@@ -5913,6 +5913,7 @@ function routeSays(bot, goal, r, { frame, placed, frameAt, here, diamondPickaxe,
   return `${site}; cast from ${lava}. Buckets: ${bucketsSay}. Water: ${water}. ${PP.priceSays(p, { tripWhat: r.site === 'beside' ? 'a scoop and a few blocks\' walk' : 'there and back' })}${measured} Pickaxe: ${digs}. Risk: ${risk}.${record}${failed || (record ? '' : ' No failures known for this route.')}${PP.planRecordSays(r.site, v.kind)}${leaving}`;
 }
 
+const POOL_LOOKS = 4;
 async function portalMethod(bot, task, goal, save, client = task.opportunityClient) {
   const { fitRuin, adopt } = require('./ruined-portal');
   const { knownLandmarks } = require('./exploration');
@@ -6002,6 +6003,21 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   const failing = r => r.lava.kind === 'pool' ? !!require('./obsidian').lavaRecord(goal, r.lava.l, here) || PP.failuresFor(goal, { lava: r.lava.at }).length > 0 : PP.failuresFor(goal, { lava: r.lava.kind === 'deep' ? { deep: true } : r.lava.at }).length > 0;
   const ordered = Object.values(routes).sort((a, b) => (failing(a) - failing(b)) || ((a.price.seconds ?? Infinity) - (b.price.seconds ?? Infinity)));
   for (const r of ordered) tree[r.key] = { description: routeSays(bot, goal, r, says) + (r.waitSays || '') + (r.surfaceSays || '') + (r.nightSays || ''), ...(r.site === 'beside' ? { target: { x: r.lava.at.x, y: r.lava.at.y, z: r.lava.at.z } } : {}) };
+  // With no lava known but the deep layer's, a look for a pool at the
+  // surface first is a way of its own (note 1083). On 2026-10-03 five of
+  // the day's deaths in the Overworld were below y -40, three of them at or
+  // on the way to the deep lava for a first portal: 25584 drowned on its
+  // waterfall down at y -51 (14:53Z) and died in the lava at y -54 with a
+  // zombie and a creeper on it (16:25Z), and 25585 was blown up at y -47
+  // among four creepers (16:41Z); the question offered only the deep
+  // routes, and was answered none of these at 0.28.
+  const onlyDeep = /overworld/.test(String(bot.game?.dimension || '')) && Object.values(routes).length > 0 && Object.values(routes).every(r => r.lava.kind === 'deep') && !ruins.length;
+  const looks = goal.poolLooks?.n || 0;
+  if (onlyDeep && looks < POOL_LOOKS) {
+    let area = null; try { area = require('./exploration').unexploredArea(bot, goal, { home: goal.survival?.home?.origin }); } catch (_) { area = null; }
+    let up = 0; try { up = require('./surface').climbToSurface(bot, bot.entity.position) ?? 0; } catch (_) { up = 0; }
+    if (area) tree.look_for_pool = { description: `Look for a lava pool at the surface before going down for the deep lava: ${up >= 3 ? `the climb back to open sky first, ${up} blocks, then ` : ''}one leg of exploring to the nearest ground not yet walked, ${area.fromHere} blocks off, a pool seen on the way noted (pools lie open on the surface in most country, a few hundred blocks apart; a ruined portal is noted the same way); the plan is asked again after it, ${looks ? `${looks} such look${looks === 1 ? '' : 's'} made so far and no pool seen, ` : ''}at most ${POOL_LOOKS} in all. No lava is known but the deep layer's at y -54 and under: on 2026-10-03 five of the day's deaths in the Overworld were below y -40 (the record's costliest place at any hour), three of them at or on the way to the deep lava for a first portal.` };
+  }
   // A frame of its own from obsidian: the diamond route, as the steps it is
   // (note 470), with the trip to the nearest lava where the obsidian is made.
   const trip = fetchTrip(frameAt, frame ? nearestLava(bot, goal, sources, frameAt) || lava : lava, null);
@@ -6109,6 +6125,15 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   if (pick === 'into_cave') {
     method.intoCave = { ...cave }; method.reasked = (method.reasked || 0) + 1; delete method.nearAsked; restate(routes[current]);
     save(); return false;
+  }
+  // A look for a surface pool: one leg of exploring, and the plan asked again.
+  if (pick === 'look_for_pool') {
+    goal.poolLooks = { n: (goal.poolLooks?.n || 0) + 1, at: Date.now() };
+    goal.step = { action: 'look_for_pool', looks: goal.poolLooks.n }; save();
+    bot.chat?.("I'll look for a lava pool up top before I go down to the deep lava.");
+    try { if (require('./surface').climbToSurface(bot, bot.entity.position) >= 3) await surfaceStep(bot, task, goal, save); await exploreStep(bot, task, goal, save, { navigate, home: goal.survival?.home?.origin, noticeVillage }); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[portal] the look for a surface pool: ${err.message}`); }
+    return false;
   }
   const r = routes[pick];
   const ruin = pick.startsWith('ruin_') ? ruinOf(pick, ruins, goal) : null;

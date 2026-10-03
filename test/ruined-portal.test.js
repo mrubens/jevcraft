@@ -1158,3 +1158,29 @@ test('a climb chosen for a portal site, made, looks for the site up there, not t
   assert.equal(goal.surfaceTrip, undefined, 'the climb for the site is done with');
   assert.equal(asked, 0, 'not asked again');
 });
+
+test('with no lava known but the deep layer\'s, a look for a pool at the surface is offered; taken, one leg is explored and the plan is asked again (note 1083)', async t => {
+  const { portalMethod } = require('../src/work');
+  const { Task } = require('../src/skills');
+  const exploration = require('../src/exploration');
+  const { bot } = castingBot({ bucket: 2, water_bucket: 1, cobblestone: 30 });
+  bot.findBlocks = () => [];
+  bot.health = 20; bot.food = 20; bot.said = []; bot.chat = m => bot.said.push(m);
+  t.mock.method(exploration, 'unexploredArea', () => ({ x: 100, z: 0, fromHere: 96 }));
+  let offered = null;
+  const task = new Task('nether');
+  task.opportunityClient = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'look_for_pool', confidence: 0.7 } } }; } };
+  const goal = {};
+  const done = await portalMethod(bot, task, goal, () => {});
+  assert.ok(offered.look_for_pool, Object.keys(offered).join(','));
+  assert.match(offered.look_for_pool, /^Look for a lava pool at the surface before going down for the deep lava: .*one leg of exploring to the nearest ground not yet walked, 96 blocks off.*at most 4 in all\. No lava is known but the deep layer's at y -54 and under/);
+  assert.equal(done, false, 'the plan is asked again after the look');
+  assert.equal(goal.poolLooks.n, 1);
+  assert.equal(goal.portalMethod, undefined, 'no route is taken by it');
+  assert.match(bot.said.join(' '), /look for a lava pool up top/);
+  // Four looks made: no longer offered.
+  goal.poolLooks.n = 4;
+  task.opportunityClient = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'here_deep', confidence: 0.7 } } }; } };
+  await portalMethod(bot, task, goal, () => {});
+  assert.equal(offered.look_for_pool, undefined);
+});
