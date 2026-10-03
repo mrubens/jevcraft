@@ -910,7 +910,25 @@ const reserveWeather = bot => bot.game?.gameMode !== 'creative' && !bot.entity?.
 // pickaxes and no wood had the bot climbing out of its night mine by hand,
 // a block every twenty-three seconds for four minutes.
 const woodDue = (bot, goal) => reserveWeather(bot) && woodUnits(bot) < WOOD_RESERVE && /overworld/.test(String(bot.game?.dimension || 'overworld')) && !isSetAside(goal, 'block_reserve', 'wood');
-const blocksDue = (bot, goal) => { const { blockStock, blockReserve } = require('./inventory-tidy'); return reserveWeather(bot) && blockStock(bot) < blockReserve(bot) && !isSetAside(goal, 'block_reserve', 'gather'); };
+// A gather that came to nothing rests where it failed, not everywhere (note
+// 986): sixteen blocks or more from there the rock about is other rock.
+// 25590 (2026-10-03 05:31Z) gathered nothing on its span over the cavern,
+// and for the ten minutes after, 60 blocks on with rock under its feet and
+// none carried, the reserve was not offered: its tunnel home stopped at each
+// gap for want of a block.
+const GATHER_REST_NEAR = 16;
+function gatherRests(bot, goal, why) {
+  setAside(goal, 'block_reserve', 'gather', why, 600000);
+  const p = bot?.entity?.position;
+  if (p) goal.blockGatherAt = { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z) }; else delete goal.blockGatherAt;
+}
+function gatherResting(bot, goal) {
+  if (!isSetAside(goal, 'block_reserve', 'gather')) return false;
+  const at = goal.blockGatherAt, p = bot?.entity?.position;
+  if (at && p && Math.hypot(at.x + 0.5 - p.x, at.y - p.y, at.z + 0.5 - p.z) >= GATHER_REST_NEAR) { attemptsFor(goal).clear('block_reserve', 'gather'); delete goal.blockGatherAt; return false; }
+  return true;
+}
+const blocksDue = (bot, goal) => { const { blockStock, blockReserve } = require('./inventory-tidy'); return reserveWeather(bot) && blockStock(bot) < blockReserve(bot) && !gatherResting(bot, goal); };
 // Wood chosen at upkeep is the climb for it chosen, said there with the
 // depth and the pickaxes: not asked again as a surface trip (note 543).
 const LOG_NEED = /\blog\b|wood/, UPKEEP_WOOD_MS = 15 * 60 * 1000;
@@ -964,7 +982,7 @@ async function gatherBlocks(bot, task, goal, save, { acquire = acquireStep } = {
         if (blockStock(bot) <= before) break;
       }
     }
-    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'block_reserve', 'gather', err, 600000); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; gatherRests(bot, goal, err); }
   }
   // A round that gained nothing is a failure too, said on the option next
   // time and resting it after two: mid-202-l chose "mine netherrack" sixteen
@@ -978,7 +996,7 @@ async function gatherBlocks(bot, task, goal, save, { acquire = acquireStep } = {
     const gained = blockStock(bot) - have;
     const tries = (goal.blockRounds || []).filter(r => Date.now() - r.at < 600000);
     goal.blockRounds = [...tries, { at: Date.now(), gained }].slice(-6);
-    if (gained <= 0 && tries.filter(r => r.gained <= 0).length >= 1) setAside(goal, 'block_reserve', 'gather', `${item.replaceAll('_', ' ')} sought twice in ten minutes and none gained`, 600000);
+    if (gained <= 0 && tries.filter(r => r.gained <= 0).length >= 1) gatherRests(bot, goal, `${item.replaceAll('_', ' ')} sought twice in ten minutes and none gained`);
     save();
   }
   return true;
@@ -5327,7 +5345,7 @@ const PORTAL_WAY_TRIED_MS = 5 * 60000;
 function blocksShortSays(bot, goal, target) {
   const nt = require('./nether-travel'), bridging = require('./bridging');
   const { BLOCK_RESERVE } = require('./inventory-tidy');
-  if (typeof bot.blockAt !== 'function' || pickaxeTier(bot) < 1 || isSetAside(goal, 'block_reserve', 'gather') || nt.crossingResting(bot, goal, target)) return null;
+  if (typeof bot.blockAt !== 'function' || pickaxeTier(bot) < 1 || gatherResting(bot, goal) || nt.crossingResting(bot, goal, target)) return null;
   const carried = bridging.blocksCarried(bot);
   let all = null, mined = null;
   try {
@@ -9097,4 +9115,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { relightPortalAt, stairPickaxeWanted, pickaxeForStair, siteHoldEnds, exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
+module.exports = { gatherRests, gatherResting, relightPortalAt, stairPickaxeWanted, pickaxeForStair, siteHoldEnds, exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
