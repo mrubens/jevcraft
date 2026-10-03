@@ -64,6 +64,28 @@ const odds = p => p <= 0 ? null : p >= 0.5 ? 'about even' : `about 1 in ${Math.r
 
 // What keeping on with the work here at night has cost, against the day,
 // and over the minutes to dawn at the night's rate.
+// Back with empty hands: the deaths that followed a death (note 1114). On
+// 2026-10-03 (08:00 to 21:00Z, every trial's deaths from its server log),
+// 20 of the 110 were followed by another of the same trial within ten
+// minutes and 30 within twenty: the bot back at its bed with nothing in
+// hand and nothing worn, out again among the night's mobs. The night's
+// record above is every bot's, most of them armed and in iron. 25589
+// (19:31:06Z), a minute and a half after it came back bare, was told of
+// leaving its pocket "about 1 in 37 of a death" to dawn, left at 0.48, and
+// was dead seven minutes on.
+const BARE = Object.freeze({ day: '2026-10-03', from: '08:00', to: '21:00Z', deaths: 110, again10: 20, again20: 30 });
+// Bare: no sword or axe carried and no armour worn.
+function bareOf(bot) {
+  try {
+    const items = bot?.inventory?.items?.() || [];
+    const worn = [5, 6, 7, 8].some(slot => bot.inventory?.slots?.[slot]);
+    return !worn && !items.some(i => /_(sword|axe)$/.test(i.name));
+  } catch (_) { return false; }
+}
+function bareSays(bot) {
+  if (!bareOf(bot)) return '';
+  return ` With empty hands and nothing worn the record is another: on ${BARE.day} (${BARE.from} to ${BARE.to}), of ${BARE.deaths} deaths ${BARE.again10} were followed by another of the same trial within ten minutes and ${BARE.again20} within twenty, the bot back bare, about 1 in ${Math.round(BARE.deaths / BARE.again10)} and 1 in ${Math.round(BARE.deaths / BARE.again20)}.`;
+}
 function keepOnSays(place, { minutesToDawn = null } = {}) {
   const r = RECORD[place];
   if (!r) return '';
@@ -166,4 +188,4 @@ function bedSafety(monsters = []) {
     facts: { monstersWithin8OfBed: within8.length, monstersWithin16OfBed: within8.length + within16.length, ...(creeper ? { creeperWithin16OfBed: round(creeper.distance) } : {}), sleepRecord: { band, ...b } } };
 }
 
-module.exports = { SURFACE_Y, DEEP_Y, CLEAR_MS, CLEAR_WITHIN, RECORD, BEDS, SINCE, bandOf, placeOf, keepOnSays, sealedSays, nightMineSays, facts, holdEnds, holdSays, holdOf, holdNow, bedSafety };
+module.exports = { BARE, bareOf, bareSays, SURFACE_Y, DEEP_Y, CLEAR_MS, CLEAR_WITHIN, RECORD, BEDS, SINCE, bandOf, placeOf, keepOnSays, sealedSays, nightMineSays, facts, holdEnds, holdSays, holdOf, holdNow, bedSafety };

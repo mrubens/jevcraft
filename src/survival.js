@@ -10626,6 +10626,7 @@ class Survival {
       // record of the place (night-record.js, note 789).
       if (night && !offWorld && options.leave && typeof options.leave.description === 'string')
         options.leave.description += require('./night-record').keepOnSays(require('./night-record').placeOf({ y: bot.entity?.position?.y, underground: below && !/ That step is at the surface \(/.test(options.leave.description) }), { minutesToDawn: minutesToDawn(bot) });
+      if (night && !offWorld && options.leave && typeof options.leave.description === 'string') options.leave.description += require('./night-record').bareSays(bot);
       const leaveOff = (() => {
         const key = 'survival:leave_shelter', now = Date.now();
         if (excused(bot, 'leave_shelter', now)) return null;
@@ -11354,6 +11355,7 @@ class Survival {
       state.nightRecord = nightRec.facts(nightPlace);
       const mins = minutesToDawn(bot);
       if (tree.continue_request) tree.continue_request.description += nightRec.keepOnSays(nightPlace, { minutesToDawn: mins });
+      if (tree.continue_request) tree.continue_request.description += nightRec.bareSays(bot);
       if (tree.secure_shelter) tree.secure_shelter.description += nightRec.sealedSays(nightPlace, { minutesToDawn: mins, waiting }) + nightRec.holdSays(sealWhy, { minutesToDawn: mins });
     }
     // At night too, with what it risks said, not hidden (the decision
