@@ -166,6 +166,21 @@ test('in the Nether with no pickaxe and no wood, the trip home for wood is offer
   const { options } = await upkeepOffers(bot, new Task('upkeep', 'upkeep'), goal, () => {});
   assert(options.return_for_wood, `offered: ${Object.keys(options)}`);
   assert.match(options.return_for_wood.description, /Go back through the portal \(the nearest known \d+ blocks off at 200, 48, 60\) for .*a pickaxe needs wood \(none carried/);
+  // What carrying on costs is said beside it, whichever the way to a pickaxe (note 1096):
+  // 25585 at 19:35Z was offered the walk home against "carry on ... asked again in five minutes" alone.
+  const { upkeepStep } = require('../src/work');
+  const asked = [];
+  const client = { systemOne: async req => { asked.push(req.questions.branch_0.criteria); return { answers: { branch_0: { choice: 'carry_on', confidence: 0.7 } } }; } };
+  const g = { ...goal, step: { action: 'find_fortress' } };
+  // No stems known or to be looked for: the walk home is the only way to a pickaxe.
+  const nw = require('../src/nether-wood'), offer = nw.fetchStemsOffer;
+  nw.fetchStemsOffer = async () => null;
+  try { await upkeepStep(bot, { check() {} }, g, () => {}, client); } finally { nw.fetchStemsOffer = offer; }
+  assert.doesNotMatch(JSON.stringify(asked[0] || ''), /fetch_stems|make_pickaxe/);
+  const said = JSON.stringify(asked[0] || '');
+  assert.match(said, /a way chosen fails for want of a pickaxe/);
+  assert.match(said, /No pickaxe is carried: for the next 5 minutes rock is dug by hand/);
+  assert.equal(g.upkeepHold?.noPickaxe, true, 'the hold ends at the first way that fails for want of one');
   // With no portal known it is not offered.
   const none = await upkeepOffers(bot, new Task('upkeep', 'upkeep'), { ...goal, portals: [] }, () => {});
   assert(!none.options.return_for_wood);

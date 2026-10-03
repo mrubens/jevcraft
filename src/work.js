@@ -1102,6 +1102,11 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   // (note 687).
   const bs = require('./block-stock');
   const noPick = pickaxeNeeded(bot) && (options.make_pickaxe || options.fetch_stems);
+  // The same said where the only way to one is back through the portal:
+  // 25585, at its fortress with no pickaxe, no wood and no block (2026-10-03
+  // 19:35Z), was offered the walk home against a carry-on of one line, what
+  // going on cost left out, and carried on (note 1096).
+  const noPickCost = noPick || (pickaxeNeeded(bot) && !!options.return_for_wood);
   // With a pickaxe carried in the Nether and a spare or its wood on offer,
   // the wear the carry-on goes on with (note 687).
   const wearNow = !noPick && inNetherNow(bot) && goal.kind === 'win' && (options.spare_pickaxe || options.fetch_stems) ? require('./pickaxe-budget').wearSays(bot, goal) : '';
@@ -1120,8 +1125,8 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   // hunger 10 with nothing to eat for stems 140 blocks from it.
   const away = !atCage && options.fetch_stems ? require('./fortress-away').awaySays(bot, goal, options.fetch_stems.place?.at, { owed: true }) : null;
   if (away) options.fetch_stems.description = `${options.fetch_stems.description.replace(require('./nether-wood').LATER, '')} ${away}`;
-  options.carry_on = { description: `${atCage ? atCage.carryOn : `Carry on with ${goal.step?.action ? `the ${String(goal.step.item || goal.step.block || goal.step.action).replaceAll('_', ' ')}` : 'the work'} and see to this later;`} asked again in five minutes, or sooner if what is due here changes${noPick ? ' or a way chosen fails for want of a pickaxe' : ''}.${budget?.short ? ` The pickaxes carried then run ${budget.need - budget.usesLeft} digs short of the step in hand and the way home, the rest dug by hand.` : ''}${noPick ? `${bs.aheadByHandSays(bot, goal)}${bs.goingOnSays(bot, UPKEEP_HOLD_MS / 60000)}` : wearNow ? ` The pickaxes: ${wearNow}.` : ''}${ended ? ` The last carry-on ended early: ${ended.method} failed for want of a pickaxe (${ended.why}).` : ''}`,
-    run: async () => { goal.upkeepHold = { keys, until: Date.now() + UPKEEP_HOLD_MS, ...(noPick ? { noPickaxe: true, since: Date.now() } : {}) }; delete goal.upkeepHoldEnded; save(); } };
+  options.carry_on = { description: `${atCage ? atCage.carryOn : `Carry on with ${goal.step?.action ? `the ${String(goal.step.item || goal.step.block || goal.step.action).replaceAll('_', ' ')}` : 'the work'} and see to this later;`} asked again in five minutes, or sooner if what is due here changes${noPickCost ? ' or a way chosen fails for want of a pickaxe' : ''}.${budget?.short ? ` The pickaxes carried then run ${budget.need - budget.usesLeft} digs short of the step in hand and the way home, the rest dug by hand.` : ''}${noPickCost ? `${bs.aheadByHandSays(bot, goal)}${bs.goingOnSays(bot, UPKEEP_HOLD_MS / 60000)}` : wearNow ? ` The pickaxes: ${wearNow}.` : ''}${ended ? ` The last carry-on ended early: ${ended.method} failed for want of a pickaxe (${ended.why}).` : ''}`,
+    run: async () => { goal.upkeepHold = { keys, until: Date.now() + UPKEEP_HOLD_MS, ...(noPickCost ? { noPickaxe: true, since: Date.now() } : {}) }; delete goal.upkeepHoldEnded; save(); } };
   // The lead short: carry_on says what going on without one costs.
   const ways = ['make_pickaxe', 'fetch_stems'].filter(k => options[k]);
   const lead = atCage ? atCage.lead : noPick ? `No pickaxe is carried: ${ways.join(' or ')} gets one first.` : null;
