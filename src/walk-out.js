@@ -162,6 +162,22 @@ function backTrail(trail, here, portal = null) {
   return { cells: way, off: Math.round(bestD), reaches: !!portal && Math.hypot(start[0] - portal.x, start[1] - portal.y, start[2] - portal.z) <= 6, start: { x: start[0], y: start[1], z: start[2] } };
 }
 
+// Whether the way back begins by leading away from the portal: its cell two
+// legs on is farther from the portal than the bot stands by more than
+// AWAY_BLOCKS. A tunnel or span made toward the portal since is the newest
+// end of the way in, and walking it back undoes it (note 1008): 25592
+// (2026-10-03 07:28 to 07:34Z), 3 rods carried and 3 kept, tunnelled to 92
+// blocks from its portal and was walked "back the way it came in" 60 cells
+// down its own tunnel to 120 from it, three times, its hunger falling from
+// 17 to 13 with nothing to eat.
+const AWAY_BLOCKS = 8;
+function leadsAway(way, here, portal) {
+  if (!way?.cells?.length || !here || !portal) return false;
+  const c = way.cells[Math.min(way.cells.length - 1, 2 * LEG_CELLS)];
+  const flat = p => Math.hypot(p.x - portal.x, p.z - portal.z);
+  return flat(c) > flat(here) + AWAY_BLOCKS;
+}
+
 // The way back's cells beside lava or a drop into it, and the bot's own
 // spans on it, read from the world where loaded.
 function wayFacts(bot, way) {
@@ -208,10 +224,11 @@ function wayBackSays(bot, way, facts) {
 // The way back walked: legs of LEG_CELLS cells, each to a cell on the way by
 // the pathfinder (the rods' rules on, the way's own cells allowed at the
 // edge). Returns { tried, ok, reached, why, walked }.
-async function walkBack(bot, task, goal, portal, navigate) {
+async function walkBack(bot, task, goal, portal, navigate, { force = false } = {}) {
   const trail = wayInOf(bot, goal), here = bot.entity.position;
   const way = backTrail(trail, here, portal);
   if (!way?.cells.length) return { tried: false, off: way?.off ?? null };
+  if (!force && leadsAway(way, here, portal)) return { tried: false, away: true };
   const { goals } = require('mineflayer-pathfinder');
   let i = 0, walked = 0;
   while (i < way.cells.length - 1) {
@@ -234,4 +251,4 @@ async function walkBack(bot, task, goal, portal, navigate) {
   return { tried: true, ok: true, walked, reached: way.reaches };
 }
 
-module.exports = { endSays, rodsCarried, noteCell, noteWayIn, wayInPlugin, wayInOf, onWayIn, backTrail, wayFacts, rodsSays, wayBackSays, walkBack, feetOf, ROD_DROP_MAX, ROD_COST, LEG_CELLS, WAY_NEAR, WAY_IN_MOST };
+module.exports = { leadsAway, endSays, rodsCarried, noteCell, noteWayIn, wayInPlugin, wayInOf, onWayIn, backTrail, wayFacts, rodsSays, wayBackSays, walkBack, feetOf, ROD_DROP_MAX, ROD_COST, LEG_CELLS, WAY_NEAR, WAY_IN_MOST };

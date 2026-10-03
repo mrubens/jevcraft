@@ -5229,7 +5229,10 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
       // two rods carried, took the way in "to where the way kept begins,
       // (-183, 57, 519)", 543 blocks from its portal against 476 from where
       // it stood, and walked away from home.
-      tree.the_way_in = { description: walkOut.wayBackSays(bot, way, walkOut.wayFacts(bot, way)) + walkOut.endSays(way, target, here) };
+      // Where it begins by leading away (walk-out.js leadsAway, note 1008):
+      // said, and then walked only as Jev's own choice here.
+      const awaySays = walkOut.leadsAway(way, here, target) ? ` Its first cells lead away from the portal (the newest of the way in is what the bot dug or laid toward the portal since): two legs along it is about ${Math.round(Math.hypot(way.cells[Math.min(way.cells.length - 1, 2 * walkOut.LEG_CELLS)].x - target.x, way.cells[Math.min(way.cells.length - 1, 2 * walkOut.LEG_CELLS)].z - target.z))} blocks from it, where the bot stands ${Math.round(Math.hypot(here.x - target.x, here.z - target.z))}.` : '';
+      tree.the_way_in = { description: walkOut.wayBackSays(bot, way, walkOut.wayFacts(bot, way)) + walkOut.endSays(way, target, here) + awaySays };
     }
     const fresh = !rods ? '' : ` Fresh ground, not the way the bot came in: with ${rods} blaze rod${rods === 1 ? '' : 's'} carried, a fall or lava on it loses ${rods === 1 ? 'it' : 'every one'}.`;
     for (const k of ['climb_here', 'around_left', 'around_right', 'floor_way', 'blocks_then_cross', 'dig_across']) if (tree[k]) tree[k].description += fresh;
@@ -5310,7 +5313,7 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
   }
   if (pick === 'the_way_in') {
     attemptsFor(goal).clear('way_in', target);
-    const went = await walkOut.walkBack(bot, task, goal, p, navigate);
+    const went = await walkOut.walkBack(bot, task, goal, p, navigate, { force: true });
     if (went.tried && !went.ok) { setAside(goal, 'way_in', target, `the way back along it stopped: ${went.why}`, 120000); save(); }
     cameTo(went.ok ? null : went.why || 'no way kept from here');
     return true;
