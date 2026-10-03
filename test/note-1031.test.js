@@ -33,6 +33,15 @@ test('behind a wall from the mouth, in sight two cells out: that cell, its path 
   // Eight blocks off it would be at the bot before the slot's end: no cell.
   const near = world(new Vec3(8.5, 64, 3.5));
   assert.equal(slot.outSpot(near.bot, near.site, [near.bot.entities[5]]), null);
+  // Note 1040: none gone out for with one within twelve blocks of the mouth, and never to a cell beside a drop.
+  const crowd = world(new Vec3(24.5, 64, 0.5));
+  crowd.bot.entities[6] = { id: 6, name: 'enderman', position: new Vec3(6.5, 64, -6.5), isValid: true, metadata: [] };
+  assert.equal(slot.outSpot(crowd.bot, crowd.site, Object.values(crowd.bot.entities)), null, 'one eight blocks from the mouth');
+  const ledge = world(new Vec3(24.5, 64, 0.5)), was = ledge.bot.blockAt;
+  // The floor east of x 1 is gone (a drop) on both sides of the mouth's row.
+  ledge.bot.blockAt = p => { const c = p.floored(); return c.x >= 1 && c.x <= 3 && c.z !== 0 && c.y <= 63 && c.y >= 50 ? { position: c, name: 'air', boundingBox: 'empty', shapes: [] } : was(p); };
+  const out = slot.outSpot(ledge.bot, ledge.site, [ledge.bot.entities[5]]);
+  if (out) assert.ok(out.path.every(c => [[1, 0], [-1, 0], [0, 1], [0, -1]].every(([x, z]) => { const n = c.offset(x, 0, z), b = k => ledge.bot.blockAt(n.offset(0, k, 0)).boundingBox === 'block'; return b(0) || b(-1) || b(-2); })), 'every cell on the way has floor round it');
   // One already turned is waited for at the back, not gone out to.
   far.bot.entities[5].metadata = { 17: true };
   assert.equal(slot.outSpot(far.bot, far.site, [far.bot.entities[5]]), null);

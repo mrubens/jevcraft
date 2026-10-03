@@ -84,21 +84,28 @@ function slotFrom(bot, f) {
 // the mouth, 9 endermen killed in all: the slot is dug where the rock is,
 // and the endermen walk where it is open.
 // -> { cell, path, e, steps, gap } or null
-const OUT_STEPS = 4, OUT_TRIES = 3, BOT_RUN = 4.3, BACK_START = 0.5;
+const OUT_STEPS = 4, OUT_TRIES = 3, BOT_RUN = 4.3, BACK_START = 0.5, OUT_CLEAR = 12;
 function outSpot(bot, site, list) {
+  // Not with one within OUT_CLEAR of the mouth, turned or not: it is at the bot before the look is done.
+  const mid0 = site.mouth.offset(0.5, 0, 0.5);
+  if (list.some(x => x.position.distanceTo(mid0) <= OUT_CLEAR)) return null;
   const at = c => bot.blockAt(c), solid = b => !!b && b.boundingBox === 'block', open = b => !!b && b.boundingBox === 'empty' && !/lava|water|fire/.test(b.name);
   const stands = c => open(at(c)) && open(at(c.offset(0, 1, 0))) && solid(at(c.offset(0, -1, 0))) && !/magma|fire/.test(at(c.offset(0, -1, 0)).name);
+  // No drop beside it: each of the eight cells round it is rock, or open with a floor under it or one step down.
+  const floored = c => [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]].every(([x, z]) => { const n = c.offset(x, 0, z); return solid(at(n)) || solid(at(n.offset(0, -1, 0))) || solid(at(n.offset(0, -2, 0))); });
   let speed = 8.7; try { speed = require('./combat-estimate').blocksPerSecond('enderman'); } catch (_) { speed = 8.7; }
   const seen = new Set([`${site.mouth}`, `${site.a}`, `${site.b}`]);
   let ring = [{ cell: site.mouth, path: [] }];
   for (let step = 1; step <= OUT_STEPS && ring.length; step++) {
     const next = [];
-    for (const { cell, path } of ring) for (const [dx, dz] of DIRS) for (const dy of [0, 1, -1]) {
-      const c = cell.offset(dx, dy, dz);
-      if (seen.has(`${c}`) || !stands(c)) continue;
-      // A step up wants the head room over where it is stepped from.
-      if (dy === 1 && !open(at(cell.offset(0, 2, 0)))) continue;
-      if (dy === -1 && !open(at(c.offset(0, 2, 0)))) continue;
+    for (const { cell, path } of ring) for (const [dx, dz] of DIRS) {
+      // On the mouth's own level, with a floor under every cell round it
+      // (note 1040): the first going out live (25591, 2026-10-03 10:12:03Z)
+      // was to a cell a step down from the mouth beside a ledge; an
+      // enderman was at it two seconds on, its blow knocked it over, and
+      // the fall killed it with six rods kept and a pearl just got.
+      const c = cell.offset(dx, 0, dz);
+      if (seen.has(`${c}`) || !stands(c) || !floored(c)) continue;
       seen.add(`${c}`);
       next.push({ cell: c, path: [...path, c] });
     }
@@ -139,7 +146,7 @@ function slotSite(bot, { reach = 6, toward = null } = {}) {
 }
 
 function says(site, n) {
-  return `Fight it from a slot: dig a tunnel one wide and two high two cells into the rock ${site.off ? `${site.off} blocks off at (${site.mouth.x}, ${site.mouth.y}, ${site.mouth.z})` : 'beside where the bot stands'} (${site.digs.length} blocks to dig), stand at its back and look the enderman in the eyes from its mouth to bring it${site.line ? ' (the mouth has a line to its eyes now)' : site.out ? ` (the mouth has no line to one now: the bot goes ${site.out.steps} cell${site.out.steps === 1 ? '' : 's'} out of it to where one ${site.out.off} blocks off is in sight, looks, and is back at the slot's end before it comes; in the arena, a wall between the mouth and an enderman 21 blocks off, 10 runs of 10, the look turning it in 9 of 10 goings out, no health lost)` : ''}. An enderman is 2.9 blocks tall and does not come into a space two high; from the mouth its blow falls about 0.4 blocks short of the bot, and the sword reaches it there. Each is struck until it dies and its drop taken from the mouth${n > 1 ? `; ${n} are about, and those that come are taken one after another` : ''}.`;
+  return `Fight it from a slot: dig a tunnel one wide and two high two cells into the rock ${site.off ? `${site.off} blocks off at (${site.mouth.x}, ${site.mouth.y}, ${site.mouth.z})` : 'beside where the bot stands'} (${site.digs.length} blocks to dig), stand at its back and look the enderman in the eyes from its mouth to bring it${site.line ? ' (the mouth has a line to its eyes now)' : site.out ? ` (the mouth has no line to one now: the bot goes ${site.out.steps} cell${site.out.steps === 1 ? '' : 's'} out of it to where one ${site.out.off} blocks off is in sight, looks, and is back at the slot's end before it comes; in the arena, a wall between the mouth and an enderman 21 blocks off, 10 runs of 10, the look turning it in 9 of 10 goings out, no health lost; the first going out live, to a cell a step down beside a ledge with another enderman near, ended in a blow and a fall, and it now goes only to cells on the mouth's level with floor all round and none within twelve blocks)` : ''}. An enderman is 2.9 blocks tall and does not come into a space two high; from the mouth its blow falls about 0.4 blocks short of the bot, and the sword reaches it there. Each is struck until it dies and its drop taken from the mouth${n > 1 ? `; ${n} are about, and those that come are taken one after another` : ''}.`;
 }
 
 // The arena's record (scripts/terrain.js enderman_slot, 2026-10-03): an iron
