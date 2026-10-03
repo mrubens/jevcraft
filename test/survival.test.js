@@ -6211,3 +6211,20 @@ test('each way against mobs that bite says its own price straight after the lead
     assert(at < 700, `${k}: the price ${at} characters in`);
   }
 });
+
+test('striking a ghast\'s fireball back with calm zombified piglins about says they turn on the bot where it bursts by them (note 1107)', async () => {
+  // 25581 (2026-10-03 20:36:28Z): three about on its span, the fireball struck back, four on it eleven seconds later, 20 health to none in six.
+  const make = withPiglins => {
+    const bot = rockWorld(p => p.y >= 64, ['iron_sword', 'cobblestone']);
+    bot.game.dimension = 'the_nether';
+    const ghast = ghastAt(30.5, 0.5, 70);
+    bot.entities = { 21: ghast };
+    if (withPiglins) for (const i of [1, 2, 3]) bot.entities[50 + i] = { id: 50 + i, name: 'zombified_piglin', type: 'hostile', position: new Vec3(8.5 + i, 64, 3.5), height: 1.95, width: 0.6, isValid: true };
+    const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+    return survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, ghast)], false);
+  };
+  const about = make(true), none = make(false);
+  assert(about.return_fireball, Object.keys(about).join(','));
+  assert.match(about.return_fireball.description, /3 zombified piglins stand within 32 blocks, the nearest \d+ off, calm now: a fireball the bot strikes is the bot's own from then, and where it bursts within about two blocks of one, every zombified piglin about turns on the bot, about [\d.]+ a blow each/);
+  assert.doesNotMatch(none.return_fireball.description, /zombified piglin/);
+});

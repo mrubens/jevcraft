@@ -5322,7 +5322,18 @@ class Survival {
       // Priced by what the strike has measured live, and over a drop a
       // shot can push the bot off by that fall (note 574).
       const back = ghast.returnOption(bot, danger, { hit: ghastHit, others, since: goal?.fireballReturns, over: overEdge });
-      if (back) options.return_fireball = { expects: back.expects, description: back.description + edge,
+      // Zombified piglins standing about, calm: a fireball the bot strikes
+      // is its own from then, and one that bursts by them is the bot's blow
+      // on them. 25581 (2026-10-03 20:36:28Z), on a span with three about,
+      // struck a ghast's fireball back; by 20:36:34Z they were coming, four
+      // were on it at 20:36:39Z, and it went from 20 health to none in six
+      // seconds (note 1107).
+      const zps = Object.values(bot.entities || {}).filter(e => e.name === 'zombified_piglin' && e.isValid !== false && e.position && e.position.distanceTo(bot.entity.position) <= 32);
+      const zpNear = zps.length ? Math.round(Math.min(...zps.map(e => e.position.distanceTo(bot.entity.position)))) : null;
+      const zpSays = zps.length && !danger.some(t => t.entity.name === 'zombified_piglin')
+        ? ` ${zps.length === 1 ? 'A zombified piglin stands' : `${zps.length} zombified piglins stand`} within 32 blocks, the nearest ${zpNear} off, calm now: a fireball the bot strikes is the bot's own from then, and where it bursts within about two blocks of one, every zombified piglin about turns on the bot, about ${Math.round(ce.afterArmour(ce.MOBS.zombified_piglin?.hit ?? 8, ce.armourOf([5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean))) * 10) / 10} a blow each through what is worn.`
+        : '';
+      if (back) options.return_fireball = { expects: back.expects, description: back.description + zpSays + edge,
         run: async () => {
           this.report(goal, save, { action: 'return_fireball', target: 'ghast', entityId: back.ghast.entity.id, distance: Math.round(back.ghast.distance * 10) / 10, health: bot.health, stance: true });
           const r = await ghast.returnFireball(bot, task, back.ghast.entity);
