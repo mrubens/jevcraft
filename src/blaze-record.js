@@ -375,11 +375,31 @@ function answersSay(bot, opts = {}) {
   return sentence;
 }
 // A kind of answer's own row, said on its option (a short sentence), or ''.
+// Where the rods came from (note 1023): the step the bot was in when each
+// blaze rod was picked up in the Nether, with the minutes spent in that step
+// and the deaths in it (the step most of the last fifteen seconds), from the
+// flight frames of 2026-10-03 03:00Z to 08:56Z: [minutes, rods, deaths]. 105
+// rods in all; 77 of them picked up while closing in, at two a minute, and
+// none at a corner or in a hole. The rows above are of fights two to five
+// days old and say who died; none said which answer brought the rods.
+const RODS_BY = { from: '2026-10-03 03:00Z', to: '08:56Z', rods: 105,
+  rows: { close_in: [36, 77, 7], charge: [5, 11, 0], corner: [5, 0, 3], box: [44, 1, 2], hole: [8, 0, 4], heal: [8, 0, 1], spawner: [23, 4, 6] } };
+const RODS_BY_KEY = { close_in: 'close_in', charge_nearest: 'charge', corner_ambush: 'corner', box_here: 'box', box_at_spawner: 'box', dig_in_and_fight: 'hole', dig_in_at_spawner: 'hole', bunker: 'hole', leave_and_heal: 'heal', fight_at_spawner: 'spawner', wait_at_spawner: 'spawner' };
+const RODS_BY_SAID = { close_in: 'closing in', charge: 'a charge at the nearest', corner: 'a corner ambush', box: 'a box (building it and holding it)', hole: 'a hole dug to fight or recover in', heal: 'leaving to heal', spawner: 'standing or waiting at the cage' };
+function rodsBySays(key) {
+  const kind = RODS_BY_KEY[key], row = kind && RODS_BY.rows[kind];
+  if (!row) return '';
+  const [minutes, rods, deaths] = row, plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  return ` Where the rods came from, ${RODS_BY.from} to ${RODS_BY.to} (the step the bot was in as each of ${RODS_BY.rods} rods was picked up): in ${RODS_BY_SAID[kind]}, ${plural(minutes, 'minute')} in all, ${rods ? plural(rods, 'rod') : 'no rod'} and ${deaths ? plural(deaths, 'death') : 'no death'}${kind === 'close_in' ? '' : `; closing in, ${RODS_BY.rows.close_in[0]} minutes, ${RODS_BY.rows.close_in[1]} rods and ${RODS_BY.rows.close_in[2]} deaths`}.`;
+}
 function optionSays(bot, key, opts = {}) {
+  return blazeRowSays(bot, key, opts) + (/nether/.test(String(bot?.game?.dimension || '')) && blazesAbout(bot).within24 ? rodsBySays(key) : '');
+}
+function blazeRowSays(bot, key, opts = {}) {
   const kind = CLASS_OF[key];
   if (!kind) return '';
   const s = situationOf(bot, opts), row = rowOf(s, kind);
   return row ? ` In the fights of ${ANSWERS_OF.from} to ${ANSWERS_OF.to} after an answer of this kind (${CLASS_SAYS[kind].short}) in a situation like this (${situationSays(s)}): ${answerRowSays(row, s)}.` : '';
 }
 
-module.exports = { BOXED, boxedSays, lullsSay, COUNTS, countRow, stayWithin, entryFacts, WAYS, WAYS_OF, WAYS_MIN, waySays, blazesAbout, RECENT, IRON_LOST, ironSays, recentSays, situationOf, answersSay, optionSays, rowOf, HOW, CLASS_OF, CLASS_SAYS, MIN_FIGHTS, ANSWERS, ANSWERS_OF, BLAZES_ABOUT, HEALTH_BAND, cellKeys, DAY, ALL, HEALTH, HUNGER, BLAZES, IRON, DEATHS, says, bandOf, rowSays };
+module.exports = { RODS_BY, rodsBySays, BOXED, boxedSays, lullsSay, COUNTS, countRow, stayWithin, entryFacts, WAYS, WAYS_OF, WAYS_MIN, waySays, blazesAbout, RECENT, IRON_LOST, ironSays, recentSays, situationOf, answersSay, optionSays, rowOf, HOW, CLASS_OF, CLASS_SAYS, MIN_FIGHTS, ANSWERS, ANSWERS_OF, BLAZES_ABOUT, HEALTH_BAND, cellKeys, DAY, ALL, HEALTH, HUNGER, BLAZES, IRON, DEATHS, says, bandOf, rowSays };
