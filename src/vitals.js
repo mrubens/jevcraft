@@ -945,7 +945,18 @@ function closeHostiles(bot) {
 // mid-242-ab-nether-3 gave the meal the turn 41 times in six seconds at
 // 10.6 health, each stopped at once, the claim saying it could eat and
 // the run saying it could not (note 585). Starving, it eats anyway.
-const unhealingAmongBlazes = (bot, close = closeHostiles(bot)) => (bot.food ?? 20) < 18 && (bot.health ?? 20) <= UNHEALING_HEALTH && close.every(e => e.name === 'blaze');
+// And only where the meal would be eaten through a shot on its way
+// (shot-reflex.js mealThroughShot, note 1006): at a health one fireball's
+// hit ends, the shield cuts every bite, and the claim stood the bot still
+// in their line with nothing eaten. 25591 (2026-10-03 07:22:01 to 07:22:11Z)
+// was given the meal's turn three times at 5.6 and 3.6 health with four
+// blazes in line five blocks off, ate nothing, and the next fireball ended
+// it; there the turn is the stance's (out of their line first).
+const unhealingAmongBlazes = (bot, close = closeHostiles(bot)) => {
+  if (!((bot.food ?? 20) < 18 && (bot.health ?? 20) <= UNHEALING_HEALTH && close.every(e => e.name === 'blaze'))) return false;
+  if (!close.length) return true;
+  try { return require('./shot-reflex').mealThroughShot(bot, { name: 'small_fireball' }); } catch (_) { return false; }
+};
 function checkMeal(bot) {
   if ((bot.food ?? 20) <= 2) return;
   const close = closeHostiles(bot);

@@ -25,4 +25,5 @@ test('hurt at hunger 17 with a blaze two blocks off, the meal is claimed and pre
   assert.match(hurt.facts.healthComesBackOnlyAfterAMeal, /hunger 17 is under eighteen/);
   assert.equal(vitals.claim(bot({ health: 12.6, food: 18 })), null, 'at eighteen it heals: the blaze close keeps the meal off');
   assert.equal(vitals.claim(bot({ health: 18, food: 17 })), null, 'not much hurt: the blaze close keeps the meal off');
+  assert.equal(vitals.claim(bot({ health: 3.6, food: 17 })), null, 'one fireball would end it and the shield cuts every bite: the stance\'s turn, not the meal\'s (note 1006)');
 });
