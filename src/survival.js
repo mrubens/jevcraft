@@ -2736,7 +2736,13 @@ class Survival {
         // The way out of the fire or the lava running is the answer to the
         // burns: stopped, its keys let go, the body stood in the flames (note
         // 792: 24 watchdog stops with the run out of fire the last action).
-        const answering = (held && held.choice !== 'keep_working' && !require('./vitals').inFire(bot)) || !!require('./vitals').wayOutRunning(bot, now);
+        // Not to a blow from a mob at arm's length (note 1015): the run out
+        // is no answer to that, and the next ask is the stance's. 25590
+        // (2026-10-03 08:03:00 to 08:03:03Z), at full health, ran out of a
+        // fire with a blaze 0.8 blocks off, and its four blows in four
+        // seconds, 14.3 health to none, stopped nothing.
+        const atArm = !!byMob && !!source?.position && source.position.distanceTo(bot.entity.position) <= 3;
+        const answering = (held && held.choice !== 'keep_working' && !require('./vitals').inFire(bot)) || (!!require('./vitals').wayOutRunning(bot, now) && !atArm);
         if (bot._hurtTimes.filter(t => now - t < 4000).length >= (byMob ? 1 : 2) && !answering && !(bot._threatResponseAt > now - 3000) && !(bot._threatAbortAt > now - 5000) && (bot.health ?? 0) > 0) {
           bot._threatAbortAt = now; bot._threatAbort = true;
           const was = require('./turn').stopForTurn(bot);
