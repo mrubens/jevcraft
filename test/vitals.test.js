@@ -43,6 +43,26 @@ test('air escape moves around a solid overhang before surfacing', () => {
   assert(route.every(p => bot.blockAt(p).name !== 'stone' && bot.blockAt(p.offset(0, 1, 0)).name !== 'stone'));
 });
 
+test('a swim to air with blows landing on it ends at the third after three seconds, said for the next asking (note 1039)', async () => {
+  const bot = waterWorld();
+  const controls = {};
+  bot.pathfinder = { setGoal: () => {} };
+  bot.stopDigging = () => {};
+  bot.clearControlStates = () => { controls.jump = false; controls.forward = false; };
+  bot.setControlState = (key, value) => { controls[key] = value; };
+  bot.lookAt = async () => {};
+  // Knocked about under water, never rising: a blow a second.
+  const blows = setInterval(() => { bot._blowAt = Date.now(); bot._blowBy = 'drowned'; bot.entity.position.x += 0.2; }, 900);
+  const t0 = Date.now();
+  let r;
+  try { r = await surfaceForAir(bot, new Task('test', 'surface')); }
+  finally { clearInterval(blows); }
+  assert.equal(r, false);
+  assert.ok(Date.now() - t0 >= 2900 && Date.now() - t0 < 6000, `${Date.now() - t0} ms`);
+  assert.match(bot._bodyWayWhy, /^\d blows from the drowned at arm's length landed in the [\d.]+ seconds of the swim, each knocking the body off it, and the head is still under \(air \d+ of 20\)$/);
+  assert(!controls.jump && !controls.forward);
+});
+
 test('surfacing refills the air bar and releases swimming controls', async () => {
   const bot = waterWorld();
   const controls = {};

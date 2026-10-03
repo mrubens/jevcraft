@@ -236,6 +236,7 @@ function breathShort(bot, path) {
   return null;
 }
 
+const SWIM_BLOWS = 3, SWIM_BLOWS_MS = 3000;
 async function surfaceForAir(bot, task, onAction = () => {}, { keepOff = null } = {}) {
   onAction({ action: 'surface', oxygen: bot.oxygenLevel, ...(keepOff ? { keepOff: keepOff.why } : {}) });
   bot.pathfinder.setGoal(null); bot.stopDigging(); bot.clearControlStates();
@@ -245,8 +246,8 @@ async function surfaceForAir(bot, task, onAction = () => {}, { keepOff = null } 
   const find = () => airRoute(bot, closed, { budgetS: breathSeconds(bot) }) || airRoute(bot, closed, { budgetS: breathSeconds(bot) + drowningSeconds(bot) });
   let route = find();
   if (!route) return straightUp(bot, task);
-  const deadline = Date.now() + 15000;
-  let index = 0;
+  const deadline = Date.now() + 15000, began = Date.now();
+  let index = 0, blowsOn = 0, blowSeen = 0;
   // Air comes before anything, and a swimmer held still is spending it for
   // nothing: mid-92-b pressed jump into a lily pad the way to air went
   // through, not a hair of movement for thirteen seconds, and drowned
@@ -263,6 +264,16 @@ async function surfaceForAir(bot, task, onAction = () => {}, { keepOff = null } 
     while (bot.oxygenLevel < 20 || headSubmerged(bot)) {
       task.check();
       if (Date.now() >= deadline) throw new Error('Could not reach breathable air along the observed swimming route');
+      // Blows landing on the swim (note 1039): the third in three seconds or
+      // more ends it, said to the question asked next, where the strike is
+      // a way (note 1036). 25584's swim "of about 0.8 seconds" ran sixteen
+      // with a drowned at arm's length, fourteen blows, and was never asked
+      // about again.
+      if (bot._blowAt > began && bot._blowAt !== blowSeen) { blowSeen = bot._blowAt; blowsOn++; }
+      if (blowsOn >= SWIM_BLOWS && Date.now() - began >= SWIM_BLOWS_MS && bot.oxygenLevel > 0) {
+        bot._bodyWayWhy = `${blowsOn} blows from ${bot._blowBy ? `the ${String(bot._blowBy).replaceAll('_', ' ')}` : 'a mob'} at arm's length landed in the ${Math.round((Date.now() - began) / 100) / 10} seconds of the swim, each knocking the body off it, and the head is still under (air ${bot.oxygenLevel} of 20)`;
+        return false;
+      }
       const p = bot.entity.position;
       // A block in the way on the route is dug when the bot is beside it.
       for (const cell of route[index].digs || []) {
