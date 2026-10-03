@@ -75,3 +75,18 @@ test('portal_way asked on the trip home carries the trip on: its ways toward the
   assert.deepEqual(offered[0].filter(k => k !== 'none_good').sort(), ['around_left', 'dig_across', 'pickaxe_first']);
   assert.equal(goal.intention?.choice, 'return_for_wood', 'the trip holds');
 });
+
+test('the stem fetch resting is said as resting on pickaxe_first, not as no stem known (note 967)', async () => {
+  const { portalWay } = require('../src/work');
+  const { setAside } = require('../src/progress');
+  const bot = groundBot(fixture, { at: new Vec3(-161.5, 66, -112.5), dimension: 'the_nether', health: 20, food: 20, items: [] });
+  bot.findBlocks = () => [];
+  const task = new Task('back'), asked = [];
+  task.opportunityClient = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: 'around_left', confidence: 0.9 } } }; } };
+  bot.pathfinder = { ...(bot.pathfinder || {}), goto: async () => { throw new Error('No path to the goal!'); }, setGoal: () => {} };
+  const goal = { survival: {} };
+  setAside(goal, 'fetch_stems', 'nether', 'No stems were fetched: the walk to the crimson stems came no nearer', 600000);
+  await portalWay(bot, task, goal, () => {}, { x: -140, y: 66, z: -113 }, 'nether', { walk: 'the walk there failed (no route)', pickaxeWanted: { item: 'stone_pickaxe', gather: true } }).catch(() => {});
+  assert.match(asked[0]?.pickaxe_first || '', /The fetch of stems rests from a failure \(No stems were fetched: the walk to the crimson stems came no nearer\)/);
+  assert.doesNotMatch(asked[0].pickaxe_first, /No stem is known/);
+});

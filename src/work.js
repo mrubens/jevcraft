@@ -3831,6 +3831,17 @@ async function acquireStep(bot, task, item, count, goal, save, { minimumMiningY,
   const inv = planningInventory(bot);
   for (const [name, amount] of Object.entries(reserved)) inv[name] = Math.max(0, (inv[name] || 0) - amount);
   if ((inv[item] || 0) >= count) return true;
+  // Netherrack in the Nether, dug where the bot stands first (note 968, as
+  // the block gather since note 960): 25592 and 25591 (2026-10-03 03:18 to
+  // 03:19Z), with pickaxes, were told "No way to netherrack from here: 518
+  // known 12 blocks west" and "497 known 6 blocks north" by the mining's
+  // walk, standing in it.
+  if (item === 'netherrack' && /nether/.test(String(bot.game?.dimension || ''))) {
+    try { await require('./bridging').quarryHere(bot, task, count - (inv[item] || 0), { names: ['netherrack'] }); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    if (countOf(bot, item) >= count) return true;
+    inv[item] = countOf(bot, item);
+  }
   const available = await withUsableWorkstations(bot, task, inv, [item]);
   const plan = catalogPlan(bot, item, count, available, goal);
   // A plan that mines what is found only in another dimension is the
@@ -5131,7 +5142,18 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
   if (pickaxeWanted) {
     let fetch = null;
     try { fetch = await require('./nether-wood').fetchStemsOffer(bot, task, goal); } catch (_) { fetch = null; }
-    const wood = fetch ? await fetch.describe() : 'No stem is known and none is on offer to fetch: the wood is looked for by the gathering\'s legs.';
+    // A fetch resting is said as resting, with the stems known (note 967):
+    // 25593 (mid-242-nc-fortress-6, 2026-10-03 02:58:58Z) was told "No stem
+    // is known" a minute after the gathering listed 10 crimson stems at
+    // (71, 64, 88) and 121 at (57, 41, 78), its fetch resting.
+    let wood = fetch ? await fetch.describe() : null;
+    if (!wood) {
+      const nw = require('./nether-wood'), resting = isSetAside(goal, 'fetch_stems', 'nether');
+      let places = []; try { places = typeof bot.findBlocks === 'function' ? nw.stemPlaces(bot, goal) : []; } catch (_) { places = []; }
+      const known = places.slice(0, 2).map(pl => `${pl.n ? `${pl.n} ` : ''}${String(pl.name || 'stem').replaceAll('_', ' ')}s known at (${Math.round(pl.at.x)}, ${Math.round(pl.at.y)}, ${Math.round(pl.at.z)}), ${Math.round(pl.at.distanceTo(here))} blocks off`).join('; ');
+      const why = resting ? String(attemptsFor(goal).why('fetch_stems', 'nether') || 'it came to nothing').slice(0, 160) : '';
+      wood = resting ? `The fetch of stems rests from a failure (${why})${known ? `; ${known}` : ''}.` : known ? `Stems: ${known}; no fetch is on offer from here.` : 'No stem is known and none is on offer to fetch: the wood is looked for by the gathering\'s legs.';
+    }
     // Against the tunnel by hand, said with both paces (note 941).
     const handMin = Math.round(Math.hypot(target.x - here.x, target.z - here.z) * TUNNEL_SECONDS.hand / 60), pickMin = Math.max(1, Math.round(Math.hypot(target.x - here.x, target.z - here.z) * TUNNEL_SECONDS.pickaxe / 60));
     tree.pickaxe_first = { description: `Get ${pickaxeWanted.item.replaceAll('_', ' ')} first for the way to the portal, from wood not carried, then the way on: the gathering goes where the wood is, not toward the portal. ${wood} With it the tunnel home is about ${pickMin} minute${pickMin === 1 ? '' : 's'} for the ${Math.round(Math.hypot(target.x - here.x, target.z - here.z))} blocks across, against about ${handMin} by hand (the live tunnels' paces).` };
@@ -7692,6 +7714,18 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
       const failedFor = [...new Set(wanted.map(e => `${String(e.method).replaceAll('_', ' ')}: ${String(e.why).split('; ')[0].slice(0, 100)}`))].slice(-3);
       pickaxeLeads = bs.pickaxeLead(bot, ways, failedFor, { closedSays: 'tried lately and came to nothing for want of one' });
       if (pickaxeLeads) { const first = bs.pickaxeFirstOrder(tree); for (const k of Object.keys(tree)) delete tree[k]; Object.assign(tree, first); }
+    }
+  }
+  // Nothing on offer while a rest runs out (note 969): the rungs set aside
+  // are offered back, said with the standing still that is the other way.
+  // 25597 (mid-242-pf-nether-1, 2026-10-03 02:58 to 03:20Z), two rods
+  // carried, the rods and the pearls both set aside, held step:rods_waiting
+  // with "detours: none" for 22 minutes on one block, 28 from a fortress.
+  if (holding && !Object.keys(tree).length && goal.kind === 'win') {
+    let backs = []; try { backs = require('./game-progress').takeBackRungs(bot, goal, now); } catch (_) { backs = []; }
+    for (const back of backs) {
+      tree[`take_up_${back.phase}`] = { description: `Take up the ${String(back.phase).replaceAll('_', ' ')} again now, its rest cut short: set aside ${agoSays(now - back.at)} ago (${back.why}). Nothing else is on offer from here: otherwise the bot stands where it is until the rest ends, ${holding.minutes} more minute${holding.minutes === 1 ? '' : 's'}.`,
+        run: async () => { require('./game-progress').takeBackRung(goal, back.phase); save(); } };
     }
   }
   const options = Object.keys(tree);

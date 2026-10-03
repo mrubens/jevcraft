@@ -522,9 +522,17 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
       options.dig_in_reach = { description: `Dig the ${words(resource)} within reach here: ${talliedSays(found.reachable)}, the nearest ${Math.round(first.p.distanceTo(here))} blocks off at ${at3(first.p)}, dug from ${first.walk ? `a walk of ${plural(first.walk, 'block')}` : 'where the bot stands'}, up to ${most} one after another, with the ${(bot.inventory?.items?.() || []).find(i => /_pickaxe$/.test(i.name))?.name.replaceAll('_', ' ') || 'hand'}. ${plural(countOf(bot), words(resource))} carried now.${Object.keys(found.unreachable).length ? ` Within ${WOOD_REACH} blocks but not to be dug from ground walked to from here: ${talliedSays(found.unreachable)}.` : ''}`,
         run: async () => {
           goal.step = { action: 'nether_gather', way: 'dig_in_reach', what: talliedSays(found.reachable) }; save();
+          // The walls where it stands first, no walk (note 971, as the block
+          // gather's since note 960): 25590 (mid-242-wb-fortress-6,
+          // 2026-10-03 03:40:15Z) was told "netherrack within reach gave
+          // nothing", the walk to each source refused.
+          const before = countOf(bot);
+          try { await require('./bridging').quarryHere(bot, task, most, { names: names.filter(n => dropsWith(bot, n)) }); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+          if (countOf(bot) - before >= most) return;
           const done = await gatherSpanBlocks(bot, task, countOf(bot) + most, { navigate, reach: WOOD_REACH, walk: WOOD_WALK, names: names.filter(n => dropsWith(bot, n)), carried: countOf, what: words(resource),
             skip: p => isSetAside(goal, 'reach', p), mineAt: x => mineAt(x.p, x.name) });
-          if (!done.gained) {
+          if (!done.gained && countOf(bot) <= before) {
             const why = `The ${words(resource)} within reach gave nothing${done.why ? `: ${done.why}` : ''}`;
             for (const x of found.sources) setAside(goal, 'reach', x.p, why, WAY_REST_MS);
             save(); throw new Error(why);

@@ -943,6 +943,7 @@ async function quarryHere(bot, task, want, { names = LAID } = {}) {
     out.moves++;
   }
   out.gained = blocksCarried(bot) - start;
+  if (out.dug) console.log(`[quarry] dug ${out.dug} where it stood (${out.moves} step${out.moves === 1 ? '' : 's'} into what it opened): ${out.gained} blocks gained, ${blocksCarried(bot)} carried`);
   return out;
 }
 

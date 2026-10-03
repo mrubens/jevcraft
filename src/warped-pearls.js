@@ -101,8 +101,13 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
   // And time spent, not tries: stuck on a pillar, twenty-four tries went in
   // a minute. Eight legs, or a quarter of an hour, and the search rests.
   if (search.legs >= SEARCH_LEGS || now() - search.startedAt > SEARCH_MS) {
-    setAside(goal, 'rung', 'warped_search', `${SEARCH_LEGS} legs without a warped forest`, REST_MS); delete goal.warpedSearch; save();
-    bot.chat?.('No warped forest found. Pearls the other way for now.');
+    const knownOnes = (goal.landmarks || []).filter(l => l.kind === 'warped_forest').length;
+    setAside(goal, 'rung', 'warped_search', knownOnes ? `${SEARCH_LEGS} legs without reaching a warped forest (${knownOnes} known, not reached)` : `${SEARCH_LEGS} legs without a warped forest`, REST_MS); delete goal.warpedSearch; save();
+    // Forests known but not reached are said as that (note 970): 25597
+    // (mid-242-pf-nether-1, 2026-10-03 02:58:24Z) said "No warped forest
+    // found" with 84, 119 and 206 warped stems known 48 to 51 blocks off.
+    const knownForests = (goal.landmarks || []).filter(l => l.kind === 'warped_forest' && (!l.dimension || /nether/.test(l.dimension))).length;
+    bot.chat?.(knownForests ? `The warped forest${knownForests === 1 ? '' : 's'} known could not be reached. Pearls the other way for now.` : 'No warped forest found. Pearls the other way for now.');
     return false;
   }
   const here = bot.entity.position;
