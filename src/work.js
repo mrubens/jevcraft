@@ -8302,8 +8302,18 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   }
   if (spareKit) tree.spare_kit = { description: spareKit.says };
   if (rodsToBank) tree.bank_rods_first = { description: rodsToBank.says };
-  if (valuables?.how === 'stash') tree.stash_valuables = { description: `Walk ${valuables.far} blocks to the stash chest at home first and leave the valuables in it (${valuables.what}), about ${Math.round(valuables.far / 4.3)} seconds each way: a death in the Nether drops everything carried, often into lava.` };
-  if (valuables?.how === 'cache') tree.cache_valuables = { description: `Put ${valuables.chest} down here first and leave the valuables in it (${valuables.what}): home's chest is out of reach, and a death in the Nether drops everything carried, often into lava. They are taken back passing by.${pickaxeLeft(bot, valuables.spends)}` };
+  // What the iron carried is worth after a death (note 1052): on 2026-10-03
+  // the crossing offered the stash 267 times and the cache 326 and neither
+  // was taken once; the crossings went in with a median 10 iron (raw and
+  // ingots; a quarter with 28 or more, one with 92), and of the 412
+  // bot-minutes spent in the Overworld after deaths in the Nether (10:30Z to
+  // 11:40Z) 209 went to iron: mining it, the tunnel to it, smelting it.
+  const ironLeftSays = how => {
+    const iron = countOf(bot, 'raw_iron') + countOf(bot, 'iron_ingot');
+    return iron >= 5 ? ` The ${iron} iron carried (raw and ingots) is what a kit is made of again (a pickaxe 3, a sword 2, a shield 1, armour up to 24): left in the chest it is ${how}. On 2026-10-03 half the minutes after a death in the Nether went to iron (209 of 412 bot-minutes: mining it, the tunnel to it, smelting it), and a death was back in the Nether a median 37 minutes later.` : '';
+  };
+  if (valuables?.how === 'stash') tree.stash_valuables = { description: `Walk ${valuables.far} blocks to the stash chest at home first and leave the valuables in it (${valuables.what}), about ${Math.round(valuables.far / 4.3)} seconds each way: a death in the Nether drops everything carried, often into lava.${ironLeftSays('taken up again at home after a death')}` };
+  if (valuables?.how === 'cache') tree.cache_valuables = { description: `Put ${valuables.chest} down here first and leave the valuables in it (${valuables.what}): home's chest is out of reach, and a death in the Nether drops everything carried, often into lava. They are taken back passing by.${ironLeftSays('fetched from this chest on the way back to the portal after a death')}${pickaxeLeft(bot, valuables.spends)}` };
   const keys = Object.keys(tree).sort().join(',');
   const held = kit.choice && kit.choice.keys === keys && kit.workedMs - kit.choice.at < KIT_HOLD_MS && tree[kit.choice.pick];
   let pick = held ? kit.choice.pick : null;

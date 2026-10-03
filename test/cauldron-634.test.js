@@ -184,3 +184,16 @@ test('crossing_kit offers to put the rods carried in a chest before crossing, an
   assert.notEqual(ready, true, 'not crossed yet: the bank first');
   assert.equal(goal.rodBank?.rods, 7);
 });
+
+// Note 1052: the chest for the valuables says what the iron carried is worth after a death.
+test('crossing_kit: the cache of valuables says what the iron left in it saves after a death (note 1052)', async () => {
+  const { crossingKitReady } = require('../src/work');
+  const b = bot({ items: [['stick', 4], ['cobblestone', 128], ['stone_pickaxe'], ['stone_pickaxe'], ['golden_boots'], ['oak_log', 8], ['crafting_table'], ['chest'], ['raw_iron', 30], ['iron_ingot', 6], ['diamond', 3]], dimension: 'overworld' });
+  b.game.difficulty = 'peaceful'; b.game.gameMode = 'survival'; b.chat = () => {};
+  let asked = null;
+  const client = { systemOne: async ({ questions }) => { asked = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'cross_now', confidence: 0.8 } } }; } };
+  await crossingKitReady(b, { check() {}, opportunityClient: client }, { kind: 'win' }, () => {}, client);
+  const says = asked?.cache_valuables || asked?.stash_valuables;
+  assert.ok(says, Object.keys(asked || {}).join(','));
+  assert.match(says, /The 36 iron carried \(raw and ingots\) is what a kit is made of again \(a pickaxe 3, a sword 2, a shield 1, armour up to 24\): left in the chest it is (fetched from this chest on the way back to the portal|taken up again at home) after a death\. On 2026-10-03 half the minutes after a death in the Nether went to iron \(209 of 412 bot-minutes/);
+});
