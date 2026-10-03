@@ -81,6 +81,8 @@ test('a walk that fails at once is not a leg: the sweep tunnels on and gives up 
   assert(warped.warpedOpen(goal), 'the search is still on');
   for (let i = 0; i < 30; i++) await warped.warpedPearls(bot, new Task('pearls'), goal, () => {}, actions, { count: 12 });
   assert(warped.warpedOpen(goal), 'forty quick tries are not a search spent');
+  // The search kept at through the quarter hour (its last step a second before: note 1109 begins the clock again only after five minutes away).
+  goal.warpedSearch.lastAt = Date.now() + 16 * 60000 - 1000;
   await warped.warpedPearls(bot, new Task('pearls'), goal, () => {}, actions, { count: 12 }, { now: () => Date.now() + 16 * 60000 });
   assert.equal(warped.warpedOpen(goal), false, 'a quarter of an hour without a forest: it rests');
 });
@@ -176,4 +178,30 @@ test('in the Overworld with every rod kept in chests and none carried, the stage
   const stage = nextGameStage(bot, goal);
   assert.equal(stage.phase, 'obtain_ender_pearls', JSON.stringify(stage));
   assert.equal(stage.action, 'pearl_patrol');
+});
+
+test('from the Overworld a forest counts as it will on the far side, within the walk\'s reach of where the crossing comes out; the search\'s clock begins again after five minutes away (note 1109)', async () => {
+  // 25591 (2026-10-03 20:42 to 20:46Z): nine rods and seven pearls in its chest, four crossings in four minutes: a forest remembered far off sent it through,
+  // the search begun ninety minutes before rested twelve seconds in, and it came back.
+  const { bot, goal } = fixture('overworld');
+  setAside(goal, 'rod_bank', 'arrival', 'answered', 30 * 60000);
+  setAside(goal, 'rung', 'warped_search', 'eight legs without reaching a warped forest', 600000);
+  // The bot at (0, 0) here comes out near (0, 0) there: a forest 900 blocks off is out of the walk's reach.
+  goal.landmarks = [{ kind: 'warped_forest', x: 900, y: 70, z: 40, dimension: 'nether' }];
+  assert.equal(nextGameStage(bot, goal).action, 'pearl_patrol', 'far off and the search resting: the pearls on this side');
+  goal.landmarks = [{ kind: 'warped_forest', x: 300, y: 70, z: 40, dimension: 'nether' }];
+  assert.equal(nextGameStage(bot, goal).via, 'warped_forest', 'within reach: through the portal');
+  // A portal known on the far side is where the crossing comes out.
+  goal.portals = [{ dimension: 'nether', x: 60, y: 70, z: 0 }];
+  goal.landmarks = [{ kind: 'warped_forest', x: 560, y: 70, z: 0, dimension: 'nether' }];
+  assert.equal(nextGameStage(bot, goal).via, 'warped_forest', '500 from the portal there');
+  // The search's clock: begun long ago and left, it begins again; it does not rest at its first step.
+  const there = fixture('the_nether');
+  there.goal.warpedSearch = { legs: 7, heading: 0, fails: 0, tries: 0, startedAt: Date.now() - 90 * 60000, lastAt: Date.now() - 80 * 60000 };
+  const legs = [];
+  const actions = { navigate: async (b, t, g) => { legs.push([g.x, g.z]); b.entity.position = new Vec3(g.x, 64, g.z); }, acquireStep: async () => assert.fail('no hunt without a forest'), notice: () => {} };
+  await warped.warpedPearls(there.bot, new Task('pearls'), there.goal, () => {}, actions, { count: 12 });
+  assert.equal(legs.length, 1, 'a leg is walked');
+  assert.equal(there.goal.warpedSearch?.legs, 1, 'counted from none');
+  assert.equal(warped.warpedOpen(there.goal), true, 'the search is not rested');
 });

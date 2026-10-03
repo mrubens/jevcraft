@@ -1030,7 +1030,7 @@ function nextGameStage(bot, goal, skip = new Set()) {
     return { phase: 'obtain_ender_pearls', action: 'trade', item: 'ender_pearl', count: target - eyes };
   // A warped forest (remembered, or looked for) beats a night walk here:
   // the Overworld hunt is the fallback once the Nether search has rested.
-  if (count(bot, 'ender_pearl') < target - eyes && warped.warpedOpen(goal) && !overworldPearls)
+  if (count(bot, 'ender_pearl') < target - eyes && warped.warpedOpen(goal, Date.now(), { bot }) && !overworldPearls)
     return { phase: 'obtain_ender_pearls', action: 'enter_nether', item: 'ender_pearl', count: target - eyes, via: 'warped_forest' };
   // Endermen when they show, and something worth doing while they do not:
   // walking rings about looking for one was the dullest hour of the run

@@ -14,6 +14,7 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { setAside, isSetAside } = require('./progress');
 
+const SEARCH_AWAY_MS = 5 * 60 * 1000;
 const LEG = 64, FOREST_REACH = 512, SEARCH_LEGS = 8, SEARCH_MS = 15 * 60 * 1000, REST_MS = 30 * 60 * 1000, STALL_MS = 15 * 60 * 1000, AWAY_MS = 60 * 1000, TUNNEL_NEAR = 96;
 const HEADINGS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
 const count = (bot, name) => bot.inventory.items().filter(i => i.name === name).reduce((n, i) => n + i.count, 0);
@@ -38,7 +39,22 @@ const warpedKnown = (goal, now = Date.now()) => (goal.landmarks || []).filter(l 
 function warpedOpen(goal, now = Date.now(), { bot = null } = {}) {
   if (isSetAside(goal, 'rung', 'warped_pearls', now)) return false;
   const here = bot?.entity?.position && /nether/.test(String(bot.game?.dimension || ''));
-  const known = here ? require('./exploration').knownLandmarks(bot, goal, 'warped_forest', FOREST_REACH).filter(k => tripOpen(goal, k.landmark, now)) : warpedKnown(goal, now);
+  // From the Overworld (`bot` given there), a forest counts as it will on
+  // the far side: within the step's reach of where the crossing comes out,
+  // the nearest portal known in the Nether to the bot's place there (an
+  // eighth of its place here), or that place itself (note 1109). Counted
+  // from here with no reach, a forest remembered far off sent the bot
+  // through the portal, where no forest was in reach and the search rested,
+  // and back, and through again: 25591 crossed four times in four minutes
+  // (20:42 to 20:46Z).
+  const over = !here && bot?.entity?.position && /overworld/.test(String(bot.game?.dimension || ''));
+  const arrival = over ? (() => {
+    const at = { x: bot.entity.position.x / 8, z: bot.entity.position.z / 8 };
+    const portals = (goal.portals || []).filter(p => /nether/.test(String(p.dimension || ''))).sort((a, b) => Math.hypot(a.x - at.x, a.z - at.z) - Math.hypot(b.x - at.x, b.z - at.z));
+    return portals[0] && Math.hypot(portals[0].x - at.x, portals[0].z - at.z) <= 128 ? portals[0] : at;
+  })() : null;
+  const known = here ? require('./exploration').knownLandmarks(bot, goal, 'warped_forest', FOREST_REACH).filter(k => tripOpen(goal, k.landmark, now))
+    : warpedKnown(goal, now).filter(l => !arrival || Math.hypot(l.x - arrival.x, l.z - arrival.z) <= FOREST_REACH);
   return known.length > 0 || !isSetAside(goal, 'rung', 'warped_search', now);
 }
 
@@ -133,6 +149,15 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
   // None known: sweep for one.
   const search = goal.warpedSearch ||= { legs: 0, heading: Math.floor(Math.random() * 4), fails: 0, tries: 0, startedAt: now() };
   search.startedAt ||= now();
+  // The clock and the legs are the search's own, begun again after five
+  // minutes away from it (note 1109, as the forest's watch since note
+  // 1065): 25591 (2026-10-03 20:42:44Z), back in the Nether for pearls
+  // after ninety minutes in the Overworld, nine rods and seven pearls in
+  // its chest, was told twelve seconds in "The warped forests known could
+  // not be reached. Pearls the other way for now" by a search begun before
+  // it left, and went back through the portal.
+  if (now() - (search.lastAt || search.startedAt) > SEARCH_AWAY_MS) Object.assign(search, { legs: 0, fails: 0, tries: 0, startedAt: now() });
+  search.lastAt = now();
   // Legs are ground covered, not attempts: on the first live search every
   // walk failed at once on Nether ground and eight "legs" went in a second.
   // And time spent, not tries: stuck on a pillar, twenty-four tries went in
