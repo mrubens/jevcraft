@@ -902,6 +902,14 @@ async function leaveAndHeal(bot, task, goal, save, site, { navigate, seconds = 6
     while (Date.now() - started < seconds * 1000 && (bot.health ?? 20) < 20) {
       task.check(); bot._threatResponseAt = Date.now();
       const came = biter(); if (came) { stats.ended = came; break; }
+      // The cell was chosen for being out of every blaze's line: a blaze
+      // come round to one ends the stay, said, and the cell is not offered
+      // again for a while (note 998; not where it walled itself in, its
+      // walls being what keeps the line off). 25595 (2026-10-03 06:27:44 to
+      // 06:28:00Z) stood healing at its cell at hunger 20 while a blaze
+      // with a line to it landed four fireballs, 11.3 health to none.
+      const lined = !site.build?.length && Date.now() - arrived > 500 ? blazesAbout(bot, 24).map(t => t.entity).filter(e => seesAny(bot, [e], c)) : [];
+      if (lined.length) { stand.noteSiteFailed(bot, c, 'a blaze came round to a line on it'); stats.ended = `${lined.length === 1 ? 'a blaze has' : `${lined.length} blazes have`} a line to the cell now`; stats.inLine = lined.length; break; }
       if (await stand.putOutFlames(bot, task)) continue;
       if (await strikeInReach(bot, task)) continue;
       if (await stand.shieldVolley(bot, task)) continue;
