@@ -456,6 +456,8 @@ const LINE_HIDES = new Set(['out_of_sight', 'take_cover', 'nook', 'bunker', 'pil
 const STALE_ONCE_MS = 3000;
 // A stance's options built in more than this are said with what they hold (note 954).
 const SLOW_OPTIONS_MS = 250;
+// The survival steps whose whole work is to move the body off where it stands.
+const STEPS_THAT_MOVE = new Set(['off_the_edge', 'off_span', 'off_hot_floor', 'leave_lava_edge']);
 const MOVING_STANCES = new Set(['retreat', 'leave_reach', 'fight_from_footing', 'out_of_the_push', 'rail_and_fight', 'seal', 'bunker', 'charge_shooter', 'creeper_dance', 'come_down', 'dig_down', 'eat', 'eat_golden_apple', 'drink_fire_resistance']);
 // Two blocks up: from the pillar's report to two up took a second and a
 // half to two seconds in mid-92-e, mid-92-g and mid-110-k (2026-09-26).
@@ -2822,9 +2824,24 @@ class Survival {
     const spin = this._spin ||= {};
     if (spin.until?.[key] > now) throw Object.assign(new Error(`${action.action.replaceAll('_', ' ')} is set aside: it ran twenty times in a second and the bot did not move`), { name: 'SetAside', until: spin.until[key] });
     const run = spin.runs?.[key];
-    if (run && now - run.since < 1000 && here && run.at && here.distanceTo(run.at) < 0.3) run.count++;
-    else (spin.runs ||= {})[key] = { since: now, at: here?.clone?.() || null, count: 1 };
+    const still = !!(run && here && run.at && here.distanceTo(run.at) < 0.3);
+    if (still && now - run.since < 1000) run.count++;
+    else (spin.runs ||= {})[key] = { since: now, at: here?.clone?.() || null, count: 1, first: still ? run.first : now, all: still ? run.all : 0 };
+    spin.runs[key].all = (spin.runs[key].all || 0) + 1;
     if (spin.runs[key].count >= 20) { (spin.until ||= {})[key] = now + 5000; delete spin.runs[key]; console.log(`[survival] ${action.action} ran twenty times in a second without the bot moving: set aside five seconds`); }
+    // A step that is to move the body (off an edge, off a span, off a hot
+    // floor, back from the lava), said again and again from the same spot
+    // for two seconds, is answering nothing at any pace (note 1086): under
+    // twenty a second it was never refused. 25597 (2026-10-03 16:55:22 to
+    // 16:55:40Z), all seven rods and two pearls in its chests, stood at one
+    // spot at y -10 with "off the edge" said about ten times a second for
+    // eighteen seconds, its walk ending where it began each time, while a
+    // skeleton nine blocks off shot it eight times, 20 health to 5.7, and
+    // two creepers walked up; it died there half a minute later.
+    else if (STEPS_THAT_MOVE.has(action.action) && spin.runs[key].all >= 8 && now - (spin.runs[key].first ?? now) >= 2000) {
+      (spin.until ||= {})[key] = now + 8000; delete spin.runs[key];
+      console.log(`[survival] ${action.action} was said for two seconds from one spot without the bot moving: set aside eight seconds`);
+    }
     const flip = !EMERGENCIES.has(action.action) && flipped(goal, key);
     // A hold whose results can be read rests as any action does unless it
     // is getting them: mid-226-h's seal, "resting ten seconds" after each
