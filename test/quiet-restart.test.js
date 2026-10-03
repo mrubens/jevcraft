@@ -71,3 +71,32 @@ test('not quiet while hurt or with a shooter within forty-eight blocks (note 988
   blaze.position = new Vec3(60, 64, 0);
   assert.equal(quiet(bot), true);
 });
+
+test('past fifteen minutes the restart still waits for a calm moment, and quits whatever only past forty-five (note 1002)', async () => {
+  const { watchRestartRequest, WAIT_MS, LAST_MS } = require('../src/quiet-restart');
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'jev-')), 'restart-requested');
+  const skeleton = { id: 4, name: 'skeleton', type: 'hostile', position: new Vec3(9, 64, 0), height: 1.95, isValid: true };
+  const bot = { isAlive: true, health: 3, entity: { position: new Vec3(0, 64, 0), onGround: true }, entities: { 4: skeleton }, quit() { this.quitted = true; } };
+  let clock = Date.now(), exited = 0;
+  const stop = watchRestartRequest(bot, file, { startedAt: clock - 1000, every: 10, exit: () => { exited++; }, port: 25589, watched: () => true, now: () => clock });
+  fs.writeFileSync(file, '');
+  await new Promise(r => setTimeout(r, 60));
+  clock += WAIT_MS + 60000;
+  await new Promise(r => setTimeout(r, 60));
+  assert.equal(bot.quitted, undefined, 'sixteen minutes on, 3 health and a skeleton nine blocks off: not quit');
+  delete bot.entities[4]; bot.health = 11;
+  await new Promise(r => setTimeout(r, 700));
+  assert.equal(bot.quitted, true, 'calm: quits');
+  stop();
+  // Never calm: quit past forty-five minutes.
+  const bot2 = { isAlive: true, health: 3, entity: { position: new Vec3(0, 64, 0), onGround: true }, entities: { 4: skeleton }, quit() { this.quitted = true; } };
+  const file2 = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'jev-')), 'restart-requested');
+  let clock2 = Date.now();
+  const stop2 = watchRestartRequest(bot2, file2, { startedAt: clock2 - 1000, every: 10, exit: () => {}, port: 25589, watched: () => true, now: () => clock2 });
+  fs.writeFileSync(file2, '');
+  await new Promise(r => setTimeout(r, 60));
+  clock2 += LAST_MS + 60000;
+  await new Promise(r => setTimeout(r, 700));
+  assert.equal(bot2.quitted, true);
+  stop2();
+});

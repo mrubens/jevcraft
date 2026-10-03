@@ -22,6 +22,11 @@ const { execFileSync } = require('child_process');
 // minute. With a build shipped every ten minutes or so the five minutes'
 // wait ran out in most fights.
 const WAIT_MS = 15 * 60000;
+// Past the fifteen minutes it still waits for a calmer moment, and only
+// past forty-five quits whatever (note 1002): in a long fight no moment is
+// quiet by the rule above, the fifteen minutes ran out inside it, and 25589
+// (2026-10-03 07:06:43Z) was quit at 3 health with a skeleton shooting it.
+const LAST_MS = 45 * 60000, CALM_HEALTH = 10;
 const QUIET_HEALTH = 16, SHOOTER_REACH = 48;
 const SHOOTERS = /^(blaze|ghast|skeleton|stray|bogged|pillager|wither_skeleton|piglin|piglin_brute|hoglin)$/;
 
@@ -35,6 +40,18 @@ function quiet(bot) {
     if (danger.hostileEntities(bot, 24).length) return false;
     if (danger.hostileEntities(bot, SHOOTER_REACH).some(x => SHOOTERS.test(x.name))) return false;
   } catch (_) { return false; }
+  try { if (require('./combat-estimate').burnLeft(bot) > 0) return false; } catch (_) { /* not read: not held against it */ }
+  return true;
+}
+
+// Calm enough once the wait has run long: nothing hostile within sixteen,
+// on dry ground off any span or seat, ten health or more and not alight.
+function calm(bot) {
+  const e = bot.entity;
+  if (!e || !bot.isAlive) return false;
+  if (e.onGround === false || e.isInWater || e.isInLava || bot.vehicle || bot._seatedIn != null || bot._spanning) return false;
+  if ((bot.health ?? 20) < CALM_HEALTH) return false;
+  try { if (require('./danger').hostileEntities(bot, 16).length) return false; } catch (_) { return false; }
   try { if (require('./combat-estimate').burnLeft(bot) > 0) return false; } catch (_) { /* not read: not held against it */ }
   return true;
 }
@@ -61,9 +78,11 @@ function watchRestartRequest(bot, file, { startedAt = Date.now(), every = 2000, 
       askedAt = now();
       return;
     }
-    if (quiet(bot) || now() - askedAt > WAIT_MS) {
+    const waited = now() - askedAt;
+    const why = quiet(bot) ? 'quiet now' : waited > LAST_MS ? 'forty-five minutes waited' : waited > WAIT_MS && calm(bot) ? 'fifteen minutes waited and calm now' : null;
+    if (why) {
       clearInterval(timer);
-      console.log(`[restart] asked for, and ${quiet(bot) ? 'quiet now' : 'fifteen minutes waited'}: quitting for the new build`);
+      console.log(`[restart] asked for, and ${why}: quitting for the new build`);
       try { bot.quit('restart for a new build'); } catch (_) { /* gone already */ }
       setTimeout(exit, 500);
     }
@@ -72,4 +91,4 @@ function watchRestartRequest(bot, file, { startedAt = Date.now(), every = 2000, 
   return () => clearInterval(timer);
 }
 
-module.exports = { watchRestartRequest, quiet, supervised, WAIT_MS };
+module.exports = { watchRestartRequest, quiet, calm, supervised, WAIT_MS, LAST_MS };
