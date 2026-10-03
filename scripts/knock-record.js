@@ -44,7 +44,7 @@ for (const f of files) {
     if (d && d.id === 'encounter_stance' && !d.noneGood && d.state?.dimension === 'the_nether') {
       const drop = d.state.dropWithinThreeBlocks, kinds = new Set((d.state.threats || []).map(x => x.name));
       if (!(drop && (drop.into === 'lava' || drop.deadly))) continue;
-      const kind = kinds.has('ghast') ? 'ghast' : kinds.has('magma_cube') ? 'magma_cube' : null;
+      const kind = kinds.has('ghast') ? 'ghast' : kinds.has('magma_cube') ? 'magma_cube' : kinds.has('hoglin') ? 'hoglin' : null;
       if (!kind) continue;
       const choice = (d.path || [])[0], at = Date.parse(d.at) || t, key = `${kind}/${choice}`;
       if (lastAsk.has(key) && at - lastAsk.get(key) < 60000) { lastAsk.set(key, at); continue; }

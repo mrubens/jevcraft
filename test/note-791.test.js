@@ -77,7 +77,7 @@ test('with no iron at all the spare shield is priced with the mining, the record
 
 test('the crossing question offers them, cross_now says what going without means, and a top-up chosen is worked', async () => {
   const { crossingKitReady } = require('../src/work');
-  const bot = carrying({ cooked_beef: 10, iron_ingot: 2, oak_planks: 10, crafting_table: 1, stone_pickaxe: 2, cobblestone: 140, golden_boots: 1, chest: 1, oak_log: 8 },
+  const bot = carrying({ stick: 4, cooked_beef: 10, iron_ingot: 2, oak_planks: 10, crafting_table: 1, stone_pickaxe: 2, cobblestone: 140, golden_boots: 1, chest: 1, oak_log: 8 },
     { worn: { 5: 'iron_helmet', 6: 'iron_chestplate', 7: 'iron_leggings' } });
   let asked = null, pick = 'cross_now';
   const client = { systemOne: async ({ questions }) => { asked = questions.branch_0.criteria; return { answers: { branch_0: { choice: pick, confidence: 0.9 } } }; } };

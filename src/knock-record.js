@@ -35,13 +35,18 @@ const RECORD = {
 const STANCES = {
   ghast: { take_cover: [195, 10], out_of_sight: [152, 10], rail_and_fight: [85, 8], seal: [81, 3], fight_from_footing: [80, 5], out_of_the_push: [63, 2], hold_on_span: [53, 5], keep_working: [36, 3], retreat: [32, 1], fight: [27, 4], nook: [20, 1], return_fireball: [13, 0], pillar: [9, 2] },
   magma_cube: { fight: [54, 1], shield_guard: [47, 2], pillar: [31, 4], fight_from_footing: [25, 2], retreat: [22, 1], rail_and_fight: [12, 0] },
+  // With a hoglin about (note 966), the answers over 2026-09-30T00:00Z to
+  // 2026-10-03T03:00Z: 25595 (mid-243-ia-fortress-6, 02:36:10Z) held
+  // shield_guard on its own span against a hoglin, took the first blow with
+  // the shield not yet up and went ten down into the lava with its rod.
+  hoglin: { shield_guard: [15, 4], pillar: [14, 0] },
 };
 // Said on an option in that situation (n of 8 or more).
 function optionSays(choice, names) {
-  const kind = (names || []).includes('ghast') ? 'ghast' : (names || []).includes('magma_cube') ? 'magma_cube' : null;
+  const kind = (names || []).includes('ghast') ? 'ghast' : (names || []).includes('magma_cube') ? 'magma_cube' : (names || []).includes('hoglin') ? 'hoglin' : null;
   const r = kind && STANCES[kind]?.[choice];
   if (!r || r[0] < 8) return '';
-  return ` Measured on this bot: ${choice.replaceAll('_', ' ')} chosen with a drop that kills within three blocks and ${kind === 'ghast' ? 'a ghast' : 'magma cubes'} about, ${r[0]} times (each stretch counted once): ${r[1]} of them had the bot in lava within 30 seconds.`;
+  return ` Measured on this bot: ${choice.replaceAll('_', ' ')} chosen with a drop that kills within three blocks and ${kind === 'ghast' ? 'a ghast' : kind === 'hoglin' ? 'a hoglin' : 'magma cubes'} about, ${r[0]} times (each stretch counted once): ${r[1]} of them had the bot in lava within 30 seconds.`;
 }
 // The blocks along the ground a drop is looked for from the bot's feet: the
 // throw that covers nine in ten of that kind's hits, rounded up (a ghast's 5;

@@ -265,6 +265,18 @@ const wayResting = (bot, goal, target, method) => isSetAside(goal, 'gather_way',
 // Why it rests, as its run said it: the reason goes with the rest.
 const wayRestWhy = (bot, goal, target, method) => { try { return String(require('./progress').attemptsFor(goal).why('gather_way', wayKey(bot, target, method)) || '').replace(/^The way [^:]*came no nearer: /, '').replace(/; it rests from here$/, '').slice(0, 160); } catch (_) { return ''; } };
 const WAY_SAYS = { walk: 'on foot', cross: 'straight across', floor: 'down to the floor and along it', climb: 'up by a pillar and across' };
+// The ways to a place that came no nearer lately from anywhere (note 965):
+// the rest is kept by the 8-block area begun from, and a bot walking back
+// and forth was offered the same failed way from the next area. 25597
+// (mid-242-pf-nether-1, 2026-10-03 02:33:59 to 02:36:19Z) was offered and
+// took walk_to_21 to the planks at (-62, 68, 91) again two minutes after it
+// came no nearer, walking one diagonal four times in fifteen minutes.
+const FAILED_LATELY_MS = 10 * 60000;
+function failedLatelySays(goal, target, method, now = Date.now()) {
+  const tail = `>${Math.round(target.x)},${Math.round(target.z)}:${method}`;
+  const n = Object.entries(require('./progress').attemptsFor(goal).entries).filter(([k, e]) => k.startsWith('gather_way:') && k.endsWith(tail) && now - (e.at || 0) < FAILED_LATELY_MS).length;
+  return n ? ` This way there came no nearer ${n === 1 ? 'once' : `${n} times`} in the last ten minutes, begun from other places near here.` : '';
+}
 
 // A way that ends at the same place again. 25585 (mid-242-gf-fortress-1,
 // 21:02 to 21:36Z on 2026-09-29) asked this question about 60 times on one
@@ -553,7 +565,7 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
       const how = method === 'walk' ? (way.walk.found ? 'on foot, by the pathfinder\'s route' : `on foot as far as the pathfinder goes (${at3(way.walk.end)}, ${way.walk.nearer} blocks nearer), and the way on asked from there`)
         : method === 'cross' ? `straight across at this height as far as the blocks carried take it (${way.cross.now.cells} cells, ${Math.round(way.cross.now.gain)} blocks nearer${way.cross.whole.bridge > way.cross.carried ? `; the whole crossing needs ${way.cross.whole.bridge} blocks laid and ${way.cross.carried} are carried, so it cannot be done with what is carried` : ''})`
           : 'down to the floor and along it toward them';
-      options[key] = { description: `Go to ${where} ${how}. ${says}`, target: place.at, run: () => runWay(bot, task, goal, save, way, method, `${where} at ${at3(place.at)}`, navigate) };
+      options[key] = { description: `Go to ${where} ${how}. ${says}${failedLatelySays(goal, place.at, method)}`, target: place.at, run: () => runWay(bot, task, goal, save, way, method, `${where} at ${at3(place.at)}`, navigate) };
     }
     // Up to it: stems overhead are climbed to, as a player pillars up to a
     // forest's floor (note 751d).
@@ -702,4 +714,4 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
   return true;
 }
 
-module.exports = { climbTo, withoutOption, noteEnd, sameEnd, END_REST_MS, netherGather, reachSays, crossSays, gathers, resourceNames, knownPlaces, wayTo, woodInReach, isWood, STEM, PLACE_APART, WAY_REST_MS };
+module.exports = { failedLatelySays, climbTo, withoutOption, noteEnd, sameEnd, END_REST_MS, netherGather, reachSays, crossSays, gathers, resourceNames, knownPlaces, wayTo, woodInReach, isWood, STEM, PLACE_APART, WAY_REST_MS };

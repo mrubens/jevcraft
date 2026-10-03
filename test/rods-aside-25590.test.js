@@ -86,12 +86,13 @@ const FAILED = 'No measurable progress on {"action":"find_fortress","target":{"x
 // The recorded escalation: the trial's rung clock from 12:31:57, the approach and the leg answered as recorded, the
 // approach's every way resting at 12:35:04 (escalated to fortress_leg), and the step's two failures at 12:35:09.3
 // and 12:35:11.5 with the leg's question never asked between (the walk to the remembered fortress, unasked).
-async function recordedEscalation(t, picks = {}, { start = '2026-09-28T12:31:57.600Z' } = {}) {
+async function recordedEscalation(t, picks = {}, { start = '2026-09-28T12:31:57.600Z', step = null, smelting = null } = {}) {
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse(start) });
   const { decide } = require('../src/decisions');
   const { persist } = require('../src/work');
   const tried = require('../src/tried');
   const { bot, goal } = nether();
+  if (smelting) goal.smelting = smelting;
   tried.watchRung(bot, goal);
   const asked = [];
   const client = recordedJev(asked, picks);
@@ -110,7 +111,7 @@ async function recordedEscalation(t, picks = {}, { start = '2026-09-28T12:31:57.
   const lines = [];
   const fail = async iso => {
     at(iso);
-    goal.step = { action: 'find_fortress', target: { x: -70, y: 32, z: 140 }, legs: 12 };
+    goal.step = step || { action: 'find_fortress', target: { x: -70, y: 32, z: 140 }, legs: 12 };
     const log = t.mock.method(console, 'log', (...a) => lines.push(a.join(' ')));
     try { await persist(bot, new Task('persist'), goal, () => {}, Object.assign(new Error(FAILED), { name: 'Blocked' }), () => {}, { client }); }
     finally { log.mock.restore(); }
@@ -189,4 +190,10 @@ test('long on the rung (25 minutes), the same escalation offers setting it aside
   assert(rung, 'the rung\'s question is asked');
   assert.ok(rung.options.set_aside_rung, `offered: ${Object.keys(rung.options)}`);
   assert.match(rung.options.set_aside_rung, /Ways below it not yet tried from here: fortress leg \(leg east, .*\); 25 minutes have gone on it\./);
+});
+
+test('a batch in the furnace for the step in hand is said on keeping at it and on the set-aside (note 961)', async t => {
+  const { asked } = await recordedEscalation(t, { rung_progress: ['keep_at_it'] }, { start: '2026-09-28T12:10:00.000Z', smelting: { item: 'cooked_mutton', from: 'mutton', count: 17, startedAt: Date.parse('2026-09-28T12:34:30.000Z'), dimension: 'nether' } });
+  const rung = asked.find(a => a.id === 'rung_progress');
+  for (const k of ['keep_at_it', 'set_aside_rung']) assert.match(rung.options[k] || '', /In the furnace now: 17 mutton to cooked mutton, about \d+ seconds of the batch left; the rung counts it once it is taken out\./, k);
 });

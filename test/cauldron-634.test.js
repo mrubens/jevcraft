@@ -138,7 +138,7 @@ test('the crossing kit says the set when it is carried or could be made, and nev
 
 test('crossing_kit offers top_up_cauldron with nothing short, and never as the fallback', async () => {
   const { crossingKitReady } = require('../src/work');
-  const b = bot({ items: [['iron_ingot', 9], ['bucket'], ['cobblestone', 128], ['stone_pickaxe'], ['golden_boots'], ['oak_log', 8], ['crafting_table'], ['cooked_beef', 12]], dimension: 'overworld' });
+  const b = bot({ items: [['stick', 4], ['iron_ingot', 9], ['bucket'], ['cobblestone', 128], ['stone_pickaxe'], ['golden_boots'], ['oak_log', 8], ['crafting_table'], ['cooked_beef', 12]], dimension: 'overworld' });
   b.game.difficulty = 'peaceful';
   b.game.gameMode = 'survival';
   let asked = null;
@@ -153,7 +153,7 @@ test('crossing_kit offers top_up_cauldron with nothing short, and never as the f
   // Nothing on offer and nothing short: not asked.
   asked = null;
   // Two pickaxes, so no spare is on offer either (note 943).
-  const plain = bot({ items: [['cobblestone', 128], ['stone_pickaxe'], ['stone_pickaxe'], ['golden_boots'], ['oak_log', 8], ['crafting_table'], ['chest']], dimension: 'overworld' });
+  const plain = bot({ items: [['stick', 4], ['cobblestone', 128], ['stone_pickaxe'], ['stone_pickaxe'], ['golden_boots'], ['oak_log', 8], ['crafting_table'], ['chest']], dimension: 'overworld' });
   plain.game.difficulty = 'peaceful';
   assert.equal(await crossingKitReady(plain, { check() {}, opportunityClient: client }, { kind: 'win' }, () => {}, client), true);
   assert.equal(asked, null);

@@ -189,7 +189,7 @@ test('a bank ends where there is nothing left to bank, the walk out ran past its
 test('at the crossing, no chest carried and the wood for one: top_up_chest asks the question on its own, said with what a chest is for; a chest carried, not asked', async () => {
   const { crossingKitReady } = require('../src/work');
   const { Task } = require('../src/skills');
-  const GEAR = { iron_pickaxe: 1, stone_pickaxe: 1, diamond_sword: 1, shield: 1, water_bucket: 1, iron_helmet: 1, iron_chestplate: 1, iron_leggings: 1, iron_boots: 1, golden_boots: 1, white_bed: 1, bow: 1, arrow: 16, oak_log: 8, crafting_table: 1, cooked_beef: 10, cobblestone: 128 };
+  const GEAR = { stick: 4, iron_pickaxe: 1, stone_pickaxe: 1, diamond_sword: 1, shield: 1, water_bucket: 1, iron_helmet: 1, iron_chestplate: 1, iron_leggings: 1, iron_boots: 1, golden_boots: 1, white_bed: 1, bow: 1, arrow: 16, oak_log: 8, crafting_table: 1, cooked_beef: 10, cobblestone: 128 };
   const atPortal = extra => {
     const items = Object.entries({ ...GEAR, ...extra }).filter(([, n]) => n > 0).map(([name, count]) => ({ name, count, type: registry.itemsByName[name].id, durabilityUsed: 0 }));
     return { registry, health: 20, food: 20, oxygenLevel: 20, game: { gameMode: 'survival', dimension: 'overworld', difficulty: 'normal' }, time: { timeOfDay: 6000 },

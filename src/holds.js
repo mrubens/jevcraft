@@ -121,7 +121,15 @@ function diverged(hold, { now = Date.now(), health, mobs = [], offered = [], sho
     // 752f). A hide, a pillar or a wall a hit came through is news.
     if ((hurtBy[m.name] || 0) > hold.at && !FACES.has(hold.choice) && !isClosing(hold.choice)) return `the ${name(m.name)} it was chosen against hit the bot`;
   }
-  if (shot) return `a shot came at the bot${shot.name ? ` (${name(shot.name)})` : ''}`;
+  // A shot from the shooters it faces is that stance as priced, as a hit
+  // from them is (note 752f): ended only where a shooter it was not chosen
+  // against is about, or the stance hides from them (note 963). 25584
+  // (mid-241-dx, 2026-10-03 02:12:10 to 02:13:23Z) was asked its stance
+  // against one pillager every 4 to 6 seconds, at each bolt, and turned
+  // take_cover, fight, take_cover, fight eleven times, hit six times.
+  const shootersNow = mobs.filter(x => x?.entity && (x.shoots || isShooter(x.entity)));
+  const facedOnly = (FACES.has(hold.choice) || isClosing(hold.choice)) && shootersNow.length && shootersNow.every(x => hold.against.some(m => m.id === x.entity.id));
+  if (shot && !facedOnly) return `a shot came at the bot${shot.name ? ` (${name(shot.name)})` : ''}`;
   // A shot at one mob or another is the one way (shoot_<id> per target):
   // a new target's key is not a new way (25583, 13:05:51Z: "shoot 5353").
   const way = k => String(k).replace(/^shoot_\d+$/, 'shoot');

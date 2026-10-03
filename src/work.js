@@ -669,6 +669,19 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
       for (const o of untriedBelow || []) tried.sendBack(goal, o.q, `the rung's question sent the work back here: ${stall.escalated?.says || 'a failure below'}`, now);
       save();
     } };
+  // A batch in the furnace for the work in hand, said on keeping at it and
+  // on the set-aside (note 961): the rung's measure counts what is carried,
+  // and a batch cooking is not yet. 25583 (mid-237-cu, 2026-10-03
+  // 02:14:27 to 02:15:13Z) put 17 mutton in its furnace for the Nether food,
+  // left it cooking to work meanwhile, was told "nothing gained on the rung:
+  // no cooked mutton" and set the food rung aside 46 seconds later.
+  const cooking = goal.smelting?.count && (!goal.smelting.dimension || goal.smelting.dimension === dimension(bot)) ? goal.smelting : null;
+  if (cooking) {
+    const made = String(cooking.item || 'it').replaceAll('_', ' '), from = String(cooking.from || 'it').replaceAll('_', ' ');
+    const left = Math.max(0, Math.round((cooking.count * 10000 - (now - (cooking.startedAt || now))) / 1000));
+    const cookingSays = ` In the furnace now: ${cooking.count} ${from} to ${made}, ${left ? `about ${left} seconds of the batch left` : 'the batch done or nearly'}; the rung counts it once it is taken out.`;
+    for (const k of ['keep_at_it', 'set_aside_rung']) if (answers[k]) answers[k].description += cookingSays;
+  }
   // At the cage, keeping at it and the stay say what the stay there has come
   // to (cage-yield.js, note 702).
   if (cage) { try { require('./cage-yield').annotate(bot, goal, answers, now); } catch (_) { /* no record */ } }
@@ -931,6 +944,8 @@ async function gatherBlocks(bot, task, goal, save, { acquire = acquireStep } = {
   // advice on note 423).
   try {
     try {
+      // Dug where it stands first, no walk (note 960).
+      if (nether) { try { await require('./bridging').quarryHere(bot, task, BLOCK_RESERVE - blockStock(bot)); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; } }
       for (let round = 0; round < BLOCK_RESERVE && blockStock(bot) < BLOCK_RESERVE; round++) {
         const before = blockStock(bot);
         await acquire(bot, task, item, countOf(bot, item) + (BLOCK_RESERVE - blockStock(bot)), goal, save);
@@ -8074,7 +8089,14 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   // make the question worth asking, as the cauldron and the chest do.
   let entry = [];
   try { entry = require('./entry-kit').offers(bot); } catch (_) { entry = []; }
-  if (!short.length && !valuables && !cauldron && !chest && !noPickaxe && !spareMade && !empty.length && !entry.length) { delete goal.preparingNether; return true; }
+  // Sticks for pickaxes made in the Nether (note 962): its rock gives no head
+  // to a hand, but cobblestone carried does, and its wood is the forests'
+  // stems alone. On 2026-10-02, of the Nether time with rods carried (2564
+  // frames sampled), 671 (26%) had no pickaxe, a third of them with sticks.
+  const woodOf = () => bot.inventory.items().filter(i => /_(log|stem|planks)$/.test(i.name)).reduce((n, i) => n + (/_planks$/.test(i.name) ? i.count : i.count * 4), 0);
+  const heads = bot.inventory.items().filter(i => /^(cobblestone|cobbled_deepslate|blackstone)$/.test(i.name)).reduce((n, i) => n + i.count, 0);
+  const sticksShort = countOf(bot, 'stick') < 4 && woodOf() >= 2 && heads >= 3 ? { sticks: countOf(bot, 'stick'), heads, table: countOf(bot, 'crafting_table') > 0 } : null;
+  if (!short.length && !valuables && !cauldron && !chest && !noPickaxe && !spareMade && !sticksShort && !empty.length && !entry.length) { delete goal.preparingNether; return true; }
   // A record left from another crossing, untouched half an hour, starts afresh.
   if (goal.crossingKit && now - (goal.crossingKit.lastAt || 0) > 30 * 60000) delete goal.crossingKit;
   const kit = goal.crossingKit ||= { workedMs: 0, spent: {} };
@@ -8124,6 +8146,7 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     const one = picksNow[0], uses = Math.max(0, (bot.registry?.itemsByName?.[one.name]?.maxDurability ?? 0) - (one.durabilityUsed || 0));
     tree.top_up_spare_pickaxe = { description: `Make a spare pickaxe first, from what is carried: ${spareMade.replaceAll('_', ' ')}, a few seconds at a table. The one carried, ${one.name.replaceAll('_', ' ')}, has ${uses} uses left; a tunnel through netherrack digs about two blocks a block across, a use each, and in the Nether a pickaxe is made again only from wood its forests have. On 2026-10-02 the bots in the Nether carried no pickaxe for 12% of their time there, 23% from 19Z.` };
   }
+  if (sticksShort) tree.top_up_sticks = { description: `Make 8 sticks from the wood carried first (4 planks, a few seconds, one slot; ${sticksShort.sticks} carried now). In the Nether a pickaxe worn out is made again only from what is carried or from the forests' stems: with 2 sticks and 3 of the ${sticksShort.heads} cobblestone carried, a stone pickaxe (131 uses) is made anywhere at a crafting table${sticksShort.table ? ' (one carried)' : ' (none carried: 4 planks more)'}. On 2026-10-02, 26% of the Nether time with rods carried had no pickaxe, and with none the tunnel home is dug by hand at about five seconds a block.` };
   if (cauldron) tree.top_up_cauldron = { description: `Make the cauldron set for the Nether's fire first: ${countOf(bot, 'cauldron') ? '' : `craft a cauldron (7 of the ${countOf(bot, 'iron_ingot')} iron ingots carried, at a crafting table${countOf(bot, 'crafting_table') ? ' carried' : ' made first'})`}${!countOf(bot, 'cauldron') && !countOf(bot, 'water_bucket') ? ' and ' : ''}${countOf(bot, 'water_bucket') ? '' : 'fill a bucket with water (an empty bucket carried, water to be found)'}. ${cauldron.says}` };
   if (chest) tree.top_up_chest = { description: `Make a chest from the wood carried first and carry it in (8 planks${countOf(bot, 'crafting_table') ? ' at the crafting table carried' : ', and a crafting table of 4 more'}, a few seconds, one slot).${chest.says.replace(/^Chest: none carried\./, '')}` };
   // The wait for health at hunger under eighteen (note 927): health does not
@@ -8178,6 +8201,10 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     else if (pick === 'top_up_pickaxe') {
       goal.step = { action: 'pickaxe_for_nether', item: pickMade }; save();
       await acquireStep(bot, task, pickMade, countOf(bot, pickMade) + 1, goal, save);
+    }
+    else if (pick === 'top_up_sticks') {
+      goal.step = { action: 'sticks_for_nether', item: 'stick' }; save();
+      await acquireStep(bot, task, 'stick', countOf(bot, 'stick') + 8, goal, save);
     }
     else if (pick === 'top_up_spare_pickaxe') {
       goal.step = { action: 'pickaxe_for_nether', item: spareMade, spare: true }; save();

@@ -3477,7 +3477,8 @@ class Survival {
   stanceOptions(task, goal, save, danger, swung) {
     const t0 = Date.now(), timed = {};
     const wrap = (M, name) => { const f = M[name]; timed[name] = { n: 0, ms: 0, f, M }; M[name] = (...a) => { const t = Date.now(); try { return f(...a); } finally { timed[name].n++; timed[name].ms += Date.now() - t; } }; };
-    const mods = [[require('./bunker'), ['lineRegained', 'seenFrom', 'coverWithin', 'nookSite', 'wayTo']], [require('./blaze-stand'), ['blazeStands']], [require('./blaze-tactics'), ['healSite']]];
+    const BT = require('./blaze-tactics');
+    const mods = [[require('./bunker'), ['lineRegained', 'seenFrom', 'coverWithin', 'nookSite', 'wayTo']], [require('./blaze-stand'), ['blazeStands']], [BT, Object.keys(BT).filter(k => typeof BT[k] === 'function')]];
     for (const [M, names] of mods) for (const name of names) if (typeof M[name] === 'function') wrap(M, name);
     try { return this.stanceOptionsBuilt(task, goal, save, danger, swung); }
     finally {
@@ -3485,7 +3486,7 @@ class Survival {
       const ms = Date.now() - t0;
       if (ms >= SLOW_OPTIONS_MS) {
         const shooters = danger.filter(t => shooter(t.entity)).length;
-        console.log(`[slow] stanceOptions ${ms} ms: ${danger.length} mobs (${shooters} shooters); ${Object.entries(timed).map(([n, v]) => `${n} ${v.n} calls ${v.ms} ms`).join(', ')}`);
+        console.log(`[slow] stanceOptions ${ms} ms: ${danger.length} mobs (${shooters} shooters); ${Object.entries(timed).filter(([, v]) => v.n).sort((x, y) => y[1].ms - x[1].ms).slice(0, 8).map(([n, v]) => `${n} ${v.n} calls ${v.ms} ms`).join(', ')}`);
       }
     }
   }
@@ -5287,7 +5288,7 @@ class Survival {
     }
     // What followed each stance chosen so, over a drop that kills with a
     // ghast or magma cubes about (knock-record.js, note 662).
-    if (dropHere && dropHere.into === 'lava' && knockKinds.some(n => n === 'ghast' || n === 'magma_cube')) {
+    if (dropHere && dropHere.into === 'lava' && knockKinds.some(n => n === 'ghast' || n === 'magma_cube' || n === 'hoglin')) {
       for (const [k, o] of Object.entries(options)) if (k !== 'none_good' && !k.startsWith('shoot_')) o.description += require('./knock-record').optionSays(k, knockKinds);
     }
     // The hardest blow that can get to the bot, first on every stance

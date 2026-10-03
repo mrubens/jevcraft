@@ -564,7 +564,7 @@ test('the kit for the crossing is one question: every item said against what the
   // and a table, and the valuables walked home were gates in a row between "Nether first" and the portal, none said.
   // mid-220-a stood at 39 of 40 food points for forty-four passes.
   const { crossingKitReady } = require('../src/work');
-  const items = [['cooked_beef', 2], ['cobblestone', 30], ['stone_pickaxe', 1], ['oak_log', 8], ['crafting_table', 1], ['chest', 1]]
+  const items = [['stick', 4], ['cooked_beef', 2], ['cobblestone', 30], ['stone_pickaxe', 1], ['oak_log', 8], ['crafting_table', 1], ['chest', 1]]
     .map(([name, count]) => ({ name, count, type: registry.itemsByName[name].id, durabilityUsed: 0 }));
   const bot = Object.assign(new EventEmitter(), { registry, inventory: { items: () => items }, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' },
     entity: { id: 1, position: new Vec3(0.5, 64, 0.5) }, health: 20, food: 20, entities: {}, time: { timeOfDay: 3000 },

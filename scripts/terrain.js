@@ -317,6 +317,17 @@ const RUNS = {
   async tunnel_home_soul_sand(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async tunnel_home_down_through_cavern(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async tunnel_home_through_own_fence(d, bounded) { return RUNS.tunnel_home(d, bounded); },
+  async tunnel_by_hand_to_gap(d, bounded) {
+    const t0 = Date.now(); let error = null;
+    try { await require('../src/bridging').tunnelStraight(bot, bounded, vec(d.target), { maxSteps: 40, navigate, down: true }); } catch (err) { error = err.message; }
+    const p = bot.entity.position;
+    return { pass: !watch.died && p.x >= 6102, detail: { x: Math.round(p.x * 10) / 10, seconds: Math.round((Date.now() - t0) / 1000), error: error && error.slice(0, 120) } };
+  },
+  async quarry_here(d, bounded) {
+    let r = null, error = null;
+    try { r = await require('../src/bridging').quarryHere(bot, bounded, 16); } catch (err) { error = err.message; }
+    return { pass: !watch.died && (r?.gained || 0) >= 5, detail: { ...r, carried: require('../src/bridging').blocksCarried(bot), error } };
+  },
   async rise_and_swim_lake(d, bounded) {
     const u = require('../src/unstuck');
     const plan = u.risePlan(u.liveView(bot), bot.entity.position.floored());

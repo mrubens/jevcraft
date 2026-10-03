@@ -470,7 +470,7 @@ async function stairsDown(bot, task, target, { maxSteps = 40 } = {}) {
 // trial ended there, the best rod run of the record. Ends within `near`
 // blocks of the target across, after maxSteps, or where no way on is safe.
 // -> { steps, laid, arrived }
-const QUARRY_WANT = 24, QUARRY_BACK = 12;
+const QUARRY_WANT = 24, QUARRY_BACK = 12, QUARRY_MOVES = 4;
 // Arrived across and more than this over the target: the tunnel comes down (note 920).
 const OVER = 1;
 async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4, navigate = null, down = false } = {}) {
@@ -544,6 +544,16 @@ async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4, navi
   // are picked up), nothing molten against any, never the floor; then back
   // to where it stood. Up to QUARRY_WANT blocks.
   const quarry = async (here, d) => {
+    // Only blocks the tools carried make drop (note 964): by hand netherrack
+    // drops nothing, and the walk back along the tunnel for its walls was
+    // for nothing. 25593 (mid-242-nc-fortress-6, 2026-10-03 02:34 to
+    // 02:38Z), no pickaxe, crawled back 9 blocks through its own tunnel
+    // away from its portal, about 17 seconds a block, digging walls that
+    // gave nothing.
+    const tools = (bot.inventory?.items?.() || []).filter(i => /_(pickaxe|shovel|axe)$/.test(i.name)).map(i => i.type);
+    const yields = b => !b.harvestTools || tools.some(t => b.harvestTools[t]);
+    const wallsAround = [new Vec3(d.z, 0, d.x), new Vec3(-d.z, 0, -d.x)].flatMap(v => [here.plus(v), here.plus(v).offset(0, 1, 0)]).map(c => bot.blockAt(c)).filter(b => solid(b));
+    if (wallsAround.length && !wallsAround.some(b => LAID.includes(DROP_OF[b.name] || b.name) && yields(b))) return;
     const sides = [new Vec3(d.z, 0, d.x), new Vec3(-d.z, 0, -d.x)];
     const around = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1), new Vec3(0, 1, 0), new Vec3(0, -1, 0)];
     const digAround = async c => {
@@ -551,7 +561,7 @@ async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4, navi
         task.check();
         if (blocksCarried(bot) >= QUARRY_WANT) return;
         const b = bot.blockAt(q);
-        if (!solid(b) || !LAID.includes(DROP_OF[b.name] || b.name)) continue;
+        if (!solid(b) || !LAID.includes(DROP_OF[b.name] || b.name) || !yields(b)) continue;
         if (around.some(v => molten(bot.blockAt(q.plus(v))))) continue;
         const had = blocksCarried(bot);
         try { await clear(bot, task, q, { wall: true }); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; continue; }
@@ -888,4 +898,52 @@ async function gatherSpanBlocks(bot, task, want, { navigate, mineAt, deadline = 
   return { gained: carried(bot) - start, why: carried(bot) >= want ? null : why };
 }
 
-module.exports = { spanMaterial: material, BLAST_PROOF, tunnelStraight, stairsDown, spanPusher, spanWallsAt, clearCell: clear, stepOntoFooting, bridgeTo, crossAlong, underFire, spanRefused, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, LAID, NETHER_WOOD, NATURAL };
+// Blocks dug where the bot stands (note 960): the walls round the feet and
+// the head and the cell over the head, of a kind a span or tunnel lays and
+// that drops itself to the tools carried, each over a floor its drop lands
+// on beside the bot. No walk: the gather's walk to a known place was the
+// only way, and it came to nothing a block or five off. 25593 (mid-242-nc,
+// 2026-10-03 02:05:55Z), with a pickaxe, was told "No way to netherrack
+// from here: 508 netherracks known at (82, 48, 98), 5 blocks west and 2
+// up"; 25595 and 25597 walked 64-block legs away from their portals for 12.
+// -> { gained, dug }.
+async function quarryHere(bot, task, want, { names = LAID } = {}) {
+  const out = { gained: 0, dug: 0, moves: 0 };
+  const start = blocksCarried(bot);
+  const tools = (bot.inventory?.items?.() || []).filter(i => /_(pickaxe|shovel|axe)$/.test(i.name)).map(i => i.type);
+  const drops = b => !b.harvestTools || tools.some(t => b.harvestTools[t]);
+  const molten = c => /lava|water|fire/.test(bot.blockAt(c)?.name || '');
+  const near = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
+  // A ring where it stands, then into a cell it dug and a ring there, up to
+  // QUARRY_MOVES times: a ring is four to five blocks.
+  for (let round = 0; round <= QUARRY_MOVES && blocksCarried(bot) - start < want; round++) {
+    const feet = standing(bot), opened = [];
+    const cells = [...near.map(v => feet.plus(v)), ...near.map(v => feet.plus(v).offset(0, 1, 0)), feet.offset(0, 2, 0)];
+    for (const q of cells) {
+      if (blocksCarried(bot) - start >= want) break;
+      task.check();
+      const b = bot.blockAt(q);
+      if (!solid(b) || !b.diggable || !names.includes(DROP_OF[b.name] || b.name) || !drops(b)) continue;
+      // Its drop lands on a floor beside the bot: the cell under it solid,
+      // at the head the feet-level cell under that, or over the head onto
+      // the bot itself.
+      const overHead = q.x === feet.x && q.z === feet.z;
+      if (!overHead && !solid(bot.blockAt(q.offset(0, -1, 0))) && !(q.y === feet.y + 1 && solid(bot.blockAt(q.offset(0, -2, 0))))) continue;
+      if ([[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]].some(([x, y, z]) => molten(q.offset(x, y, z)))) continue;
+      if (overHead && FALLS.test(bot.blockAt(q.offset(0, 1, 0))?.name || '')) continue;
+      if (!require('./tunneling').safeExcavation(bot, q)) continue;
+      const had = blocksCarried(bot);
+      try { await clear(bot, task, q, { wall: true }); out.dug++; if (q.y === feet.y) opened.push(q); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; continue; }
+      for (let i = 0; i < 12 && blocksCarried(bot) <= had; i++) { await sleep(100); task.check(); }
+    }
+    if (round === QUARRY_MOVES || blocksCarried(bot) - start >= want) break;
+    // Into a cell it opened, on a floor that stands with its head clear.
+    const next = opened.find(c => solid(bot.blockAt(c.offset(0, -1, 0))) && !solid(bot.blockAt(c)) && !solid(bot.blockAt(c.offset(0, 1, 0))));
+    if (!next || !await creepTo(bot, task, next, 2500)) break;
+    out.moves++;
+  }
+  out.gained = blocksCarried(bot) - start;
+  return out;
+}
+
+module.exports = { quarryHere, spanMaterial: material, BLAST_PROOF, tunnelStraight, stairsDown, spanPusher, spanWallsAt, clearCell: clear, stepOntoFooting, bridgeTo, crossAlong, underFire, spanRefused, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, LAID, NETHER_WOOD, NATURAL };

@@ -418,6 +418,33 @@ const TERRAIN = Object.freeze([
     target: [5919, 81, 5900],
   },
   {
+    name: 'quarry_here',
+    why: 'Note 960: in a netherrack tunnel with a pickaxe and no block carried, blocks are dug from the walls where the bot stands, no walk (25593 was told "No way to netherrack from here", 5 blocks off).',
+    dimension: 'the_nether', seconds: 60,
+    start: [6000.5, 81, 6000.5],
+    kit: [['iron_pickaxe', 1]],
+    build: [
+      'forceload add 5990 5990 6010 6010',
+      'fill 5995 76 5995 6005 88 6005 minecraft:netherrack',
+      'fill 6000 81 5997 6000 82 6003 minecraft:air',
+    ],
+  },
+  {
+    name: 'tunnel_by_hand_to_gap',
+    why: 'Note 964: no pickaxe and no block, the tunnel dug by hand comes out over a cavern: it stops at the lip, not walking back along its own tunnel for walls that drop nothing by hand (25593 crawled back 9 blocks).',
+    dimension: 'the_nether', seconds: 150,
+    start: [6097.5, 81, 6100.5],
+    kit: [['cooked_beef', 4]],
+    build: [
+      'forceload add 6090 6090 6150 6110',
+      'fill 6095 60 6092 6103 90 6108 minecraft:netherrack',
+      'fill 6104 60 6092 6145 90 6108 minecraft:air',
+      'fill 6104 60 6092 6145 68 6108 minecraft:netherrack',
+      'fill 6096 81 6100 6097 82 6100 minecraft:air',
+    ],
+    target: [6120, 69, 6100],
+  },
+  {
     name: 'tunnel_home_from_span',
     why: 'Note 920: the tunnel begins on a block in open air ten over its target and three across (25595 on its own span over its portal): it comes down on laid steps and ends on the floor, no fall.',
     dimension: 'the_nether', seconds: 150,

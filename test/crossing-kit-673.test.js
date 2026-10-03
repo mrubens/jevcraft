@@ -13,7 +13,7 @@ const { Task } = require('../src/skills');
 const registry = require('minecraft-data')('26.1');
 
 // A bot at the portal: the ladder's gear all carried, by day on the surface.
-const GEAR = { iron_pickaxe: 1, diamond_sword: 1, shield: 1, water_bucket: 1, iron_helmet: 1, iron_chestplate: 1, iron_leggings: 1, iron_boots: 1, golden_boots: 1, white_bed: 1, bow: 1, arrow: 16, oak_log: 8, crafting_table: 1, chest: 1 };
+const GEAR = { stick: 4, iron_pickaxe: 1, diamond_sword: 1, shield: 1, water_bucket: 1, iron_helmet: 1, iron_chestplate: 1, iron_leggings: 1, iron_boots: 1, golden_boots: 1, white_bed: 1, bow: 1, arrow: 16, oak_log: 8, crafting_table: 1, chest: 1 };
 function atPortal(carried = {}) {
   const items = Object.entries({ ...GEAR, ...carried }).filter(([, n]) => n > 0).map(([name, count]) => ({ name, count, type: registry.itemsByName[name].id, durabilityUsed: 0 }));
   return {
@@ -163,4 +163,12 @@ test('the food rung taken: going without sets it aside as a choice, which the cr
   asked = null;
   assert.equal(await kitFoodStep(atPortal(FED), new Task('win'), {}, () => {}, { wants: 80 }, client), true);
   assert.equal(asked, null);
+});
+
+test('fewer than four sticks, wood and cobblestone carried: the crossing offers sticks for pickaxes made in the Nether (note 962)', async () => {
+  const { crossingKitReady } = require('../src/work');
+  let asked = null;
+  const client = { systemOne: async ({ questions }) => { asked = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'cross_now', confidence: 0.7 } } }; } };
+  assert.equal(await crossingKitReady(atPortal({ stick: 0, oak_log: 2, cobblestone: 40, crafting_table: 1 }), new Task('win'), { kind: 'win' }, () => {}, client), true);
+  assert.match(asked?.top_up_sticks || '', /^Make 8 sticks from the wood carried first \(4 planks, a few seconds, one slot; 0 carried now\)\. In the Nether a pickaxe worn out is made again only from what is carried or from the forests' stems: with 2 sticks and 3 of the 40 cobblestone carried, a stone pickaxe \(131 uses\) is made anywhere at a crafting table \(one carried\)\. On 2026-10-02, 26% of the Nether time with rods carried had no pickaxe/);
 });
