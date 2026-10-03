@@ -433,6 +433,7 @@ function raiseFor(bot, goal, why, now = Date.now(), extra = {}) {
 const FLIP_CHANGES = 5, FLIP_MS = 45000, FLIP_REST_MS = 2 * FLIP_MS;
 const FLIPPING = /^turning between /;
 function worth(bot) { return (bot.inventory?.items?.() || []).filter(i => !FILLER.test(i.name)).reduce((n, i) => n + i.count, 0); }
+function kinds(bot) { const m = {}; for (const i of bot.inventory?.items?.() || []) if (!FILLER.test(i.name)) m[i.name] = (m[i.name] || 0) + i.count; return m; }
 const countKey = step => step ? `${step.action}:${step.drops || step.item || ''}` : null;
 // The step a retry is retrying is the step: a step and its own persist are
 // one piece of work failing, which the ledger and persist answer, not two
@@ -555,7 +556,7 @@ function flipWatch(bot, goal, now = Date.now()) {
     if (!a || (layer === 'work' && waitingByChoice)) continue;
     const changes = (stalls.changes ||= {})[layer] ||= [];
     const changed = changes.at(-1)?.a !== a;
-    if (changed) changes.push({ a, t: now, p: here.clone ? here.clone() : { ...here }, worth: worth(bot), blocks: stalls.marked || 0, count: goal.step?.count, countKey: countKey(goal.step), ...(layer === 'work' ? { m: rungMeasure(bot, goal, now) } : {}) });
+    if (changed) changes.push({ a, t: now, p: here.clone ? here.clone() : { ...here }, worth: worth(bot), kinds: kinds(bot), blocks: stalls.marked || 0, count: goal.step?.count, countKey: countKey(goal.step), ...(layer === 'work' ? { m: rungMeasure(bot, goal, now) } : {}) });
     while (changes.length > FLIP_CHANGES) changes.shift();
     // A pair resting together from here (note 699): the two trading again
     // within its reach is raised at the first trade, with the count, and
@@ -584,6 +585,16 @@ function flipWatch(bot, goal, now = Date.now()) {
     const place = flipPlace(changes, here);
     if (!place) continue;
     if (worth(bot) > first.worth) continue;
+    // A thing made is something gained though what it was made of is gone
+    // (note 1060): more of any one kind carried than at the first of the
+    // changes. 25593 (2026-10-03 13:36:40 to 13:37:16Z), come back to life
+    // bare-handed, mined cobblestone and crafted a stone pickaxe, sticks and
+    // a stone sword in 36 seconds, was raised as "turning between mine and
+    // craft 4 times in 36 seconds with nothing gained on the rung" (the
+    // pickaxe and the sword against the three sticks they took), set the
+    // iron pickaxe aside at 0.44 for thirty minutes, and took detours for
+    // five.
+    if (first.kinds && Object.entries(kinds(bot)).some(([name, n]) => n > (first.kinds[name] || 0))) continue;
     // On the game's ladder the rung's measure says whether the two got
     // anywhere (note 699): more of what the rung or the step is for, a
     // portal frame block standing, a new nearest to the step's target or
