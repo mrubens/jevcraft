@@ -179,6 +179,7 @@ const CLOCK = 'runClock is the run so far. A practiced player with iron reaches 
 const STOCK = 'blockStock is what can be laid: with no pickaxe carried none comes back, and what is carried is all there will be until one is made (makingAPickaxe).';
 const SCULK = 'sculk is the sculk sensors and shriekers near and what a shrieker calls.';
 const HEALING = 'healing is health, hunger, whether health comes back, the food carried and nearest; standing still spends no hunger.';
+const SLOT = 'slot is the slot the bot stands in now, who can and cannot come at it there, and what walking out of it leaves.';
 const RODS_AT_RISK = 'rodsAtRisk is the blaze rods carried and what a death now does to them, with the trials\' record of lives that carried as many.';
 // Note 786 (shield-wear.js): the shield's uses left against the blazes.
 const SHIELD_WEAR = 'shieldWear is the shield\'s uses left against blaze fireballs, the spare carried or makeable, and the trials\' record of shields broken at the blazes.';
@@ -243,7 +244,7 @@ function withRealTime(spec, state = {}, dimension = state?.dimension) {
   const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
   const trail = (state?.recentPositions ? ` ${TRAIL}` : '') + (state?.underWay || state?.lastIntention ? ` ${UNDER_WAY}` : '');
   const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '') + (state?.leastBadLast ? ` ${LEAST_BAD}` : '') + (state?.failedAtOnce ? ` ${AT_ONCE}` : '') + (state?.lastHit ? ` ${LAST_HIT}` : '') + (state?.answerChangedNothing ? ` ${CHANGED_NOTHING}${/recorded as failed/.test(state.answerChangedNothing) ? ` ${RECORDED_FAILED}` : ''}` : '') + (state?.alreadySo ? ` ${ALREADY_SO}` : '') + (state?.spellSoFar ? ` ${SPELL}` : '') + (state?.asideHolds ? ` ${ASIDE_HOLDS}` : '') + (state?.toTheBlazes ? ` ${TO_THE_BLAZES}` : '') + (state?.answersHold || state?.lastCommitment ? ` ${HOLDS}` : '');
-  const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '') + (state?.healing ? ` ${HEALING}` : '') + (state?.healing?.withoutFood ? ` ${WITHOUT_FOOD}` : '') + (state?.blockStock ? ` ${STOCK}` : '') + (state?.rodsAtRisk ? ` ${RODS_AT_RISK}` : '') + (state?.shieldWear ? ` ${SHIELD_WEAR}` : '');
+  const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '') + (state?.healing ? ` ${HEALING}` : '') + (state?.healing?.withoutFood ? ` ${WITHOUT_FOOD}` : '') + (state?.blockStock ? ` ${STOCK}` : '') + (state?.rodsAtRisk ? ` ${RODS_AT_RISK}` : '') + (state?.shieldWear ? ` ${SHIELD_WEAR}` : '') + (state?.slot ? ` ${SLOT}` : '');
   const dark = off && normDimension(dimension) === 'the_nether' && (state?.darkHere !== undefined || /\bdark\b/.test(guidance)) ? ` ${NETHER_DARK}` : '';
   return { ...own, task, guidance: `${guidance}${guidance ? ' ' : ''}${off ? elsewhereTime(placeName(dimension)) : REAL_TIME}${dark}${clock}${risk}${trail}${deaths}` };
 }
@@ -912,6 +913,12 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.rodsAtRisk && !state.rodsCarried) {
     let atRisk = null; try { atRisk = require('../rod-risk').risk(bot, goal); } catch (_) { /* no body */ }
     if (atRisk) state = { ...state, rodsAtRisk: atRisk.says };
+  }
+  // The slot the bot stands in (enderman-slot.js standing, note 1019), with
+  // every such question asked while it stands there.
+  if (bot?._slotAt && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.slot) {
+    let slot = null; try { slot = require('../enderman-slot').standing(bot); } catch (_) { /* no body */ }
+    if (slot) state = { ...state, slot };
   }
   // The shield's wear at the blazes (shield-wear.js, note 786), with the
   // questions asked among them: 24 shields broke under blaze fire in the

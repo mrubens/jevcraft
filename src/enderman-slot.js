@@ -116,6 +116,7 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
   for (const c of site.digs) { task.check(); await bridging.clearCell(bot, task, c, { wall: true }); }
   await navigate(bot, task, new goals.GoalBlock(site.b.x, site.b.y, site.b.z), { timeoutMs: 5000, stallMs: 2000 });
   if (!bot.entity.position.floored().equals(site.b)) { out.ended = 'the back of the slot was not reached'; return out; }
+  bot._slotAt = { b: site.b.clone(), mouth: site.mouth.clone(), d: site.d.clone(), at: Date.now() };
   const sword = (bot.inventory?.items?.() || []).filter(i => /_sword$|_axe$/.test(i.name)).sort((x, y) => (/_sword$/.test(y.name) ? 1 : 0) - (/_sword$/.test(x.name) ? 1 : 0))[0];
   if (sword) { try { await bot.equip(sword, 'hand'); } catch (_) { /* the hand, then */ } }
   let dead = 0;
@@ -288,4 +289,22 @@ async function stand(bot, task, site, { navigate, names = ['wither_skeleton'], s
   return out;
 }
 
-module.exports = { lineFrom, enter, stand, TALL, slotSite, slotFrom, says, fight, recordSays, RECORD };
+// The slot the bot stands in, for every question asked while it stands
+// there (note 1019): what it is, who is about, and what leaving it does.
+// 25595 (2026-10-03 08:31:24 to 08:31:44Z), at the back of its slot with an
+// enderman ten blocks off, was asked its stance at a ghast 62 blocks away,
+// took out of sight at 0.50 (the work 0.02), walked eight blocks out into
+// the open, and two endermen ended it from 20 health in six seconds; no
+// question said it stood where they could not come.
+function standing(bot) {
+  const s = bot?._slotAt, here = bot?.entity?.position?.floored?.();
+  if (!s || !here || typeof bot.blockAt !== 'function') return null;
+  if (!here.equals(s.b)) { if (here.distanceTo(s.b) > 3) delete bot._slotAt; return null; }
+  if (bot.blockAt(s.b.offset(0, 2, 0))?.boundingBox !== 'block') return null;
+  const compass = d => d.x > 0 ? 'west' : d.x < 0 ? 'east' : d.z > 0 ? 'north' : 'south';
+  const about = endermen(bot, 32).sort((x, y) => x.position.distanceTo(bot.entity.position) - y.position.distanceTo(bot.entity.position)), turned = about.filter(angry);
+  const who = about.length ? `${about.length} enderm${about.length === 1 ? 'an' : 'en'} within 32 blocks, the nearest ${Math.round(about[0].position.distanceTo(bot.entity.position))} off${turned.length ? `, ${turned.length} turned on the bot now` : ', none turned on the bot now'}` : 'no enderman within 32 blocks now';
+  return `The bot stands at the back of the slot it dug at (${s.b.x}, ${s.b.y}, ${s.b.z}): one wide and two high, rock on every side but the mouth, two blocks to the ${compass(s.d)}. An enderman is ${TALL.enderman} blocks tall and does not come in under a roof two high (the game's rule): it stands at the mouth, where the sword reaches it and its blow does not reach the bot; ${who}. Nothing that shoots has a line in but along the slot from the mouth. Any way that walks out of it leaves that: in the open an enderman that has turned is at the bot at once, wherever it walks, about 7 a blow before armour.`;
+}
+
+module.exports = { standing, lineFrom, enter, stand, TALL, slotSite, slotFrom, says, fight, recordSays, RECORD };
