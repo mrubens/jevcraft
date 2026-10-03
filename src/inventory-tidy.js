@@ -391,6 +391,15 @@ const EXPENDABLE = [
 // of a cliff-banked lake, a wall against a creeper, a pillar out of a pit.
 // The live run had none when it needed one and drowned digging stone.
 const BLOCK_RESERVE = 16;
+// In the Nether a stack (note 984): there the blocks are the way itself, a
+// block a step over every gap. 25590 and 25591 (2026-10-03 05:15 to 05:32Z),
+// a rod each to bank and the portal about 100 blocks off and 24 up across
+// open cavern, mined the sixteen, laid them in ten seconds of tunnel floor
+// ("no blocks carried to lay the tunnel's floor over open air", 13 times in
+// one log), and walked 1,360 blocks each in a quarter hour to end 41 and 44
+// from where they began.
+const NETHER_BLOCK_RESERVE = 64;
+const blockReserve = bot => nether(bot) ? NETHER_BLOCK_RESERVE : BLOCK_RESERVE;
 // Cobblestone is kept to two stacks: the Nether is crossed with them
 // (work.js NETHER_BLOCKS), and one kept lost to the tidy is gathered again.
 // In the Nether, where netherrack is the blocks, one.
@@ -735,4 +744,4 @@ async function makeRoom(bot, task, name, { keep = new Set(), away = null, purpos
 // How many of an item are worth keeping, where there is a cap: past it the
 // tidy drops them first (coal is never tossed, but past two stacks it is said).
 function capOf(name) { return SURPLUS[name] ?? (name === 'coal' ? 128 : undefined); }
-module.exports = { tidyContext, rungNeeds, tidyPlan, overCaps, consolidate, dropCount, capFor, capWhy, atKeep, keptSaysAll, BUDGETS, BUILDING_BUDGET, BUDGET_BLOCKS: /^(cobblestone|cobbled_deepslate|netherrack|blackstone|stone|deepslate|dirt|coarse_dirt)$/, NO_RUNG, crossingFood, crossingDropSays, noteDroppedFood, DROP_LASTS_MS, NO_USE, capOf, openDirection, makeRoom, tidyInventory, surplus, spares, roomFor, crowded, faceAway, blockStock, BLOCK_RESERVE, SURPLUS, FREE_SLOTS };
+module.exports = { blockReserve, NETHER_BLOCK_RESERVE, tidyContext, rungNeeds, tidyPlan, overCaps, consolidate, dropCount, capFor, capWhy, atKeep, keptSaysAll, BUDGETS, BUILDING_BUDGET, BUDGET_BLOCKS: /^(cobblestone|cobbled_deepslate|netherrack|blackstone|stone|deepslate|dirt|coarse_dirt)$/, NO_RUNG, crossingFood, crossingDropSays, noteDroppedFood, DROP_LASTS_MS, NO_USE, capOf, openDirection, makeRoom, tidyInventory, surplus, spares, roomFor, crowded, faceAway, blockStock, BLOCK_RESERVE, SURPLUS, FREE_SLOTS };

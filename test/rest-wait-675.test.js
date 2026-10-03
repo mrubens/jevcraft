@@ -82,7 +82,7 @@ test('25598 with the blocks carried: nothing is on offer, and the idle wait for 
   const w = win('mid-242-bb-nether-1-fortress-9');
   const T0 = Date.parse(w.at);
   t.mock.timers.enable({ apis: ['Date'], now: T0 });
-  const { bot, goal } = recorded(w, { extra: { netherrack: 32 } });
+  const { bot, goal } = recorded(w, { extra: { netherrack: 64 } });
   const asked = await rungQuestion(bot, goal, T0 + 67000, 'keep_at_it');
   // The ways rest for coming to nothing: standing here idle changes none of
   // that, so the rest's end brings the same (waits.js, note 698).
@@ -118,7 +118,7 @@ test('25598: the hold chosen, it offers the blocks as work while the rest runs; 
 
 test('25598: the wait chosen as idle is held to the rest\'s end, said once (note 609 kept)', async t => {
   const w = win('mid-242-bb-nether-1-fortress-9');
-  const { bot, goal } = recorded(w, { extra: { netherrack: 32 } });
+  const { bot, goal } = recorded(w, { extra: { netherrack: 64 } });
   const { holdForRest } = require('../src/work');
   const logs = []; const log = console.log; console.log = (...a) => logs.push(a.join(' '));
   const until = Date.now() + 600;
@@ -148,7 +148,7 @@ test('25585 mid-242-ca-nether-1: leave_nether\'s wait_here says what the hold ha
   assert.match(w.waitHereSaid, /^Other work in the Nether until the rods step's rest ends, taken up again in 27 minutes, then the rods again; what the work is, is asked then\.$/);
   const { gameHandlers } = require('../src/work');
   const stage = { phase: 'obtain_blaze_rods', action: 'rods_waiting', until: T0 + 27 * 60000 - 30000, why: 'Jev set it aside at the rung\'s question' };
-  for (const [extra, idle] of [[{}, false], [{ iron_pickaxe: 1, stone_pickaxe: 1, crimson_stem: 8, netherrack: 32 }, true]]) {
+  for (const [extra, idle] of [[{}, false], [{ iron_pickaxe: 1, stone_pickaxe: 1, crimson_stem: 8, netherrack: 64 }, true]]) {
     const { bot, goal } = recorded(w, { extra });
     const asked = [], holds = [];
     const client = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: questions.branch_0.criteria.wait_here ? 'wait_here' : Object.keys(questions.branch_0.criteria)[0], confidence: 0.87 } } }; } };

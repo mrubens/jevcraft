@@ -140,9 +140,9 @@ test('the portal way held says its pace and where its minutes went', () => {
 });
 
 test('blocks chosen for the reserve are gathered round after round until the reserve is met', async () => {
-  // A mining round ends after one block of stone: sixteen upkeep questions for a reserve of sixteen (the Fable advice, 2026-09-27).
+  // A mining round ends after one block of stone: sixteen upkeep questions for a reserve of sixteen (the Fable advice, 2026-09-27). In the Nether the reserve is a stack (note 984).
   const { gatherBlocks } = require('../src/work');
-  const { BLOCK_RESERVE } = require('../src/inventory-tidy');
+  const BLOCK_RESERVE = require('../src/inventory-tidy').NETHER_BLOCK_RESERVE;
   let n = 0;
   const bot = { game: { dimension: 'the_nether' }, inventory: { items: () => (n ? [{ name: 'netherrack', count: n }] : []) } };
   const goal = { kind: 'win' };

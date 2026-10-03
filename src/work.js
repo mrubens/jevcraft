@@ -910,7 +910,7 @@ const reserveWeather = bot => bot.game?.gameMode !== 'creative' && !bot.entity?.
 // pickaxes and no wood had the bot climbing out of its night mine by hand,
 // a block every twenty-three seconds for four minutes.
 const woodDue = (bot, goal) => reserveWeather(bot) && woodUnits(bot) < WOOD_RESERVE && /overworld/.test(String(bot.game?.dimension || 'overworld')) && !isSetAside(goal, 'block_reserve', 'wood');
-const blocksDue = (bot, goal) => { const { blockStock, BLOCK_RESERVE } = require('./inventory-tidy'); return reserveWeather(bot) && blockStock(bot) < BLOCK_RESERVE && !isSetAside(goal, 'block_reserve', 'gather'); };
+const blocksDue = (bot, goal) => { const { blockStock, blockReserve } = require('./inventory-tidy'); return reserveWeather(bot) && blockStock(bot) < blockReserve(bot) && !isSetAside(goal, 'block_reserve', 'gather'); };
 // Wood chosen at upkeep is the climb for it chosen, said there with the
 // depth and the pickaxes: not asked again as a surface trip (note 543).
 const LOG_NEED = /\blog\b|wood/, UPKEEP_WOOD_MS = 15 * 60 * 1000;
@@ -944,7 +944,8 @@ async function gatherWood(bot, task, goal, save) {
   return true;
 }
 async function gatherBlocks(bot, task, goal, save, { acquire = acquireStep } = {}) {
-  const { blockStock, BLOCK_RESERVE } = require('./inventory-tidy');
+  const { blockStock, blockReserve } = require('./inventory-tidy');
+  const BLOCK_RESERVE = blockReserve(bot);
   const have = blockStock(bot);
   const nether = /nether/.test(String(bot.game?.dimension || ''));
   const item = nether ? 'netherrack' : pickaxeTier(bot) >= 1 ? 'cobblestone' : 'dirt';
@@ -1105,7 +1106,8 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
 // asked at upkeep, and offered as work while a rest is waited out
 // (holdForRest, note 675), where "carry on" had held it five minutes.
 async function upkeepOffers(bot, task, goal, save) {
-  const { blockStock, BLOCK_RESERVE } = require('./inventory-tidy');
+  const { blockStock, blockReserve } = require('./inventory-tidy');
+  const BLOCK_RESERVE = blockReserve(bot);
   const options = {};
   const worn = bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name.replaceAll('_', ' ')} (${remainingUses(bot, i)} uses left)`);
   // The uses carried against the step in hand and the way home after it,
@@ -1220,7 +1222,7 @@ async function upkeepOffers(bot, task, goal, save) {
   if (goal.kind === 'win' && blocksDue(bot, goal) && !(inNether && pickaxeNeeded(bot) && !makeable)) {
     const source = inNether ? await blockSourceSaid(bot, task, goal, 'netherrack') : '';
     options.block_reserve = { description: (inNether
-      ? `Mine netherrack for building blocks now: ${blockStock(bot)} carried. Here every crossing over lava or a gap is laid a block a step, and a crossing with none stops at the first gap; a block of netherrack comes out in a moment with any pickaxe once the bot is at it${pickaxeNeeded(bot) ? `, and ${makeable ? 'none is carried: it is made first from what is carried' : 'none is carried and none can be made from what is carried: dug by hand, netherrack drops nothing'}` : ''}.${source} ${BLOCK_RESERVE} also seal a pocket or tower out of a hole.`
+      ? `Mine netherrack for building blocks now: ${blockStock(bot)} carried. Here every crossing over lava or a gap is laid a block a step, and a crossing with none stops at the first gap; a block of netherrack comes out in a moment with any pickaxe once the bot is at it${pickaxeNeeded(bot) ? `, and ${makeable ? 'none is carried: it is made first from what is carried' : 'none is carried and none can be made from what is carried: dug by hand, netherrack drops nothing'}` : ''}.${source} Mined up to ${BLOCK_RESERVE}, a stack: sixteen were laid in ten seconds of a tunnel's floor over open cavern and the walk stopped at the next gap, time after time; each block is one use of the pickaxe. Sixteen also seal a pocket or tower out of a hole.`
       : `Gather building blocks now: ${blockStock(bot)} carried, and ${BLOCK_RESERVE} seal a pocket for the night or tower out of a hole.`) + blockRoundsSay(goal), run: () => gatherBlocks(bot, task, goal, save) };
   }
   // Two things a night asks for, seen to before it comes (the user,
