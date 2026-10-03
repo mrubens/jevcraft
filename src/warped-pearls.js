@@ -14,7 +14,7 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { setAside, isSetAside } = require('./progress');
 
-const LEG = 64, FOREST_REACH = 512, SEARCH_LEGS = 8, SEARCH_MS = 15 * 60 * 1000, REST_MS = 30 * 60 * 1000, STALL_MS = 15 * 60 * 1000;
+const LEG = 64, FOREST_REACH = 512, SEARCH_LEGS = 8, SEARCH_MS = 15 * 60 * 1000, REST_MS = 30 * 60 * 1000, STALL_MS = 15 * 60 * 1000, AWAY_MS = 60 * 1000;
 const HEADINGS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
 const count = (bot, name) => bot.inventory.items().filter(i => i.name === name).reduce((n, i) => n + i.count, 0);
 const inNether = l => /nether/.test(String(l.dimension || ''));
@@ -83,6 +83,15 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
     if (!arrived) return false;
     // In the forest: the ordinary hunt, which takes the endermen in view.
     const watch = goal.warpedHunt ||= { since: now(), best: count(bot, 'ender_pearl') };
+    // The fifteen minutes are minutes in the forest (note 1065): a watch not
+    // looked at for a minute (the bot away, dead, or in the Overworld) begins
+    // again, as does one whose pearls are no longer carried. 25590
+    // (2026-10-03 14:26 to 14:32Z), eight rods in its chests, came back into
+    // the Nether for pearls, reached the forest, and was told at once "No
+    // pearls from the warped forest for a while" by a watch begun before it
+    // left; it went back to the Overworld five minutes after it came.
+    if (now() - (watch.lastAt || watch.since) > AWAY_MS || count(bot, 'ender_pearl') < watch.best) { watch.since = now(); watch.best = count(bot, 'ender_pearl'); }
+    watch.lastAt = now();
     if (count(bot, 'ender_pearl') > watch.best) { watch.best = count(bot, 'ender_pearl'); watch.since = now(); }
     if (now() - watch.since > STALL_MS) {
       setAside(goal, 'rung', 'warped_pearls', 'fifteen minutes in the warped forest without a pearl', REST_MS); delete goal.warpedHunt; save();
