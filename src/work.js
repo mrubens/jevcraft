@@ -4830,6 +4830,20 @@ function rememberPortal(goal, save, portal, where) {
 }
 // Seconds a block of the tunnel home, as measured live (note 936).
 const TUNNEL_SECONDS = { pickaxe: 1.5, hand: 5 };
+// The tunnel home's rest, lifted where it rested for want of blocks and
+// blocks are carried now (note 980): what it stopped for is no longer so.
+// 25597 (mid-242-pf-nether-1, 2026-10-03 04:35:55Z), four rods, 25
+// netherrack just dug and a pickaxe made, was asked the way home with the
+// legs round and nothing else, the tunnel resting five minutes for "no
+// blocks carried to lay the tunnel's floor".
+const TUNNEL_BLOCKS_BACK = 8;
+function tunnelHomeResting(bot, goal) {
+  if (!isSetAside(goal, 'tunnel_home', 'nether')) return false;
+  const why = String(attemptsFor(goal).why('tunnel_home', 'nether') || '');
+  let carried = 0; try { carried = require('./bridging').blocksCarried(bot); } catch (_) { carried = 0; }
+  if (/no blocks carried/.test(why) && carried >= TUNNEL_BLOCKS_BACK) { attemptsFor(goal).clear('tunnel_home', 'nether'); return false; }
+  return true;
+}
 async function walkToKnownPortal(bot, task, goal, save, where) {
   const here = bot.entity.position;
   // One Jev chose to pass over for a portal made here (portal_way) is not
@@ -4963,7 +4977,7 @@ async function stairsOrWay(bot, task, goal, save, p, where, walk) {
   // pickaxe, was offered the tunnel at about 5 seconds a block by hand (45
   // minutes of it) and the walks round, and never the pickaxe; thirty
   // minutes into the bank it was no nearer than 195.
-  if (where === 'nether' && require('./walk-out').rodsCarried(bot) && !isSetAside(goal, 'tunnel_home', 'nether')) {
+  if (where === 'nether' && require('./walk-out').rodsCarried(bot) && !tunnelHomeResting(bot, goal)) {
     const pw = !(goal.portalPickaxeChosen?.at > Date.now() - PORTAL_PICKAXE_HOLD_MS) ? stairPickaxeWanted(bot, goal, pos(p)) : null;
     return portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted: pw?.gather ? pw : null });
   }
@@ -5109,7 +5123,7 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
   // across, a cavern under it; the walk found only a drop, the staircase
   // rested, and portal_way offered going round or waiting. In the arena
   // the tunnel came 26 down through a cavern to its portal in 47 seconds.
-  if (where === 'nether' && (Math.hypot(target.x - here.x, target.z - here.z) > 6 || target.y - here.y <= -8) && !isSetAside(goal, 'tunnel_home', 'nether')) {
+  if (where === 'nether' && (Math.hypot(target.x - here.x, target.z - here.z) > 6 || target.y - here.y <= -8) && !tunnelHomeResting(bot, goal)) {
     const across = Math.round(Math.hypot(target.x - here.x, target.z - here.z)), dy = Math.round(target.y - here.y);
     // The pace as measured live (note 936): the tunnels home of 2026-10-02
     // made about 40 blocks a minute with a pickaxe (174 minutes of them) and
