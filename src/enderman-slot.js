@@ -207,7 +207,7 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
   const onHealth = () => { if (bot.health < hp) { const e = endermen(bot)[0]; console.log(`[slot] hurt ${(hp - bot.health).toFixed(1)} at (${bot.entity.position.x.toFixed(1)}, ${bot.entity.position.z.toFixed(1)}), slot back (${site.b.x + 0.5}, ${site.b.z + 0.5}), enderman ${e ? `(${e.position.x.toFixed(1)}, ${e.position.y.toFixed(1)}, ${e.position.z.toFixed(1)})` : 'none'}`); } hp = bot.health; };
   bot.on('health', onHealth);
   const deadline = Date.now() + seconds * 1000;
-  let lastSwing = 0, lastStare = 0, misses = 0, turnedAt = null, noLineSince = null, outs = 0, collected = 0;
+  let lastSwing = 0, lastStare = 0, misses = 0, turnedAt = null, turnedWhere = null, noLineSince = null, outs = 0, collected = 0;
   // The drops where the last fell, walked out for and back (see below).
   const collect = async () => {
       const safety = err => { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; };
@@ -293,7 +293,12 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
         // (one looked at stands where it is); one that does not come in
         // twenty seconds is left (note 996).
         turnedAt ??= Date.now();
-        if (Date.now() - turnedAt > TURNED_WAIT_MS) { out.ended = 'it turned and did not come to the mouth in twenty seconds'; break; }
+        // Where it was when it turned and where it is as the wait ends, said
+        // with the ending (note 1074): three such endings on 25593 on
+        // 2026-10-03 said nothing of the enderman.
+        const at = () => `${Math.round(e.position.distanceTo(bot.entity.position))} blocks off, ${Math.round(e.position.y - bot.entity.position.y)} up`;
+        turnedWhere ??= at();
+        if (Date.now() - turnedAt > TURNED_WAIT_MS) { out.ended = `it turned and did not come to the mouth in twenty seconds (${turnedWhere} when the wait began, ${at()} at its end, ${lineFrom(bot, site.mouth, e) ? 'a line' : 'no line'} from the mouth to it)`; break; }
         await bot.lookAt(site.mouth.offset(0.5, 0, 0.5), true);
       } else if (misses >= STARE_MISSES) {
         out.ended = `${STARE_MISSES} looks from the mouth did not turn it (no line to its eyes from there)`; break;
