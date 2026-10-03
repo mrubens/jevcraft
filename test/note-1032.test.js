@@ -17,6 +17,19 @@ test('rods banked under one goal are known to the goal launched after it', () =>
   assert.notEqual(next.rodStashes, known.rodStashes, 'a copy, so a change on the goal is still a change at its save');
 });
 
+test('a running goal\'s chests are kept where the store has none yet, and a goal that knows none takes up the store\'s (note 1033)', () => {
+  const chest = { position: { x: -113, y: 74, z: 158 }, dimension: 'nether', contents: { blaze_rod: 5 } };
+  const running = wk.hydrate({ kind: 'win', rodStashes: [chest], portals: [{ x: 1, y: 2, z: 3 }] }, {});
+  assert.deepEqual(running.rodStashes, [chest], 'not taken off for the store\'s not having them');
+  assert.equal(running.portals, undefined, 'the world\'s other fields are the store\'s as before');
+  const { known } = wk.harvest(running, {});
+  assert.deepEqual(known.rodStashes, [chest]);
+  const blank = wk.hydrate({ kind: 'win' }, {});
+  const after = wk.harvest(blank, structuredClone(known));
+  assert.deepEqual(after.known.rodStashes, [chest], 'not unlearned');
+  assert.deepEqual(blank.rodStashes, [chest], 'taken up by the goal that knew none');
+});
+
 test('a narrated action whose threats is a count names no mobs and does not throw', () => {
   const { SURVIVAL } = require('../src/narration');
   let called = 0;

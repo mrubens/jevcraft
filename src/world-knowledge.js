@@ -21,6 +21,7 @@
 // dream launched the next one, and that goal knew no chest: "First: obtain
 // blaze rods", seven wanted again.
 const WORLD_FIELDS = ['portals', 'portalFrame', 'villages', 'endPortal', 'strongholdSearch', 'explored', 'landmarks', 'looted', 'rodStashes'];
+const GOAL_OWNED = new Set(['rodStashes']);
 // Progress toward beating the game belongs to the run, and every run of it
 // in this world is the same run: the milestones are observations of this
 // bot in this world.
@@ -38,7 +39,12 @@ function hydrate(goal, known = {}) {
   for (const field of fieldsFor(goal)) {
     // A copy: a portal pushed onto the goal's list must still look like a
     // change when the goal is saved, not already be in the store.
-    if (known[field] !== undefined) goal[field] = structuredClone(known[field]); else delete goal[field];
+    // The bot's own chests are never taken off a goal for the store's not
+    // having them (note 1033): the store learns them from the goal. Added
+    // to the world's fields (note 1032) with no store yet holding them, the
+    // first restart took them off four running goals (25590, 25593, 25594
+    // and 25597, 2026-10-03 09:40Z: six rods in four chests forgotten).
+    if (known[field] !== undefined) goal[field] = structuredClone(known[field]); else if (!GOAL_OWNED.has(field)) delete goal[field];
   }
   goal.worldKnowledge = true;
   return goal;
@@ -50,6 +56,8 @@ function harvest(goal, known = {}) {
   for (const field of fieldsFor(goal)) {
     const value = goal[field];
     if (JSON.stringify(value) === JSON.stringify(known[field])) continue;
+    // Nor does a goal that knows none unlearn the world's: it takes them up.
+    if (value === undefined && GOAL_OWNED.has(field)) { goal[field] = structuredClone(known[field]); continue; }
     if (value === undefined) delete known[field]; else known[field] = structuredClone(value);
     changed = true;
   }
