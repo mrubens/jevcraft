@@ -10297,7 +10297,29 @@ class Survival {
       // portal. mid-243-fa sat thirteen minutes sealed in 19 blocks from its
       // fortress, the leave naming only "the obtain blaze rods step".
       const workWhere = rungParts.length ? ` From here that work is ${rungParts.map(x => `${x.what} ${Math.round(x.v)} blocks off`).join(', ')}.` : '';
-      options.leave = { description: `Open the pocket and ${foodTrip ? foodTrip.to : `go back to ${waiting || 'work'}`}${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${foodTrip ? foodTrip.says : `${workWhere}${tripNot}`}${night && below ? ` ${BELOW_NIGHT}${BELOW_NIGHT_SURFACE}` : ''}${lidSays}${doorsSay}${outSays}${outHealth}` + wardenSays(bot) + placeSays + (waitSays?.leave || ''),
+      // The step waiting is the surface's (levels.js: a tree's logs, wool,
+      // a village) and up there it is night (note 1055): said as that, with
+      // the mobs about and what the bot has in hand, not as work under the
+      // rock where the hour changes nothing. 25598 (2026-10-03 12:50 to
+      // 12:58Z), come back to life bare-handed at night, was told "the
+      // night adds about nothing here" three times, left its pocket for an
+      // oak log each time, eight hostile mobs within 24 blocks, and was
+      // killed by zombies twice in eight minutes.
+      let surfaceStep = '';
+      try {
+        // No pickaxe carried and something owed at the surface: the step
+        // waiting begins up there (a tree's logs for the pickaxe).
+        const lp = night && below ? require('./levels').levelPlan(bot, goal) : null;
+        const noPick = !(bot.inventory?.items?.() || []).some(i => /_pickaxe$/.test(i.name));
+        const up = lp && noPick && lp.up?.length ? { says: String(lp.up[0]).split(':')[0] } : null;
+        if (up) {
+          const about = threats(bot, 24), kinds = [...new Set(about.map(t => t.entity.name.replaceAll('_', ' ')))];
+          const weapon = require('./combat').defenseWeapon(bot)?.name?.replaceAll('_', ' ') || 'bare hands';
+          const points = require('./combat-estimate').armourOf([5, 6, 7, 8].map(n => bot.inventory?.slots?.[n]?.name).filter(Boolean)).points;
+          surfaceStep = ` That step is at the surface (${up.says}), and up there it is night until dawn, about ${minutesToDawn(bot)} real minutes: ${about.length ? `${about.length} hostile mob${about.length === 1 ? '' : 's'} within 24 blocks now (${kinds.join(', ')})` : 'no hostile mob within 24 blocks now, and they spawn in the dark'}, the bot with ${weapon} and ${points} armour point${points === 1 ? '' : 's'}.`;
+        }
+      } catch (_) { surfaceStep = ''; }
+      options.leave = { description: `Open the pocket and ${foodTrip ? foodTrip.to : `go back to ${waiting || 'work'}`}${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${foodTrip ? foodTrip.says : `${workWhere}${tripNot}`}${night && below ? (surfaceStep || ` ${BELOW_NIGHT}${BELOW_NIGHT_SURFACE}`) : ''}${lidSays}${doorsSay}${outSays}${outHealth}` + wardenSays(bot) + placeSays + (waitSays?.leave || ''),
         run: async () => {
           delete this.state.watchedSince;
           // Out at night is a plan for a while, not a moment: without it the
@@ -10393,7 +10415,7 @@ class Survival {
       // Out at night, what keeping on with the work there has cost by the
       // record of the place (night-record.js, note 789).
       if (night && !offWorld && options.leave && typeof options.leave.description === 'string')
-        options.leave.description += require('./night-record').keepOnSays(require('./night-record').placeOf({ y: bot.entity?.position?.y, underground: below }), { minutesToDawn: minutesToDawn(bot) });
+        options.leave.description += require('./night-record').keepOnSays(require('./night-record').placeOf({ y: bot.entity?.position?.y, underground: below && !/ That step is at the surface \(/.test(options.leave.description) }), { minutesToDawn: minutesToDawn(bot) });
       const leaveOff = (() => {
         const key = 'survival:leave_shelter', now = Date.now();
         if (excused(bot, 'leave_shelter', now)) return null;

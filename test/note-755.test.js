@@ -210,3 +210,37 @@ test('a walk to the saved shelter that finds no route sets it aside ten minutes 
   assert(isSetAside(survival, 'shelter_method', 'saved_shelter'), 'the way rests');
   assert(reports.some(r => r.action === 'shelter_unreachable' && r.reason === 'noRoute'));
 });
+
+// Note 1055: bare-handed in a pocket at night with wood owed at the surface, leaving says that the step is up there, in the night.
+test('pocket_next: with no pickaxe and wood owed at the surface at night, leave says the step is at the surface and what is about (note 1055)', async () => {
+  const { Survival } = require('../src/survival');
+  const origin = new Vec3(0, 62, 0);
+  const open = new Set([`${origin}`, `${origin.offset(0, 1, 0)}`]);
+  const solid = q => !open.has(`${q}`) && q.y <= 66;
+  const mk = (id, d) => ({ id, name: 'zombie', type: 'hostile', position: new Vec3(d, 67, 0.5), height: 1.95, width: 0.6, isValid: true });
+  const run = async items => {
+    const bot = {
+      registry, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' },
+      entities: { 5: mk(5, 12), 6: mk(6, 18) }, health: 20, food: 20, oxygenLevel: 20, time: { timeOfDay: 16500 },
+      entity: { position: origin.offset(0.5, 0, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) },
+      inventory: { items: () => items, slots: [], emptySlotCount: () => 30 }, heldItem: null,
+      blockAt: q => ({ name: solid(q.floored ? q.floored() : q) ? 'stone' : 'air', boundingBox: solid(q.floored ? q.floored() : q) ? 'block' : 'empty', position: q, getProperties: () => ({}) }),
+      findBlocks: () => [], world: { raycast: from => ({ intersect: from.offset(0.6, 0, 0) }) }, on() {}, once() {}, removeListener() {}, emit() {},
+    };
+    const goal = { kind: 'win', request: 'beat the game', rungTime: { phase: 'stone_pickaxe' } };
+    const survival = new Survival(bot, {}, { state: { shelters: [{ origin: { ...origin }, dimension: 'overworld', verifiedAt: new Date().toISOString() }] }, client: { systemOne: async () => ({}) } });
+    let tree;
+    survival.decide = async (task, g, save, { id, tree: t }) => { if (id === 'pocket_next') tree = t; return { path: ['stay'], stale: false }; };
+    survival.nightMine = async () => false; survival.wait = async () => {};
+    await survival.step(new Task('wait'), goal, () => {}).catch(() => {});
+    return tree;
+  };
+  const bare = await run([{ name: 'dirt', count: 11 }, { name: 'oak_log', count: 2 }]);
+  assert(bare?.leave, 'leave was offered');
+  assert.match(bare.leave.description, /That step is at the surface \(wood toward the 6 logs' worth.*\), and up there it is night until dawn, about \d+ real minutes: 2 hostile mobs within 24 blocks now \(zombie\), the bot with bare hands and 0 armour points\./);
+  assert.match(bare.leave.description, /on the surface/, 'the record said is the surface\'s at night');
+  assert.doesNotMatch(bare.leave.description, /under the rock \(y 0 to 56\) at night/);
+  assert.doesNotMatch(bare.leave.description, /nightfall changes nothing down here/);
+  const kitted = await run([{ name: 'iron_pickaxe', count: 1 }, { name: 'iron_sword', count: 1 }, { name: 'oak_log', count: 8 }]);
+  if (kitted?.leave) assert.doesNotMatch(kitted.leave.description, /That step is at the surface/);
+});
