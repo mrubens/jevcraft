@@ -766,6 +766,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
+| `wood_for_chest` | root | fetch the wood for a chest, then keep the rods in it here | no chest and no wood for one is carried (under eight planks' worth) and stems of a Nether forest are known within 128 blocks (nether-wood.js); said with where the stems are and the way there, what the wood is for, the portal's distance and the rods carried and still needed (note 997) |
 | `bank_now` (trip: the portal) | root | out through the portal with the rods to a chest on the Overworld side, then back for the rest | always here; said with the walk and its record, the chest, the round trip, and the day's record of lives that stayed and that left |
 | `keep_here` | root | put the rods in a chest here and hunt on with nothing to lose, the walk out made once with them all | a chest can go down here out of the shooters' lines, made from what is carried or one carried or known within reach (src/rod-stash.js keepOption, note 931); said with the health and whether it comes back |
 | `stay_for_more` | root | stay and hunt on with the rods in the pack | always here; said with what a death takes and the record of lives that carried as many |

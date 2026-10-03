@@ -196,9 +196,37 @@ async function askBank(bot, task, goal, save, actions, client, { now = Date.now(
   // The chest here (note 931): the rods kept in the Nether, the hunt on.
   let keep = null; try { keep = rs().keepOption(bot, task, goal, save, actions, { thenSays: `Then the hunt goes on here for the ${plural(offer.left, 'rod')} still needed with nothing in the pack to lose, and the walk out is made once, with them all.` }); } catch (_) { keep = null; }
   const last = lastWalkSays(goal, now);
+  // No chest and no wood for one: the wood fetched first where stems are
+  // known, then the chest here (note 997). On 2026-10-03 (04:00 to 06:40Z)
+  // keep_here was taken at all 18 askings it was offered at; at the other
+  // 14 the bot carried no chest and under eight planks, and the walk to the
+  // portal was taken at 12 of them, 161 to 519 blocks off.
+  let woodFirst = null;
+  if (!keep && !rs().chestMaking(bot)) {
+    try {
+      const nw = require('./nether-wood');
+      bot._woodAlso = { planks: 8, for: 'a chest to keep the rods in', until: Date.now() + 15 * 60000 };
+      const fetch = await nw.fetchStemsOffer(bot, task, goal);
+      if (fetch?.place) {
+        const said = fetch.describe ? await fetch.describe() : fetch.description;
+        woodFirst = { description: `Get the wood for a chest first, then keep the rods here in it: ${said} With the wood a chest is made (eight planks, two stems' worth) and the ${plural(offer.rods, 'rod')} put in it where the hunt is: no walk to the portal ${offer.d} blocks off, the hunt going on for the ${plural(offer.left, 'rod')} still needed with nothing in the pack to lose, and the walk out made once, with them all.`,
+          run: async () => {
+            const acquireStep = actions?.acquireStep || require('./work').acquireStep;
+            try { await nw.fetchStems(bot, task, goal, save, { acquireStep }); }
+            catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[rods_now] the wood for a chest was not got: ${String(err.message || err).slice(0, 200)}`); }
+            finally { delete bot._woodAlso; }
+            const kept = rs().chestMaking(bot) ? rs().keepOption(bot, task, goal, save, actions) : null;
+            if (!kept) return false;
+            return kept.run();
+          } };
+      }
+    } catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; woodFirst = null; }
+    if (!woodFirst) delete bot._woodAlso;
+  }
   const tree = {
     bank_now: { description: `${opt.description}${last} ${bankWalksSays()} ${today} The way out can be the tunnel dug straight at the portal (asked on the way where the walk fails): in the rock nothing sees or pushes the bot.`, trip: 'the portal', run: opt.run },
     ...(keep ? { keep_here: { description: keep.description, run: keep.run } } : {}),
+    ...(woodFirst ? { wood_for_chest: woodFirst } : {}),
     stay_for_more: { description: `Stay and hunt on for the ${plural(offer.left, 'rod')} still needed with the ${plural(offer.rods, 'rod')} in the pack: no walk out now, and every rod carried is lost with a death here.${last} ${staying} ${today} ${bankWalksSays()} Asked again when another rod is carried, or in ten minutes.` },
   };
   let decision;
@@ -206,6 +234,8 @@ async function askBank(bot, task, goal, save, actions, client, { now = Date.now(
   catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[rods_now] not asked: ${String(err.message || err).slice(0, 900)}`); return null; }
   if (decision.stale) return null;
   if (decision.path?.at(-1) === 'keep_here') { await tree.keep_here.run(); return 'kept'; }
+  if (decision.path?.at(-1) === 'wood_for_chest') { const kept = await tree.wood_for_chest.run(); return kept ? 'kept' : 'stay'; }
+  delete bot._woodAlso;
   if (decision.path?.at(-1) !== 'bank_now') return 'stay';
   await tree.bank_now.run();
   return 'banked';

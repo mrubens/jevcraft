@@ -80,11 +80,14 @@ function woodWanted(bot) {
   const stickPlanks = Math.ceil(sticksShort / STICKS_PER_CRAFT) * STICK_CRAFT;
   const headPlanks = heads.filter(h => h === 'wooden').length * HEAD;
   const tablePlanks = carried.table ? 0 : TABLE;
-  const want = tablePlanks + stickPlanks + headPlanks;
+  // Wood wanted for something else as well, named by who asks (rod-bank.js:
+  // a chest to keep the rods in, note 997), while that asking stands.
+  const also = bot?._woodAlso && bot._woodAlso.until > Date.now() ? bot._woodAlso : null;
+  const want = tablePlanks + stickPlanks + headPlanks + (also ? also.planks : 0);
   const short = Math.max(0, want - carried.planks);
   const named = heads.map((h, i) => `${i === 0 && !picked ? 'the pickaxe to make now' : 'a spare'} (${h === 'iron' ? (i < ingotHeads ? 'iron, from the ingots carried' : 'iron, from the raw iron carried, smelted in the furnace carried') : h === 'stone' ? 'stone, from the cobblestone or blackstone carried' : 'wooden, its head three planks'})`);
   const parts = [tablePlanks && `a crafting table (${TABLE} planks)`, stickPlanks && `the sticks for ${plural(picks, 'pickaxe')} (${STICKS_PER_PICK * picks} sticks, ${carried.sticks ? `${carried.sticks} carried, ` : ''}${stickPlanks} planks)`,
-    headPlanks && `${headPlanks / HEAD === 1 ? 'a wooden head' : `${headPlanks / HEAD} wooden heads`} (${headPlanks} planks)`].filter(Boolean);
+    headPlanks && `${headPlanks / HEAD === 1 ? 'a wooden head' : `${headPlanks / HEAD} wooden heads`} (${headPlanks} planks)`, also && `${also.for} (${also.planks} planks)`].filter(Boolean);
   return { picked, picks, heads, carried, want, short, stems: Math.ceil(short / 4),
     says: `Wanted in wood: ${want} planks' worth for ${named.join(' and ')}${parts.length ? `: ${parts.join(', ')}` : ''}; carried: ${carried.said} (${carried.planks} planks' worth)${short ? `, ${short} short: ${plural(Math.ceil(short / 4), 'stem')} (${Math.ceil(short / 4) * 4} planks)` : ''}.` };
 }
