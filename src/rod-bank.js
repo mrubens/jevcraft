@@ -178,8 +178,10 @@ const TODAY = Object.freeze({ day: '2026-10-02 (11:45Z to 13:00Z)', lives: 5, di
 // had only 2026-09-28's walks back to a portal (22 of 181 came out), from
 // before the bank; on 2026-10-02 rods_now was answered bank_now 61 times and
 // stay_for_more none.
-const BANK_WALKS = Object.freeze({ day: '2026-10-02 (13:37Z to 22:55Z)', walks: 47, banked: 27, died: 13, other: 4, open: 3 });
-const bankWalksSays = () => `On ${BANK_WALKS.day}, ${BANK_WALKS.walks} bank walks were begun with rods: ${BANK_WALKS.banked} put them in a chest (${Math.round(BANK_WALKS.banked / BANK_WALKS.walks * 100)}%), ${BANK_WALKS.died} died within the hour it was begun (${Math.round(BANK_WALKS.died / BANK_WALKS.walks * 100)}%), ${BANK_WALKS.other} ended another way, ${BANK_WALKS.open} were still under way.`;
+// The day after (note 1038; scripts/rod-bank-walks.js 2026-10-03): 30 walks
+// to 09:53Z, 20 banked, 4 died, where the day before's 47 came to 27 and 13.
+const BANK_WALKS = Object.freeze({ day: '2026-10-03 (00:25Z to 09:53Z)', walks: 30, banked: 20, died: 4, other: 4, open: 2, before: 'the day before, 47 walks: 27 banked (57%), 13 died (28%)' });
+const bankWalksSays = () => `On ${BANK_WALKS.day}, ${BANK_WALKS.walks} bank walks were begun with rods: ${BANK_WALKS.banked} put them in a chest (${Math.round(BANK_WALKS.banked / BANK_WALKS.walks * 100)}%), ${BANK_WALKS.died} died within the hour it was begun (${Math.round(BANK_WALKS.died / BANK_WALKS.walks * 100)}%), ${BANK_WALKS.other} ended another way, ${BANK_WALKS.open} were still under way${BANK_WALKS.before ? ` (${BANK_WALKS.before})` : ''}.`;
 // The last bank walk, where it ended without the chest (note 983): said on
 // every answer of the next asking. 25591 (mid-242-nc-fortress-7, 2026-10-03)
 // set its walk aside at 05:14:41Z after 31 minutes, the portal 137 blocks
