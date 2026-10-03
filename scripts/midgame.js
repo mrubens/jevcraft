@@ -163,11 +163,11 @@ function cutReasons(world, playedMinutes, reachedAtMinute = {}, { casting = fals
 // every verdict on 25581, 25583 and 25584 failed on "loop: N× TypeSafe 402"
 // a minute or two in, and the overnight loop started a new world each time.
 const STRANDED_DOWN_SHARE = 0.1;
-function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY, kept = keptNow(identity), endHours = false } = {}) {
+function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY, kept = keptNow(identity), endHours = false, holds = null } = {}) {
   const from = Date.parse(trial.startedAt);
   const read = to => analyse({ identity, from, to, ...(dir ? { dir } : {}) });
   // The window: the three hours played, run on by the Jev-down time in it.
-  const limit = endHours ? END_LIMIT_MS : limitFor(kept);
+  const limit = endHours ? END_LIMIT_MS : limitFor(holds || kept);
   let to = Math.min(now, from + limit), a = read(to), spells = a ? spellsOf(a.frames) : [];
   for (let i = 0; a && spells.length && i < 4; i++) {
     const next = Math.min(now, from + limit + overlapMs(spells, from, to));
@@ -178,9 +178,20 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
   const downMs = overlapMs(spells, from, to);
   const downNow = !!spells.at(-1)?.open && now - spells.at(-1).to < 3 * 60000;
   const { at, best } = reached(a.frames);
+  // The hours are by what the bot holds, kept in its chests and carried now
+  // (note 1126): 25597 (mid-242-yc-nether-1, 2026-10-03), seven rods kept
+  // and twelve hours given, took six of them out of its chest to carry
+  // home, was then read as keeping one, given six hours, and ended at once
+  // as "missing after 6 hours" eleven hours in, the rods in its pack.
+  if (!holds && !endHours) {
+    const lastInv = [...a.frames].reverse().find(f => f.snapshot?.inventory && typeof f.snapshot.inventory === 'object');
+    const carried = lastInv ? counts(lastInv.snapshot.inventory) : { rods: 0, pearls: 0 };
+    const held = { rods: (kept?.rods || 0) + carried.rods, pearls: (kept?.pearls || 0) + carried.pearls };
+    if (limitFor(held) > limit) return verdict(trial, { now, dir, identity, kept, holds: held });
+  }
   // The rods and the pearls reached in the pack (not only kept in chests):
   // the End's hours from there, read again over that window.
-  if (!endHours && limit < END_LIMIT_MS && 'blaze_rods' in at && 'ender_pearls' in at) return verdict(trial, { now, dir, identity, kept, endHours: true });
+  if (!endHours && limit < END_LIMIT_MS && 'blaze_rods' in at && 'ender_pearls' in at) return verdict(trial, { now, dir, identity, kept, holds, endHours: true });
   const dragon = dragonAt(identity);
   if (dragon && dragon >= from && dragon <= to) at.dragon = dragon;
   const all = MILESTONES.every(k => k in at);
@@ -248,11 +259,17 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
   const deathSays = !deaths.length ? [] : keeps
     ? [`died ${deaths.length} time${deaths.length === 1 ? '' : 's'}${downSays} with ${[kept.rods >= 1 ? `${kept.rods} blaze rod${kept.rods === 1 ? '' : 's'}` : null, kept.pearls >= 1 ? `${kept.pearls} ender pearl${kept.pearls === 1 ? '' : 's'}` : null].filter(Boolean).join(' and ')} kept in its chests: played on`]
     : [`${deaths.length} death(s)${downSays}`];
-  const reasons = [...deathSays, ...loops.map(l => `loop: ${l}`), ...(stranded ? [stranded.says] : []),
+  // Nor does half an hour in one place end it while rods or pearls are kept
+  // (note 1126): said as held, and played on, as a death is. 25594
+  // (mid-242-sc-fortress-10, 22:04Z), seven rods and eight pearls in its
+  // chests, the most pearls of any trial, was ended as stranded and its
+  // world replaced.
+  const strandedSays = !stranded ? [] : keeps ? [`held ${stranded.says.replace(/^stranded: /, '').split(';')[0]}: played on with what is kept in its chests`] : [stranded.says];
+  const reasons = [...deathSays, ...loops.map(l => `loop: ${l}`), ...strandedSays,
     ...(timedOut ? MILESTONES.filter(k => !(k in at)).map(k => `missing ${said}: ${k}`) : []),
     ...(all ? [] : cutReasons(trial.world, Math.round(playedMs / 60000), Object.fromEntries(Object.entries(at).map(([k, t]) => [k, Math.round(playedBy(t) / 60000)])), { casting: castingLately(a.frames, to) }))];
   return { world: trial.world, source: trial.source, ...(trial.arm ? { arm: trial.arm } : {}), from: new Date(from).toISOString(), minutes: Math.round((to - from) / 60000),
-    pass: all && !reasons.length, done: all || timedOut || reasons.some(r => !/^died /.test(r)), failedAlready: reasons.length > 0, reasons, ...(deaths.length && keeps ? { playedOnAfterDeath: { deaths: deaths.length, kept } } : {}), ...(stranded ? { stranded } : {}),
+    pass: all && !reasons.length, done: all || timedOut || reasons.some(r => !/^(died|held) /.test(r)), failedAlready: reasons.length > 0, reasons, ...(deaths.length && keeps ? { playedOnAfterDeath: { deaths: deaths.length, kept } } : {}), ...(stranded ? { stranded } : {}),
     ...(!/fortress|nether/.test(trial.world || '') && at.nether != null && playedBy(at.nether) > CUT_MINUTES * 60000 ? { netherAfterTheHour: Math.round(playedBy(at.nether) / 60000) } : {}),
     ...(rodsGot >= 1 && loopsSeen.length ? { loopsWithRodsCarried: { rods: rodsNow, got: rodsGot, loops: loopsSeen } } : {}),
     playedMinutes: Math.round(playedMs / 60000), absentMinutes: Math.round(absentMs / 60000), unplayed,
