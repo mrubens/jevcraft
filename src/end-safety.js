@@ -72,6 +72,28 @@ function dodgeRoutes(bot, dragon, allowed = () => true) {
   return routes;
 }
 
+// A point RUN_BLOCKS away from `start`, off the bearing to the dragon (away
+// first, then the quarters, then the sides), every cell of the line to it
+// with a solid block at most two under the feet's level or one over it (a
+// step down or up, never the void) and not walled two high. -> Vec3 or null
+const RUN_BLOCKS = 6;
+function straightAway(bot, start, bearing, allowed = () => true) {
+  const solid = (x, y, z) => bot.blockAt(new Vec3(x, y, z))?.boundingBox === 'block';
+  const feet = Math.floor(start.y);
+  for (const angle of [Math.PI, Math.PI * .75, -Math.PI * .75, Math.PI / 2, -Math.PI / 2]) {
+    const dx = Math.cos(bearing + angle), dz = Math.sin(bearing + angle);
+    let ok = true, y = feet;
+    for (let d = 1; d <= RUN_BLOCKS && ok; d++) {
+      const x = Math.floor(start.x + dx * d), z = Math.floor(start.z + dz * d);
+      // The floor under this cell: one up, level, or down to two.
+      const floor = [y, y - 1, y - 2, y - 3].find(fy => solid(x, fy, z) && !solid(x, fy + 1, z) && !solid(x, fy + 2, z));
+      if (floor === undefined || !allowed(new Vec3(x + .5, floor + 1, z + .5))) ok = false; else y = floor + 1;
+    }
+    if (ok) return new Vec3(start.x + dx * RUN_BLOCKS, y, start.z + dz * RUN_BLOCKS);
+  }
+  return null;
+}
+
 async function evadeOverTerrain(bot, task, goal, save, dragon, { allowed = () => true, walk = navigate } = {}) {
   const start = bot.entity.position.clone(), dimension = bot.game.dimension, toward = dragon.position.minus(start); toward.y = 0;
   const check = () => {
@@ -119,6 +141,27 @@ async function evadeOverTerrain(bot, task, goal, save, dragon, { allowed = () =>
     // One dodge with nowhere to go is a bad moment, not the end of the
     // fight: the next step looks again. As a Blocked error it ended the
     // rehearsal at full health with two crystals down.
+    // No route the survey finds in its tenth of a second each (a hillside,
+    // a pillar's foot): straight away from it at a run, over cells that
+    // have a floor within two blocks under them all the way, as a player
+    // runs out of the breath without a plan (note 1130). The rehearsal of
+    // 2026-10-03 (23:02:09 to 23:02:22Z) stood on the island's slope in the
+    // dragon's breath, "No surveyed walking escape" twelve times in a row,
+    // 20 health to none without a step.
+    const away = straightAway(bot, start, bearing, allowed);
+    if (away) {
+      goal.step = { action: 'evade_dragon_straight', from: { ...start }, toward: { x: away.x, y: away.y, z: away.z } }; save();
+      try {
+        await require('./motion').move(bot, { check, get cancelled() { return task.cancelled; }, label: task.label }, { label: 'evade_dragon_straight', keys: ['forward', 'sprint', 'jump'], sneak: false,
+          why: 'out of the dragon\'s breath or its path at a run, over ground with a floor under every cell', look: away.offset(0, 1.6, 0), maxMs: 1500, tick: 50,
+          until: () => bot.entity.position.distanceTo(start) >= RUN_BLOCKS - 1 || fallDanger(bot) });
+      } catch (err) { check(); }
+      if (fallDanger(bot)) await recoverFall(bot, task, goal, save);
+      if (bot.entity.position.distanceTo(start) >= 2) {
+        const evidence = { at: Date.now(), from: { ...start }, to: { ...bot.entity.position }, hazard: { id: dragon.id, name: dragon.name }, straightRun: true };
+        goal.endCombat.lastEvasion = evidence; save(); bot.emit('end_combat', { evasion: evidence }); return true;
+      }
+    }
     throw Object.assign(new Error('No surveyed walking escape from the dragon on loaded terrain'), { name: 'NoEscape' });
   } finally { bot.pathfinder.setGoal(null); bot.clearControlStates(); Object.assign(movement, previous); }
 }
@@ -170,4 +213,4 @@ async function evadeDragon(bot, task, goal, save, { allowed, timeoutMs = 1600 } 
     return true;
   } finally { bot.clearControlStates(); }
 }
-module.exports = { cloudRadius, hazardDistance, breathThreat, dragonThreat, endEmergency, checkEndEmergency, dodgeRoutes, evadeOverTerrain, evadeDragon };
+module.exports = { straightAway, cloudRadius, hazardDistance, breathThreat, dragonThreat, endEmergency, checkEndEmergency, dodgeRoutes, evadeOverTerrain, evadeDragon };
