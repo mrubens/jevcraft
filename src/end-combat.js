@@ -163,6 +163,54 @@ function arenaMovement(bot, center) {
   return { allowed, allowedPoint, restore: () => Object.assign(movement, previous) };
 }
 
+// Off a height onto the island's ground beside it: the edge nearest the
+// arena's centre whose landing is solid, in view, at most DROP_MOST blocks
+// down and not past what the health carries (a fall takes its blocks less
+// three; a water bucket carried breaks it, fall-recovery.js). Walked off
+// upright, the landing waited for. -> true when the bot came down.
+const DROP_MOST = 14, DROP_KEEPS = 8;
+function dropOffs(bot, center = null) {
+  const here = bot.entity.position, feet = here.floored();
+  const solid = c => bot.blockAt(c)?.boundingBox === 'block';
+  const water = (bot.inventory?.items?.() || []).some(i => i.name === 'water_bucket');
+  const out = [];
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+    for (let d = 1; d <= 6; d++) {
+      const c = feet.offset(dx * d, 0, dz * d);
+      if (solid(c) || solid(c.offset(0, 1, 0))) break;
+      if (solid(c.offset(0, -1, 0))) continue;
+      // The edge: the first cell with no floor. Its landing, and a clear fall to it.
+      let land = null;
+      for (let dy = 2; dy <= DROP_MOST + 1; dy++) { const b = bot.blockAt(c.offset(0, -dy, 0)); if (!b) break; if (b.boundingBox === 'block') { land = c.offset(0, -dy + 1, 0); break; } if (/lava|fire/.test(b.name)) break; }
+      const fall = land ? feet.y - land.y : null;
+      if (land && fall >= 4 && (water || (bot.health ?? 20) - (fall - 3) >= DROP_KEEPS)) {
+        const toCenter = center ? Math.hypot(land.x - center.x, land.z - center.z) : 0;
+        out.push({ edge: c, land, fall, toCenter });
+      }
+      break;
+    }
+  }
+  return out.sort((a, b) => a.toCenter - b.toCenter || a.fall - b.fall);
+}
+async function leaveHighGround(bot, task, goal, save, state) {
+  const { fallDanger, recoverFall } = require('./fall-recovery');
+  const way = dropOffs(bot, state?.arenaCenter || { x: 0, z: 0 })[0];
+  if (!way) return false;
+  const startY = bot.entity.position.y;
+  goal.step = { action: 'leave_high_ground', edge: { x: way.edge.x, y: way.edge.y, z: way.edge.z }, land: { x: way.land.x, y: way.land.y, z: way.land.z }, fall: way.fall }; save();
+  console.log(`[end] nothing to do from this height: off its edge at (${way.edge.x}, ${way.edge.y}, ${way.edge.z}) onto the ground ${way.fall} blocks down`);
+  try {
+    await require('./motion').move(bot, task, { label: 'leave_high_ground', keys: ['forward'], sneak: false, why: 'off a height onto the island\'s ground in view under its edge, nothing to do from up here',
+      look: way.edge.offset(0.5, 1.6, 0.5), maxMs: 3000, tick: 50, until: () => !bot.entity.onGround && bot.entity.position.y < startY - 0.5 });
+  } catch (err) { task.check(); }
+  for (let i = 0; i < 100 && !bot.entity.onGround; i++) {
+    task.check();
+    if (fallDanger(bot)) { try { await recoverFall(bot, task, goal, save); } catch (err) { task.check(); } break; }
+    await sleep(50);
+  }
+  return bot.entity.position.y <= startY - 3;
+}
+
 async function arenaRoutes(bot, task, goal, policy, focus) {
   const current = bot.entity.position, visits = goal.endCombat.visits ||= {}, buckets = new Map();
   const target = focus?.position || focus;
@@ -421,6 +469,15 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       goal.step = { action: 'end_hold', unsafe: state.heldForMobs.unsafe }; save();
       await defendHere(1000); return;
     }
+    // Nothing to do from a height with the island's ground under its edge
+    // (the entry platform, a pillar's ledge): the way down off it, before
+    // the fight is called blocked (leaveHighGround, note 1131). The
+    // rehearsals of 2026-10-03 (23:00 and 23:05Z) ended at their first
+    // steps on the entry platform, ten blocks over the island: every route
+    // lay more than the three blocks down a route may go, no shot was
+    // clear, and "No observed safe End route" ended the fight with 192
+    // arrows carried and every crystal standing.
+    if (!Object.keys(tree).length && safe && await leaveHighGround(bot, task, goal, save, state)) return;
     if (!Object.keys(tree).length) {
       state.emptyChoice = { at: Date.now(), position: { ...bot.entity.position }, safe, unsafe: safe ? [] : unsafeBecause(bot, bot.entity.position).slice(0, 6),
         crystals: crystals.length, dragon: !!dragon, bow, arrows: countOf(bot, 'arrow'), focus: focus?.name, idle: state.idleObservations || 0 };
@@ -459,4 +516,4 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
   }
 }
 
-module.exports = { voidEdge, endermenNearRoute, metadata, perched, perchedHead, repeatedCrystalMiss, observeArena, endHazards, safeEndPoint, arenaMovement, arenaRoutes, fightEndStep };
+module.exports = { dropOffs, leaveHighGround, voidEdge, endermenNearRoute, metadata, perched, perchedHead, repeatedCrystalMiss, observeArena, endHazards, safeEndPoint, arenaMovement, arenaRoutes, fightEndStep };
