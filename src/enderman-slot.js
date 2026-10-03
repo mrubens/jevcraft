@@ -24,7 +24,7 @@ const STARE_MS = 450, STARE_EVERY_MS = 12000;
 // 25593 (2026-10-03 15:15:38 to 15:18:34Z), all seven rods in its chests,
 // waited its twenty seconds, left the slot for the sweep's walk, and was
 // struck in the open two minutes on, 18.2 health to 5.7 in three seconds.
-const STARE_AGAIN_MS = 3000, STARE_MISSES = 3, TURNED_WAIT_MS = 45000, NO_LINE_MS = 12000;
+const STARE_AGAIN_MS = 3000, STARE_MISSES = 3, TURNED_WAIT_MS = 45000, NO_LINE_MS = 12000, LEVEL = 4;
 // The server's own word that it has been stared at or screams (its entity
 // data, 17 and 18): one brought is not gone out to again.
 const angry = e => !!(e.metadata?.[17] || e.metadata?.[18]);
@@ -255,12 +255,18 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
         if (count() - had >= want) { out.ended = 'pearl'; break; }
         continue;
       }
-      const e = all.find(x => angry(x) || x.position.distanceTo(bot.entity.position) <= 5) || all.find(x => lineFrom(bot, site.mouth, x)) || null;
+      // One far under or over the mouth is not looked at (note 1089): turned,
+      // it has the climb to make and stands where it is. 25593's port
+      // (2026-10-03 17:3xZ) waited its 45 seconds for one "15 blocks off, 5
+      // down when the wait began, 15 blocks off, 5 down at its end, no line
+      // from the mouth to it".
+      const level = x => Math.abs(x.position.y - site.mouth.y) <= LEVEL;
+      const e = all.find(x => (angry(x) && level(x)) || x.position.distanceTo(bot.entity.position) <= 5) || all.find(x => level(x) && lineFrom(bot, site.mouth, x)) || null;
       if (!e && all.length) {
         noLineSince ??= Date.now();
         // Out of the mouth to where one is in sight, looked at from there,
         // and back to the slot's end before it has come (note 1031).
-        const spot = outs < OUT_TRIES && Date.now() - noLineSince > 1500 ? outSpot(bot, site, all) : null;
+        const spot = outs < OUT_TRIES && Date.now() - noLineSince > 1500 ? outSpot(bot, site, all.filter(level)) : null;
         if (spot) {
           outs++;
           const c = spot.cell, from = Math.round(spot.e.position.distanceTo(c.offset(0.5, 0, 0.5)));
@@ -280,7 +286,7 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
           if (angry(spot.e)) { noLineSince = null; turnedAt = Date.now(); }
           continue;
         }
-        if (Date.now() - noLineSince > NO_LINE_MS) { out.ended = dead ? 'none left in line from the mouth' : `none of the ${all.length} about has a line to the mouth`; break; }
+        if (Date.now() - noLineSince > NO_LINE_MS) { out.ended = dead ? 'none left in line from the mouth' : `none of the ${all.length} about has a line to the mouth${all.some(level) ? '' : ` (all more than ${LEVEL} blocks over or under it)`}`; break; }
         await bot.lookAt(site.mouth.offset(0.5, 0, 0.5), true);
         await sleep(200); continue;
       }
