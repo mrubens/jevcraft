@@ -186,7 +186,16 @@ async function findStronghold(bot, task, goal, save, actions, client) {
   if (!surfaceReturnComplete(bot, goal)) { await actions.surfaceStep(bot, task, goal, save); return; }
   const sinceThrow = last ? horizontal(last.origin, bot.entity.position) : Infinity;
   const estimate = search.estimate;
-  const throwAgain = !last || sinceThrow >= (estimate && horizontal(bot.entity.position, estimate) < 96 ? 24 : 96) ||
+  // With three bearings or more that meet at one place, the next Eye is
+  // thrown a third of the way on to it (96 blocks at the least, 400 at the
+  // most), not every 96 (note 1125): each throw is ten seconds, a pickup
+  // and one Eye in five lost. The rehearsal of 2026-10-03 (21:59 to
+  // 22:24Z), its three bearings meeting on the stronghold to the block,
+  // threw eleven Eyes over 750 blocks and was half way there at its end.
+  const toEstimate = estimate ? horizontal(bot.entity.position, estimate) : null;
+  const settled = estimate && search.bearings.length >= 3 && toEstimate >= 96;
+  const every = estimate && toEstimate < 96 ? 24 : settled ? Math.min(400, Math.max(96, toEstimate / 3)) : 96;
+  const throwAgain = !last || sinceThrow >= every ||
     (target && horizontal(bot.entity.position, target) < 12 && sinceThrow >= 12);
   if (throwAgain) {
     if (countOf(bot, 'ender_eye') <= 12) throw blocked('Stronghold search needs another spare Eye of Ender; preserving twelve for the portal');
