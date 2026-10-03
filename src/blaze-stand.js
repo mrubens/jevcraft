@@ -853,7 +853,23 @@ function fourNearSays(bot, goal, blazes) {
 // blaze in reach now. close_in, charge_nearest, fight's no-step, the hunt's
 // hunt_<id> and the hunt's own walk to it (combatRoute) all read it, and
 // the walk goes to the cell it names. -> { cell, steps } or null
-const REACH_STEPS = 40, REACH_MEMO_MS = 400;
+// The walk's map is kept three seconds for the cell stood in, and let go at
+// once when a block within its reach changes (note 1084). Kept 400 ms it was
+// made again inside one build of the stance's options: of 18 builds of 300
+// ms and more sampled on 2026-10-03 (16:03 to 16:50Z, stance-profile.js),
+// 6.8 seconds in all, moveWalk was 3.7 seconds, about 215 ms a build, the
+// body standing still under the blazes' fire meanwhile.
+const REACH_STEPS = 40, REACH_MEMO_MS = 3000, REACH_CHANGE = 44;
+function watchBlocks(bot) {
+  if (bot._reachWatch || typeof bot.on !== 'function') return;
+  bot._reachWatch = true;
+  bot.on('blockUpdate', (was, now) => {
+    const p = (now || was)?.position, here = bot.entity?.position;
+    if (!p || !here || (!bot._reachWalk && !bot._wayOutWalk)) return;
+    if ((was?.boundingBox === now?.boundingBox) && (was?.name === now?.name)) return;
+    if (Math.abs(p.x - here.x) <= REACH_CHANGE && Math.abs(p.z - here.z) <= REACH_CHANGE && Math.abs(p.y - here.y) <= REACH_CHANGE) { bot._reachWalk = null; bot._wayOutWalk = null; }
+  });
+}
 // The walk read is the walk taken (note 774c): the bot's own movements'
 // neighbours (movement.js SurvivalMovements: the Nether's edge and lava
 // rules, and while rods are carried note 762's, no drop over two, no cell at
@@ -913,6 +929,7 @@ function reachWalk(bot) {
     for (const c of require('./blaze-tactics').walkCells(bot, { steps: REACH_STEPS })) map.set(`${c.cell}`, c);
   }
   bot._reachWalk = { k, at: now, map };
+  watchBlocks(bot);
   return map;
 }
 // Whether the walk takes the bot to a cell (note 786): the ways out of the
@@ -944,7 +961,7 @@ function walkTakes(bot, { edges = false } = {}) {
   if (edges) {
     const k = `${feet}`, m = bot._wayOutWalk, now = Date.now();
     walk = m && m.k === k && now - m.at < REACH_MEMO_MS ? m.map : null;
-    if (!walk) { walk = moveWalk(bot, mv, { edges: true }); bot._wayOutWalk = { k, at: now, map: walk }; }
+    if (!walk) { walk = moveWalk(bot, mv, { edges: true }); bot._wayOutWalk = { k, at: now, map: walk }; watchBlocks(bot); }
   } else walk = reachWalk(bot);
   if (!walk) return () => true;
   return c => {
@@ -2315,4 +2332,4 @@ async function runTactic(bot, task, goal, save, option, { navigate, seconds, ite
   return null;
 }
 
-module.exports = { sortieFloor, eatInHold, fourNearSays, FOUR_NEAR, walkTakes, behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze, blazeReach, pushedOnly, REACH_STEPS, riseSite, riseOrAwait };
+module.exports = { reachWalk, REACH_MEMO_MS, sortieFloor, eatInHold, fourNearSays, FOUR_NEAR, walkTakes, behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze, blazeReach, pushedOnly, REACH_STEPS, riseSite, riseOrAwait };
