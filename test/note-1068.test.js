@@ -53,3 +53,14 @@ test('at night with only the climb on offer the question is asked, with the wait
   bot.time.timeOfDay = 1000;
   assert.equal(nightUpSays(bot), null);
 });
+
+test('with the dawn under a minute off the climb says so, and the wait is not offered', async () => {
+  const n = nightUpSays(bot(DAY.DAWN - 300));
+  assert.match(n.climb, /It is night up there, under a minute to dawn/);
+  const { surfaceTrip } = require('../src/work');
+  const b = under(DAY.DAWN - 300), goal = { kind: 'win', gameProgress: { phase: 'bed' } };
+  let tree = null;
+  const task = { check() {}, opportunityClient: { systemOne: async ({ questions }) => { tree = questions; return { answers: { branch_0: { choice: 'climb', confidence: 0.7 } } }; } } };
+  await surfaceTrip(b, task, goal, () => {}, 'wool').catch(() => {});
+  assert.equal(tree?.branch_0?.criteria?.wait_for_dawn, undefined);
+});

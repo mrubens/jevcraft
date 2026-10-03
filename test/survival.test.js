@@ -6087,3 +6087,25 @@ test('a run that came to nothing from here is not offered again here for half a 
   survival.state.runFromFailed.at = Date.now() - 31000;
   assert.ok(ask().run_from, 'and here again after half a minute');
 });
+
+test('a pillar a block from a drop into lava with a hoglin about leads with the fall, and its figure is the fall (note 1078)', () => {
+  const hoglin = { id: 3, name: 'hoglin', type: 'hostile', position: new Vec3(-1.5, 64, 0.5), height: 1.4, width: 1.4, isValid: true };
+  const world = ledgeWorld();
+  const make = x => {
+    const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, health: 19.6, food: 20,
+      entity: { position: new Vec3(x, 64, 0.5), onGround: true }, entities: { 3: hoglin }, time: { timeOfDay: 6000 },
+      inventory: { items: () => [{ name: 'iron_sword', count: 1 }, { name: 'netherrack', count: 16 }], slots: {} }, world: { raycast: () => null },
+      blockAt: p => world(p), pathfinder: { movements: {}, setGoal() {}, getPathTo: () => ({ status: 'noPath', path: [] }) }, clearControlStates() {} });
+    const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+    return survival.stanceOptions(new Task('x'), {}, () => {}, [{ entity: hoglin, distance: hoglin.position.distanceTo(bot.entity.position), visible: true }], false);
+  };
+  const edge = make(5.5);
+  if (edge.pillar) {
+    assert.match(edge.pillar.description, /On a pillar a block from this drop the first blow that lands is the fall: a hoglin's blow reaches a player two up and throws the bot up and back, up to about \d+ blocks, and a drop of \d+ blocks into lava is (a block off|under the bot's edge)/);
+    assert.ok(edge.pillar.expects.damage >= 19, JSON.stringify(edge.pillar.expects));
+  }
+  // Well back from the edge: the pillar as it was.
+  const back = make(-8.5);
+  if (back.pillar) assert.doesNotMatch(back.pillar.description, /On a pillar a block from this drop/);
+  assert.ok(edge.pillar || back.pillar, `a pillar is offered in one of the two: ${Object.keys(edge)} / ${Object.keys(back)}`);
+});

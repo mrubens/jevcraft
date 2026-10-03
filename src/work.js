@@ -2567,7 +2567,8 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
     tree.climb.description += night.climb; for (const k of ['stay_below', 'mine_first', 'dig_site', 'dig_to_water']) if (tree[k]) tree[k].description += night.below;
     // The dawn waited for here, a way of its own: the climb was made unasked
     // where nothing else was on offer.
-    if (client && (cost?.up ?? 0) >= 3) tree.wait_for_dawn = { description: `Wait under the rock here for the dawn, about ${night.toDawn} real minute${night.toDawn === 1 ? '' : 's'}, and make the climb for ${need} then, by day: nothing is gained meanwhile but the night up there gone by; the step waits, and mobs spawn in the dark down here as up there, the rock between.` };
+    // Not with the dawn under a minute off: the climb itself outlasts it.
+    if (client && (cost?.up ?? 0) >= 3 && night.toDawn >= 1) tree.wait_for_dawn = { description: `Wait under the rock here for the dawn, about ${night.toDawn} real minute${night.toDawn === 1 ? '' : 's'}, and make the climb for ${need} then, by day: nothing is gained meanwhile but the night up there gone by; the step waits, and mobs spawn in the dark down here as up there, the rock between.` };
   }
   let pick = 'climb', asked = false;
   if (tree.stay_below || tree.dig_site || tree.mine_first || tree.dig_to_water || tree.wait_for_dawn) {
@@ -8218,8 +8219,8 @@ function nightUpSays(bot) {
     const shield = bot.inventory?.slots?.[45]?.name === 'shield' || (bot.inventory?.items?.() || []).some(i => i.name === 'shield');
     return {
       toDawn,
-      climb: ` It is night up there, about ${toDawn} real minute${toDawn === 1 ? '' : 's'} to dawn: mobs spawn in the open until then, and the zombies and skeletons out at dawn burn in the sun. The bot comes out with ${weapon}, ${worn.length ? worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'nothing worn'} and ${shield ? 'a shield' : 'no shield'}.${require('./night-record').keepOnSays('surface', { minutesToDawn: toDawn })}`,
-      below: ` Up there it is night for about ${toDawn} real minute${toDawn === 1 ? '' : 's'} more; this keeps the bot under the rock meanwhile.`,
+      climb: ` It is night up there, ${toDawn < 1 ? 'under a minute' : `about ${toDawn} real minute${toDawn === 1 ? '' : 's'}`} to dawn: mobs spawn in the open until then, and the zombies and skeletons out at dawn burn in the sun. The bot comes out with ${weapon}, ${worn.length ? worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'nothing worn'} and ${shield ? 'a shield' : 'no shield'}.${require('./night-record').keepOnSays('surface', { minutesToDawn: toDawn })}`,
+      below: ` Up there it is night for ${toDawn < 1 ? 'under a minute' : `about ${toDawn} real minute${toDawn === 1 ? '' : 's'}`} more; this keeps the bot under the rock meanwhile.`,
     };
   } catch (_) { return null; }
 }

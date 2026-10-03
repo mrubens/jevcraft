@@ -5403,6 +5403,18 @@ class Survival {
     // drop of 37 blocks into lava a block off, took the guard at 0.48.
     if (options.shield_guard && dropHere && dropHere.blocksAway <= 1 && (dropHere.into === 'lava' || dropHere.damage >= (bot.health ?? 20)))
       options.shield_guard.description = `Held here, the shield does not hold the bot's ground: a drop of ${dropHere.fallBlocks} blocks${dropHere.into === 'lava' ? ' into lava' : ''} is ${dropHere.blocksAway < 1 ? 'under the bot\'s edge' : 'a block off'}, each blow the shield takes still knocks the bot about half a block with a hop, and the second or third puts it over. In the trials of 2026-10-03 (00:00Z to 09:20Z), of 6 falls into lava that began with the shield held at a drop (4 from this guard, 2 from the shield raised at a shot), 5 were deaths. ${options.shield_guard.description}`;
+    // The pillar at a drop that kills with a hoglin about (note 1078): its
+    // toss reaches a player two up, and a block from the edge the one blow
+    // is the fall. The pillar said "about 2.8 damage ... none of them reaches
+    // it" and, 600 characters on, the toss and the death in the lava; its
+    // own figure was the 2.8. 25584 (2026-10-03 14:10:20 to 14:10:27Z), a
+    // hoglin 7 blocks off and a drop of 19 blocks into lava a block off,
+    // took the pillar at 0.78: the blow landed as the second block went
+    // down and it fell 21 into the lava, 17.7 health to none.
+    if (options.pillar && tosser && dropHere && dropHere.blocksAway <= 1 && (dropHere.into === 'lava' || dropHere.damage >= (bot.health ?? 20))) {
+      options.pillar.description = `On a pillar a block from this drop the first blow that lands is the fall: a ${tosser.replaceAll('_', ' ')}'s blow reaches a player two up and throws the bot up and back, up to about ${tossReach} blocks, and a drop of ${dropHere.fallBlocks} blocks${dropHere.into === 'lava' ? ' into lava' : ''} is ${dropHere.blocksAway < 1 ? 'under the bot\'s edge' : 'a block off'}; the pillar's own figure below counts the blow and not the fall. On 2026-10-03 one such pillar, a hoglin 7 blocks off and 19 blocks of drop into lava a block away, ended in the lava seven seconds after it was chosen. ${options.pillar.description}`;
+      options.pillar.expects = { ...options.pillar.expects, damage: Math.max(options.pillar.expects?.damage || 0, Math.round(bot.health ?? 20)) };
+    }
     // The mobs past their follow range, left out of the figures (note 770).
     const pastSays = pastFollowSays(pastFollow);
     if (pastSays) for (const o of Object.values(options)) o.description += pastSays;
