@@ -34,3 +34,18 @@ test('at low health the ways whose blows take more than the bot has come after t
   assert.equal(calm.strike_at_arm, undefined);
   assert.match(calm.swim_to_air.description, /^Swim the shortest way to air/);
 });
+
+// Note 1053: alight with biters in sight and none at arm's length yet, every way out of the fire says them first.
+test('alight with two wither skeletons eight and nine blocks off: each fire way says them and how soon the nearest is at the bot', t => {
+  const { EventEmitter } = require('events');
+  const registry = require('minecraft-data')('26.1'), Block = require('prismarine-block')(registry);
+  const blockAt = p => { const f = p.floored(); const b = Block.fromStateId(registry.blocksByName[f.y <= 63 ? 'nether_bricks' : 'air'].defaultState); b.position = f; return b; };
+  const bot = Object.assign(new EventEmitter(), { registry, game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, health: 15, food: 17, foodSaturation: 0, oxygenLevel: 20, entities: {},
+    entity: { position: new Vec3(0.5, 64, 0.5), onGround: true, metadata: [], yaw: 0, pitch: 0, height: 1.8, width: 0.6, velocity: new Vec3(0, 0, 0), isOnFire: true }, time: { timeOfDay: 6000 }, fireTicks: 80,
+    inventory: { items: () => [{ name: 'cooked_beef', count: 4, type: registry.itemsByName.cooked_beef.id }], slots: {} }, blockAt, world: { raycast: () => null } });
+  const mob = (id, d) => ({ entity: { id, name: 'wither_skeleton', type: 'hostile', position: new Vec3(0.5 + d, 64, 0.5), height: 2.4, width: 0.7 }, distance: d, visible: true });
+  t.mock.method(danger, 'threats', (b, r) => [mob(1, 7.9), mob(2, 9.3)].filter(m => m.distance <= r));
+  const ways = vitals.fireWays(bot, { check() {}, cancelled: false });
+  assert.ok(Object.keys(ways).length, 'ways offered');
+  for (const [k, w] of Object.entries(ways)) assert.match(w.description, /^In sight and able to walk at the bot: 2 wither skeletons \(7\.9, 9\.3 blocks off\)\. At its speed \(about [\d.]+ blocks a second\) the nearest is at the bot in about [\d.]+ seconds if it comes/, k);
+});

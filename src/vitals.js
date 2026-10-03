@@ -1414,6 +1414,16 @@ function fireWays(bot, task, onAction = () => {}) {
     const strikeIt = strikeWay(bot, task, onAction, blows, burn, hp);
     if (strikeIt) ways.strike_at_arm = strikeIt;
     over = horizonSays(ways, blows, burn, hp) || [];
+  } else {
+    // None at arm's length yet, and biters in sight that can walk at the
+    // bot (arbiter.js packSays, note 1053): said first on every way, with
+    // how soon the nearest is at the bot. 25591 (2026-10-03 12:32:55Z),
+    // alight, two wither skeletons 7.9 and 9.3 blocks off, was offered the
+    // meal ("about 1.6 seconds standing still") with no word of them, took
+    // it at 0.80, and they were at it in a second and a half: 15 health to
+    // none in two.
+    let pack = ''; try { pack = require('./arbiter').packSays(bot); } catch (_) { pack = ''; }
+    if (pack) for (const way of Object.values(ways)) way.description = `${pack.trim()} ${way.description}`;
   }
   // The old rule: the bucket poured where it can be, else (none carried)
   // the water run into, else nothing.
