@@ -5292,6 +5292,12 @@ class Survival {
       const record = require('./blaze-record'), situation = record.situationOf(bot);
       for (const [k, o] of Object.entries(options)) if (!standKeys.has(k)) o.description += record.optionSays(bot, k, situation);
     }
+    // What followed each stance chosen with wither skeletons within ten
+    // blocks (wither-guard.js answerSays, note 1026).
+    {
+      const withers = danger.filter(t => t.entity.name === 'wither_skeleton' && t.distance <= 10).length;
+      if (withers) for (const [k, o] of Object.entries(options)) o.description += require('./wither-guard').answerSays(k, withers);
+    }
     // What followed each stance chosen so, over a drop that kills with a
     // ghast or magma cubes about (knock-record.js, note 662).
     if (dropHere && dropHere.into === 'lava' && knockKinds.some(n => n === 'ghast' || n === 'magma_cube' || n === 'hoglin')) {

@@ -298,4 +298,24 @@ async function guard(bot, task, { until, radius = 8, stop = () => false, focus =
   return { swings, hurt: Math.round(Math.max(0, start - bot.health) * 10) / 10, ended };
 }
 
-module.exports = { HOLE, holeSays, WIDEN, BLOW_EVERY, AFTER_BLOW_MS, watchSwings, bladeReaches, tallWalker, attachOrder, lowCeilingPlan, MEASURED, SCENES, measuredSays, RECORD, recordSays, guardable, inGuard, UNSEEN_WITHIN, guard };
+// What followed each stance chosen with a wither skeleton within ten blocks
+// (note 1026): the flight frames of 2026-10-03 00:00Z to 09:05Z, each answer
+// of encounter_stance counted, [answers, followed by a death within thirty
+// seconds, health lost in those thirty seconds on average], with one about
+// and with two or more. They are what followed, not what a stance caused:
+// the stances were chosen in states these rows do not hold alike. Shield
+// guard was the answer most taken (118 of 245) and with two or more about
+// 20 of its 47 were followed by a death; cover and a wall, none of 21.
+const ANSWERS = { from: '2026-10-03 00:00Z', to: '09:05Z',
+  one: { shield_guard: [71, 10, 3.9], retreat: [18, 4, 5.9], fight: [13, 1, 2.8], charge_nearest: [10, 7, 9.8], take_cover: [8, 0, 1.7], back_to_wall: [6, 0, 0], await_in_reach: [5, 0, 3.5] },
+  more: { shield_guard: [47, 20, 7.5], retreat: [12, 8, 11.6], take_cover: [7, 0, 0], corner_ambush: [5, 0, 4.8] } };
+const ANSWERS_MIN = 5;
+// The stance's row, said on it: '' where under ANSWERS_MIN answers are in it.
+function answerSays(key, about) {
+  const many = about >= 2, row = (many ? ANSWERS.more : ANSWERS.one)[key];
+  if (!row || row[0] < ANSWERS_MIN) return '';
+  const [n, died, lost] = row;
+  return ` In the trials of ${ANSWERS.from} to ${ANSWERS.to}, with ${many ? 'two or more wither skeletons' : 'one wither skeleton'} within ten blocks, after this stance was chosen (${n} answers): ${died ? `${died} were followed by a death within thirty seconds (${Math.round(100 * died / n)}%)` : 'none was followed by a death within thirty seconds'}, ${lost} health lost in those thirty seconds on average (what followed, not what the stance caused).`;
+}
+
+module.exports = { ANSWERS, answerSays, HOLE, holeSays, WIDEN, BLOW_EVERY, AFTER_BLOW_MS, watchSwings, bladeReaches, tallWalker, attachOrder, lowCeilingPlan, MEASURED, SCENES, measuredSays, RECORD, recordSays, guardable, inGuard, UNSEEN_WITHIN, guard };
