@@ -375,11 +375,17 @@ function noneGood(id, decision, listed, { bot, goal, state, last = null }) {
   let weak = null;
   const bestKey = keys.filter(k => k !== NONE_GOOD_KEY).sort((a, b) => (weights[b] || 0) - (weights[a] || 0))[0];
   const ng = weights[NONE_GOOD_KEY] || 0, bestW = weights[bestKey] || 0;
-  if (!why && !SAY_ONLY.has(id) && ng >= 2 * bestW && ng > 0) {
+  // At upkeep, none good on top is carrying on, at any margin (note 1010):
+  // every listed thing there is an errand off the work in hand, and the one
+  // that changes nothing is what "none of these" leaves. 25592 (2026-10-03
+  // 07:40:49Z), 45 blocks from its portal with three rods and hunger 13,
+  // answered none good at 0.46 and was sent for stems at 0.27.
+  const calmAlways = CALM_WHEN_NONE_GOOD.has(id) && ng > 0 && ng >= bestW;
+  if (!why && !SAY_ONLY.has(id) && (ng >= 2 * bestW || calmAlways) && ng > 0) {
     const KEEP = require('../intention').KEEP;
     const calm = keys.find(k => k !== NONE_GOOD_KEY && (listed[k]?.ladderNext || KEEP.test(k)));
     const r = n => Math.round(n * 100) / 100;
-    if (calm && calm !== path[0]) { passedOver = `none good at ${r(ng)} was twice the best listed or more (${bestKey.replaceAll('_', ' ')} ${r(bestW)}): ${calm.replaceAll('_', ' ')}, which changes nothing, was taken rather than a guess`; path = down(calm).path; }
+    if (calm && calm !== path[0]) { passedOver = `none good at ${r(ng)} was ${ng >= 2 * bestW ? 'twice the best listed or more' : 'over the best listed, and at upkeep that is carrying on'} (${bestKey.replaceAll('_', ' ')} ${r(bestW)}): ${calm.replaceAll('_', ' ')}, which changes nothing, was taken rather than a guess`; path = down(calm).path; }
     else if (!calm) weak = { key: path[0], p: r(weights[path[0]] || 0), noneGood: r(ng) };
   }
   let node = { children: listed };
@@ -521,6 +527,7 @@ const UNLEDGERED = new Set(['turn_priority', 'shot_answer']);
 // body's way out of the lava or the fire, the shield (note 521: a failed
 // stance stays on offer with its failure said; Jev weighs it).
 const SAY_ONLY = new Set(['encounter_stance', 'body_way', 'shot_answer', 'ranged_response']);
+const CALM_WHEN_NONE_GOOD = new Set(['upkeep']);
 // The questions about the plan, which wait while a fight is on (danger.js
 // fightOn, note 696): the legs, the fortress's questions, the detours, the
 // upkeep and the stage. Survival's turn comes first; asked at the end of the

@@ -456,6 +456,11 @@ async function digBunker(bot, task, goal, save, { from = null, navigate = null, 
     return { ...dug, mouth: new Vec3(dug.mouth.x, dug.mouth.y, dug.mouth.z), inside, watch, held: true };
   }
   const centre = from || centroid(blazes(bot));
+  // A meal first where nothing heals without one and no shot is on its way
+  // (blaze-stand.js eatInHold, note 1009): 25590 (2026-10-03 07:35:18 to
+  // 07:35:38Z) dug in at 8.3 health and hunger 17, twenty seconds with
+  // nothing healing, and the next fireball and its fire left it 0.4.
+  try { await require('./blaze-stand').eatInHold(bot, task); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
   await reachWall(bot, task, centre, navigate);
   const feet = feetCell(bot);
   const side = bunkerSide(bot, feet, centre);
