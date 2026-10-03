@@ -38,3 +38,21 @@ test('a death with rods kept in a chest fails the trial and does not end it; wit
     assert.deepEqual(kept.playedOnAfterDeath, { deaths: 1, kept: { rods: 5, pearls: 0 } });
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+// Note 1049: three and a half hours in, a trial whose chests hold rods plays on to six; one with none kept has timed out.
+test('the three hours end a trial with nothing kept; with rods kept in its chests it plays to six', () => {
+  const { verdict } = require('../scripts/midgame');
+  const identity = '127_0_0_1-25994-Jev';
+  const t = trial(), dir = flightDir(t.frames.filter(f => f.snapshot.health > 0 && f.kind !== 'death'), identity);
+  try {
+    const at = { world: 'mid-242-zz-fortress-9', startedAt: new Date(t.t0).toISOString() }, now = t.t0 + 3.5 * 3600000;
+    const bare = verdict(at, { now, dir, identity, kept: { rods: 0, pearls: 0 } });
+    assert.equal(bare.done, true);
+    assert.ok(bare.reasons.some(r => /^missing after/.test(r)), JSON.stringify(bare.reasons));
+    const kept = verdict(at, { now, dir, identity, kept: { rods: 6, pearls: 1 } });
+    assert.equal(kept.done, false, JSON.stringify(kept.reasons));
+    const late = verdict(at, { now: t.t0 + 6.2 * 3600000, dir, identity, kept: { rods: 6, pearls: 1 } });
+    assert.equal(late.done, true);
+    assert.ok(late.reasons.some(r => /6 hours/.test(r)), JSON.stringify(late.reasons));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

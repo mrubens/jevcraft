@@ -37,6 +37,13 @@ const IDENTITY = `127_0_0_1-${PORT}-Jev`;
 // entry (2026-09-25); the others were never judged.
 const LOG_DIR = path.join(ROOT, 'artifacts', 'midgame');
 const LIMIT_MS = Number(process.env.MIDGAME_HOURS || 3) * 3600000;
+// A trial whose chests hold rods or pearls plays to six hours (note 1049):
+// played on after a death (note 1022), each death is about thirty-five
+// minutes of making the kit again, and three hours ended the trials that
+// had got furthest. mid-242-qb-fortress-9 (25591, 2026-10-03) was ended at
+// its three hours with six of seven blaze rods in its chests and a pearl;
+// mid-242-uf-nether-1 (25592) with six.
+const KEPT_LIMIT_MS = Math.max(LIMIT_MS, Number(process.env.MIDGAME_KEPT_HOURS || 6) * 3600000);
 const BLAZE_RODS = 6, PEARLS = 12;
 const trials = () => { try { return fs.readdirSync(LOG_DIR).filter(f => f.endsWith('.json')).map(f => JSON.parse(fs.readFileSync(path.join(LOG_DIR, f), 'utf8'))).sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt)); } catch (_) { return []; } };
 const saveTrial = t => { fs.mkdirSync(LOG_DIR, { recursive: true }); fs.writeFileSync(path.join(LOG_DIR, `${t.world}.json`), JSON.stringify(t, null, 2)); };
@@ -132,9 +139,10 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
   const from = Date.parse(trial.startedAt);
   const read = to => analyse({ identity, from, to, ...(dir ? { dir } : {}) });
   // The window: the three hours played, run on by the Jev-down time in it.
-  let to = Math.min(now, from + LIMIT_MS), a = read(to), spells = a ? spellsOf(a.frames) : [];
+  const limit = kept && (kept.rods >= 1 || kept.pearls >= 1) ? KEPT_LIMIT_MS : LIMIT_MS;
+  let to = Math.min(now, from + limit), a = read(to), spells = a ? spellsOf(a.frames) : [];
   for (let i = 0; a && spells.length && i < 4; i++) {
-    const next = Math.min(now, from + LIMIT_MS + overlapMs(spells, from, to));
+    const next = Math.min(now, from + limit + overlapMs(spells, from, to));
     if (next <= to) break;
     to = next; a = read(to) || a; spells = spellsOf(a.frames);
   }
@@ -181,7 +189,7 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
   // crash, a server down) is not play: the verdict says how much of the
   // window was played, and a run that timed out with a tenth or more of it
   // unplayed says so instead of claiming the whole window.
-  const timedOut = !all && windowMs - downMs >= LIMIT_MS;
+  const timedOut = !all && windowMs - downMs >= limit;
   const gone = absences(a.frames, from, to, { closed: timedOut || all });
   const absentMs = gone.reduce((n, g) => n + (g.to - g.from), 0);
   // A spell's time the bot was not running is counted once, as absent.
@@ -189,7 +197,7 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
   const playedMs = windowMs - absentMs - downPlayedMs;
   const playedBy = t => (t - from) - gone.reduce((n, g) => n + Math.max(0, Math.min(t, g.to) - g.from), 0) - overlapMs(spells, from, t);
   const unplayed = timedOut && absentMs >= 0.1 * (windowMs - downPlayedMs);
-  const said = unplayed ? `after ${Math.round(playedMs / 60000)} minutes played of ${LIMIT_MS / 3600000} hours (the bot was not running for ${Math.round(absentMs / 60000)}; not a verdict on play)` : `after ${LIMIT_MS / 3600000} hours`;
+  const said = unplayed ? `after ${Math.round(playedMs / 60000)} minutes played of ${limit / 3600000} hours (the bot was not running for ${Math.round(absentMs / 60000)}; not a verdict on play)` : `after ${limit / 3600000} hours`;
   // Stranded (note 650): not a death and not a loop, and no more play in it:
   // half an hour inside a dozen blocks with the way off answered none good.
   // Not while Jev was down for a tenth of that half hour: it could answer nothing.
