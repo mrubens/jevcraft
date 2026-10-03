@@ -279,3 +279,16 @@ test('the chest here as an answer of its own: said with the health and what a gh
   assert.match(keep.description, /Now: health 5, and at hunger 9 it does not come back/);
   assert.match(keep.description, /Then back for food\.$/);
 });
+
+test('seen by a blaze, the chest here is offered by a step out of its line first (note 973)', async () => {
+  const goal = huntGoal();
+  const seeing = [...rec.blazes, { id: 9, position: { x: -151.5, y: 81, z: 162.5 } }];
+  const bot = frameBot({ inventory: { ...rec.inventory, blaze_rod: 2, chest: 1 }, blazes: seeing, health: 20, food: 20 });
+  assert.equal(rs.stashOffer(bot, goal), null, 'no chest set down in a blaze\'s line');
+  const keep = rs.keepOption(bot, { check() {} }, goal, () => {}, {}, { thenSays: 'Then the hunt goes on.' });
+  assert.ok(keep, 'offered by the step out');
+  assert.match(keep.description, /^Step out of their line first, then keep them here: walk \d+ blocks? to \(-?\d+, \d+, -?\d+\), which none of the \d+ shooters? that see the bot now has a line to \(the nearest then [\d.]+ blocks off\), set a chest down there and put 2 blaze rods in it: about [\d.]+ seconds in all, the walk in their fire\./);
+  assert.match(keep.description, /a death meanwhile .* drops none of them.* Then the hunt goes on\.$/);
+  // No chest and no wood for one: not offered either way.
+  assert.equal(rs.keepOption(frameBot({ inventory: { blaze_rod: 2, iron_sword: 1 }, blazes: seeing }), { check() {} }, huntGoal(), () => {}, {}), null);
+});

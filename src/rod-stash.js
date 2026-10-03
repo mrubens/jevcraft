@@ -264,9 +264,50 @@ async function stashRods(bot, task, goal, save, actions, offer, { step = 'stash_
 // in the pack. Here: the rods in a chest where the bot stands, then the walk
 // `then` names (the trip back for food) or the hunt on, the way back in
 // passing them. -> { description, run } or null
+// Seen by a shooter, the chest is set down out of their line (note 973): a
+// few blocks' walk to a cell none of them sees (blaze-tactics.js healSite),
+// then the chest as anywhere. On 2026-10-02 and 03 keep_here was offered at
+// 21 of 131 rods_now askings and taken at every one of them; at the rest,
+// most of them at a spawner with a blaze's line on the bot, the only way to
+// keep a rod was the walk to the portal (bank_now 99 times), about eighteen
+// minutes there and back, 28% of those walks ending in a death.
+function stepOutOffer(bot, goal, now = Date.now()) {
+  if (!bot?.entity || !inNether(bot) || bot.game?.gameMode !== 'survival') return null;
+  const rods = rodsEquivalent(bot);
+  if (rods < ROD_MIN || isSetAside(goal, 'rod_stash', 'here', now)) return null;
+  let left = 1, wanted = null; try { const n = require('./eye-need').need(bot, goal); left = n.rodsLeft; wanted = n.rodsWanted; } catch (_) { left = 1; }
+  if (!left) return null;
+  const T = require('./blaze-tactics'), eyeOf = bot.entity.position.offset(0, 1.62, 0);
+  const all = shooters(bot), seenBy = all.filter(e => T.lineThrough(bot, e.position.offset(0, (e.height || 1.8) * 0.85, 0), eyeOf, new Set()));
+  if (!seenBy.length) return null;
+  const making = chestMaking(bot);
+  if (!making) return null;
+  let site = null; try { site = T.healSite(bot, all); } catch (_) { site = null; }
+  if (!site || site.build?.length || !site.steps) return null;
+  const what = KEPT.filter(n => countOf(bot, n) > 0).map(n => ({ item: n, count: countOf(bot, n) }));
+  return { stepOut: { cell: site.cell, steps: site.steps, nearest: site.nearest }, making, what, rods, wanted, seenBy, seconds: round(site.steps / WALK + PUT_SECONDS + making.seconds) };
+}
 function keepOption(bot, task, goal, save, actions, { then = null, thenSays = '' } = {}) {
   const offer = stashOffer(bot, goal);
-  if (!offer) return null;
+  if (!offer) {
+    const out = stepOutOffer(bot, goal);
+    if (!out) return null;
+    const acts = { ...actions, place: actions?.place || require('./work').place, acquireStep: actions?.acquireStep || require('./work').acquireStep, navigate: actions?.navigate || require('./skills').navigate };
+    const list = out.what.map(w => plural(w.count, words(w.item))).join(' and '), c = out.stepOut.cell;
+    const description = `Step out of their line first, then keep them here: walk ${plural(out.stepOut.steps, 'block')} to ${at(c)}, which none of the ${plural(out.seenBy.length, 'shooter')} that see the bot now has a line to (the nearest then ${out.stepOut.nearest} blocks off), set a chest down there and put ${list} in it: about ${out.seconds} seconds in all, the walk in their fire.${makingSays(out.making)} The chest stays here: it is counted as rods held, and taken out on the way out once every rod wanted is got; a death meanwhile (the bot comes back to life in the Overworld) drops none of them. A ghast's fireball breaks a chest only where it lands beside it; a blaze's does not.${thenSays ? ` ${thenSays}` : ''}`;
+    return { description, offer: out,
+      run: async () => {
+        goal.step = { action: 'stash_rods', stepOut: P(c), items: out.what }; save?.();
+        const { goals } = require('mineflayer-pathfinder');
+        try { await acts.navigate(bot, task, new goals.GoalBlock(c.x, c.y, c.z), { timeoutMs: 8000, stallMs: 2500, onFoot: true, sprint: true }); }
+        catch (err) { task.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+        const there = stashOffer(bot, goal, { underFire: true });
+        if (!there) { setAside(goal, 'rod_stash', 'here', 'the step out of their line found no place for a chest', 60000); save?.(); return false; }
+        const kept = await stashRods(bot, task, goal, save, acts, there);
+        if (kept && then) await then();
+        return kept;
+      } };
+  }
   const acts = { ...actions,
     place: actions?.place || require('./work').place,
     acquireStep: actions?.acquireStep || require('./work').acquireStep,
