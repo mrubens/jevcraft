@@ -171,6 +171,17 @@ const TODAY = Object.freeze({ day: '2026-10-02 (11:45Z to 13:00Z)', lives: 5, di
 // stay_for_more none.
 const BANK_WALKS = Object.freeze({ day: '2026-10-02 (13:37Z to 22:55Z)', walks: 47, banked: 27, died: 13, other: 4, open: 3 });
 const bankWalksSays = () => `On ${BANK_WALKS.day}, ${BANK_WALKS.walks} bank walks were begun with rods: ${BANK_WALKS.banked} put them in a chest (${Math.round(BANK_WALKS.banked / BANK_WALKS.walks * 100)}%), ${BANK_WALKS.died} died within the hour it was begun (${Math.round(BANK_WALKS.died / BANK_WALKS.walks * 100)}%), ${BANK_WALKS.other} ended another way, ${BANK_WALKS.open} were still under way.`;
+// The last bank walk, where it ended without the chest (note 983): said on
+// every answer of the next asking. 25591 (mid-242-nc-fortress-7, 2026-10-03)
+// set its walk aside at 05:14:41Z after 31 minutes, the portal 137 blocks
+// off and the nearest it had come 102, and at 05:18:04Z answered bank_now at
+// 0.86 to a question that said nothing of it.
+function lastWalkSays(goal, now = Date.now()) {
+  const b = goal?.rodBank;
+  if (!b?.endedAt || b.doneAt || now - b.endedAt > 60 * 60000) return '';
+  const mins = ms => plural(Math.max(1, Math.round(ms / 60000)), 'minute');
+  return ` The last bank walk, begun ${mins(now - b.at)} ago with ${plural(b.rods, 'rod')} from ${at(b.from)}, ended ${mins(now - b.endedAt)} ago after ${mins(b.endedAt - b.at)} without reaching the chest: ${String(b.why || 'ended').replace(/[.!?]+$/, '')}.`;
+}
 const ASK_AGAIN_MS = 10 * 60000;
 async function askBank(bot, task, goal, save, actions, client, { now = Date.now() } = {}) {
   if (!client) return null;
@@ -184,10 +195,11 @@ async function askBank(bot, task, goal, save, actions, client, { now = Date.now(
   const today = `On ${TODAY.day}, ${TODAY.lives} lives carried 2 or more rods at a fortress: ${TODAY.died} stayed and died with them (${TODAY.lost.join(', ')} rods lost), ${TODAY.out} left and carried its ${TODAY.outRods} out.`;
   // The chest here (note 931): the rods kept in the Nether, the hunt on.
   let keep = null; try { keep = rs().keepOption(bot, task, goal, save, actions, { thenSays: `Then the hunt goes on here for the ${plural(offer.left, 'rod')} still needed with nothing in the pack to lose, and the walk out is made once, with them all.` }); } catch (_) { keep = null; }
+  const last = lastWalkSays(goal, now);
   const tree = {
-    bank_now: { description: `${opt.description} ${bankWalksSays()} ${today} The way out can be the tunnel dug straight at the portal (asked on the way where the walk fails): in the rock nothing sees or pushes the bot.`, trip: 'the portal', run: opt.run },
+    bank_now: { description: `${opt.description}${last} ${bankWalksSays()} ${today} The way out can be the tunnel dug straight at the portal (asked on the way where the walk fails): in the rock nothing sees or pushes the bot.`, trip: 'the portal', run: opt.run },
     ...(keep ? { keep_here: { description: keep.description, run: keep.run } } : {}),
-    stay_for_more: { description: `Stay and hunt on for the ${plural(offer.left, 'rod')} still needed with the ${plural(offer.rods, 'rod')} in the pack: no walk out now, and every rod carried is lost with a death here. ${staying} ${today} ${bankWalksSays()} Asked again when another rod is carried, or in ten minutes.` },
+    stay_for_more: { description: `Stay and hunt on for the ${plural(offer.left, 'rod')} still needed with the ${plural(offer.rods, 'rod')} in the pack: no walk out now, and every rod carried is lost with a death here.${last} ${staying} ${today} ${bankWalksSays()} Asked again when another rod is carried, or in ten minutes.` },
   };
   let decision;
   try { decision = await require('./decisions').decide('rods_now', { client, bot, task, goal, save, tree, state: { rodsCarried: offer.rods, rodsWanted: offer.wanted, rodsStillNeeded: offer.left, portalBlocks: offer.d, health: bot.health, food: bot.food } }); }
@@ -282,4 +294,4 @@ function collectHere(bot, goal) {
   return rs().collectStage(bot, goal);
 }
 
-module.exports = { tunnelOpen, OUT_MS, OUT_MAX_MS, askBank, bankOnArrival, bankOffer, offerSays, option, bankStage, bank, collectHere, pending, chestThere };
+module.exports = { lastWalkSays, tunnelOpen, OUT_MS, OUT_MAX_MS, askBank, bankOnArrival, bankOffer, offerSays, option, bankStage, bank, collectHere, pending, chestThere };

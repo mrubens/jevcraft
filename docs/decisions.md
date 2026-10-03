@@ -756,7 +756,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **Blaze rods are carried in the Nether and more are needed: take them out through the portal to a chest now and come back for the rest, or stay and hunt on with them in the pack?**
 
-- When: At a spawner or with blazes to hunt (before empty_spawner and hunt_target), a rod or more carried, rods still wanted and the way to the portal open with its distance known; once for each count of rods carried, again after ten minutes (src/rod-bank.js askBank).
+- When: (The last bank walk, where it ended without reaching the chest within the hour, is said on bank_now and stay_for_more: when it began and ended, its minutes, and why: note 983.) At a spawner or with blazes to hunt (before empty_spawner and hunt_target), a rod or more carried, rods still wanted and the way to the portal open with its distance known; once for each count of rods carried, again after ten minutes (src/rod-bank.js askBank).
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
 - Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers

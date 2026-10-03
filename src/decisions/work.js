@@ -494,7 +494,7 @@ define({
 define({
   id: 'rods_now', area: 'strategy', parent: 'rung_progress', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'Blaze rods are carried in the Nether and more are needed: take them out through the portal to a chest now and come back for the rest, or stay and hunt on with them in the pack?',
-  trigger: 'At a spawner or with blazes to hunt (before empty_spawner and hunt_target), a rod or more carried, rods still wanted and the way to the portal open with its distance known; once for each count of rods carried, again after ten minutes (src/rod-bank.js askBank).',
+  trigger: '(The last bank walk, where it ended without reaching the chest within the hour, is said on bank_now and stay_for_more: when it began and ended, its minutes, and why: note 983.) At a spawner or with blazes to hunt (before empty_spawner and hunt_target), a rod or more carried, rods still wanted and the way to the portal open with its distance known; once for each count of rods carried, again after ten minutes (src/rod-bank.js askBank).',
   source: 'src/rod-bank.js (askBank, bankOffer, option), src/rod-risk.js (recordSays)',
   options: [
     { key: 'bank_now', trip: 'the portal', label: 'out through the portal with the rods to a chest on the Overworld side, then back for the rest', when: 'always here; said with the walk and its record, the chest, the round trip, and the day\'s record of lives that stayed and that left', level: 'root' },
