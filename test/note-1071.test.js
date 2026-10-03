@@ -10,7 +10,8 @@ test('the hours a trial plays by what its chests hold', () => {
   assert.equal(hours(null), 3);
   assert.equal(hours({ rods: 0, pearls: 0 }), 3);
   assert.equal(hours({ rods: 0, pearls: 2 }), 6);
-  assert.equal(hours({ rods: 6, pearls: 0 }), 6);
+  assert.equal(hours({ rods: 5, pearls: 0 }), 6);
+  assert.equal(hours({ rods: 6, pearls: 0 }), 12);
   assert.equal(hours({ rods: 7, pearls: 0 }), 12);
   assert.equal(hours({ rods: 10, pearls: 2 }), 12);
 });

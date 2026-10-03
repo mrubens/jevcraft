@@ -49,7 +49,11 @@ const KEPT_LIMIT_MS = Math.max(LIMIT_MS, Number(process.env.MIDGAME_KEPT_HOURS |
 // that had got furthest. mid-242-we-nether-1 (25598, 2026-10-03) was ended
 // at 14:59Z with 10 blaze rods and 2 pearls in its chests, on its way into
 // the Nether for the rest; mid-242-xa-fortress-9 (25590) at 14:58Z with 8.
-const RODS_WANTED = 7;
+// By the trial's own bar for the rods (BLAZE_RODS, six), not seven (note
+// 1082): mid-242-xh-fortress-9 (25593), six rods counted in its chests and
+// a seventh in a chest not counted, was ended at its six hours at 15:44Z on
+// 2026-10-03 on its way into the Nether for pearls.
+const RODS_WANTED = 6;
 const FULL_LIMIT_MS = Math.max(KEPT_LIMIT_MS, Number(process.env.MIDGAME_FULL_HOURS || 12) * 3600000);
 const limitFor = kept => kept && kept.rods >= RODS_WANTED ? FULL_LIMIT_MS : kept && (kept.rods >= 1 || kept.pearls >= 1) ? KEPT_LIMIT_MS : LIMIT_MS;
 const BLAZE_RODS = 6, PEARLS = 12;
