@@ -105,19 +105,28 @@ async function backOnFooting(bot, keys = [], { maxMs = 1000 } = {}) {
   bot.setControlState('sneak', true);
   const tx = rest.x + 0.5, tz = rest.z + 0.5;
   if (typeof bot.look === 'function') await bot.look(Math.atan2(-(tx - p.x), -(tz - p.z)), 0, true);
-  bot.setControlState('forward', true);
-  const end = Date.now() + maxMs;
-  try {
-    while (Date.now() < end) {
-      const q = bot.entity.position.floored();
-      if (q.x === rest.x && q.z === rest.z) break;
-      await sleep(25);
-    }
-  } finally { bot.setControlState('forward', false); }
-  await sleep(60);
+  // Until the body's middle is over the footing, not for a second by the
+  // clock (note 1043): a second in which the machine stalled moved nothing,
+  // "back onto the footing" was said all the same, the crouch was let go
+  // and the walk begun from the edge went over it. 25590 (2026-10-03
+  // 10:25:22Z) was "back onto the footing at (-145, 59, -1) from over a
+  // fall into lava" half a block past its edge, and fell 32 blocks into the
+  // lava sea as the next step began. Two tries, the second longer; still
+  // over the fall, the crouch is kept and the caller told.
+  const over = () => { const q = bot.entity.position.floored(); return q.x === rest.x && q.z === rest.z; };
+  for (const ms of [maxMs, 2 * maxMs]) {
+    if (over()) break;
+    if (typeof bot.look === 'function') { const now = bot.entity.position; await bot.look(Math.atan2(-(tx - now.x), -(tz - now.z)), 0, true); }
+    bot.setControlState('forward', true);
+    const end = Date.now() + ms;
+    try { while (Date.now() < end && !over()) await sleep(25); }
+    finally { bot.setControlState('forward', false); }
+    await sleep(60);
+  }
   const fall = terrain.fallFrom(terrain.atOf(bot), { x: f.x, y: f.y - 1, z: f.z });
-  console.log(`[motion] back onto the footing at (${rest.x}, ${rest.y - 1}, ${rest.z}) from over a fall ${fall.into === 'lava' ? 'into lava' : `of ${fall.n} at ${Math.round((bot.health ?? 20) * 10) / 10} health`}`);
-  return true;
+  const back = over();
+  console.log(`[motion] ${back ? 'back onto' : 'not back onto'} the footing at (${rest.x}, ${rest.y - 1}, ${rest.z}) from over a fall ${fall.into === 'lava' ? 'into lava' : `of ${fall.n} at ${Math.round((bot.health ?? 20) * 10) / 10} health`}${back ? '' : ': the crouch is kept'}`);
+  return back ? true : 'hanging';
 }
 // Before a walk the pathfinder takes: it lets every key go, the crouch
 // with them, and a body hanging by an edge over such a fall goes over it
@@ -126,8 +135,10 @@ async function backOnFooting(bot, keys = [], { maxMs = 1000 } = {}) {
 async function footingFirst(bot) {
   if (typeof bot.setControlState !== 'function' || !fallUnder(bot)) return false;
   const held = !!(bot.getControlState ? bot.getControlState('sneak') : bot.controlState?.sneak);
-  try { return await backOnFooting(bot); }
-  finally { bot.setControlState('forward', false); bot.setControlState('sneak', held); }
+  let r = false;
+  try { r = await backOnFooting(bot); return r; }
+  // Still over the fall, the crouch stays on: let go there, the next key pressed is the fall.
+  finally { bot.setControlState('forward', false); bot.setControlState('sneak', r === 'hanging' ? true : held); }
 }
 // A guard for a move that keeps to its own columns: stopped, keys let go,
 // where the body's middle leaves them. A body pressed against a wall slides

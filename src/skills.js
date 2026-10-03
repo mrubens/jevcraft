@@ -562,7 +562,10 @@ async function walkTo(bot, task, goal, { timeoutMs, stallMs, stopWhen, sprint, b
   // Hanging by an edge over a fall that kills or costs half the health,
   // back onto the footing before the pathfinder lets the crouch go (note
   // 622, motion.js footingFirst).
-  if (bot.pathfinder && require('./motion').fallUnder(bot)) await require('./motion').footingFirst(bot);
+  if (bot.pathfinder && require('./motion').fallUnder(bot)) {
+    // Not back on it: no walk is begun from over the fall (note 1043).
+    if (await require('./motion').footingFirst(bot) === 'hanging') throw Object.assign(new Error('Hanging by an edge over a fall and not back onto the footing: no walk begun from here'), { name: 'NoRoute' });
+  }
   const movements = bot.pathfinder?.movements, sprinting = sprint && (bot.food ?? 20) > SPRINT_FOOD && !!movements;
   const walked = sprinting ? movements.allowSprinting : undefined;
   if (sprinting) movements.allowSprinting = true;

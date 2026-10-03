@@ -117,6 +117,16 @@ test('the walk the pathfinder takes from a body hanging so steps it back onto th
   assert(run.lowest >= 38 - 1e-6, `never fell: lowest ${run.lowest}`);
 });
 
+test('with the machine stalled the body is not back: said so, the crouch kept, and no walk begun from over the fall (note 1043)', { timeout: 15000 }, async () => {
+  const { footingFirst } = require('../src/motion');
+  const bot = worldBot({ at: new Vec3(-110.69, 38, -124.29) });
+  bot.controlState.sneak = false;
+  // No physics runs: the keys are pressed and nothing moves, as in a stall.
+  assert.equal(await footingFirst(bot), 'hanging');
+  assert.equal(bot.controlState.sneak, true, 'the crouch is kept over the fall, though it was not held before');
+  assert.equal(bot.controlState.forward, false);
+});
+
 test('at full health the same hang over a fall of six (three damage) is left alone, as the walks price it (note 545)', { timeout: 5000 }, async () => {
   const { footingFirst } = require('../src/motion');
   const bot = worldBot({ at: new Vec3(-110.69, 38, -124.29), health: 20 });
