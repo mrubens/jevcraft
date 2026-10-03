@@ -368,6 +368,7 @@ const RUNS = {
     try { site = slot.slotSite(bot); if (site) r = await slot.fight(bot, bounded, site, { navigate, seconds: 60 }); } catch (err) { error = err.message; }
     return { pass: !watch.died && !!site && (r?.kills || 0) >= 1 && hp - bot.health <= 2, detail: { site: site ? `${site.mouth}` : null, digs: site?.digs.length, ...r, health: bot.health, error: error && error.slice(0, 140) } };
   },
+  async enderman_slot_out(d, bounded) { return RUNS.enderman_slot(d, bounded); },
   async quarry_here(d, bounded) {
     let r = null, error = null;
     try { r = await require('../src/bridging').quarryHere(bot, bounded, 16); } catch (err) { error = err.message; }

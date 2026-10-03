@@ -75,6 +75,43 @@ function slotFrom(bot, f) {
 // a slot whose mouth has a line to its eyes comes first, marked `line`
 // (note 1000): the look that brings it is from the mouth, and where rock or
 // a stem stands between it does not turn.
+// A few cells out of the mouth to a look (note 1031): where none about has
+// a line to the mouth, the nearest cell within OUT_STEPS of walking, on the
+// mouth's level or a step off it, from which one does, that one far enough
+// off for the bot to be back at the slot's end before it has come at its
+// chase's speed. Of the first 32 slot fights live (2026-10-03 to 09:20Z) 21
+// ended "3 looks from the mouth did not turn it" or with none in line from
+// the mouth, 9 endermen killed in all: the slot is dug where the rock is,
+// and the endermen walk where it is open.
+// -> { cell, path, e, steps, gap } or null
+const OUT_STEPS = 4, OUT_TRIES = 3, BOT_RUN = 4.3, BACK_START = 0.5;
+function outSpot(bot, site, list) {
+  const at = c => bot.blockAt(c), solid = b => !!b && b.boundingBox === 'block', open = b => !!b && b.boundingBox === 'empty' && !/lava|water|fire/.test(b.name);
+  const stands = c => open(at(c)) && open(at(c.offset(0, 1, 0))) && solid(at(c.offset(0, -1, 0))) && !/magma|fire/.test(at(c.offset(0, -1, 0)).name);
+  let speed = 8.7; try { speed = require('./combat-estimate').blocksPerSecond('enderman'); } catch (_) { speed = 8.7; }
+  const seen = new Set([`${site.mouth}`, `${site.a}`, `${site.b}`]);
+  let ring = [{ cell: site.mouth, path: [] }];
+  for (let step = 1; step <= OUT_STEPS && ring.length; step++) {
+    const next = [];
+    for (const { cell, path } of ring) for (const [dx, dz] of DIRS) for (const dy of [0, 1, -1]) {
+      const c = cell.offset(dx, dy, dz);
+      if (seen.has(`${c}`) || !stands(c)) continue;
+      // A step up wants the head room over where it is stepped from.
+      if (dy === 1 && !open(at(cell.offset(0, 2, 0)))) continue;
+      if (dy === -1 && !open(at(c.offset(0, 2, 0)))) continue;
+      seen.add(`${c}`);
+      next.push({ cell: c, path: [...path, c] });
+    }
+    const gap = speed * ((step + 2) / BOT_RUN + BACK_START) + 2;
+    for (const n of next) {
+      const mid = n.cell.offset(0.5, 0, 0.5);
+      const e = list.filter(x => !angry(x) && x.position.distanceTo(mid) >= gap && x.position.distanceTo(mid) <= 60 && lineFrom(bot, n.cell, x)).sort((x, y) => x.position.distanceTo(mid) - y.position.distanceTo(mid))[0];
+      if (e) return { ...n, e, steps: step, gap: Math.round(gap) };
+    }
+    ring = next;
+  }
+  return null;
+}
 const lineFrom = (bot, mouth, e) => { try { return require('./danger').lineClear(bot, mouth.offset(0.5, 1.62, 0.5), e.position.offset(0, EYES, 0)); } catch (_) { return false; } };
 function slotSite(bot, { reach = 6, toward = null } = {}) {
   if (!bot?.entity?.position || typeof bot.blockAt !== 'function') return null;
@@ -128,7 +165,7 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
   const onHealth = () => { if (bot.health < hp) { const e = endermen(bot)[0]; console.log(`[slot] hurt ${(hp - bot.health).toFixed(1)} at (${bot.entity.position.x.toFixed(1)}, ${bot.entity.position.z.toFixed(1)}), slot back (${site.b.x + 0.5}, ${site.b.z + 0.5}), enderman ${e ? `(${e.position.x.toFixed(1)}, ${e.position.y.toFixed(1)}, ${e.position.z.toFixed(1)})` : 'none'}`); } hp = bot.health; };
   bot.on('health', onHealth);
   const deadline = Date.now() + seconds * 1000;
-  let lastSwing = 0, lastStare = 0, misses = 0, turnedAt = null, noLineSince = null;
+  let lastSwing = 0, lastStare = 0, misses = 0, turnedAt = null, noLineSince = null, outs = 0;
   try {
     while (Date.now() < deadline) {
       task.check();
@@ -144,6 +181,28 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
       const e = all.find(x => angry(x) || x.position.distanceTo(bot.entity.position) <= 5) || all.find(x => lineFrom(bot, site.mouth, x)) || null;
       if (!e && all.length) {
         noLineSince ??= Date.now();
+        // Out of the mouth to where one is in sight, looked at from there,
+        // and back to the slot's end before it has come (note 1031).
+        const spot = outs < OUT_TRIES && Date.now() - noLineSince > 1500 ? outSpot(bot, site, all) : null;
+        if (spot) {
+          outs++;
+          const c = spot.cell, from = Math.round(spot.e.position.distanceTo(c.offset(0.5, 0, 0.5)));
+          let reached = false;
+          try { await navigate(bot, task, new goals.GoalBlock(c.x, c.y, c.z), { timeoutMs: 3000, stallMs: 1200 }); reached = bot.entity.position.floored().equals(c); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+          if (reached && spot.e.isValid !== false && lineFrom(bot, c, spot.e)) {
+            const until = Date.now() + STARE_MS;
+            while (Date.now() < until && spot.e.isValid !== false) { task.check(); bot._stareMeant = { id: spot.e.id, until: Date.now() + 500 }; await bot.lookAt(spot.e.position.offset(0, EYES, 0), true); await sleep(50); }
+            delete bot._stareMeant;
+          }
+          try { await navigate(bot, task, new goals.GoalBlock(site.mouth.x, site.mouth.y, site.mouth.z), { timeoutMs: 3000, stallMs: 1200, sprint: true }); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+          await walkTo(bot, task, site.b.offset(0.5, 0, 0.5), site.d.scaled(-1));
+          for (let i = 0; i < 10 && !angry(spot.e); i++) { task.check(); await sleep(100); }
+          console.log(`[slot] out ${spot.steps} cell${spot.steps === 1 ? '' : 's'} to (${c.x}, ${c.y}, ${c.z}) for a look at one ${from} blocks off (wanted ${spot.gap} or more): ${!reached ? 'the cell was not reached' : angry(spot.e) ? 'it turned' : 'it did not turn'}; back at the slot's end ${bot.entity.position.floored().equals(site.b) ? 'yes' : 'no'}`);
+          if (angry(spot.e)) { noLineSince = null; turnedAt = Date.now(); }
+          continue;
+        }
         if (Date.now() - noLineSince > NO_LINE_MS) { out.ended = dead ? 'none left in line from the mouth' : `none of the ${all.length} about has a line to the mouth`; break; }
         await bot.lookAt(site.mouth.offset(0.5, 0, 0.5), true);
         await sleep(200); continue;
@@ -307,4 +366,4 @@ function standing(bot) {
   return `The bot stands at the back of the slot it dug at (${s.b.x}, ${s.b.y}, ${s.b.z}): one wide and two high, rock on every side but the mouth, two blocks to the ${compass(s.d)}. An enderman is ${TALL.enderman} blocks tall and does not come in under a roof two high (the game's rule): it stands at the mouth, where the sword reaches it and its blow does not reach the bot; ${who}. Nothing that shoots has a line in but along the slot from the mouth. Any way that walks out of it leaves that: in the open an enderman that has turned is at the bot at once, wherever it walks, about 7 a blow before armour.`;
 }
 
-module.exports = { standing, lineFrom, enter, stand, TALL, slotSite, slotFrom, says, fight, recordSays, RECORD };
+module.exports = { outSpot, OUT_STEPS, standing, lineFrom, enter, stand, TALL, slotSite, slotFrom, says, fight, recordSays, RECORD };
