@@ -333,3 +333,13 @@ test('a mob at the swimmer stops the swim across: it is answered, not swum on fr
     lookAt: async () => {}, look: async () => {}, setControlState() {}, getControlState() { return false; }, chat() {} };
   await assert.rejects(swimAcross(bot, new Task('swim'), {}, () => {}, 0), err => err.name === 'NeedsSafety');
 });
+
+test('a biome of another dimension, read from chunks held a moment after a crossing, is no trip in the Overworld (note 1110)', () => {
+  // 25591 (2026-10-03 20:47:55Z): a second out of its portal, "I'll head to the warped forest to the west", and "In the warped forest now" half a minute on, in the Overworld.
+  const { biomeTrips } = require('../src/exploration');
+  const registry = require('minecraft-data')('26.1');
+  const id = name => Object.values(registry.biomes).find(b => b.name === name).id;
+  const biomeAt = p => p.x <= -64 ? 'warped_forest' : p.z <= -64 ? 'plains' : 'desert';
+  const bot = { registry, game: { dimension: 'minecraft:overworld' }, entity: { position: new Vec3(0.5, 64, 0.5) }, blockAt: p => ({ biome: { id: id(biomeAt(p)) } }) };
+  assert.deepEqual(biomeTrips(bot).map(t => t.biome), ['plains']);
+});

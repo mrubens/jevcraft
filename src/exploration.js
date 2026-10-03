@@ -218,12 +218,18 @@ async function swimAcross(bot, task, goal, save, heading) {
 // the walk takes the bot somewhere new, nearest first, each said with what
 // it holds. A general side trip (work.js sideTrips) and the wool search's
 // choice (home-base.js) are built from them.
+const OTHER_WORLDS = /^(nether_wastes|crimson_forest|warped_forest|soul_sand_valley|basalt_deltas|the_end|small_end_islands|end_midlands|end_highlands|end_barrens)$/;
 function biomeTrips(bot, { min = 24, limit = 4 } = {}) {
   const view = biomeView(bot);
   if (!view || !/overworld/.test(String(bot.game?.dimension || 'overworld'))) return [];
   // Not the cave biomes: sampled at the feet they are underground, and trial
   // 34 set off for the dripstone caves with its bed still to make.
-  return view.biomesNearby.filter(b => b.distance >= min && !/^(dripstone_caves|lush_caves|deep_dark)$/.test(b.biome)).slice(0, limit)
+  // Nor a biome of another dimension, read from chunks still held a moment
+  // after a crossing (note 1110): 25591 (2026-10-03 20:47:55Z), a second out
+  // of its portal, said "Before the iron pickaxe, I'll head to the warped
+  // forest to the west", climbed to open sky for it and said "In the warped
+  // forest now" half a minute on, in the Overworld.
+  return view.biomesNearby.filter(b => b.distance >= min && !/^(dripstone_caves|lush_caves|deep_dark)$/.test(b.biome) && !OTHER_WORLDS.test(b.biome)).slice(0, limit)
     .map(b => ({ ...b, says: `the ${b.biome.replaceAll('_', ' ')} ${b.distance} blocks ${b.direction}${b.has ? ` (${b.has})` : ''}` }));
 }
 
