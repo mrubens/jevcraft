@@ -5124,8 +5124,14 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
   // With blaze rods carried (note 762): back the way it came in, where a way
   // is kept from near here. Every other way is fresh ground, said with what
   // a fall or lava on it costs.
+  // Without rods too (note 958): the way kept is the bot's own ground, its
+  // span over the void among it. 25595 (mid-243-mc-fortress-5, 2026-10-02
+  // 00:45 to 01:05Z) stood at the end of its own one-wide span of netherrack
+  // and wool over the void, no block carried and none to dig that would not
+  // drop into it, 34 none_good of 63, and was offered the tunnel and the
+  // wait, never the walk back along the span it had laid.
   const walkOut = require('./walk-out'), rods = where === 'nether' ? walkOut.rodsCarried(bot) : 0;
-  if (rods) {
+  if (where === 'nether') {
     const way = walkOut.backTrail(walkOut.wayInOf(bot, goal), here, p);
     if (way?.cells.length > 1 && !isSetAside(goal, 'way_in', target)) {
       // Where it ends against the portal (note 942): a way kept that does not
@@ -5136,7 +5142,7 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
       // it stood, and walked away from home.
       tree.the_way_in = { description: walkOut.wayBackSays(bot, way, walkOut.wayFacts(bot, way)) + walkOut.endSays(way, target, here) };
     }
-    const fresh = ` Fresh ground, not the way the bot came in: with ${rods} blaze rod${rods === 1 ? '' : 's'} carried, a fall or lava on it loses ${rods === 1 ? 'it' : 'every one'}.`;
+    const fresh = !rods ? '' : ` Fresh ground, not the way the bot came in: with ${rods} blaze rod${rods === 1 ? '' : 's'} carried, a fall or lava on it loses ${rods === 1 ? 'it' : 'every one'}.`;
     for (const k of ['climb_here', 'around_left', 'around_right', 'floor_way', 'blocks_then_cross', 'dig_across']) if (tree[k]) tree[k].description += fresh;
   }
   if (until) tree.wait_rest = { description: `Other work until the staircase's rest ends in ${minutes} minute${minutes === 1 ? '' : 's'}, then the way to the portal again from wherever the bot is; the work is asked then.`,

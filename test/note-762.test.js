@@ -248,3 +248,15 @@ test('with rods the portal made for is the one the way in began at, where rememb
   assert.deepEqual(goal.step.portal, { x: 0, y: 70, z: 0 });
   assert.equal(legs[0].x, 48);
 });
+
+test('without rods the way in kept is offered too, and the other ways carry no word of rods (note 958)', async () => {
+  const { returnFromNether } = require('../src/work');
+  const { bot, goal } = walkBackBot({ rods: 0, fail: true });
+  require('../src/progress').setAside(goal, 'staircase', { x: 0, y: 64, z: 0 }, 'no floor to step onto', 600000);
+  const task = new Task('back'), asked = [];
+  task.opportunityClient = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: 'wait_rest', confidence: 0.9 } } }; } };
+  await returnFromNether(bot, task, goal, () => {}).catch(() => {});
+  const options = asked.find(o => o.the_way_in || o.around_left);
+  assert.ok(options?.the_way_in, `offered: ${asked.map(o => Object.keys(o).join(',')).join(' | ')}`);
+  for (const k of ['around_left', 'around_right']) if (options[k]) assert.doesNotMatch(options[k], /blaze rods? carried/);
+});
