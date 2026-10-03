@@ -252,6 +252,15 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     task.check(); checkAir(bot);
     if (dimension(bot) !== 'end' || bot.game.gameMode !== 'survival' || bot.health <= 0 || bot.isAlive === false) throw blocked('End combat requires a living Survival player in the End');
   };
+  // In the End the fight is the answer to what hurts the bot: it owns every
+  // tick, the survival layer has none there, and the hurt watchdog's stop
+  // (survival.js: "hit with no survival response") is lifted only by the
+  // survival layer's own step, or ten seconds on (note 1133). The rehearsal
+  // of 2026-10-03 (23:11 to 23:22Z) had 714 of its 841 steps end at the
+  // first check, "Threat nearby: something unseen at 0 blocks", each hurt
+  // by the dragon stopping the fight ten seconds; it spent its budget with
+  // three crystals down and 371 arrows carried.
+  if (dimension(bot) === 'end') { bot._threatAbort = false; bot._threatResponseAt = Date.now(); }
   check();
   if (goal.gameProgress?.milestones.dragon_defeated) return;
   const state = goal.endCombat ||= { steps: 0, shots: [], destroyedCrystals: [], visits: {}, noProgress: 0 };
