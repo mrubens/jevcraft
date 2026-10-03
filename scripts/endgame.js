@@ -214,6 +214,8 @@ const DRILLS = {
 
 bot.once('spawn', async () => {
   const task = new Task('endgame', 'late-game rehearsal');
+  // The questions asked off the task (the climb's, the walk's) go to the same client as the handlers' (note 1121): with none here the first of them, climb_out, held the rehearsal at "no Jev client is configured" for good.
+  task.opportunityClient = client;
   try {
     await bot.waitForChunksToLoad();
     configureMovements(bot);
