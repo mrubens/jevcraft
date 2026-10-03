@@ -182,10 +182,14 @@ test('the trials running now are read from each listening trial server\'s level-
 });
 
 test('a fortress save without a pickaxe or blocks to lay is not a start (the crossing kit, note 673)', () => {
-  assert.deepEqual(stage.kitOf([{ id: 'minecraft:iron_pickaxe', count: 1 }, { id: 'minecraft:cobblestone', count: 40 }, { id: 'minecraft:cooked_beef', count: 8 }]), { pickaxes: 1, blocks: 40 });
+  assert.deepEqual(stage.kitOf([{ id: 'minecraft:iron_pickaxe', count: 1 }, { id: 'minecraft:cobblestone', count: 40 }, { id: 'minecraft:cooked_beef', count: 8 }]), { pickaxes: 1, blocks: 40, chests: 0, planks: 0 });
+  assert.deepEqual(stage.kitOf([{ id: 'minecraft:chest', count: 1 }, { id: 'minecraft:oak_log', count: 2 }, { id: 'minecraft:crimson_planks', count: 3 }]), { pickaxes: 0, blocks: 3, chests: 1, planks: 11 });
   const v = { health: 20, hunger: 20, foodPoints: 80 };
   assert.match(stage.shortfalls({ ...v, pickaxes: 0, blocks: 64 }).join(';'), /0 pickaxes \(under 1\)/);
   assert.match(stage.shortfalls({ ...v, pickaxes: 1, blocks: 6 }).join(';'), /6 blocks to lay \(under 32\)/);
   assert.deepEqual(stage.shortfalls({ ...v, pickaxes: 2, blocks: 64 }), []);
+  // A chest or the wood for one (note 979).
+  assert.deepEqual(stage.shortfalls({ ...v, pickaxes: 2, blocks: 64, chests: 0, planks: 4 }), ["no chest and 4 planks' worth of wood (under 8 for one)"]);
+  assert.deepEqual(stage.shortfalls({ ...v, pickaxes: 2, blocks: 64, chests: 0, planks: 8 }), []);
   assert.deepEqual(stage.shortfalls(v), [], 'a save read before the kit was recorded is judged without it');
 });

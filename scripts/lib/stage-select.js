@@ -55,13 +55,16 @@ const MIN_PICKAXES = 1, MIN_BLOCKS = 32;
 const kitCheck = process.env.STAGE_KIT !== '0';
 const LAYABLE = /^(cobblestone|cobbled_deepslate|stone|deepslate|netherrack|blackstone|basalt|dirt|andesite|diorite|granite|tuff|sandstone|end_stone|oak_planks|spruce_planks|birch_planks|crimson_planks|warped_planks)$/;
 function kitOf(inventory) {
-  let pickaxes = 0, blocks = 0;
+  let pickaxes = 0, blocks = 0, chests = 0, planks = 0;
   for (const it of inventory || []) {
     const name = String(it.id || '').replace('minecraft:', '');
     if (/_pickaxe$/.test(name)) pickaxes += 1;
     else if (LAYABLE.test(name)) blocks += it.count || 1;
+    if (name === 'chest') chests += it.count || 1;
+    else if (/_planks$/.test(name)) planks += it.count || 1;
+    else if (/_(log|stem|wood|hyphae)$/.test(name)) planks += 4 * (it.count || 1);
   }
-  return { pickaxes, blocks };
+  return { pickaxes, blocks, chests, planks };
 }
 // Starts of one save in an hour after which it rests (STAGE_MAX_PER_HOUR).
 const MAX_PER_HOUR = 4, HOUR_MS = 3600000;
@@ -106,7 +109,7 @@ async function vitalsOf(snapshotDir, { nbt = require('prismarine-nbt') } = {}) {
     const { parsed } = await nbt.parse(fs.readFileSync(path.join(dir, file)));
     const p = nbt.simplify(parsed), f = foodPoints(p.Inventory), k = kitOf(p.Inventory);
     const [x, y, z] = Array.isArray(p.Pos) ? p.Pos : [];
-    return { pickaxes: k.pickaxes, blocks: k.blocks, health: p.Health, hunger: p.foodLevel, saturation: Math.round((p.foodSaturationLevel ?? 0) * 10) / 10, foodPoints: f.points, foods: f.items, dimension: String(p.Dimension || '').replace('minecraft:', ''), position: [x, y, z].every(Number.isFinite) ? { x, y, z } : null };
+    return { pickaxes: k.pickaxes, blocks: k.blocks, chests: k.chests, planks: k.planks, health: p.Health, hunger: p.foodLevel, saturation: Math.round((p.foodSaturationLevel ?? 0) * 10) / 10, foodPoints: f.points, foods: f.items, dimension: String(p.Dimension || '').replace('minecraft:', ''), position: [x, y, z].every(Number.isFinite) ? { x, y, z } : null };
   } catch (err) { return { error: String(err.message).slice(0, 80) }; }
 }
 
@@ -125,6 +128,13 @@ function shortfalls(v, { stage = 'fortress', minFood = MIN_FOOD } = {}) {
   if (kitCheck && v.pickaxes != null) {
     if (!(v.pickaxes >= MIN_PICKAXES)) out.push(`${v.pickaxes} pickaxe${v.pickaxes === 1 ? '' : 's'} (under ${MIN_PICKAXES})`);
     if (!(v.blocks >= MIN_BLOCKS)) out.push(`${v.blocks} blocks to lay (under ${MIN_BLOCKS})`);
+    // A chest, or the wood for one (note 979): the rods are kept in one at
+    // the fortress (rod-stash.js keep_here, taken at every one of the 21
+    // askings it was offered at on 2026-10-02 and 03); a start without one
+    // has only the walk to the portal for each rod. 25591
+    // (mid-242-nc-fortress-7, 04:09Z) left a spawner with 21 blazes in sight
+    // at full health to bank one rod 336 blocks off.
+    if (v.chests != null && !(v.chests >= 1 || v.planks >= 8)) out.push(`no chest and ${v.planks} planks' worth of wood (under 8 for one)`);
   }
   return out;
 }
