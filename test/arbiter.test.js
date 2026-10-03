@@ -744,3 +744,27 @@ test('a mob at arm\'s length is an alert with three blows of it left, not six he
   bot._recentHurtAt = Date.now() - arbiter.STRUCK_MS - 1;
   assert.deepEqual(keys([], look({ mobs: [mob('blaze', 0.6)] })), []);
 });
+
+test('live: a survival step that says it acted, in no time, with nothing reported and nothing asked, is its winner doing nothing (note 1062)', async () => {
+  const bot = fakeBot({ health: 10 });
+  let asked = 0;
+  const decide = async () => { asked++; return { path: ['survival'] }; };
+  const claims = run => [claim('survival', 'pressing', { action: 'secure_shelter', run }), claim('work')];
+  const t0 = 2000000, lines = [], log = console.log;
+  console.log = l => lines.push(String(l));
+  try {
+    for (let i = 0; i < 20; i++) {
+      const turn = await arbiter.take(bot, claims(async () => true), { decide, mobs: [], now: t0 + i * 250 });
+      assert.equal(turn.acted, false);
+    }
+    const again = await arbiter.take(bot, claims(async () => true), { decide, mobs: [], now: t0 + arbiter.IDLE_MS + 1 });
+    assert.equal(again.why, `its winner did nothing for ${arbiter.IDLE_MS / 1000} seconds`);
+    assert.equal(asked, 2);
+    assert(lines.some(l => /survival secure shelter|survival secure_shelter said it acted in \d+ ms with nothing reported or asked: counted as nothing done/.test(l)), lines.join('\n'));
+    // One that reports, asks, or takes its time acted.
+    const reported = await arbiter.take(bot, claims(async () => { bot._survivalReportedAt = Date.now() + 1; return true; }), { decide, mobs: [], now: t0 + arbiter.IDLE_MS + 300 });
+    assert.equal(reported.acted, true);
+    const slow = await arbiter.take(bot, claims(async () => { await new Promise(r => setTimeout(r, 30)); return true; }), { decide, mobs: [], now: t0 + arbiter.IDLE_MS + 600 });
+    assert.equal(slow.acted, true);
+  } finally { console.log = log; }
+});

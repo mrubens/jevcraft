@@ -743,6 +743,9 @@ function answerOrCut(bot, asking, { task, askedAt = Date.now(), ms = ASK_MS, eve
   });
 }
 
+// The latest any question was asked (turn.js keeps bot._askedAt).
+const NO_TIME_MS = 15;
+const lastAsked = bot => Math.max(0, ...Object.values(bot?._askedAt || {}));
 // A held ruling whose winner did nothing is marked from the first such
 // turn, and the mark goes when it acts.
 function idled(state, winner, acted, now = Date.now()) {
@@ -930,11 +933,22 @@ async function take(bot, claims, ctx = {}) {
   // it; survival never answered (note 504). Note 490's rule read only the
   // work's error.
   let acted;
+  const began = Date.now(), reportedAt = bot?._survivalReportedAt || 0, askedBefore = lastAsked(bot);
   try { acted = !!(w.run ? await w.run(ctx.task) : false); }
   catch (err) {
     if (err?.name === 'NeedsSafety' && state.ruling?.winner === w.layer) { state.ruling.until = 0; state.ruling.stoppedBy = String(err.message || '').slice(0, 120); }
     if (err?.name === 'NeedsSafety') stopped(state, w.layer, err.message, ctx.now ?? Date.now());
     throw err;
+  }
+  // A survival step that says it acted, in no time, with nothing reported
+  // and nothing asked, did nothing (note 1062): counted so, the ruling's
+  // idle rule ends it. 25595 (2026-10-03 10:41:58 to 10:43:29Z), the turn
+  // given to survival for a shelter at 0.37 and held, ran 3,296 passes in
+  // 81 seconds, each "acted", none reported, no shelter question asked, the
+  // work's smelt begun and stopped forty times a second.
+  if (acted && w.layer === 'survival' && Date.now() - began < NO_TIME_MS && (bot?._survivalReportedAt || 0) === reportedAt && lastAsked(bot) === askedBefore) {
+    acted = false;
+    said(bot, `[arbiter] ${w.layer} ${w.action} said it acted in ${Date.now() - began} ms with nothing reported or asked: counted as nothing done`, now);
   }
   idled(state, w, acted, ctx.now ?? Date.now());
   try { promised(bot, state, w, ctx.now ?? Date.now()); } catch (err) { failedOnce(err); }
