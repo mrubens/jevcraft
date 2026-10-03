@@ -888,9 +888,10 @@ const CLOSE = 5;
 // Close and able to get at the bot: through a wall it is not. Sealed in a
 // pocket at three health with a skeleton outside, the dream run would not
 // eat, so could not heal, and the work walked it out to be shot (2026-09-24).
-function closeHostile(bot) {
+const closeHostile = bot => closeHostiles(bot)[0] || false;
+function closeHostiles(bot) {
   const here = bot.entity?.position;
-  if (!here) return false;
+  if (!here) return [];
   const eye = here.offset(0, 1.62, 0);
   const reaches = e => {
     if (typeof bot.world?.raycast !== 'function') return true;
@@ -934,8 +935,8 @@ function closeHostile(bot) {
   // (note 559).
   let round;
   const roundCorner = e => { if (!round) { try { round = new Set(danger.unseenClose(bot).map(t => t.entity)); } catch (_) { round = new Set(); } } return round.has(e); };
-  return Object.values(bot.entities || {}).find(e => e !== bot.entity && e.position && e.isValid !== false &&
-    hostile(e) && (e.position.distanceTo(here) <= reach(e.name) || soon.has(e)) && (reaches(e) || roundCorner(e))) || false;
+  return Object.values(bot.entities || {}).filter(e => e !== bot.entity && e.position && e.isValid !== false &&
+    hostile(e) && (e.position.distanceTo(here) <= reach(e.name) || soon.has(e)) && (reaches(e) || roundCorner(e)));
 }
 // The meal Jev gave the turn to is stopped by what its claim is made by:
 // a mob that can get at the bot while it eats (closeHostile). Run under
@@ -944,9 +945,13 @@ function closeHostile(bot) {
 // mid-242-ab-nether-3 gave the meal the turn 41 times in six seconds at
 // 10.6 health, each stopped at once, the claim saying it could eat and
 // the run saying it could not (note 585). Starving, it eats anyway.
+const unhealingAmongBlazes = (bot, close = closeHostiles(bot)) => (bot.food ?? 20) < 18 && (bot.health ?? 20) <= UNHEALING_HEALTH && close.every(e => e.name === 'blaze');
 function checkMeal(bot) {
   if ((bot.food ?? 20) <= 2) return;
-  const mob = closeHostile(bot);
+  const close = closeHostiles(bot);
+  // Claimed among blazes at hunger under eighteen (note 1001), it is not stopped by them.
+  if (unhealingAmongBlazes(bot, close)) return;
+  const mob = close[0];
   if (mob) throw new (require('./danger').NeedsSafety)({ entity: mob, distance: mob.position.distanceTo(bot.entity.position) });
 }
 
@@ -972,6 +977,7 @@ function comingWhileEating(bot) {
 }
 // A second and six tenths eating (survival.js EAT_SECONDS).
 const EAT_MEAL_SECONDS = 1.6;
+const UNHEALING_HEALTH = 14;
 
 function chooseFood(bot) {
   return bot.inventory.items().filter(item => safeFood(bot, item))
@@ -1695,14 +1701,25 @@ function claim(bot) {
   if (inPowderSnow(bot) || bot._freezingAt > Date.now() - 3000) return { layer: 'vitals', action: 'out_of_powder_snow', urgency: 'pressing', facts: { ...facts, freezing: true } };
   if (headSubmerged(bot) && !atWaterTop(bot) && !(bot._surfaceFailedAt > Date.now() - 60000)) return { layer: 'vitals', action: 'surface', urgency: 'pressing', facts: { ...facts, headUnderwater: true } };
   if (!(bot.food <= 16 || (bot.health < 20 && bot.food < 18) || (bot.health <= 12 && bot.food < 20))) return null;
-  if (bot.food > 2 && closeHostile(bot)) return null;
+  // Hurt with hunger under eighteen, nothing heals until a meal is eaten
+  // (note 1001): the meal is then claimed with a mob close or a stance held
+  // too, pressing, and whose turn it is stays Jev's (turn_priority). Four
+  // deaths at blaze spawners on 2026-10-03 (05:52 to 06:58Z) ran their last
+  // half minute to two minutes at hunger 17 with food carried and no meal
+  // claimed: 25592 stood in its box alight thirteen seconds, 12.6 to none.
+  // Only where what is close is blazes: a biter at arm's length lands every
+  // blow of the meal's second and a half (notes 552, 559), and stays the
+  // meal's stop.
+  const close = closeHostiles(bot);
+  const unhealing = unhealingAmongBlazes(bot, close);
+  if (bot.food > 2 && close.length && !unhealing) return null;
   const held = require('./danger').stanceHeld(bot);
-  if (bot.food > 6 && held && held.choice !== 'keep_working' && held.choice !== 'eat') return null;
+  if (bot.food > 6 && held && held.choice !== 'keep_working' && held.choice !== 'eat' && !unhealing) return null;
   const food = chooseFood(bot) || lastResortFood(bot);
   if (!food) return null;
   const effect = sideEffectSays(food.name);
   const coming = comingWhileEating(bot);
-  return { layer: 'vitals', action: 'eat', urgency: bot.food <= 6 ? 'pressing' : 'routine', facts: { ...facts, item: food.name, foodPoints: bot.registry.foodsByName?.[food.name]?.foodPoints, ...(effect ? { effect } : {}),
+  return { layer: 'vitals', action: 'eat', urgency: bot.food <= 6 || unhealing ? 'pressing' : 'routine', facts: { ...facts, ...(unhealing ? { healthComesBackOnlyAfterAMeal: `hunger ${bot.food} is under eighteen: nothing heals until it is eighteen or more, and a meal eaten to twenty heals a health each half second while its saturation lasts` } : {}), item: food.name, foodPoints: bot.registry.foodsByName?.[food.name]?.foodPoints, ...(effect ? { effect } : {}),
     ...(coming.length ? { comingAtTheBot: coming } : {}) }, cost: { seconds: EAT_MEAL_SECONDS } };
 }
 

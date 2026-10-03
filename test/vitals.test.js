@@ -825,10 +825,15 @@ test('the meal given the turn is stopped by what its claim is made by, not by a 
   const meal = new Task('under the meal\'s own'); meal.interruptCheck = () => checkMeal(bot);
   assert.equal(await maintainVitals(bot, meal), true);
   assert.equal(eaten, 1, 'eaten in the pocket');
-  // In its line, within its reach: no meal claimed, and one begun is stopped.
-  wall = false; bot.food = 17;
+  // In its line, within its reach, at hunger eighteen (the health coming back): no meal claimed, and one begun is stopped.
+  wall = false; bot.food = 18;
   assert.equal(claim(bot), null);
   assert.throws(() => checkMeal(bot), /Threat nearby: blaze at 6 blocks/);
+  // At hunger 17 and 10.6 health nothing heals until the meal: claimed among blazes, pressing, and not stopped by them (note 1001).
+  bot.food = 17;
+  assert.equal(claim(bot)?.action, 'eat');
+  assert.equal(claim(bot).urgency, 'pressing');
+  assert.doesNotThrow(() => checkMeal(bot));
   bot.food = 2;
   assert.doesNotThrow(() => checkMeal(bot), 'starving, it eats anyway');
   // And the turn: given the meal by Jev, the loop runs it under the meal's own check, and it eats.
