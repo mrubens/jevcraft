@@ -426,7 +426,19 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // with nothing to lay and nothing to dig, back along the way in to rock.
   if (!idle) {
     let shore = null; try { shore = require('./bridging').blocksCarried(bot) < 8 ? require('./shore-blocks').offer(bot, goal) : null; } catch (_) { shore = null; }
-    if (shore) answers.blocks_from_shore = { description: require('./shore-blocks').says(bot, shore),
+    // With rods carried and the portal known, what the blocks are for is
+    // said, and the answer leads (note 1012): 25592 (2026-10-03 07:43 to
+    // 07:47Z), three rods carried and three kept, stood at the end of its
+    // span 17 blocks of open air from its portal with one block left, and
+    // the trip back for blocks was one of twelve answers, the top one taken
+    // at 0.20.
+    let shoreFor = '';
+    try {
+      const rodsHeld = /nether/.test(String(bot.game?.dimension || '')) ? require('./walk-out').rodsCarried(bot) : 0;
+      const off = rodsHeld ? require('./game-progress').portalDistance(bot, goal) : null;
+      if (rodsHeld && off != null) shoreFor = ` With ${rodsHeld} blaze rod${rodsHeld === 1 ? '' : 's'} carried and the portal ${off} blocks off: where the way home is open air or lava, a block a step is what it is short of, and ${require('./bridging').blocksCarried(bot)} ${require('./bridging').blocksCarried(bot) === 1 ? 'is' : 'are'} carried.`;
+    } catch (_) { shoreFor = ''; }
+    if (shore) answers.blocks_from_shore = { leads: !!shoreFor, description: require('./shore-blocks').says(bot, shore) + shoreFor,
       run: async () => { await require('./shore-blocks').run(bot, task, goal, save, shore, { navigate }); } };
   }
   if (rising?.move && walksFailing && !idle) answers.rise_through = { description: `${rising.move.does} The walks from here have found no route${stall.error ? ` (${String(stall.error).slice(0, 160)})` : ''}; this changes the height the work is come at from, and the work is taken up again from the top.`,
@@ -719,7 +731,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // the rock, the crossing straight at the target, the floor below, the
   // pillar to a floor overhead. Relocations said as tried come last.
   {
-    const first = walksFailing ? ['rise_through', 'cross_toward', 'floor_toward', 'pillar_up'].filter(k => answers[k]) : [];
+    const first = [...(answers.blocks_from_shore?.leads ? ['blocks_from_shore'] : []), ...(walksFailing ? ['rise_through', 'cross_toward', 'floor_toward', 'pillar_up'].filter(k => answers[k]) : [])];
     const last = Object.keys(answers).filter(k => /^recover_relocate/.test(k) && /Tried: /.test(answers[k].description || ''));
     if (first.length || last.length) {
       const ordered = {};
