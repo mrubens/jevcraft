@@ -376,6 +376,8 @@ test('at home past the ladder, valuables go in before any later stage, not only 
   const chest = chestAt(w, []);
   // The warped forest resting: the pearl patrol is next, in the Overworld.
   require('../src/progress').setAside(goal, 'rung', 'warped_pearls', 'resting', 600000);
+  // (The rods' bank on arrival, note 1050, is this trip's already.)
+  require('../src/progress').setAside(goal, 'rod_bank', 'arrival', 'answered', 30 * 60000);
   const stage = nextGameStage(bot, goal).action;
   assert.equal(stage, 'pearl_patrol');
   const ran = [];

@@ -206,6 +206,8 @@ test('with blaze rods in hand the armour lost in a death is still made again bef
   // Rods come from the Nether: the ladder after a first entry (note 776's
   // optional rungs are before it).
   goal.gameProgress.milestones.nether_entered = { at: Date.now(), dimension: 'nether' };
+  // (The rods' bank on arrival, note 1050, is this trip's already: the ladder past it is what is read here.)
+  require('../src/progress').setAside(goal, 'rod_bank', 'arrival', 'answered', 30 * 60000);
   const noArmour = GEAR.filter(i => !/^iron_(helmet|chestplate|leggings|boots)$/.test(i.name)).concat({ name: 'blaze_rod', count: 7 });
   bot.inventory.items = () => noArmour;
   const stage = nextGameStage(bot, goal);

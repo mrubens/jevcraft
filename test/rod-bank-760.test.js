@@ -335,3 +335,15 @@ test('banked rods are not taken out on the Overworld side before the pearls are 
   assert.equal(rb.collectHere(all, goal)?.action, 'collect_rod_stash');
 });
 
+
+// Note 1050: every rod had and pearls still wanted, the rods carried out are banked on arrival all the same.
+test('out of the Nether with every rod had and pearls still wanted, the bank begins on arrival (note 1050)', () => {
+  const said = [];
+  const bot = frameBot({ inventory: { ...BARE, blaze_rod: 7 }, dimension: 'overworld' }); bot.chat = m => said.push(m);
+  const goal = huntGoal(); goal.gameProgress.here = { dimension: 'overworld', at: Date.now() - 20000 };
+  assert.equal(rb.bankOnArrival(bot, goal, 'overworld'), true);
+  assert.match(said[0], /^Out with 7 blaze rods: into a chest here first, \d+ pearls still to get\.$/);
+  const done = frameBot({ inventory: { ...BARE, blaze_rod: 7, ender_pearl: 16 }, dimension: 'overworld' }); done.chat = () => {};
+  const g2 = huntGoal(); g2.gameProgress.here = { dimension: 'overworld', at: Date.now() - 20000 };
+  assert.equal(rb.bankOnArrival(done, g2, 'overworld'), false, 'with the pearls had too they are what the eyes are made of');
+});

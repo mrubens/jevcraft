@@ -50,6 +50,8 @@ test('in the Nether with the rods in hand, the pearls come from the warped fores
 
 test('in the Overworld, a remembered warped forest sends the bot back through the portal for pearls', () => {
   const { bot, goal } = fixture('overworld');
+  // (The rods' bank on arrival, note 1050, is this trip's already.)
+  setAside(goal, 'rod_bank', 'arrival', 'answered', 30 * 60000);
   assert.equal(nextGameStage(bot, goal).via, 'warped_forest', 'none known yet: back through the portal to look for one');
   setAside(goal, 'rung', 'warped_search', 'none found', 600000);
   assert.equal(nextGameStage(bot, goal).action, 'pearl_patrol', 'the search rested: endermen on sight, an expedition or exploring between');

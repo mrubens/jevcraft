@@ -157,10 +157,15 @@ function bankOnArrival(bot, goal, dim, now = Date.now()) {
   if (aside && aside.at < here.at) attemptsFor(goal).clear('rung', 'bank_rods');
   if (!(rods >= 1) || isSetAside(goal, 'rod_bank', 'arrival', now) || isSetAside(goal, 'rung', 'bank_rods', now)) return false;
   let n = null; try { n = require('./eye-need').need(bot, goal); } catch (_) { n = null; }
-  if (!n?.rodsLeft) return false;
+  // Every rod had and pearls still wanted (note 1050): banked on coming out
+  // all the same, the pearls hunted with none in the pack, and taken out
+  // when the pearls are had too (collectHere). The ladder walks the rods
+  // out when the Nether's pearls rest, and they stayed in the pack through
+  // the Overworld's hunt and the next crossing.
+  if (!n || (!n.rodsLeft && !(n.pearlsLeft > 0))) return false;
   goal.rodBank = { at: now, rods, from: P(bot.entity.position), chest: chestThere(bot, goal).how, onArrival: true };
   setAside(goal, 'rod_bank', 'arrival', 'banked on coming out with rods', 30 * 60000);
-  bot.chat?.(`Out with ${plural(rods, 'blaze rod')}: into a chest here first, ${n.rodsLeft} more to get.`);
+  bot.chat?.(`Out with ${plural(rods, 'blaze rod')}: into a chest here first, ${n.rodsLeft ? `${n.rodsLeft} more to get` : `${plural(n.pearlsLeft, 'pearl')} still to get`}.`);
   return true;
 }
 
