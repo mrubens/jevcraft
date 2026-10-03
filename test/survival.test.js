@@ -4240,7 +4240,7 @@ test('a wither skeleton reaches a pillar\'s top from the bot\'s own floor, and t
   const skeleton = { entity: { id: 1, name: 'wither_skeleton', position: new Vec3(7.5, 64, 3.5), height: 2.4 }, distance: Math.hypot(7, 3), visible: true };
   const options = survival.stanceOptions(new Task('x'), {}, () => {}, [skeleton], false);
   // After the hardest blow, said first on every stance (note 576).
-  assert.match(options.pillar.description, /^The wither skeleton 8 blocks off hits for about 8 a blow[^]*?seconds\. Go two blocks straight up on placed blocks and fight from there\. Here two up is no cover from any of the mobs that bite: the wither skeleton reaches its top, and the fight up there is the fight here, begun once the blocks are down, on a top one block wide; shooters still can hit\./);
+  assert.match(options.pillar.description, /^The wither skeleton 8 blocks off hits for about 8 a blow[^]*?seconds\. This way: about [\d.]+ damage over about 15 seconds, from 20 health \(more than the bot has\)\. Go two blocks straight up on placed blocks and fight from there\. Here two up is no cover from any of the mobs that bite: the wither skeleton reaches its top, and the fight up there is the fight here, begun once the blocks are down, on a top one block wide; shooters still can hit\./);
   assert.match(options.pillar.description, /Two up does not stop a wither skeleton/);
   assert.match(options.pillar.description, /A blow that lands knocks the bot back/);
   // Fought from the top with no approach, it read 16.3 where the fight here read 23.8.
@@ -6166,7 +6166,7 @@ test('a pillar with a hoglin at the bot before the blocks are down says so first
   };
   const near = make(-6.2), far = make(4.5);
   assert.ok(near.pillar && far.pillar, `${Object.keys(near)} / ${Object.keys(far)}`);
-  assert.match(near.pillar.description, /^The hoglin 2\.3 blocks off is at the bot in about 0\.2 seconds, before the pillar's two blocks are down \(about [\d.]+\): its blow lands on the way up and throws the bot off the first block/);
+  assert.match(near.pillar.description, /^(This way: about [\d.]+ damage over about \d+ seconds, from [\d.]+ health( \(more than the bot has\))?\. )?The hoglin 2\.3 blocks off is at the bot in about 0\.2 seconds, before the pillar's two blocks are down \(about [\d.]+\): its blow lands on the way up and throws the bot off the first block/);
   assert.doesNotMatch(far.pillar.description, /before the pillar's two blocks are down/);
 });
 
@@ -6192,4 +6192,22 @@ test('a drowned with a trident in sight and a shield carried: shield_the_trident
   // No trident held, or no shield: not offered.
   const plain = { ...drowned, heldItem: null };
   assert.equal(survival.stanceOptions(new Task('x'), {}, () => {}, [{ entity: plain, distance: 16, visible: true }], false).shield_the_tridents, undefined);
+});
+
+test('each way against mobs that bite says its own price straight after the lead they share (note 1106)', async () => {
+  // 25590 (2026-10-03 20:28:34Z): on its pillar with six zombies about, the pillar at 0 damage and the shield's guard at 67.5, each figure 900 characters in behind the same lead; it took the guard and died in eight seconds.
+  const bot = rockWorld(p => p.y >= 64, ['iron_sword', 'cobblestone']);
+  const zombies = [1, 2, 3].map(i => ({ id: 40 + i, name: 'zombie', type: 'hostile', position: new Vec3(2.5 + i, 64, 0.5), height: 1.95, width: 0.6, isValid: true }));
+  bot.entities = Object.fromEntries(zombies.map(z => [z.id, z]));
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, zombies.map(z => threat(bot, z)), false);
+  assert(options.fight, Object.keys(options).join(','));
+  const priced = Object.entries(options).filter(([, o]) => Number.isFinite(o.expects?.damage));
+  assert(priced.length >= 2, `priced: ${priced.map(([k]) => k)}`);
+  for (const [k, o] of priced) {
+    const at = o.description.indexOf('This way: about ');
+    assert(at >= 0, `${k}: ${o.description.slice(0, 300)}`);
+    assert.match(o.description.slice(at), new RegExp(`^This way: about ${String(Math.round(o.expects.damage * 10) / 10).replace('.', '\\.')} damage`), k);
+    assert(at < 700, `${k}: the price ${at} characters in`);
+  }
 });

@@ -5476,6 +5476,17 @@ class Survival {
       ? `Farther off, its first ${blowsL.mob?.name === 'creeper' ? 'blast' : 'blow'} about ${r1L(blowsL.arrives)} seconds away at its own speed: ${blows.replace(/^The /, 'the ')}`
       : blows;
     const lead = [hitSays, shootSays, blowsFramed].filter(Boolean).join(' ');
+    // Each way's own price straight after the lead they share (note 1106):
+    // the lead ran some 450 characters on every option and the figure that
+    // tells them apart came 900 in. 25590 (2026-10-03 20:28:34Z), two up on
+    // its pillar with six zombies round its foot and nothing worn, was
+    // offered the pillar at 0 damage and the shield's guard at 67.5, each
+    // behind the same lead, took the guard at 0.60, climbed down to face
+    // them and was dead in eight seconds.
+    const hpNow = Math.round((bot.health ?? 20) * 10) / 10;
+    const priceOf = o => Number.isFinite(o.expects?.damage)
+      ? `This way: about ${Math.round(o.expects.damage * 10) / 10} damage${Number.isFinite(o.expects.seconds) ? ` over about ${Math.round(o.expects.seconds)} seconds` : ''}, from ${hpNow} health${o.expects.damage >= hpNow ? ' (more than the bot has)' : ''}. `
+      : '';
     if (lead) for (const o of Object.values(options)) o.description = `${lead} ${o.description}`;
     // The shield held at a drop that kills (note 1030): a blow the shield
     // takes still knocks the bot half a block with a hop, and a block from
@@ -5680,6 +5691,16 @@ class Survival {
     // facing a piglin (note 773); wear_gold says it in full.
     const goldClause = piglinGoldClause(bot, danger);
     if (goldClause) for (const [k, o] of Object.entries(options)) if (k !== 'wear_gold' && typeof o.description === 'string') o.description += goldClause;
+    // The price, put in last so that it is the figure as it stands (a fall
+    // by a drop that kills raises it after the lead is set): after the lead
+    // wherever it stands in the words, else first.
+    if (lead) for (const o of Object.values(options)) {
+      if (typeof o.description !== 'string') continue;
+      const price = priceOf(o);
+      if (!price) continue;
+      const at = o.description.indexOf(`${lead} `);
+      o.description = at >= 0 ? `${o.description.slice(0, at + lead.length + 1)}${price}${o.description.slice(at + lead.length + 1)}` : `${price}${o.description}`;
+    }
     return options;
   }
 
