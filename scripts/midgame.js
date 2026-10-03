@@ -55,7 +55,9 @@ const KEPT_LIMIT_MS = Math.max(LIMIT_MS, Number(process.env.MIDGAME_KEPT_HOURS |
 // 2026-10-03 on its way into the Nether for pearls.
 const RODS_WANTED = 6;
 const FULL_LIMIT_MS = Math.max(KEPT_LIMIT_MS, Number(process.env.MIDGAME_FULL_HOURS || 12) * 3600000);
-const limitFor = kept => kept && kept.rods >= RODS_WANTED ? FULL_LIMIT_MS : kept && (kept.rods >= 1 || kept.pearls >= 1) ? KEPT_LIMIT_MS : LIMIT_MS;
+// With the rods wanted and twelve pearls kept or carried, the End's hours.
+const END_LIMIT_MS = Math.max(FULL_LIMIT_MS, Number(process.env.MIDGAME_END_HOURS || 24) * 3600000);
+const limitFor = kept => kept && kept.rods >= RODS_WANTED && kept.pearls >= 12 ? END_LIMIT_MS : kept && kept.rods >= RODS_WANTED ? FULL_LIMIT_MS : kept && (kept.rods >= 1 || kept.pearls >= 1) ? KEPT_LIMIT_MS : LIMIT_MS;
 const BLAZE_RODS = 6, PEARLS = 12;
 const trials = () => { try { return fs.readdirSync(LOG_DIR).filter(f => f.endsWith('.json')).map(f => JSON.parse(fs.readFileSync(path.join(LOG_DIR, f), 'utf8'))).sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt)); } catch (_) { return []; } };
 const saveTrial = t => { fs.mkdirSync(LOG_DIR, { recursive: true }); fs.writeFileSync(path.join(LOG_DIR, `${t.world}.json`), JSON.stringify(t, null, 2)); };
@@ -68,7 +70,20 @@ const alive = p => { try { process.kill(Number(p), 0); return true; } catch (_) 
 // "walking" leg) or by a blaze rod in hand, which only a fortress gives;
 // rods as rods, powder (two a rod) and eyes (one powder each) together;
 // pearls as pearls and eyes.
-const MILESTONES = ['nether', 'fortress', 'blaze_rods', 'ender_pearls'];
+// On to the dragon (the user, 2026-10-03: "kill the ender dragon"): the
+// rods and the pearls are no longer where a trial ends. A trial that has
+// them plays on to the End and the dragon, and is done at the dragon, its
+// limit or a failure (note 1117). The End by the frames' dimension; the
+// dragon by the bot's own milestone (game-progress.js dragon_defeated, the
+// kill_dragon advancement).
+const MILESTONES = ['nether', 'fortress', 'blaze_rods', 'ender_pearls', 'the_end', 'dragon'];
+function dragonAt(identity = IDENTITY) {
+  try {
+    const g = JSON.parse(fs.readFileSync(path.join(STATE, `${identity}.json`), 'utf8')), goal = g.goal || g;
+    const at = goal.gameProgress?.milestones?.dragon_defeated?.at;
+    return Number.isFinite(Number(at)) ? Number(at) : at ? Date.parse(at) || null : null;
+  } catch (_) { return null; }
+}
 // The player made an operator on every trial server, to spectate and follow
 // Jev (Jev itself never is): TRIAL_WATCHER, from the environment or .env.
 // None set, no one is made an operator.
@@ -104,6 +119,7 @@ function reached(frames) {
   for (const f of frames) {
     const s = f.snapshot || {};
     if (/nether/.test(String(s.dimension || ''))) mark('nether', f.t);
+    if (/the_end|(^|:)end$/.test(String(s.dimension || ''))) mark('the_end', f.t);
     const step = s.goal?.step || s.step;
     if (step?.action === 'find_fortress' && step.walking) mark('fortress', f.t);
     if (s.inventory && typeof s.inventory === 'object') {
@@ -147,11 +163,11 @@ function cutReasons(world, playedMinutes, reachedAtMinute = {}, { casting = fals
 // every verdict on 25581, 25583 and 25584 failed on "loop: N× TypeSafe 402"
 // a minute or two in, and the overnight loop started a new world each time.
 const STRANDED_DOWN_SHARE = 0.1;
-function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY, kept = keptNow(identity) } = {}) {
+function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY, kept = keptNow(identity), endHours = false } = {}) {
   const from = Date.parse(trial.startedAt);
   const read = to => analyse({ identity, from, to, ...(dir ? { dir } : {}) });
   // The window: the three hours played, run on by the Jev-down time in it.
-  const limit = limitFor(kept);
+  const limit = endHours ? END_LIMIT_MS : limitFor(kept);
   let to = Math.min(now, from + limit), a = read(to), spells = a ? spellsOf(a.frames) : [];
   for (let i = 0; a && spells.length && i < 4; i++) {
     const next = Math.min(now, from + limit + overlapMs(spells, from, to));
@@ -162,6 +178,11 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
   const downMs = overlapMs(spells, from, to);
   const downNow = !!spells.at(-1)?.open && now - spells.at(-1).to < 3 * 60000;
   const { at, best } = reached(a.frames);
+  // The rods and the pearls reached in the pack (not only kept in chests):
+  // the End's hours from there, read again over that window.
+  if (!endHours && limit < END_LIMIT_MS && 'blaze_rods' in at && 'ender_pearls' in at) return verdict(trial, { now, dir, identity, kept, endHours: true });
+  const dragon = dragonAt(identity);
+  if (dragon && dragon >= from && dragon <= to) at.dragon = dragon;
   const all = MILESTONES.every(k => k in at);
   const doneAt = all ? Math.max(...MILESTONES.map(k => at[k])) : null;
   // Deaths and loops count up to the moment the last milestone came.
