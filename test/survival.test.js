@@ -6109,3 +6109,20 @@ test('a pillar a block from a drop into lava with a hoglin about leads with the 
   if (back.pillar) assert.doesNotMatch(back.pillar.description, /On a pillar a block from this drop/);
   assert.ok(edge.pillar || back.pillar, `a pillar is offered in one of the two: ${Object.keys(edge)} / ${Object.keys(back)}`);
 });
+
+test('a pillar with a hoglin at the bot before the blocks are down says so first; one far off does not (note 1081)', () => {
+  const world = ledgeWorld();
+  const make = hx => {
+    const hoglin = { id: 3, name: 'hoglin', type: 'hostile', position: new Vec3(hx, 64, 0.5), height: 1.4, width: 1.4, isValid: true };
+    const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, health: 20, food: 20,
+      entity: { position: new Vec3(-8.5, 64, 0.5), onGround: true }, entities: { 3: hoglin }, time: { timeOfDay: 6000 },
+      inventory: { items: () => [{ name: 'iron_sword', count: 1 }, { name: 'netherrack', count: 16 }], slots: {} }, world: { raycast: () => null },
+      blockAt: p => world(p), pathfinder: { movements: {}, setGoal() {}, getPathTo: () => ({ status: 'noPath', path: [] }) }, clearControlStates() {} });
+    const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+    return survival.stanceOptions(new Task('x'), {}, () => {}, [{ entity: hoglin, distance: hoglin.position.distanceTo(bot.entity.position), visible: true }], false);
+  };
+  const near = make(-6.2), far = make(4.5);
+  assert.ok(near.pillar && far.pillar, `${Object.keys(near)} / ${Object.keys(far)}`);
+  assert.match(near.pillar.description, /^The hoglin 2\.3 blocks off is at the bot in about 0\.2 seconds, before the pillar's two blocks are down \(about [\d.]+\): its blow lands on the way up and throws the bot off the first block/);
+  assert.doesNotMatch(far.pillar.description, /before the pillar's two blocks are down/);
+});

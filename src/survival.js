@@ -5415,6 +5415,21 @@ class Survival {
       options.pillar.description = `On a pillar a block from this drop the first blow that lands is the fall: a ${tosser.replaceAll('_', ' ')}'s blow reaches a player two up and throws the bot up and back, up to about ${tossReach} blocks, and a drop of ${dropHere.fallBlocks} blocks${dropHere.into === 'lava' ? ' into lava' : ''} is ${dropHere.blocksAway < 1 ? 'under the bot\'s edge' : 'a block off'}; the pillar's own figure below counts the blow and not the fall. On 2026-10-03 one such pillar, a hoglin 7 blocks off and 19 blocks of drop into lava a block away, ended in the lava seven seconds after it was chosen. ${options.pillar.description}`;
       options.pillar.expects = { ...options.pillar.expects, damage: Math.max(options.pillar.expects?.damage || 0, Math.round(bot.health ?? 20)) };
     }
+    // A hoglin at the bot before the pillar is up (note 1081): its blow lands
+    // on the way up and throws the bot off the first block, up to four back
+    // and three up, among the rest of them. 25588 (2026-10-03 16:02:22 to
+    // 16:02:38Z), four hoglins about and the nearest 2.3 blocks off, took
+    // the pillar at 0.66 and again at 0.61: thrown eight blocks at the
+    // first, and dead from 20 health in fifteen seconds.
+    if (options.pillar && tosser) {
+      const near = coming.filter(t => t.entity.name === tosser).sort((a, b) => a.distance - b.distance)[0];
+      const speed = near ? require('./combat-estimate').blocksPerSecond(tosser) : 0;
+      const arrives = near && speed > 0 ? Math.max(0, near.distance - 1.5) / speed : Infinity;
+      if (arrives < PILLAR_SECONDS && !/^On a pillar a block from this drop/.test(options.pillar.description)) {
+        const others = coming.filter(t => t.entity.name === tosser).length - 1;
+        options.pillar.description = `The ${tosser.replaceAll('_', ' ')} ${Math.round(near.distance * 10) / 10} blocks off is at the bot in about ${Math.round(arrives * 10) / 10} seconds, before the pillar's two blocks are down (about ${PILLAR_SECONDS}): its blow lands on the way up and throws the bot off the first block, up to about ${tossReach} blocks back and three up${others > 0 ? `, down among the other ${others === 1 ? 'one' : others}` : ''}, and the pillar is begun again from there. ${options.pillar.description}`;
+      }
+    }
     // The mobs past their follow range, left out of the figures (note 770).
     const pastSays = pastFollowSays(pastFollow);
     if (pastSays) for (const o of Object.values(options)) o.description += pastSays;
