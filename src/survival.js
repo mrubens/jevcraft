@@ -2688,6 +2688,7 @@ class Survival {
     // a line that hits met with the shield, whatever holds the turn
     // (shot-reflex.js, note 676). The latest layer's questions are asked.
     require('./shot-reflex').install(bot, this);
+    require('./water-sink').install(bot);
     // A blaze spawner's tries, seen as they come, for the lull's clock (note 691).
     require('./spawner-clock').watch(bot);
     if (encounterJudgments(this) || !bot._shotSurvival?.client) bot._shotSurvival = this;

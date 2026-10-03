@@ -369,6 +369,21 @@ const RUNS = {
     return { pass: !watch.died && !!site && (r?.kills || 0) >= 1 && hp - bot.health <= 2, detail: { site: site ? `${site.mouth}` : null, digs: site?.digs.length, ...r, health: bot.health, error: error && error.slice(0, 140) } };
   },
   async enderman_slot_out(d, bounded) { return RUNS.enderman_slot(d, bounded); },
+  async waterfall_ride(d, bounded) {
+    const wd = require('../src/way-down');
+    const view = wd.liveView(bot), perch = wd.perchOf(view, bot.entity.position.floored());
+    const ways = perch ? wd.waysDown(view, perch, { health: bot.health, carried: { water_bucket: 1 } }) : {};
+    const way = ways.ride_water;
+    if (!way) return { pass: false, detail: { perch: !!perch, ways: Object.keys(ways) } };
+    let error = null, low = bot.health, air = bot.oxygenLevel ?? 20;
+    const onHp = () => { low = Math.min(low, bot.health); }, onAir = () => { air = Math.min(air, bot.oxygenLevel ?? 20); };
+    bot.on('health', onHp); bot.on('breath', onAir);
+    const t0 = Date.now(), y0 = bot.entity.position.y;
+    try { await wd.rideWater(bot, bounded, way.plan); } catch (err) { error = `${err.name}: ${err.message}`; }
+    bot.removeListener('health', onHp); bot.removeListener('breath', onAir);
+    const p = bot.entity.position;
+    return { pass: !watch.died && !error && p.y < 66 && 20 - low < 1, detail: { fall: way.plan.fall, seconds: Math.round((Date.now() - t0) / 100) / 10, from: y0, y: Math.round(p.y * 10) / 10, lost: Math.round((20 - low) * 10) / 10, leastAir: air, error } };
+  },
   async trident_swim(d, bounded) {
     const reflex = require('../src/shot-reflex');
     reflex.install(bot, null);

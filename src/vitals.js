@@ -313,6 +313,8 @@ async function surfaceForAir(bot, task, onAction = () => {}, { keepOff = null } 
       if (horizontal > 0.2) await bot.lookAt(new Vec3(target.x, p.y + 1.62, target.z), true);
       bot.setControlState('forward', horizontal > 0.2 && !(lower && p.y - target.y > 0.4));
       bot.setControlState('jump', !lower && p.y < target.y + 0.05 && (bot.entity.isInWater || p.y < target.y));
+      // Down a cell in water with the sneak key, the game's faster sinking (water-sink.js, note 1070).
+      if (lower && bot.entity.isInWater) require('./water-sink').install(bot);
       bot.setControlState('sneak', lower && !!bot.entity.isInWater);
       await sleep(50);
     }

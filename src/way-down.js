@@ -231,7 +231,9 @@ function waysDown(view, perch, { health = 20, carried = {}, pickaxe = null, pick
       const side = c.plus(d), wall = [side, side.plus(UP)].filter(p => solid(view.name(p))).map(p => ({ cell: p, name: view.name(p) }));
       if (wall.some(w => !diggable(w.name)) || [side, side.plus(UP)].some(p => isWater(view.name(p)) || isLava(view.name(p)) || view.name(p) == null)) continue;
       const fall = waterfall(view, side);
-      if (!fall || fall.fall <= SAFE_FALL) continue;
+      // No ride longer than RIDE_MAX (note 1070): the head is under the whole
+      // way, and the ride keeps the turn.
+      if (!fall || fall.fall <= SAFE_FALL || fall.fall > RIDE_MAX) continue;
       rides.push({ from: c, dir, side, wall, ...fall, far: Math.hypot(c.x - feet.x, c.z - feet.z) + wall.length, up: stillUp(fall.bottom) });
     }
     // Down to where a walk goes on first, then the longest ride, then the
@@ -239,7 +241,7 @@ function waysDown(view, perch, { health = 20, carried = {}, pickaxe = null, pick
     rides.sort((a, b) => !!a.up - !!b.up || b.fall - a.fall || a.far - b.far);
     const ride = rides[0];
     if (ride) ways.ride_water = {
-      description: `${ride.wall.length ? `Dig out the ${ride.wall.map(w => said(w.name)).join(' and ')} of the wall on the ${ride.dir} side${stepOver(ride.from)}, then pour` : `Pour`} the water bucket at the feet${ride.wall.length ? '' : stepOver(ride.from)} and step off the ${ride.dir} side into the waterfall it makes: ${ride.fall} blocks down to the ${said(ride.landsOn)} at ${where(ride.bottom.plus(DOWN))}, with no fall damage in the water${landsSays(ride.up)}. The water takes about ${Math.ceil(ride.fall / 4) + 1} seconds to reach the bottom before the step, and the bucket comes back empty.${RIDE_RECORD}${waterSays(ride, water)}`,
+      description: `${ride.wall.length ? `Dig out the ${ride.wall.map(w => said(w.name)).join(' and ')} of the wall on the ${ride.dir} side${stepOver(ride.from)}, then pour` : `Pour`} the water bucket at the feet${ride.wall.length ? '' : stepOver(ride.from)} and step off the ${ride.dir} side into the waterfall it makes: ${ride.fall} blocks down to the ${said(ride.landsOn)} at ${where(ride.bottom.plus(DOWN))}, with no fall damage in the water${landsSays(ride.up)}. The water takes about ${Math.ceil(ride.fall / 4) + 1} seconds to reach the bottom before the step, the ride about ${Math.ceil(ride.fall / SINK_PACE) + 1} seconds with the head under water against 15 of breath, and the bucket comes back empty.${RIDE_RECORD}${waterSays(ride, water)}`,
       plan: { kind: 'ride_water', from: ride.from, dir: ride.dir, side: ride.side, bottom: ride.bottom, fall: ride.fall, off: !ride.up, wall: ride.wall.map(w => w.cell) } };
   }
   // A side the bot survives stepping off: its fall said with its damage.
@@ -410,8 +412,19 @@ async function digWall(bot, task, cells = []) {
 // left the one-wide stream and fell the rest of the way, 20 health to none.
 // From the step until the ground the ride now keeps the turn (a cancel still
 // lands) and steers the body back to the middle of the stream.
-const RIDE_RECORD = ' Rides so far: 11 of 11 from 4 to 17 blocks came down; the 2 of 53 and 55 blocks each ended in a fall to death, the body out of the stream a second or two down (the turn was taken from the ride by a stance and a swim up, and nothing steered it). From the step off the top until the ground the ride keeps the turn, and steers back to the middle of the stream when the water carries it off; mobs and the air wait until it is down.';
-
+// The head is under the whole way down, and a body in water sinks half a
+// block a second with no key held (the game's rule; with the sneak key held
+// it goes down about 3.7 a second). 25584 (2026-10-03 14:53:07 to 14:53:41Z)
+// rode about 27 blocks from y -34 with no key held: 0.025 a tick the whole
+// way, its breath gone 16 seconds in, the ride keeping the turn until its
+// time ran out at 22; the swim to air then chosen at 0.81 pressed nothing
+// and sank on at the same pace, and it drowned from 20 health a block over
+// the ground (note 1070). The ride now holds the sneak key (sinking, below),
+// is offered to RIDE_MAX blocks, and lets the turn go to the air when the
+// breath is down to RIDE_AIR of 20.
+const RIDE_MAX = 40, RIDE_AIR = 8;
+const { SINK_PACE } = require('./water-sink');
+const RIDE_RECORD = ' Rides so far: 11 of 11 from 4 to 17 blocks came down; the 2 of 53 and 55 blocks each ended in a fall to death, the body out of the stream a second or two down (the turn was taken from the ride by a stance and a swim up, and nothing steered it), and one of 27 ended drowned, sinking half a block a second with no key held. From the step off the top until the ground the ride keeps the turn, holds the sneak key (in water that goes down about 3.7 blocks a second, the head under all the way), and steers back to the middle of the stream when the water carries it off; mobs wait until it is down, and the air until the breath is down to 8 of 20, where the ride lets the turn go. No ride over 40 blocks is offered.';
 // From the step off the top until the ground under it, nothing takes the turn
 // from the ride but a cancel, and the body is steered to the stream's middle
 // when the current has carried it off (its width 0.6 in a stream one block
@@ -422,11 +435,20 @@ async function sinkDown(bot, task, side, bottom, ms) {
   task.interruptCheck = null; task.stallCheck = null;
   const deadline = Date.now() + ms, mx = side.x + 0.5, mz = side.z + 0.5;
   let since = 0, steered = false;
+  let sneaking = false;
+  require('./water-sink').install(bot);
   try {
     while (Date.now() < deadline) {
       if (task.cancelled) task.check();
       const p = bot.entity.position, dx = mx - p.x, dz = mz - p.z, off = Math.hypot(dx, dz);
       const wet = bot.entity.isInWater !== false;
+      // The breath nearly gone under the water: the ride lets the turn go,
+      // and the air is the body's own question (note 1070).
+      if (wet && (bot.oxygenLevel ?? 20) <= RIDE_AIR) throw new (require('./vitals').NeedsAir)();
+      // The sneak key held on the way down, let go a block over the ground.
+      // Not on the top itself: sneaking there keeps the body from the edge.
+      const down = wet && p.y > bottom.y + 1.2 && p.y < side.y - 0.6;
+      if (down !== sneaking) { sneaking = down; bot.setControlState?.('sneak', down); }
       if (wet && off > 0.3 && p.y > bottom.y + 0.6) {
         try { await bot.look(Math.atan2(-dx, -dz), 0, true); } catch (_) { /* look failed */ }
         bot.setControlState?.('forward', true); steered = true;
@@ -440,6 +462,7 @@ async function sinkDown(bot, task, side, bottom, ms) {
     return false;
   } finally {
     bot.setControlState?.('forward', false);
+    if (sneaking) bot.setControlState?.('sneak', false);
     task.interruptCheck = outerInterrupt; task.stallCheck = outerStall;
   }
 }
@@ -622,4 +645,4 @@ async function oneWayDown(bot, task, walkGoal, perch, { client, goal, save }) {
   } finally { bot.clearControlStates?.(); }
 }
 
-module.exports = { sinkDown, RIDE_RECORD, endOf, creepersAtEnd, perchOf, waysDown, digColumn, digSeconds, fallUnder, perchSays, livePerch, liveView, goalOnTop, comeDownFirst, oldOrderWay, digDown, rideWater, stepOff, waterInView, waterBucketUse, SAFE_FALL };
+module.exports = { sinkDown, RIDE_RECORD, RIDE_MAX, RIDE_AIR, SINK_PACE, endOf, creepersAtEnd, perchOf, waysDown, digColumn, digSeconds, fallUnder, perchSays, livePerch, liveView, goalOnTop, comeDownFirst, oldOrderWay, digDown, rideWater, stepOff, waterInView, waterBucketUse, SAFE_FALL };

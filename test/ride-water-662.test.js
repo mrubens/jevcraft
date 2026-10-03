@@ -55,3 +55,28 @@ test('a body the current carried a block west of the stream is steered back towa
   centred.stop();
   assert.equal(centred.looks.length, 0);
 });
+
+test('the ride holds the sneak key once it is off the top and lets it go a block over the ground; the breath down to 8 of 20 lets the turn go to the air (note 1070)', async () => {
+  const { EventEmitter } = require('node:events');
+  const bot = Object.assign(new EventEmitter(), fakeBot({ landAfter: 5000 }));
+  bot.controlState = {}; bot.oxygenLevel = 20;
+  const set = bot.setControlState; bot.setControlState = (k, v) => { bot.controlState[k] = v; set(k, v); };
+  const task = new Task('ride');
+  const riding = sinkDown(bot, task, new Vec3(71, 40, 79), new Vec3(71, -16, 79), 3000);
+  await new Promise(r => setTimeout(r, 120));
+  assert.equal(bot.controls.sneak, true, 'held below the top');
+  // The game's rule for the key, each physics tick, in water.
+  const v0 = bot.entity.velocity.y; bot.emit('physicsTick');
+  assert.ok(Math.abs(bot.entity.velocity.y - (v0 - 0.04)) < 1e-9, 'the sneak key in water: 0.04 a tick down');
+  bot.oxygenLevel = 8;
+  await assert.rejects(riding, err => err.name === 'NeedsAir');
+  bot.stop();
+  assert.equal(bot.controls.sneak, false, 'let go');
+  const v1 = bot.entity.velocity.y; bot.emit('physicsTick');
+  assert.equal(bot.entity.velocity.y, v1, 'nothing added with the key let go');
+  bot.controlState.sneak = true; bot.controlState.jump = true; bot.emit('physicsTick');
+  assert.equal(bot.entity.velocity.y, v1, 'nor with the jump key held');
+  const { RIDE_MAX, RIDE_RECORD } = require('../src/way-down');
+  assert.equal(RIDE_MAX, 40);
+  assert.match(RIDE_RECORD, /one of 27 ended drowned.*holds the sneak key.*No ride over 40 blocks is offered\./);
+});

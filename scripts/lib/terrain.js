@@ -605,6 +605,19 @@ const TERRAIN = Object.freeze([
     ends: [[7405.5, 62, 7393.5], [7405.5, 62, 7407.5]],
   },
   {
+    name: 'waterfall_ride',
+    why: 'Note 1070: a column 27 high in open air, the bot on its top with a water bucket: the water poured, the ride down it with the sneak key held; a pass is on the ground alive with no health lost and breath left (25584 drowned on such a ride with no key held, half a block a second).',
+    dimension: 'overworld', seconds: 60,
+    start: [7600.5, 91, 7400.5],
+    kit: [['water_bucket', 1]],
+    build: [
+      'forceload add 7590 7390 7610 7410',
+      'fill 7592 60 7392 7608 63 7408 minecraft:stone',
+      'fill 7592 64 7392 7608 100 7408 minecraft:air',
+      'fill 7600 64 7400 7600 90 7400 minecraft:stone',
+    ],
+  },
+  {
     name: 'tunnel_home_from_span',
     why: 'Note 920: the tunnel begins on a block in open air ten over its target and three across (25595 on its own span over its portal): it comes down on laid steps and ends on the floor, no fall.',
     dimension: 'the_nether', seconds: 150,
