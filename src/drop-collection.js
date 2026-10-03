@@ -62,6 +62,30 @@ function hotOnTheWay(bot, to, from = bot.entity.position) {
   return null;
 }
 
+// A drop of more than three blocks on the straight line to `to` or within
+// `past` blocks beyond it, at the bot's level: the jumping walk at a drop
+// above goes uncrouched, and a jump carries the body on past where it was
+// aimed. 25592 (2026-10-03 19:08:14Z), mining netherrack on a ledge twenty
+// blocks over the lava sea at 20 health, jumped at a block's drop lying a
+// step up and went on over the ledge's edge into the lava (note 1102).
+// -> { x, y, z, fall } of the first such column, or null.
+function edgeOnTheWay(bot, to, { from = bot.entity.position, past = 2 } = {}) {
+  const flat = Math.hypot(to.x - from.x, to.z - from.z);
+  if (flat < 1e-3) return null;
+  const ux = (to.x - from.x) / flat, uz = (to.z - from.z) / flat, feet = Math.floor(from.y);
+  const solid = (x, y, z) => bot.blockAt(new Vec3(x, y, z))?.boundingBox === 'block';
+  for (let d = 0.5; d <= flat + past; d += 0.5) {
+    const x = Math.floor(from.x + ux * d), z = Math.floor(from.z + uz * d);
+    if (x === Math.floor(from.x) && z === Math.floor(from.z)) continue;
+    // A wall across the way stops the body there: nothing past it counts.
+    if (solid(x, feet + 1, z) && solid(x, feet + 2, z)) return null;
+    let floored = false;
+    for (let y = feet + 1; y >= feet - 4; y--) if (solid(x, y, z)) { floored = true; break; }
+    if (!floored) return { x, y: feet, z, fall: 4 };
+  }
+  return null;
+}
+
 class PickupGoal extends goals.GoalBlock {
   constructor(point) { super(point.x, point.y, point.z); this.standingY = point.y; }
   // The graph uses integer cells; smoothing uses the surface height. Accept
@@ -156,6 +180,8 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
         // not worth the fall the walk straight at it would be. A sneaking
         // player cannot walk off an edge, so the walk is slower and longer.
         const up = drop.position.y > bot.entity.position.y + 0.6;
+        const edge = up ? edgeOnTheWay(bot, drop.position) : null;
+        if (edge) { console.log(`[drops] the jump at the ${item.replaceAll('_', ' ')} a step up goes on over a drop of four blocks or more at (${edge.x}, ${edge.y}, ${edge.z}); not jumped at`); continue; }
         try {
           await motion.move(bot, task, { label: 'walk_to_drop', keys: up ? ['forward', 'jump'] : ['forward'], sneak: !up,
             why: up ? 'jumping up to a drop above: a step up, not over an edge' : undefined,
@@ -177,4 +203,4 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
   }
 }
 
-module.exports = { collectNearbyDrops, pickupPositions, hotOnTheWay };
+module.exports = { collectNearbyDrops, pickupPositions, hotOnTheWay, edgeOnTheWay };
