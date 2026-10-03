@@ -15,6 +15,11 @@ const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const EYES = 2.55, REACH = 3, SWING_MS = 650, HURT_STOP = 6;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const STARE_MS = 450, STARE_EVERY_MS = 12000;
+// A look that does not turn it is tried again after three seconds, three
+// times, and one turned is waited for twenty seconds (note 996): of the
+// first five fights live (2026-10-03), three ran their whole minute with an
+// enderman about that never came, a look every twelve seconds.
+const STARE_AGAIN_MS = 3000, STARE_MISSES = 3, TURNED_WAIT_MS = 20000;
 // The server's own word that it has been stared at or screams (its entity
 // data, 17 and 18): one brought is not gone out to again.
 const angry = e => !!(e.metadata?.[17] || e.metadata?.[18]);
@@ -85,9 +90,9 @@ function says(site, n) {
 
 // The arena's record (scripts/terrain.js enderman_slot, 2026-10-03): an iron
 // sword, no armour, no shield, a slot dug with an iron pickaxe.
-const RECORD = { runs: 16, kills: 16, damage: 0, seconds: 14.2, pearls: 4 };
+const RECORD = { runs: 26, kills: 26, damage: 0, seconds: 15, late: { runs: 10, pearls: 7 } };
 function recordSays() {
-  return `The arena's record of this way, one enderman, an iron sword and no armour or shield: ${RECORD.runs} fights, ${RECORD.kills} kills, no damage taken in any, a median ${RECORD.seconds} seconds with the slot's four blocks dug by an iron pickaxe; ${RECORD.pearls} pearls from them. With Jev's own answers and the trials' kit, a wall three blocks off: 3 fights, the slot chosen in each, 3 kills, 2 pearls, no damage. Before a change that keeps the bot in once the enderman has turned, it was hit at the slot's mouth on the way back in (7 damage unarmoured, 8 times in 18 fights); it now goes out to look only at one that has not turned.`;
+  return `The arena's record of this way, one enderman, an iron sword and no armour or shield: ${RECORD.runs} fights, ${RECORD.kills} kills, no damage taken in any, about ${RECORD.seconds} seconds each with the slot's four blocks dug by an iron pickaxe; with the drop waited for where it falls, ${RECORD.late.pearls} pearls from the last ${RECORD.late.runs}. With Jev's own answers and the trials' kit, a wall three blocks off: 3 fights, the slot chosen in each, 3 kills, 2 pearls, no damage. It goes out to look only at one that has not turned, three looks at most, and one turned is waited for twenty seconds.`;
 }
 
 const endermen = (bot, within = 40) => Object.values(bot.entities || {}).filter(e => e.name === 'enderman' && e.isValid !== false && e.position && e.position.distanceTo(bot.entity.position) <= within)
@@ -108,13 +113,14 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
   if (sword) { try { await bot.equip(sword, 'hand'); } catch (_) { /* the hand, then */ } }
   let dead = 0;
   let fell = null;
-  const onDead = e => { if (e?.name === 'enderman') { dead++; fell = e.position.clone(); } };
+  let fellAt = 0;
+  const onDead = e => { if (e?.name === 'enderman') { dead++; fell = e.position.clone(); fellAt = Date.now(); } };
   bot.on('entityDead', onDead);
   let hp = bot.health;
   const onHealth = () => { if (bot.health < hp) { const e = endermen(bot)[0]; console.log(`[slot] hurt ${(hp - bot.health).toFixed(1)} at (${bot.entity.position.x.toFixed(1)}, ${bot.entity.position.z.toFixed(1)}), slot back (${site.b.x + 0.5}, ${site.b.z + 0.5}), enderman ${e ? `(${e.position.x.toFixed(1)}, ${e.position.y.toFixed(1)}, ${e.position.z.toFixed(1)})` : 'none'}`); } hp = bot.health; };
   bot.on('health', onHealth);
   const deadline = Date.now() + seconds * 1000;
-  let lastSwing = 0, lastStare = 0;
+  let lastSwing = 0, lastStare = 0, misses = 0, turnedAt = null;
   try {
     while (Date.now() < deadline) {
       task.check();
@@ -128,8 +134,18 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
       const d = Math.hypot(e.position.x - eye.x, e.position.z - eye.z, Math.max(e.position.y - eye.y, 0, eye.y - (e.position.y + 2.9)));
       if (d <= REACH + 0.3) {
         // At the mouth: struck at the body, the swing at its pace.
+        turnedAt = Date.now();
         if (Date.now() - lastSwing >= SWING_MS) { await bot.lookAt(e.position.offset(0, 1.0, 0), true); bot.attack(e); lastSwing = Date.now(); }
-      } else if (Date.now() - lastStare > STARE_EVERY_MS && !angry(e) && e.position.distanceTo(bot.entity.position) > 8) {
+      } else if (angry(e)) {
+        // Turned: waited for at the back, the eyes on the mouth's floor
+        // (one looked at stands where it is); one that does not come in
+        // twenty seconds is left (note 996).
+        turnedAt ??= Date.now();
+        if (Date.now() - turnedAt > TURNED_WAIT_MS) { out.ended = 'it turned and did not come to the mouth in twenty seconds'; break; }
+        await bot.lookAt(site.mouth.offset(0.5, 0, 0.5), true);
+      } else if (misses >= STARE_MISSES) {
+        out.ended = `${STARE_MISSES} looks from the mouth did not turn it (no line to its eyes from there)`; break;
+      } else if (Date.now() - lastStare > STARE_AGAIN_MS && e.position.distanceTo(bot.entity.position) > 5) {
         // Brought by a look at its eyes, meant: from the mouth, where the
         // slot's walls do not hide it, and back in before it has come.
         lastStare = Date.now();
@@ -144,6 +160,9 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
         }
         await walkTo(bot, task, centre(site.b), site.d.scaled(-1), e);
         delete bot._stareMeant;
+        // Whether it turned: the server's word, a moment after.
+        for (let i = 0; i < 10 && !angry(e); i++) { task.check(); await sleep(100); }
+        if (!angry(e)) misses++;
       }
       // One looked at stands where it is: the eyes go to the mouth's floor
       // while it is waited for.
@@ -151,9 +170,25 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
       await sleep(100);
     }
     delete bot._stareMeant;
-    // The drops where the last fell: out for them, where nothing stands there.
+    // The drops where the last fell: out for them, where nothing stands
+    // there. A mob's drop comes a second after its death (the body's fall)
+    // and is picked up half a second after that: waited for, and each one
+    // seen within six blocks walked to (note 996: in the arena's first 26
+    // kills 7 pearls were carried, where about half drop one; the walk had
+    // come and gone before the pearl lay there).
     if (fell && !endermen(bot, 8).length) {
-      try { await navigate(bot, task, new goals.GoalNear(fell.x, fell.y, fell.z, 1), { timeoutMs: 5000, stallMs: 1500 }); await sleep(800); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      const safety = err => { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; };
+      const drops = () => Object.values(bot.entities || {}).filter(x => x.getDroppedItem?.()?.name === item && x.position.distanceTo(fell) <= 6);
+      while (Date.now() - fellAt < 1200) { task.check(); await sleep(100); }
+      try { await navigate(bot, task, new goals.GoalNear(fell.x, fell.y, fell.z, 1), { timeoutMs: 5000, stallMs: 1500 }); } catch (err) { safety(err); }
+      for (const until = Date.now() + 4000; Date.now() < until;) {
+        task.check();
+        const drop = drops()[0];
+        if (!drop) { if (Date.now() - fellAt > 2500) break; await sleep(150); continue; }
+        const p = drop.position;
+        try { await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 0), { timeoutMs: 2500, stallMs: 1000 }); } catch (err) { safety(err); }
+        await sleep(250);
+      }
     }
   } finally { bot.removeListener('entityDead', onDead); bot.removeListener('health', onHealth); delete bot._stareMeant; }
   out.kills = dead; out.pearls = count() - had; out.hurt = Math.max(0, hp0 - (bot.health ?? hp0));
