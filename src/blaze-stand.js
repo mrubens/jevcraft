@@ -885,7 +885,13 @@ function watchBlocks(bot) {
 // ("with 1 blaze rod carried the walk takes no drop of more than two"),
 // four times in 30 seconds. Where there are no such movements (a world read
 // without a pathfinder), blaze-tactics.js walkCells.
-const REACH_NODES = 6000;
+// Three thousand looks, not six (note 1091): of 17 builds of the stance's
+// options sampled on 2026-10-03 (17:55 to 18:10Z) the walk's map was 4.5 of
+// 7.6 seconds, about 320 ms each time it was made, the body still under
+// fire meanwhile; half the looks reach about eleven cells out on open
+// floor, where the stands lie, and past the depth reached a cell is not
+// refused (cutAt).
+const REACH_NODES = 3000;
 // `edges`: the walk of a way out names its cells beside a drop and walks
 // them (movement.js edgeTaken, note 610), so the drop's edge is not refused.
 function moveWalk(bot, mv, { edges = false } = {}) {
