@@ -19,7 +19,7 @@ const STARE_MS = 450, STARE_EVERY_MS = 12000;
 // times, and one turned is waited for twenty seconds (note 996): of the
 // first five fights live (2026-10-03), three ran their whole minute with an
 // enderman about that never came, a look every twelve seconds.
-const STARE_AGAIN_MS = 3000, STARE_MISSES = 3, TURNED_WAIT_MS = 20000;
+const STARE_AGAIN_MS = 3000, STARE_MISSES = 3, TURNED_WAIT_MS = 20000, NO_LINE_MS = 12000;
 // The server's own word that it has been stared at or screams (its entity
 // data, 17 and 18): one brought is not gone out to again.
 const angry = e => !!(e.metadata?.[17] || e.metadata?.[18]);
@@ -127,14 +127,27 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
   const onHealth = () => { if (bot.health < hp) { const e = endermen(bot)[0]; console.log(`[slot] hurt ${(hp - bot.health).toFixed(1)} at (${bot.entity.position.x.toFixed(1)}, ${bot.entity.position.z.toFixed(1)}), slot back (${site.b.x + 0.5}, ${site.b.z + 0.5}), enderman ${e ? `(${e.position.x.toFixed(1)}, ${e.position.y.toFixed(1)}, ${e.position.z.toFixed(1)})` : 'none'}`); } hp = bot.health; };
   bot.on('health', onHealth);
   const deadline = Date.now() + seconds * 1000;
-  let lastSwing = 0, lastStare = 0, misses = 0, turnedAt = null;
+  let lastSwing = 0, lastStare = 0, misses = 0, turnedAt = null, noLineSince = null;
   try {
     while (Date.now() < deadline) {
       task.check();
       out.hurt = Math.max(0, hp0 - (bot.health ?? hp0));
       if (out.hurt >= HURT_STOP) { out.ended = 'hurt'; break; }
       if (count() - had >= want) { out.ended = 'pearl'; break; }
-      const e = endermen(bot)[0];
+      // The nearest at arm's reach or turned, else the nearest with a line
+      // from the mouth to its eyes now (note 1014): the look is only made at
+      // one it can turn. The first miss logged live (2026-10-03) was a look
+      // 1.4 degrees off its eyes, well inside what the game wants, at an
+      // enderman that had gone ten blocks up out of the mouth's line.
+      const all = endermen(bot);
+      const e = all.find(x => angry(x) || x.position.distanceTo(bot.entity.position) <= 5) || all.find(x => lineFrom(bot, site.mouth, x)) || null;
+      if (!e && all.length) {
+        noLineSince ??= Date.now();
+        if (Date.now() - noLineSince > NO_LINE_MS) { out.ended = dead ? 'none left in line from the mouth' : `none of the ${all.length} about has a line to the mouth`; break; }
+        await bot.lookAt(site.mouth.offset(0.5, 0, 0.5), true);
+        await sleep(200); continue;
+      }
+      noLineSince = null;
       if (!e) { out.ended = dead ? 'none left' : 'none came'; if (dead || Date.now() > deadline - (seconds - 8) * 1000) break; await sleep(250); continue; }
       const eye = bot.entity.position.offset(0, 1.62, 0);
       // To the nearest of its body, 2.9 tall.

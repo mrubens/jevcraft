@@ -446,7 +446,7 @@ async function slotForDrop(bot, task, target, goal, save, actions, site) {
   // not offered again within twelve blocks of it for two minutes. 25598
   // (2026-10-03 06:50 to 06:54Z) took the slot at seven askings running,
   // one enderman after another, each "3 looks from the mouth did not turn it".
-  if (!r.kills && /did not turn it|did not come/.test(String(r.ended))) { const p = bot.entity.position; state.slotMiss = { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z), at: Date.now(), why: String(r.ended).slice(0, 120) }; }
+  if (!r.kills && /did not turn it|did not come|has a line to the mouth/.test(String(r.ended))) { const p = bot.entity.position; state.slotMiss = { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z), at: Date.now(), why: String(r.ended).slice(0, 120) }; }
   bot.emit('mob_hunt', result); save();
   return result;
 }
