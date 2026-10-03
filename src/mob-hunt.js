@@ -1442,6 +1442,37 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     // warped forests (2026-10-01 12:03-12:19Z, note 802). It is walked up to,
     // within a sword's reach, and the hunt strikes it there.
     const comesNot = near.name === 'enderman' && !require('./danger').provokedEnderman(bot, near);
+    // A calm enderman need not be walked up to (note 992): from a slot dug
+    // in the rock at hand a look brings it (enderman-slot.js, note 981).
+    // The slot was on offer only at hunt_target, asked of one the walk
+    // reaches: 25598 (2026-10-03 06:11:52 to 06:13:58Z) stalked endermen
+    // two minutes on ground with no walk to them, "watching endermans and
+    // getting nowhere", and the question was never asked. Asked here once
+    // for each in two minutes, beside the walk up and leaving it.
+    if (comesNot && distance > 3 && distance <= 40 && typeof bot.dig === 'function' && !isSetAside(goal, 'hunt_slot', key)) {
+      const slot = require('./enderman-slot');
+      let site = null; try { site = slot.slotSite(bot); } catch (_) { site = null; }
+      const client = actions.client || task.opportunityClient;
+      if (site && client) {
+        setAside(goal, 'hunt_slot', key, 'asked', 120000); save();
+        const about = Object.values(bot.entities || {}).filter(e => e.name === 'enderman' && e.isValid !== false && e.position?.distanceTo(bot.entity.position) <= 40).length;
+        let seen = true; try { seen = !!threats(bot, 48).find(t => t.entity === near)?.visible; } catch (_) { seen = true; }
+        const tree = {
+          [`slot_${near.id}`]: { description: `${slot.says(site, about)} The enderman is ${Math.round(distance)} blocks off${seen ? ', in sight' : ', not in sight now: the look that brings it needs a line to its eyes from the slot\'s mouth, and where there is none it does not come'}. ${slot.recordSays()}`,
+            run: () => slotForDrop(bot, task, near, goal, save, actions, site) },
+          walk_up: { description: `Walk up to it within a sword's reach and strike it first, in the open, the eyes kept off its head. ${require('./pearl-record').endermanSays(bot)}`, run: async () => 'walk' },
+          defer: { description: `Leave the endermen for now: the stalk of them ends for two minutes and the way to the ${String(step.item || 'goal').replaceAll('_', ' ')}s is asked again, the rest of the game beside it.`,
+            run: async () => { setAside(goal, 'hunt_target', key, 'Jev chose to leave it for now', 120000); setAside(goal, 'hunt_kind', step.entity, 'Jev chose to leave them for now', 120000); try { require('./pearl-order').endHeld(goal, 'Jev left the endermen in reach'); } catch (_) { /* the order stands */ } delete state.stalking; save(); } },
+        };
+        let decision = null;
+        try { decision = await decide('hunt_target', { client, bot, task, goal, save, tree, state: { health: bot.health, food: bot.food, enderman: { distance: Math.round(distance), inSight: seen }, endermenWithinForty: about } }); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; decision = null; }
+        if (decision && !decision.stale) {
+          const pick = decision.path[0];
+          if (pick !== 'walk_up') { await decision.action.run(); return; }
+        }
+      }
+    }
     if ((distance > 10 || (comesNot && distance > 3)) && actions.navigate) {
       const from = bot.entity.position.clone();
       // The mob being closed on is the encounter for the walk: without
