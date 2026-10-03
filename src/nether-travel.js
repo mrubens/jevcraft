@@ -730,6 +730,8 @@ function standingTripSays(bot, goal, option, now = Date.now()) {
 function chooseReturnForFood(goal, now = Date.now()) {
   require('./progress').attemptsFor(goal).clear('nether_return', 'food');
   goal.leaveNether = { reason: 'food', pick: 'go_back', until: 0, at: now };
+  // Kept for the crossing's question on the other side (work.js, note 1134).
+  goal.foodTurnBack = { at: now };
 }
 
 // Whether food is why the bot is going back: hungry, with nothing to eat

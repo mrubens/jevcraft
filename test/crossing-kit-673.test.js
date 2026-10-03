@@ -172,3 +172,16 @@ test('fewer than four sticks, wood and cobblestone carried: the crossing offers 
   assert.equal(await crossingKitReady(atPortal({ stick: 0, oak_log: 2, cobblestone: 40, crafting_table: 1 }), new Task('win'), { kind: 'win' }, () => {}, client), true);
   assert.match(asked?.top_up_sticks || '', /^Make 8 sticks from the wood carried first \(4 planks, a few seconds, one slot; 0 carried now\)\. In the Nether a pickaxe worn out is made again only from what is carried or from the forests' stems: with 2 sticks and 3 of the 40 cobblestone carried, a stone pickaxe \(131 uses\) is made anywhere at a crafting table \(one carried\)\. On 2026-10-02, 26% of the Nether time with rods carried had no pickaxe/);
 });
+
+test('the crossing says the last one turned back for food, while the food is no better and hunger under eighteen (note 1134)', async () => {
+  // 25591 (2026-10-03 23:24:44 to 23:25:21Z): crossed at hunger 14 with nothing to eat, back through the portal for food 22 seconds in, as at 23:11Z.
+  const { crossingKitReady } = require('../src/work');
+  let asked = null;
+  const client = { systemOne: async ({ questions }) => { asked = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'cross_now', confidence: 0.7 } } }; } };
+  const hungry = atPortal({ cobblestone: 10, golden_boots: 0 }); hungry.food = 14;
+  await crossingKitReady(hungry, new Task('win'), { kind: 'win', foodTurnBack: { at: Date.now() - 2 * 60000 } }, () => {}, client);
+  assert.match(asked.cross_now, /The last crossing turned back through the portal for food 2 minutes ago, the first thing asked on the far side; 0 food points are carried now and hunger is 14: crossed so, the same question is asked there again\./);
+  asked = null;
+  await crossingKitReady(hungry, new Task('win'), { kind: 'win' }, () => {}, client);
+  assert.doesNotMatch(asked.cross_now, /turned back through the portal for food/);
+});

@@ -8423,6 +8423,16 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     const minutes = Math.max(0, Math.round((hungerNow - 17) / NETHER_HUNGER_AN_HOUR * 60));
     tree.cross_now.description += ` No food at all is carried: in the Nether hunger falls about ${NETHER_HUNGER_AN_HOUR} an hour with nothing to eat${hungerNow >= 18 ? `, and at hunger ${hungerNow} health stops coming back in about ${minutes} minute${minutes === 1 ? '' : 's'}` : ', and health is not coming back now'}.`;
   }
+  // The crossing that turned back for food (note 1134): made again with the
+  // food no better, it is the same round trip. 25591 (2026-10-03 23:24:44
+  // to 23:25:21Z), nine rods and seven pearls in its chests, crossed at
+  // hunger 14 with nothing to eat, and 22 seconds in was "Going back
+  // through the portal for food", as it had at 23:11Z.
+  const turnedBack = goal.foodTurnBack && Date.now() - goal.foodTurnBack.at < 30 * 60000 ? goal.foodTurnBack : null;
+  if (turnedBack && foodItem && foodItem.carried < foodItem.wants && hungerNow < 18) {
+    const ago = Math.max(1, Math.round((Date.now() - turnedBack.at) / 60000));
+    tree.cross_now.description += ` The last crossing turned back through the portal for food ${ago} minute${ago === 1 ? '' : 's'} ago, the first thing asked on the far side; ${foodItem.carried} food points are carried now and hunger is ${hungerNow}: crossed so, the same question is asked there again.`;
+  }
   for (const i of empty) tree[`take_up_${i.key}`] = { description: `Take up the ${i.key} for the Nether again first: ${i.carried === 0 ? `it is empty now, 0 of ${i.wants} carried${seen[i.key] ? ` (${seen[i.key]} when the crossing last looked)` : ''}` : `${i.carried} of ${i.wants} points carried, under the Nether's reserve of ${NETHER_FLOOR}`}, and its step was set aside by the ladder; its rest is lifted and the ladder takes it up next.` };
   const pickMade = noPickaxe ? (countOf(bot, 'iron_ingot') >= 3 ? 'iron_pickaxe' : ['cobblestone', 'cobbled_deepslate', 'blackstone'].some(n => countOf(bot, n) >= 3) ? 'stone_pickaxe' : 'wooden_pickaxe') : null;
   if (noPickaxe) {
