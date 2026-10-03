@@ -5319,7 +5319,15 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
     } catch (_) { usesSays = ''; }
     tree.tunnel_home = { description: `Dig a tunnel straight at the portal through the rock, two high and one wide: ${dy ? `a step ${dy < 0 ? 'down' : 'up'} with each block until level with it (${Math.abs(dy)} ${dy < 0 ? 'below' : 'above'}), then level; ` : ''}a block laid where the floor is missing (${blocksLaid} carried), and over, under or round any lava met (no block is dug with lava or water behind it). Up to 96 blocks a go, about ${per} seconds a block ${pick ? 'with the pickaxe carried' : 'by hand (no pickaxe carried)'}: about ${Math.round(Math.max(stretch, Math.abs(dy)) * per)} seconds for ${stretch} blocks of the ${across} to the portal${Math.abs(dy) > stretch ? ` and the ${Math.abs(dy)} ${dy < 0 ? 'down' : 'up'}` : ''}, then asked again from where it ends (the pace is the live tunnels' of 2026-10-02: about ${Math.round(60 / TUNNEL_SECONDS.pickaxe)} blocks a minute with a pickaxe, ${Math.round(60 / TUNNEL_SECONDS.hand)} by hand).${usesSays}${gapSays}${inLine} Inside the rock no ghast or blaze has a line to the bot and there is no drop beside it; where it comes out into open air it lays its floor crouched, and stops there if something that pushes is in sight. It stops at lava it cannot pass. Measured in the arena: 41 blocks of netherrack, ten down, past a lava pocket and four blocks of open air, in 26 seconds with an iron pickaxe, no damage, 2 runs of 2.${rodsHere(bot)}` };
   }
-  if (pickaxeWanted) {
+  // Not on the trip home chosen for wood (upkeep's return_for_wood, note
+  // 1113): the pickaxe first is a gathering for the wood the trip is for,
+  // away from the portal, the way Jev had just passed over at upkeep.
+  // 25585 (2026-10-03 20:45 to 20:58Z), no pickaxe and no block at its
+  // fortress, answered return_for_wood ten times in a quarter hour; each
+  // time the way's question followed, pickaxe first was taken (0.28 at
+  // 20:58:42Z), the gathering's legs walked for stems that were not
+  // reached, and the walk home was never begun.
+  if (pickaxeWanted && goal.intention?.choice !== 'return_for_wood') {
     let fetch = null;
     try { fetch = await require('./nether-wood').fetchStemsOffer(bot, task, goal); } catch (_) { fetch = null; }
     // A fetch resting is said as resting, with the stems known (note 967):

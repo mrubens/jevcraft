@@ -89,4 +89,10 @@ test('the stem fetch resting is said as resting on pickaxe_first, not as no stem
   await portalWay(bot, task, goal, () => {}, { x: -140, y: 66, z: -113 }, 'nether', { walk: 'the walk there failed (no route)', pickaxeWanted: { item: 'stone_pickaxe', gather: true } }).catch(() => {});
   assert.match(asked[0]?.pickaxe_first || '', /The fetch of stems rests from a failure \(No stems were fetched: the walk to the crimson stems came no nearer\)/);
   assert.doesNotMatch(asked[0].pickaxe_first, /No stem is known/);
+  // On the trip home chosen for wood, the pickaxe first is not a way of it (note 1113).
+  const home = { survival: {}, intention: { id: 'upkeep', choice: 'return_for_wood', at: Date.now() } };
+  asked.length = 0;
+  await portalWay(bot, task, home, () => {}, { x: -140, y: 66, z: -113 }, 'nether', { walk: 'the walk there failed (no route)', pickaxeWanted: { item: 'stone_pickaxe', gather: true } }).catch(() => {});
+  assert(asked[0], 'the way is asked');
+  assert.equal(asked[0].pickaxe_first, undefined, Object.keys(asked[0]).join(','));
 });
