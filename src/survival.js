@@ -7685,7 +7685,13 @@ class Survival {
         } finally { task.interruptCheck = outerCheck; }
         return;
       }
-      if (shelter.inside(bot, refuge)) {
+      // A room is left to gather for it; a site with nothing built is not a
+      // room, and standing on it is standing in the open (note 1207): the
+      // leave of one waited behind 'threats still block the shelter exits'.
+      // 25585 (2026-10-04 09:43:44 to 09:44:27Z), bare on its site with no
+      // block laid, waited three passes of five seconds for exits that were
+      // not there while four zombies walked in from 17 blocks to 2.9.
+      if (shelter.inside(bot, refuge) && !emptySite(bot, refuge)) {
         await this.leave(task, goal, save, refuge);
         if (shelter.inside(bot, refuge)) return;
       }

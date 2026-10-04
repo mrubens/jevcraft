@@ -171,6 +171,8 @@ test('shelter supply gathering first escapes the pit beneath an empty reserved s
   await controller.refugeStep(new Task('shelter supplies'), goal, () => {});
   assert(approached); assert(!acquired, 'Approach is a bounded step before gathering');
   assert.equal(bot.pathfinder.movements.exclusionAreasBreak, original);
+  // On the site with nothing built there is no room to leave: the gathering begins at once (note 1207).
+  controller.leave = async () => { throw new Error('left a site with nothing built'); };
   await controller.refugeStep(new Task('gather outside'), goal, () => {});
   assert(acquired); assert.equal(goal.item, 'oak_log');
 });
