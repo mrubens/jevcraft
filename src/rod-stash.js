@@ -367,8 +367,17 @@ async function withStash(bot, task, entry, save, work) {
 function collectStage(bot, goal, now = Date.now()) {
   const here = bot?.entity?.position, dim = dimOf(bot);
   if (!here) return null;
-  const s = stashes(goal).filter(c => c.dimension === dim && withContents(c) && !isSetAside(goal, 'rod_stash_take', at(c.position), now))
-    .map(c => ({ c, d: Math.round(here.distanceTo(V(c.position))) })).sort((a, b) => a.d - b.d)[0];
+  const all = stashes(goal).filter(c => c.dimension === dim && withContents(c) && !isSetAside(goal, 'rod_stash_take', at(c.position), now))
+    .map(c => ({ c, d: Math.round(here.distanceTo(V(c.position))) })).sort((a, b) => a.d - b.d);
+  // The chest just filled beside the bot is the last taken, not the first
+  // (note 1261): put down 'to take on the way out', it was the nearest with
+  // something in it and came straight back out. 25593 (2026-10-04
+  // 22:10:40Z): 'Left 2 blaze rods, 6 ender pearls in a chest ... Took 2
+  // blaze rods, 6 ender pearls back out of the chest', a second apart, and
+  // walked out with them; 25597 (22:48Z) set off 364 blocks for its last
+  // rod with eleven pearls in its pack.
+  const fresh = x => x.d <= 8 && Number.isFinite(Date.parse(x.c.storedAt || '')) && now - Date.parse(x.c.storedAt) < 15 * 60000;
+  const s = all.find(x => !fresh(x)) || all[0];
   return s ? { phase: 'collect_rod_stash', action: 'collect_rod_stash', at: P(s.c.position), distance: s.d, items: { ...s.c.contents } } : null;
 }
 
@@ -379,6 +388,12 @@ async function collect(bot, task, goal, save, actions = {}) {
   const entry = stashes(goal).find(c => c.position.x === stage.at.x && c.position.y === stage.at.y && c.position.z === stage.at.z);
   const key = at(entry.position), cell = V(entry.position);
   goal.step = { action: 'collect_rod_stash', at: P(cell), distance: stage.distance, items: { ...entry.contents } }; save?.();
+  // A long walk for it in the Nether with pearls or eyes in the pack: asked
+  // first whether they are put down here (pearls_now), to take on the way out.
+  if (entry.dimension === 'nether' && stage.distance >= 64 && goal.kind === 'win' && task?.opportunityClient) {
+    try { if (await require('./mob-hunt').pearlsNow(bot, task, goal, save, actions, task.opportunityClient) === 'kept') return true; }
+    catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  }
   if (!entry.announced) { entry.announced = true; bot.chat?.(`Taking ${listed(entry.contents)} out of the chest at ${key}${entry.dimension === 'nether' ? ' before the portal' : ''}.`); }
   try {
     // Far off in the Overworld (the eyes left behind for the stronghold's
