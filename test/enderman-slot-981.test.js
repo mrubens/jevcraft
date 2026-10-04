@@ -75,3 +75,21 @@ test('of the slots in reach, the one whose mouth the most endermen have a line t
   assert.ok(site.lines >= 3, `${site.lines} have a line to it`);
   assert.strictEqual(site.mouth.z, -3, 'a mouth in the south wall, seen by the three in the north');
 });
+
+test('a mouth with lines the pathfinder has no way to gives way to the next most-seen it can walk to (note 1245)', () => {
+  const b = world((x, y, z) => y <= 63 ? 'netherrack' : (x <= 3 || z <= -4) ? 'netherrack' : 'air');
+  const e = (id, x, z) => ({ id, name: 'enderman', isValid: true, position: new Vec3(x, 64, z), metadata: [] });
+  const hunted = e(1, 14.5, 0.5);
+  b.entities = { 1: hunted, 2: e(2, 6.5, 14.5), 3: e(3, 7.5, 16.5), 4: e(4, 8.5, 18.5) };
+  b.world = { raycast: (from, dir) => {
+    const alongX = Math.abs(dir.x) > Math.abs(dir.z);
+    const fromWest = Math.floor(from.x) === 4, fromSouth = Math.floor(from.z) === -3;
+    return (fromWest && alongX) || (fromSouth && !alongX) ? null : { position: from.offset(1, 0, 0), intersect: from.offset(1, 0, 0) };
+  } };
+  // No way to any mouth in the south wall.
+  b.pathfinder = { movements: {}, getPathTo: (m, goal) => ({ status: goal.z === -3 ? 'noPath' : 'success' }) };
+  const site = slot.slotSite(b, { toward: hunted });
+  assert.strictEqual(site.line, true);
+  assert.notStrictEqual(site.mouth.z, -3, 'not a mouth it cannot walk to');
+  assert.strictEqual(site.mouth.x, 4, 'the west wall\'s mouth, seen by the one hunted');
+});

@@ -173,7 +173,17 @@ function slotSite(bot, { reach = 6, toward = null } = {}) {
   const others = endermen(bot, 60);
   let best = null;
   const linesTo = s => others.filter(e => level(s, e) && lineFrom(bot, s.mouth, e)).length + (!others.includes(toward) && level(s, toward) && lineFrom(bot, s.mouth, toward) ? 1 : 0);
-  for (const s of out.slice(0, 24)) { const lines = linesTo(s); if (lines > (best?.lines || 0)) best = { s, lines }; }
+  // And a mouth the bot has a way to (note 1245): of the mouths with lines,
+  // the most-seen the pathfinder finds a walk to, the ten best looked at.
+  // 25589 (2026-10-04 17:01 to 17:05Z) was given a mouth four blocks off
+  // with 'No route from here to (269, 62, -217) (partial)', then one beside
+  // lava it would not pass, and was four minutes between fights.
+  const walkable = s => {
+    if (!s.off || s.held || typeof bot.pathfinder?.getPathTo !== 'function') return true;
+    try { const { goals } = require('mineflayer-pathfinder'); return bot.pathfinder.getPathTo(bot.pathfinder.movements, new goals.GoalBlock(s.mouth.x, s.mouth.y, s.mouth.z), 40).status === 'success'; } catch (_) { return true; }
+  };
+  const seen = out.slice(0, 24).map(s => ({ s, lines: linesTo(s) })).filter(x => x.lines > 0).sort((x, y) => y.lines - x.lines);
+  best = seen.slice(0, 10).find(x => walkable(x.s)) || seen[0] || null;
   // None of the nearest two dozen seen by any: the rest in reach are looked
   // through before a blind slot is settled for (note 1230).
   if (!best) for (const s of out.slice(24, 120)) { const lines = linesTo(s); if (lines > 0) { best = { s, lines }; break; } }
