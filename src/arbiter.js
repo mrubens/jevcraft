@@ -1018,6 +1018,7 @@ function watchOnce(bot, { live = mode() === 'live', now = Date.now(), look = pro
   // times in five seconds by the same creeper's alert, the work it preempted
   // still the holder while the question was out, never answered, the bot
   // backing 2.4 blocks in all; the blast took 20 to 6.4 (note 752f).
+  const slotKin = t => { const h = bot._huntingEntity; return !!h?.slot && h.until > now && h.name === t?.entity?.name; };
   const askedAbout = top && ALERTS.has(top.key) && state.askingAlerts?.has(top.key);
   if (!askedAbout && outranks(bot, top, holder, now)) p = { by: top.key, layer: top.layer, action: top.action, facts: top.facts, why: `${top.action.replaceAll('_', ' ')} ${JSON.stringify(top.facts)}` };
   // A newcomer: the ruling was made without it. The work's own threat check
@@ -1047,7 +1048,14 @@ function watchOnce(bot, { live = mode() === 'live', now = Date.now(), look = pro
     // came within 5 blocks"; note 802).
     const D = require('./danger');
     const calm = t => t.entity.name === 'enderman' && !D.provokedEnderman(bot, t.entity);
-    const huntKin = t => t.distance > 3 && D.claimed(bot, t.entity);
+    // Nor, at any distance, one of the kind a slot's fight is under way for
+    // (enderman-slot.js): the enderman come to the slot's mouth is the fight
+    // itself (note 1226). 25597 (2026-10-04 10:36:38 to 10:37:19Z) took the
+    // slot at 0.73, and twelve seconds into it 'a enderman came within 3
+    // blocks' gave the turn to the stance: a cap that found no route, a
+    // pocket, a tunnel out of it, and the enderman at arm's length in the
+    // open, 20 health to none in four blows.
+    const huntKin = t => (t.distance > 3 && D.claimed(bot, t.entity)) || slotKin(t);
     const fresh = mobs.find(t => t.entity && t.distance <= STANCE_NEWCOMER && (t.visible || (t.distance <= 4 && !shooter(t.entity))) && !holder.ids.includes(t.entity.id) &&
       !(commit && commit.kinds.includes(t.entity.name) && t.distance > 3) && !sheltered(t) && !calm(t) && !huntKin(t));
     if (fresh) p = { by: 'newcomer', layer: null, action: null, id: fresh.entity.id, facts: { mob: fresh.entity.name, distance: Math.round(fresh.distance * 10) / 10, seen: !!fresh.visible },
@@ -1064,7 +1072,7 @@ function watchOnce(bot, { live = mode() === 'live', now = Date.now(), look = pro
   if (!p && holder && holder.layer !== 'survival' && holder.knew) {
     const got = pressing(bot, look);
     const mob = got.reach ? (() => { try { return look.atReach(bot)[0]; } catch (_) { return null; } })() : null;
-    if (got.reach && !holder.knew.reach) p = { by: 'reach', layer: 'survival', action: 'escape_threat', ...(mob?.entity?.id !== undefined ? { id: mob.entity.id } : {}),
+    if (got.reach && !holder.knew.reach && !(mob && slotKin(mob))) p = { by: 'reach', layer: 'survival', action: 'escape_threat', ...(mob?.entity?.id !== undefined ? { id: mob.entity.id } : {}),
       facts: mob ? { mob: mob.entity.name, distance: Math.round(mob.distance * 10) / 10, seen: !!mob.visible } : {}, why: `a ${mob?.entity?.name || 'mob'} came within its reach of the bot` };
     else if (got.push && !holder.knew.push) p = { by: 'push', layer: 'survival', action: 'escape_threat', facts: {}, why: 'something that can push the bot is about, a deadly drop beside it' };
     // Said once for the holder: its turn now counts it as given with it.

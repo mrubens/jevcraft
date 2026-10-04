@@ -456,7 +456,8 @@ async function slotForDrop(bot, task, target, goal, save, actions, site) {
   const before = countOf(bot, state.item), deadline = Date.now() + 135000;
   const restoreEncounter = encounter(bot, task, target, deadline), movement = combatMovement(bot);
   const previousInterrupt = task.interruptCheck;
-  const claim = () => { bot._huntingEntity = { name: target.name, until: Date.now() + 5000 }; };
+  // Claimed as the slot's (arbiter.js, note 1226): at the mouth, within three blocks, is where the slot's fight is.
+  const claim = () => { bot._huntingEntity = { name: target.name, until: Date.now() + 5000, slot: true }; };
   claim();
   task.interruptCheck = () => { claim(); previousInterrupt?.(); checkAir(bot); checkThreats(bot); };
   bot._provokedMobs ||= new Map(); bot._provokedMobs.set(target.id, target);

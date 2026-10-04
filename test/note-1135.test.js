@@ -28,3 +28,14 @@ test('a spear on foot strikes from its reach as the bot turns to run', () => {
   assert.match(cost.says, /as the bot turns to run, being at its reach now/);
   assert.ok(cost.damage >= 13);
 });
+
+test('an enderman set on the bot is in the run\'s price, with it through the run and after; a calm one is not (note 1226)', () => {
+  const b = bot();
+  const ender = { entity: { id: 77, name: 'enderman', position: b.entity.position.offset(1.8, 0, 0), height: 2.9 }, distance: 1.8, visible: true };
+  const calm = chaseCost(b, [ender], { destination: { x: Math.floor(b.entity.position.x) - 7, y: Math.floor(b.entity.position.y), z: Math.floor(b.entity.position.z) }, runSeconds: 1.3 });
+  assert.equal(calm.damage, 0);
+  b._provokedMobs = new Map([[77, ender.entity]]);
+  const set = chaseCost(b, [ender], { destination: { x: Math.floor(b.entity.position.x) - 7, y: Math.floor(b.entity.position.y), z: Math.floor(b.entity.position.z) }, runSeconds: 1.3 });
+  assert.ok(set.damage >= 20, `${set.damage} over the fifteen seconds`);
+  assert.match(set.says, /the enderman \d+ blows/);
+});

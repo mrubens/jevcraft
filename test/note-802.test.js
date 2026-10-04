@@ -16,3 +16,13 @@ test('a calm enderman within six is no newcomer; a zombie is (note 802)', () => 
   assert.equal(arbiter.watchOnce(botAt(), { live: true, look: look([mob('enderman', 5, 7)]), log: () => {} }), null);
   assert.equal(arbiter.watchOnce(botAt(), { live: true, look: look([mob('zombie', 5, 8)]), log: () => {} })?.by, 'newcomer');
 });
+
+test('a provoked enderman at the mouth of the slot being fought from is the fight, not a newcomer; with no slot it is one (note 1226)', () => {
+  const provoked = b => { const m = mob('enderman', 2.7, 7); b._provokedMobs = new Map([[7, m.entity]]); return m; };
+  const plain = botAt('enderman');
+  assert.equal(arbiter.watchOnce(plain, { live: true, look: look([provoked(plain)]), log: () => {} })?.by, 'newcomer');
+  const slot = botAt('enderman'); slot._huntingEntity.slot = true;
+  assert.equal(arbiter.watchOnce(slot, { live: true, look: look([provoked(slot)]), log: () => {} }), null);
+  // A zombie come to the slot is still one.
+  assert.equal(arbiter.watchOnce(slot, { live: true, look: look([mob('zombie', 2.7, 9)]), log: () => {} })?.by, 'newcomer');
+});

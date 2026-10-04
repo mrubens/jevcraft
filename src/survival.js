@@ -171,7 +171,13 @@ function chaseCost(bot, danger, { apartIds = new Set(), destination = null, runS
   const worn = ce.armourOf([5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean));
   const dest = new Vec3(destination.x + 0.5, destination.y, destination.z + 0.5);
   const r1 = x => Math.round(x * 10) / 10;
-  const chasers = danger.filter(t => t.entity?.position && !shooter(t.entity) && t.entity.name !== 'enderman' && t.entity.name !== 'creeper' && !apartIds.has(t.entity.id) && t.distance <= followRange(t.entity.name) && ce.MOBS[t.entity.name]?.hit > 0);
+  // An enderman set on the bot follows it too, faster than it sprints (note
+  // 1226); a calm one does not. 25597 (2026-10-04 10:37:16Z), an enderman
+  // it had turned striking it at 1.8 blocks, read the run at 'about 0
+  // damage over about 1 seconds' beside a fight at 28.7, ran at 0.56, and
+  // took three more blows of 4.2 where it stood.
+  const set = t => { try { return require('./danger').provokedEnderman(bot, t.entity); } catch (_) { return false; } };
+  const chasers = danger.filter(t => t.entity?.position && !shooter(t.entity) && (t.entity.name !== 'enderman' || set(t)) && t.entity.name !== 'creeper' && !apartIds.has(t.entity.id) && t.distance <= followRange(t.entity.name) && ce.MOBS[t.entity.name]?.hit > 0);
   let damage = 0, withering = null;
   const parts = [];
   for (const t of chasers) {
@@ -180,7 +186,8 @@ function chaseCost(bot, danger, { apartIds = new Set(), destination = null, runS
     const toDest = t.entity.position.distanceTo(dest), behind = toDest - v * runSeconds;
     const blows = [];
     const atReach = t.distance <= (spear ? ce.SPEAR.reach : 2.5);
-    if (v >= SPRINT && (atReach || Math.max(0, toDest - 1.5) / v <= runSeconds)) for (let s = atReach ? RUN_START : Math.max(0, toDest - 1.5) / v; s < runSeconds; s += every) blows.push(s);
+    // One faster than the bot sprints is with it through the run and after it, to the end of the fifteen seconds.
+    if (v >= SPRINT && (atReach || Math.max(0, toDest - 1.5) / v <= runSeconds)) for (let s = atReach ? RUN_START : Math.max(0, toDest - 1.5) / v; s < (t.entity.name === 'enderman' ? seconds : runSeconds); s += every) blows.push(s);
     else if (atReach) blows.push(RUN_START);
     else { const arrives = Math.max(0, toDest - 1.5) / v; if (arrives <= runSeconds) blows.push(arrives); }
     // At the bot again after the run, where it follows that far.
@@ -4673,7 +4680,10 @@ class Survival {
         // costs (armsLength, buildCost above); once up, none can land
         // another, so the price stops at the setup, not carried through
         // the fight that follows.
-        const capCost = stanceCost({ mobs: mobs.filter(m => m.name === 'enderman'), setup: plan.seconds, reaches: m => arrives(m) < plan.seconds });
+        // (It was priced with those at arm's length reaching on through the
+        // fifteen seconds: 25597 at 10:37:16Z read the cap at 68.8 damage,
+        // 'Capped, the enderman still reaches it', and took it at 0.08.)
+        const capCost = stanceCost({ mobs: mobs.filter(m => m.name === 'enderman'), setup: plan.seconds, reaches: () => false });
         const stepWords = plan.kind === 'here' ? 'Already under a two-high ceiling here' : plan.kind === 'gap' ? `Step ${plan.blocks === 0 && plan.cell.distanceTo(feet) < 1.5 ? 'onto' : 'into'} a two-high gap already ${Math.round(plan.cell.distanceTo(feet))} block${Math.round(plan.cell.distanceTo(feet)) === 1 ? '' : 's'} off` : 'Place one block above the bot\'s own head, capping the space here at two blocks high';
         options.cap_fight = { ...(plan.kind !== 'here' ? { expects: { damage: capCost.damage, seconds: capCost.seconds, oneHit } } : {}),
           description: `${stepWords}: an enderman cannot path into a cell that low, so once the lid is up none still about can ever land a hit, and the sword goes on reaching its legs from here.` + (plan.kind === 'place' ? buildCost : '') + (plan.kind === 'here' ? '' : costSays(capCost, bot.health, mobs, { doing: plan.kind === 'place' ? 'placing the lid' : 'stepping in', done: 'Capped' })) + (danger.length > 1 ? ` ${danger.length} endermen about; capped, they are taken one at a time, whichever is struck.` : ''),
