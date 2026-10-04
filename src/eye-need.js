@@ -29,7 +29,9 @@ const countOf = (bot, name) => (bot.inventory?.items() || []).filter(i => i.name
 // The eyes the goal wants in all: the frames still empty once the portal is
 // found, else the twelve and the spare the search throws with.
 const portalFrames = goal => { const needed = goal?.gameProgress?.milestones?.stronghold_located && goal?.endPortal?.neededEyes; return Number.isInteger(needed) ? needed : null; };
-const eyeTarget = goal => portalFrames(goal) ?? EYES_WANTED;
+// Once the search's bearings meet at one place (stronghold.js, note 1151),
+// the spare is no longer wanted: the walk goes there without another throw.
+const eyeTarget = goal => portalFrames(goal) ?? (goal?.strongholdSearch?.estimate && (goal.strongholdSearch.bearings || []).length >= 2 ? PORTAL_EYES : EYES_WANTED);
 // Rods that make `eyes` eyes with `powder` already made and no eyes: two powder a rod.
 const rodsFor = (eyes, powder = 0) => Math.ceil(Math.max(0, eyes - powder) / 2);
 

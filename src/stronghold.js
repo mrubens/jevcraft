@@ -197,8 +197,24 @@ async function findStronghold(bot, task, goal, save, actions, client) {
   const every = estimate && toEstimate < 96 ? 24 : settled ? Math.min(400, Math.max(96, toEstimate / 3)) : 96;
   const throwAgain = !last || sinceThrow >= every ||
     (target && horizontal(bot.entity.position, target) < 12 && sinceThrow >= 12);
-  if (throwAgain) {
-    if (countOf(bot, 'ender_eye') <= 12) throw blocked('Stronghold search needs another spare Eye of Ender; preserving twelve for the portal');
+  // With no spare Eye (twelve or fewer, the portal's own) and the bearings
+  // met at one place, no more is thrown and none is fetched: the walk goes
+  // on to that place, and there the ground is searched for the portal's
+  // frames (note 1151). An Eye thrown is one in five lost, and each lost
+  // was a pearl fetched from the Nether before the search went on: 25594
+  // (mid-242-sc-fortress-10-r2, 2026-10-04 01:16 to 01:21Z) went back for a
+  // pearl twice in five minutes. Without a place the bearings meet at, the
+  // spare is still what the search needs.
+  const noSpare = countOf(bot, 'ender_eye') <= 12;
+  if (throwAgain && noSpare) {
+    if (!estimate) throw blocked('Stronghold search needs another spare Eye of Ender; preserving twelve for the portal');
+    if (toEstimate < 12) {
+      goal.step = { action: 'search_at_estimate', target: { x: Math.round(estimate.x) + 0, z: Math.round(estimate.z) + 0 }, bearings: search.bearings.length, source: 'observed_eye_bearings', verifiedStronghold: false }; save();
+      await actions.explore(bot, task, goal, save, 'end_portal_frame', { surfaceOnly: false });
+      search.moves++; save(); return;
+    }
+  }
+  if (throwAgain && !noSpare) {
     search.throws++; goal.step = { action: 'throw_ender_eye', attempt: search.throws }; save();
     const bearing = await throwEye(bot, task);
     search.bearings = [...search.bearings, bearing].slice(-32); search.pendingPickup = bearing;
