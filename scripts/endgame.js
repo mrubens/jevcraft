@@ -205,8 +205,12 @@ const DRILLS = {
     const start = { x: truth.x + 280, z: truth.z + 110 };
     await kit();
     // Let down from the air over the start (a spread there can find no ground, and failed without a word on 2026-10-04: the run began at the world's spawn, 1,600 blocks off).
-    await commands(['time set 1000', `effect give ${username} minecraft:slow_falling 90 0 true`, `effect give ${username} minecraft:water_breathing 600 0 true`, `execute in minecraft:overworld run tp ${username} ${start.x} 200 ${start.z}`]);
-    await sleep(25000); await bot.waitForChunksToLoad();
+    // Onto land: let down at the start, and where that is water, at the next of the places about as far off (a trial's bot throws its first Eye from the ground it made its Eyes on; let down into open sea with no land remembered, the rehearsal of 2026-10-04 swam in place).
+    for (const [dx, dz] of [[280, 110], [-280, 110], [280, -110], [-280, -110], [0, 300], [300, 0], [0, -300], [-300, 0]]) {
+      await commands(['time set 1000', `effect give ${username} minecraft:slow_falling 90 0 true`, `effect give ${username} minecraft:water_breathing 600 0 true`, `execute in minecraft:overworld run tp ${username} ${truth.x + dx} 200 ${truth.z + dz}`]);
+      await sleep(25000); await bot.waitForChunksToLoad();
+      if (!/water/.test(String(where().under))) break;
+    }
     const from = where();
     const goal = { kind: 'win', request: 'beat the game', gameProgress: { version: 1, milestones: { nether_entered: { at: 1 }, eyes_obtained: { at: 1 } } }, strongholdSearch: { bearings: [], throws: 0, moves: 0, visited: {} } };
     const handlers = gameHandlers(bot, client);

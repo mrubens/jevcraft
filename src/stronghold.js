@@ -175,8 +175,10 @@ async function findStronghold(bot, task, goal, save, actions, client) {
   if (String(bot.game.dimension).replace(/^minecraft:/, '') !== 'overworld') throw blocked('Stronghold search requires the Overworld');
   const search = goal.strongholdSearch ||= { bearings: [], throws: 0, moves: 0, visited: {} };
   // The Eyes carried, asked of before the walk (eye-bank.js, note 1197): the portal's twelve into a chest here, the spare thrown.
-  if (countOf(bot, 'ender_eye') > 12) {
-    try { if (await require('./eye-bank').eyesNow(bot, task, goal, save, actions, client || task.opportunityClient, { errand: 'on the search for the stronghold', keepBack: countOf(bot, 'ender_eye') - 12, search: true }) === 'kept') return; }
+  // Only the portal's twelve go in: with twelve put away already, what is carried is the search's (the rehearsal of 2026-10-04 13:12Z, 32 carried, put twelve away and was asked to put twelve more).
+  const toBank = Math.max(0, 12 - require('./eye-bank').banked(goal));
+  if (toBank > 0 && countOf(bot, 'ender_eye') > toBank) {
+    try { if (await require('./eye-bank').eyesNow(bot, task, goal, save, actions, client || task.opportunityClient, { errand: 'on the search for the stronghold', keepBack: countOf(bot, 'ender_eye') - toBank, search: true }) === 'kept') return; }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[eyes_now] ${String(err.message || err).slice(0, 200)}`); }
   }
   const near = search.estimate && horizontal(bot.entity.position, search.estimate) < 96;
