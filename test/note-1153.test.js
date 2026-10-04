@@ -37,3 +37,15 @@ test('on the island\'s open ground the dodges are as they were', () => {
   assert.ok(routes.every(r => r.distance === 8));
   assert.ok(straightAway(bot, bot.entity.position, 0));
 });
+
+test('from the dragon\'s breath on the ground the dodge is straight out of it first, not along its ring (note 1162)', () => {
+  const { bot } = platform(new Vec3(0.5, 64, 0.5));
+  bot.blockAt = p => ({ name: p.y < 64 ? 'end_stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' });
+  const cloud = { id: 21, name: 'area_effect_cloud', position: new Vec3(2.5, 64, 0.5), metadata: {} };
+  const routes = dodgeRoutes(bot, cloud);
+  assert.ok(routes[0].direction.x < -0.99, `first ${routes[0].direction}`);
+  assert.ok(Math.abs(routes[0].direction.z) < 0.01);
+  // From the dragon itself the first is still sideways.
+  const dragon = { id: 20, name: 'ender_dragon', position: new Vec3(20.5, 66, 0.5), metadata: {} };
+  assert.ok(Math.abs(dodgeRoutes(bot, dragon)[0].direction.z) > 0.99);
+});

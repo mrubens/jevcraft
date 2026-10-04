@@ -87,7 +87,15 @@ function deepBeside(bot, p) {
 function dodgeRoutes(bot, dragon, allowed = () => true) {
   const start = bot.entity.position.clone(), toward = dragon.position.minus(start); toward.y = 0;
   const line = toward.norm() > .01 ? toward.unit() : new Vec3(0, 0, 1);
-  const directions = [new Vec3(-line.z, 0, line.x), new Vec3(line.z, 0, -line.x), line.scaled(-1)];
+  // From the dragon's charge the way is sideways; from its breath on the
+  // ground it is straight out, then the quarters, the sides last (note
+  // 1162): a run sideways from inside a cloud keeps to its ring. The
+  // rehearsal of 2026-10-04 (03:12:58 to 03:13:01Z) ran from a fireball's
+  // cloud past its middle, 20 health to 8.8 to none in three seconds
+  // ("killed by Ender Dragon using magic").
+  const side = new Vec3(-line.z, 0, line.x), away = line.scaled(-1);
+  const quarter = sgn => away.plus(side.scaled(sgn)).unit();
+  const directions = dragon.name === 'area_effect_cloud' ? [away, quarter(1), quarter(-1), side, side.scaled(-1)] : [side, side.scaled(-1), away];
   const routes = [];
   for (const direction of directions) {
     let distance = 0;
@@ -139,7 +147,7 @@ async function evadeOverTerrain(bot, task, goal, save, dragon, { allowed = () =>
   };
   check();
   const bearing = Math.atan2(toward.z, toward.x), candidates = [];
-  for (const angle of [Math.PI / 2, -Math.PI / 2, Math.PI, Math.PI * .75, -Math.PI * .75, Math.PI * .25, -Math.PI * .25]) {
+  for (const angle of dragon.name === 'area_effect_cloud' ? [Math.PI, Math.PI * .75, -Math.PI * .75, Math.PI / 2, -Math.PI / 2] : [Math.PI / 2, -Math.PI / 2, Math.PI, Math.PI * .75, -Math.PI * .75, Math.PI * .25, -Math.PI * .25]) {
     const direction = new Vec3(Math.cos(bearing + angle), 0, Math.sin(bearing + angle));
     for (const distance of [4, 6]) for (const dy of [0, -1, 1, -2, 2]) {
       const p = start.plus(direction.scaled(distance)).floored().offset(.5, dy, .5);
