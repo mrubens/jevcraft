@@ -173,7 +173,14 @@ async function findStronghold(bot, task, goal, save, actions, client) {
     goal.gameProgress.milestones.stronghold_located = { at: Date.now(), ...portal };
     goal.step = { action: 'stronghold_located', source: portal.source, center: portal.center }; save(); return;
   }
-  if (search.throws >= 64 || search.moves >= 512) throw blocked('Stronghold search budget exhausted without observing an End portal; bearings and progress saved');
+  // The search ends on its Eyes, not on a count of its walks (note 1152): a
+  // walk that gets nowhere is the rung's own question after ten minutes
+  // (tried.js), and a count once spent stayed spent, the search blocked for
+  // good with the place known. The rehearsal of 2026-10-04 (00:54 to
+  // 01:34Z), its bearings meeting on the stronghold to the block, spent two
+  // nights under the ground and the climbs out of them, and at 512 passes,
+  // 817 blocks from it with 17 Eyes carried, ended "budget exhausted".
+  if (search.throws >= 64) throw blocked('Stronghold search has thrown sixty-four Eyes without observing an End portal; bearings and progress saved');
   if (search.pendingPickup) { await recoverEye(bot, task, search, save, actions); return; }
   const last = search.bearings.at(-1), target = travelTarget(search, bot.entity.position);
   if (last?.descending) {

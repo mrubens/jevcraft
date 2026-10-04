@@ -38,3 +38,11 @@ test('with twelve eyes and no place the bearings meet at, the search still asks 
   bot.entity.position = new Vec3(-100.5, 70, 0.5);
   await assert.rejects(findStronghold(bot, new Task('find'), goal, () => {}, { explore: async () => {}, surfaceStep: async () => {} }, null), /needs another spare Eye of Ender/);
 });
+
+test('the search does not end on a count of its walks: at 600 passes with the place known it walks on (note 1152)', async () => {
+  const { bot, goal } = fixture(new Vec3(3.5, 70, 2.5));
+  goal.strongholdSearch.moves = 600;
+  const calls = [];
+  await findStronghold(bot, new Task('find'), goal, () => {}, { explore: async (b, t, g, s, what) => calls.push(what), surfaceStep: async () => calls.push('surface') }, null);
+  assert.deepEqual(calls, ['end_portal_frame']);
+});
