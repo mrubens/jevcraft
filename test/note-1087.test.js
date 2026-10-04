@@ -30,3 +30,14 @@ test('not with gold worn or carried, short of gold, with no way to smelt it, wit
   assert.equal(kit.goldBoots(bot({ gold_ingot: 4, crafting_table: 1 }, IRON, { dimension: 'overworld' })), null);
   assert.ok(kit.goldBoots(bot({ gold_ingot: 4, crafting_table: 1 }, IRON)));
 });
+
+test('gold nuggets count toward the boots, nine to an ingot at the table (note 1246)', () => {
+  const b = kit.goldBoots(bot({ gold_nugget: 36, crafting_table: 1 }, IRON));
+  assert.ok(b, 'offered from 36 nuggets');
+  assert.equal(b.fromNuggets, 4);
+  assert.match(b.says, /4 of the ingots are made of 36 of the 36 gold nuggets carried, at the table\./);
+  assert.match(b.says, /on 2026-10-04 \(16:00 to 17:25Z\) six deaths in the Nether were to piglins or in flight from them, every one with no gold on/);
+  assert.equal(kit.goldBoots(bot({ gold_nugget: 35, crafting_table: 1 }, IRON)), null, 'a nugget short');
+  const mixed = kit.goldBoots(bot({ gold_nugget: 20, gold_ingot: 2, crafting_table: 1 }, IRON));
+  assert.equal(mixed.fromNuggets, 2);
+});

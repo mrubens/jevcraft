@@ -1268,6 +1268,8 @@ async function upkeepOffers(bot, task, goal, save) {
   if (boots) options.gold_boots = { description: boots.says,
     run: async () => {
       goal.step = { action: 'gold_boots', item: 'golden_boots' }; save();
+      // The ingots made of nuggets first (note 1246).
+      if (boots.fromNuggets) await acquireStep(bot, task, 'gold_ingot', countOf(bot, 'gold_ingot') + boots.fromNuggets, goal, save);
       await acquireStep(bot, task, 'golden_boots', countOf(bot, 'golden_boots') + 1, goal, save);
       try { await require('./mob-policy').wearBestArmour(bot); } catch (err) { task.check(); }
     } };

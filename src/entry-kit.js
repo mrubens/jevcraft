@@ -198,7 +198,11 @@ function goldBoots(bot) {
   if (worn.some(n => GOLD.test(n)) || (bot.inventory.items?.() || []).some(i => GOLD.test(i.name))) return null;
   const here = bot.entity?.position;
   if (here && Object.values(bot.entities || {}).some(e => (e.type === 'hostile' || e.kind === 'Hostile mobs') && e.position && e.position.distanceTo(here) <= 24)) return null;
-  const ingots = countOf(bot, 'gold_ingot'), raw = countOf(bot, 'raw_gold'), smelt = smeltKit(bot);
+  // Nine nuggets are an ingot at a table (note 1246): 25589 (2026-10-04
+  // 17:22:43Z) was killed by four piglins with 35 gold nuggets in its pack,
+  // two pearls with them, and the boots never offered.
+  const nuggets = countOf(bot, 'gold_nugget'), fromNuggets = Math.min(Math.floor(nuggets / 9), Math.max(0, 4 - countOf(bot, 'gold_ingot')));
+  const ingots = countOf(bot, 'gold_ingot') + fromNuggets, raw = countOf(bot, 'raw_gold'), smelt = smeltKit(bot);
   const smelted = Math.max(0, 4 - ingots);
   if (ingots + (smelt.ok ? raw : 0) < 4) return null;
   const table = countOf(bot, 'crafting_table') > 0, planks = sum(bot, /_planks$/) + 4 * sum(bot, /_(log|stem|wood|hyphae)$/);
@@ -207,7 +211,7 @@ function goldBoots(bot) {
   const piglins = here ? Object.values(bot.entities || {}).filter(e => /^piglin(_brute)?$/.test(e.name || '') && e.position && e.position.distanceTo(here) <= 64).length : 0;
   const from = smelted ? `${4 - smelted ? `${4 - smelted} of the gold ingots carried and ` : ''}${smelted} smelted from the ${raw} raw gold carried (${SMELT_SECONDS} seconds an ingot in ${smelt.furnace ? 'the furnace carried' : 'a furnace made from 8 of the stone carried'}, the ${smelt.fuel.replaceAll('_', ' ')} carried for fuel)` : `4 of the ${ingots} gold ingots carried`;
   const feet = bot.inventory.slots?.[8]?.name;
-  return { seconds, says: `Make golden boots now and put them on, from what is carried (${from}), ${mins(seconds)} standing here${feet ? `; they take the place of the ${feet.replaceAll('_', ' ')} worn, a point of armour less` : ''}. No gold is worn: a piglin attacks a player wearing none on sight, sword or crossbow, and leaves one wearing any piece alone (the game's rule; a brute attacks either way)${piglins ? `; ${piglins} within 64 blocks now, none within 24` : ''}. On 2026-10-03 two bots with the gold for the boots in their pockets were shot dead by piglins in the Nether with none on.` };
+  return { seconds, fromNuggets, says: `Make golden boots now and put them on, from what is carried (${from}), ${mins(seconds)} standing here${feet ? `; they take the place of the ${feet.replaceAll('_', ' ')} worn, a point of armour less` : ''}. No gold is worn: a piglin attacks a player wearing none on sight, sword or crossbow, and leaves one wearing any piece alone (the game's rule; a brute attacks either way)${piglins ? `; ${piglins} within 64 blocks now, none within 24` : ''}. On 2026-10-03 two bots with the gold for the boots in their pockets were shot dead by piglins in the Nether with none on, and on 2026-10-04 (16:00 to 17:25Z) six deaths in the Nether were to piglins or in flight from them, every one with no gold on.${fromNuggets ? ` ${fromNuggets} of the ingots ${fromNuggets === 1 ? 'is' : 'are'} made of ${fromNuggets * 9} of the ${nuggets} gold nuggets carried, at the table.` : ''}` };
 }
 function ironPiece(bot) {
   if (bot?.game?.gameMode !== 'survival' || !bot.inventory) return null;
