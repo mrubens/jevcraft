@@ -8476,6 +8476,8 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     cross_now: { description: `Cross with what is carried now${short.length ? `, short of what the code would take in ${short.map(i => i.key).join(', ')}` : ''}${valuables ? `, and with the valuables carried (${valuables.what})` : ''}.${going}${leftSays}${hungerWeigh} ${items.filter(i => !i.rung).map(i => i.says).join(' ')}` },
   };
   tree.cross_now.description += require('./entry-kit').goingWithout(entry);
+  // The crossing chosen for the kit a death left on the far side (note 1233).
+  { const cr = require('./corpse-run'), run = goal.corpseRun; if (goal.errand?.for === cr.KIT_ERRAND && run?.status === 'open' && run.dimension === 'nether') tree.cross_now.description += ` This crossing was chosen for the kit dropped at the death in the Nether, taken up there before anything else: ${Object.entries(run.items || {}).map(([n, c]) => `${c > 1 ? `${c} ` : ''}${n.replaceAll('_', ' ')}`).join(', ')}.`; }
   for (const o of entry) tree[`top_up_${o.key}`] = { description: `${o.says}${soFar({ carried: countOf(bot, o.item) }, o.key)}` };
   if (empty.some(i => i.key === 'food' && i.carried === 0)) {
     const minutes = Math.max(0, Math.round((hungerNow - 17) / NETHER_HUNGER_AN_HOUR * 60));

@@ -534,6 +534,20 @@ define({
   instructions: workInstructions('The bot carries eyes of ender, what the End portal is opened with, and is about to go on an errand for its kit. A death drops everything carried; a chest keeps what is in it. Choose whether the eyes go in a chest first. Each option says its record.'),
 });
 
+// A death in the Nether, back to life in the Overworld: straight back for
+// the kit, or a kit made again first (src/corpse-run.js kitTrip, note 1233).
+define({
+  id: 'kit_trip', area: 'resources', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'The bot died in the Nether and is back to life in the Overworld; its kit lies where it fell, not ageing: go straight back through the portal for it, or make a kit again first?',
+  trigger: 'Once a death in the Nether whose drops are worth fetching, the bot in the Overworld with a portal known on each side and the drops not come near since.',
+  source: 'src/corpse-run.js (kitTrip)',
+  options: [
+    { key: 'go_now', trip: 'the drops', label: 'through the portal now for the drops, as the bot stands', when: 'always here; said with both walks, what lies there, what was about at the death and what the bot wears now', level: 'root' },
+    { key: 'kit_first', label: 'make a kit again first; the drops on the next Nether trip', when: 'always here; said with what the kit takes to make again and the record', level: 'root' },
+  ],
+  instructions: workInstructions('The bot died in the Nether and came back to life by its bed with empty hands. What it dropped lies where it died and does not age until the bot is near it again. Choose whether it goes straight back for it or makes a kit again first. Each option says what it costs and risks.'),
+});
+
 define({
   id: 'spare_kit_now', area: 'resources', parent: null, kind: 'upkeep', primitive: 'choice', stakes: 'low', tree: true,
   question: 'The bot is by its home chest, and the chest lacks a spare pickaxe or sword the bot carries or can make now: leave a spare kit there, or go on?',

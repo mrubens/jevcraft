@@ -361,3 +361,43 @@ test('things lying under the ground: the way down is in the minutes, and the pla
   assert.match(text, /about [3-9] minutes' walk and climb, at y -23/);
   assert.match(text, /The place is under the ground \(y -23, 93 blocks down from here\): the hour does not reach it, and what was about it at the death does not burn at dawn; the bot goes there with no sword or axe and no armour\./);
 });
+
+test('a death in the Nether, back to life in the Overworld: straight back for the kit or a kit first is asked once, and going sets the trip (note 1233)', async () => {
+  const { bot, goal, said } = world({ dimension: 'overworld', deathDimension: 'the_nether' });
+  goal.survival.deaths[0].about = [{ name: 'zombified_piglin', distance: 1 }];
+  goal.survival.deaths[0].cause = 'was slain by Zombified Piglin';
+  goal.survival.deaths[0].worn = ['iron_helmet'];
+  goal.portals = [{ x: 30, y: 64, z: 40, dimension: 'overworld' }, { x: 300, y: 64, z: 0, dimension: 'nether' }];
+  const asked = [];
+  let answer = 'go_now';
+  const client = { systemOne: async ({ questions }) => { asked.push(JSON.stringify(Object.values(questions)[0])); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: answer, confidence: 0.9 }])) }; } };
+  const task = Object.assign(new Task('run'), { opportunityClient: client });
+  assert.equal(await corpseRunStep(bot, task, goal, () => {}, {}), false, 'the ladder goes on, to the errand');
+  assert.equal(asked.length, 1);
+  assert.match(asked[0], /lie in the Nether where the bot died, 100 blocks from the portal on that side; the portal on this side is 50 blocks off/);
+  assert.match(asked[0], /The bot was slain by Zombified Piglin there; when it died, a zombified piglin 1 blocks off was about/);
+  assert.match(asked[0], /no sword or axe and no armour/);
+  assert.match(asked[0], /a median 37/);
+  assert.deepEqual({ dimension: goal.errand.dimension, items: goal.errand.items, for: goal.errand.for }, { dimension: 'nether', items: [], for: 'the kit dropped at the death there' });
+  assert.equal(goal.corpseRun.choice, 'go_back', 'not asked again on the far side');
+  assert.match(said.at(-1), /^Straight back through the portal for what I dropped/);
+  assert.equal(await corpseRunStep(bot, task, goal, () => {}, {}), false);
+  assert.equal(asked.length, 1, 'once a death');
+  const { nextGameStage } = require('../src/game-progress');
+  if (typeof nextGameStage === 'function') { const stage = nextGameStage(bot, goal); assert.equal(stage.action, 'enter_nether'); assert.equal(stage.phase, 'errand'); }
+});
+
+test('the kit made again first is the other answer: no trip, the drops left for the next one; with no portal known nothing is asked', async () => {
+  const { bot, goal } = world({ dimension: 'overworld', deathDimension: 'the_nether' });
+  const asked = [];
+  const client = { systemOne: async ({ questions }) => { asked.push(1); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'kit_first', confidence: 0.9 }])) }; } };
+  const task = Object.assign(new Task('run'), { opportunityClient: client });
+  assert.equal(await corpseRunStep(bot, task, goal, () => {}, {}), false);
+  assert.equal(asked.length, 0, 'no portal known on either side');
+  goal.portals = [{ x: 30, y: 64, z: 40, dimension: 'overworld' }, { x: 300, y: 64, z: 0, dimension: 'nether' }];
+  assert.equal(await corpseRunStep(bot, task, goal, () => {}, {}), false);
+  assert.equal(asked.length, 1);
+  assert.equal(goal.errand, undefined);
+  assert.equal(goal.corpseRun.trip.pick, 'kit_first');
+  assert.equal(goal.corpseRun.status, 'open');
+});

@@ -159,8 +159,55 @@ const FIRST = [/^ender_eye$/, /^(ender_pearl|blaze_rod|blaze_powder)$/, /^diamon
 const rank = name => { const i = FIRST.findIndex(r => r.test(name)); return i < 0 ? FIRST.length : i; };
 const lying = (bot, spot, name = null) => Object.values(bot.entities || {}).filter(e => { const it = e?.position && e.isValid !== false ? e.getDroppedItem?.() : null; return it && (!name || it.name === name) && e.position.distanceTo(spot) <= 12; });
 
+// A death in the Nether, the bot back to life in the Overworld: the kit lies
+// where it fell, not a second older (nobody is within 128 blocks of it), and
+// the way to it is the portal. The rule was the kit made again first, then
+// the next Nether trip: 25592 (2026-10-04 15:31Z) died in its warped forest
+// in iron armour with a diamond sword and an iron pickaxe, 5 pearls in a
+// chest beside it, and set about wood, stone, a furnace and iron ore again;
+// on 2026-10-03 the kit made again was 22 to 52 minutes, a median 37. Whether
+// to go straight back for it is Jev's, asked once a death (note 1233).
+// -> true when the trip was chosen (the errand set).
+const KIT_ERRAND = 'the kit dropped at the death there';
+const TRIP_RECORD = 'on 2026-10-03 the 4 deaths in the Nether with nothing in the home chest were back in the Nether 22 to 52 minutes later, a median 37, the kit mined and smelted again';
+async function kitTrip(bot, task, goal, save, now = Date.now()) {
+  const run = goal.corpseRun;
+  if (!run || run.status !== 'open' || run.trip || run.loadedAt || run.dimension !== 'nether' || dim(bot.game?.dimension) !== 'overworld' || !bot.entity?.position) return false;
+  if (!Object.keys(run.items || {}).length || now - Date.parse(run.deathAt) > KEEP_MS) return false;
+  const here = bot.entity.position, spot = run.position;
+  const near = (list, to) => list.slice().sort((a, b) => flat(a, to) - flat(b, to))[0] || null;
+  const portals = goal.portals || [];
+  const out = near(portals.filter(p => p.dimension === 'overworld'), here), there = near(portals.filter(p => p.dimension === 'nether'), spot);
+  if (!out || !there) return false;
+  const death = (goal.survival?.deaths || []).find(d => d.at === run.deathAt) || {};
+  const about = (death.about || []).map(t => `a ${t.name.replaceAll('_', ' ')} ${t.distance} blocks off`).join(', ');
+  const wornNow = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
+  const weapon = (bot.inventory?.items?.() || []).filter(i => /_(sword|axe)$/.test(i.name)).map(i => i.name.replaceAll('_', ' '))[0] || null;
+  const toPortal = Math.round(flat(here, out)), fromPortal = Math.round(flat(there, spot));
+  const minutes = Math.max(1, Math.round((toPortal + fromPortal) / 4.3 / 60));
+  const again = madeAgain(run.items);
+  const withSays = `with ${weapon ? `a ${weapon}` : 'no sword or axe'} and ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'}`;
+  const tree = {
+    go_now: { description: `Go back for them now, as the bot stands (${withSays}): ${listed(run.items)} lie in the Nether where the bot died, ${fromPortal} blocks from the portal on that side; the portal on this side is ${toPortal} blocks off, about ${minutes} minute${minutes === 1 ? '' : 's'}' walk in all if nothing stops it. They are not a second older: dropped things age only while a player is within 128 blocks, and they last until the bot comes that near again, then five minutes. ${death.cause ? `The bot ${death.cause} there; when it died, ` : 'When the bot died, '}${about || 'nothing hostile was seen'}${about ? ' was about' : ''}; what was about then may be about still, and a mob the bot had struck forgets it once the bot is gone. The bot wore ${(death.worn || []).map(n => n.replaceAll('_', ' ')).join(', ') || 'nothing'} then. Taken up, the kit is worn and carried at once and the ladder goes on from there.` },
+    kit_first: { description: `Make a kit again here first, and take the drops up on the next trip into the Nether: ${again || 'what the ladder asks for'}. In the record, ${TRIP_RECORD}. The drops do not age meanwhile, and the bot comes to them ${withSays.replace(/^with /, 'no longer with ')}, in whatever it has made.` },
+  };
+  const decision = await require('./decisions').decide('kit_trip', { client: task.opportunityClient, bot, task, goal, save, tree,
+    state: { toPortal, fromPortalToDrops: fromPortal, wornNow, weapon, aboutAtDeath: death.about || [], wornAtDeath: death.worn || [], drops: run.items } });
+  if (decision.stale) return false;
+  const pick = decision.path.at(-1);
+  run.trip = { pick, at: now };
+  if (pick !== 'go_now') { save(); return false; }
+  // Chosen here, it is not asked again on the far side.
+  run.choice = 'go_back'; run.told = TOLD;
+  goal.errand = { dimension: 'nether', items: [], for: KIT_ERRAND, at: now };
+  bot.chat?.(`Straight back through the portal for what I dropped: ${listed(run.items)}.`);
+  save();
+  return true;
+}
+
 async function corpseRunStep(bot, task, goal, save, { move = navigate, collect = collectNearbyDrops, surface = null, room = null } = {}) {
   const run = corpseRun(bot, goal);
+  if (!run && await kitTrip(bot, task, goal, save)) return false;
   if (!run) { save(); return false; }
   const spot = new Vec3(run.position.x, run.position.y, run.position.z);
   // Jev's to weigh, once a death: what was about when the bot died there,
@@ -338,4 +385,4 @@ function underWay(bot, goal, now = Date.now()) {
     secondsLeft: run.loadedAt ? Math.max(0, Math.round((DESPAWN_MS - (now - Date.parse(run.loadedAt))) / 1000)) : null };
 }
 
-module.exports = { corpseRun, corpseRunStep, worth, madeAgain, underWay };
+module.exports = { KIT_ERRAND, kitTrip, corpseRun, corpseRunStep, worth, madeAgain, underWay };
