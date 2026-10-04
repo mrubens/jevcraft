@@ -2788,6 +2788,17 @@ test('back to life with nothing, on dirt, the shaft down is still offered: the d
   assert.equal(bare('stone').dig_down, undefined);
 });
 
+test('a skeleton at the sword\'s reach is said in what is built, and one that walks is said of cover (note 1190)', () => {
+  const bot = crowdBot({ health: 5.3 });
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const close = survival.stanceOptions(new Task('night'), {}, () => {}, [crowdMob(4, 'skeleton', 2.2)], false);
+  const fact = /The skeleton is 2\.2 blocks off: it shoots from there while the blocks go down, an arrow every second or two, and steps round or into what is built; the diamond sword reaches it within three blocks, and dead it shoots no more\./;
+  for (const k of ['seal', 'pillar', 'dig_down']) assert.match(close[k].description, fact, k);
+  if (close.take_cover) assert.match(close.take_cover.description, /The skeleton 2\.2 blocks off walks: from there it is round a block in its line in a second or two and shooting again/);
+  const far = survival.stanceOptions(new Task('night'), {}, () => {}, [crowdMob(4, 'skeleton', 12)], false);
+  assert.doesNotMatch(far.seal.description, /it shoots from there while the blocks go down/);
+});
+
 test('in a crowd every stance says what the mobs cost it over the same fifteen seconds, the pillar and the pocket as well as the fight', () => {
   const bot = crowdBot();
   const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });

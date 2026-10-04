@@ -2708,6 +2708,9 @@ function biterAtPass(bot) {
   return threats(bot, 4).find(t => t.distance <= 3 && t.visible !== false && !shooter(t.entity) && t.entity.name !== 'creeper') || null;
 }
 
+// The shooters that walk up to the bot and round what it builds.
+const WALKING_SHOOTERS = /^(skeleton|stray|bogged|pillager)$/;
+
 function creeperSays(bot) {
   const { APPROACH, LIGHTS_AT, FUSE } = require('./combat-estimate');
   const near = threats(bot, 16).filter(t => t.entity.name === 'creeper' && (t.visible || t.distance <= 5)).sort((a, b) => a.distance - b.distance)[0];
@@ -3602,7 +3605,17 @@ class Survival {
     const armsLength = coming.some(t => t.distance <= 3 && !shooter(t.entity));
     // Building costs a second or so a block: said to Jev with the options
     // below rather than decided for it by hiding them.
-    const buildCost = armsLength ? ' Something that bites is at arm\'s length now, and it hits freely while the blocks go down.' : '';
+    // A shooter that walks, at the sword's reach, shoots through the same
+    // seconds (note 1190): the fact above left shooters out, and six of
+    // eighteen deaths (2026-10-04, 05:00 to 07:00Z) were to skeletons. 25594
+    // (06:02:28 to 44Z, full iron, a diamond sword) sealed, dug in and took
+    // cover with its skeleton at 2.2, 0.8 and 2.3 blocks, each priced as if
+    // it were not there, and was shot from 3.4 to none; 25593 (06:51Z) took
+    // cover six times running from one at 2.1.
+    const nearShooter = danger.filter(t => WALKING_SHOOTERS.test(t.entity.name) && t.distance <= 4 && t.visible !== false).sort((a, b) => a.distance - b.distance)[0];
+    const reachWeapon = defenseWeapon(bot)?.name;
+    const shooterCost = nearShooter ? ` The ${nearShooter.entity.name.replaceAll('_', ' ')} is ${Math.round(nearShooter.distance * 10) / 10} blocks off: it shoots from there while the blocks go down, an arrow every second or two, and steps round or into what is built; ${/_(sword|axe)$/.test(reachWeapon || '') ? `the ${reachWeapon.replaceAll('_', ' ')} reaches it within three blocks, and dead it shoots no more` : 'nothing carried strikes it harder than a fist'}.` : '';
+    const buildCost = (armsLength ? ' Something that bites is at arm\'s length now, and it hits freely while the blocks go down.' : '') + shooterCost;
     const creeperNote = creeperNoteFor(coming);
     // A witch's potions come over a pillar and into a doorway: mid-72-c dug
     // a bunker against one at twenty health, the harm (armour does not stop
@@ -5230,7 +5243,9 @@ class Survival {
       // cover is put from one that holds (ghast.js, note 551).
       const ghastCovered = cut.some(p => p.t.entity.name === 'ghast');
       const witchSays = witchCut ? ' A witch\'s potion is thrown, not shot: it bursts on the cover and its splash reaches about four blocks round, the bot behind the block too; the cover does not keep the witch off, and it is counted here as landing. A shut pocket stops it, and a witch dead throws nothing.' : '';
-      const openSays = open.length ? ` No cover can go in the line of ${open.map(p => `${named(p.t)} (${p.plan.why})`).join(', ')}: it still has the bot in its fire.` : '';
+      const walker = [...cut, ...behind].map(p => p.t).filter(t => WALKING_SHOOTERS.test(t.entity.name) && t.distance <= 8).sort((a, b) => a.distance - b.distance)[0];
+      const walkerSays = walker ? ` The ${walker.entity.name.replaceAll('_', ' ')} ${Math.round(walker.distance * 10) / 10} blocks off walks: from there it is round a block in its line in a second or two and shooting again, as often as the block is put.` : '';
+      const openSays = (walker ? walkerSays : '') + (open.length ? ` No cover can go in the line of ${open.map(p => `${named(p.t)} (${p.plan.why})`).join(', ')}: it still has the bot in its fire.` : '');
       options.take_cover = { expects: { damage: coverCost.damage, seconds: coverCost.seconds, oneHit }, quick: { seconds: Math.round((coverBlocks * BLOCK_SECONDS + madeSetup) * 10) / 10, says: coverBlocks ? `cover of ${plural(coverBlocks, 'block')}, about ${Math.round((coverBlocks * BLOCK_SECONDS + madeSetup) * 10) / 10} seconds` : 'cover already standing' }, description: `${coverBlocks ? `Put ${says.join('; and ')}, and stay behind it: ${coverBlocks} block${coverBlocks === 1 ? '' : 's'}, about ${Math.round(coverBlocks * BLOCK_SECONDS * 10) / 10} seconds${madeSetup ? `, the ${coverMade.item.replaceAll('_', ' ')} for it made first from the logs carried (${coverMade.available}), about a second more` : ''}` : `Stay here behind what stands in the line already: ${says.join('; ')}`}; a shooter fires only with a line to the bot, a shot does not come through a block, and a shooter that moves round finds the bot open again.${witchSays}${openSays}` + (ghastCovered ? require('./ghast').coverSays(bot, shelter.buildingMaterials) : '') + costSays(coverCost, bot.health, mobs, { doing: 'placing it', done: 'Behind it' }) + edge,
         run: async () => {
           if (madeSetup && shelter.materialStock(bot) < coverBlocks) {
