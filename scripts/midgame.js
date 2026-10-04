@@ -62,7 +62,12 @@ const RODS_WANTED = 6, PEARLS_HALF = 6;
 const FULL_LIMIT_MS = Math.max(KEPT_LIMIT_MS, Number(process.env.MIDGAME_FULL_HOURS || 24) * 3600000);
 // With the rods wanted and twelve pearls kept or carried, the End's hours.
 const END_LIMIT_MS = Math.max(FULL_LIMIT_MS, Number(process.env.MIDGAME_END_HOURS || 48) * 3600000);
-const limitFor = kept => kept && kept.rods >= RODS_WANTED && kept.pearls >= 12 ? END_LIMIT_MS : kept && (kept.rods >= RODS_WANTED || kept.pearls >= PEARLS_HALF) ? FULL_LIMIT_MS : kept && (kept.rods >= 1 || kept.pearls >= 1) ? KEPT_LIMIT_MS : LIMIT_MS;
+// Four rods or four pearls kept is the twenty-four hours too (note 1240):
+// mid-242-pf-fortress-11 (25593, 2026-10-04 16:26Z) was ended at its six
+// hours with five blaze rods in its chests, two more burned with it a
+// minute before, and a fresh trial takes three hours and more to five.
+const RODS_KEEP = 4, PEARLS_KEEP = 4;
+const limitFor = kept => kept && kept.rods >= RODS_WANTED && kept.pearls >= 12 ? END_LIMIT_MS : kept && (kept.rods >= RODS_KEEP || kept.pearls >= PEARLS_KEEP) ? FULL_LIMIT_MS : kept && (kept.rods >= 1 || kept.pearls >= 1) ? KEPT_LIMIT_MS : LIMIT_MS;
 const BLAZE_RODS = 6, PEARLS = 12;
 const trials = () => { try { return fs.readdirSync(LOG_DIR).filter(f => f.endsWith('.json')).map(f => JSON.parse(fs.readFileSync(path.join(LOG_DIR, f), 'utf8'))).sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt)); } catch (_) { return []; } };
 const saveTrial = t => { fs.mkdirSync(LOG_DIR, { recursive: true }); fs.writeFileSync(path.join(LOG_DIR, `${t.world}.json`), JSON.stringify(t, null, 2)); };
