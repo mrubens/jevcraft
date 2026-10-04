@@ -212,3 +212,15 @@ test('crossing_kit: the cache of valuables says what the iron left in it saves a
   assert.ok(says, Object.keys(asked || {}).join(','));
   assert.match(says, /The 36 iron carried \(raw and ingots\) is what a kit is made of again \(a pickaxe 3, a sword 2, a shield 1, armour up to 24\): left in the chest it is (fetched from this chest on the way back to the portal|taken up again at home) after a death\. On 2026-10-03 half the minutes after a death in the Nether went to iron \(209 of 412 bot-minutes/);
 });
+
+test('on the trip chosen for the kit a death left in the Nether, the crossing is not asked of again (note 1234)', async () => {
+  const { crossingKitReady } = require('../src/work');
+  const b = bot({ items: [['stone_pickaxe']], dimension: 'overworld' });
+  b.game.gameMode = 'survival';
+  let asked = 0;
+  const client = { systemOne: async ({ questions }) => { asked++; return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'cross_now', confidence: 0.7 }])) }; } };
+  const goal = { kind: 'win', errand: { dimension: 'nether', items: [], for: require('../src/corpse-run').KIT_ERRAND, at: Date.now() },
+    corpseRun: { status: 'open', dimension: 'nether', items: { iron_chestplate: 1 }, trip: { pick: 'go_now', at: Date.now() } } };
+  assert.equal(await crossingKitReady(b, { check() {}, opportunityClient: client }, goal, () => {}, client), true);
+  assert.equal(asked, 0);
+});

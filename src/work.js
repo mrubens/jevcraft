@@ -8344,6 +8344,11 @@ function nightUpSays(bot) {
   } catch (_) { return null; }
 }
 async function crossingKitReady(bot, task, goal, save, client = task.opportunityClient, now = Date.now()) {
+  // The crossing chosen as the bot stands, for the kit a death left on the
+  // far side (corpse-run.js kitTrip): not asked again here. 25589
+  // (2026-10-04 15:48:58Z) chose the trip and at the portal was asked of a
+  // shield, two of which lay with its drops (note 1234).
+  if (goal.errand?.for === require('./corpse-run').KIT_ERRAND && goal.corpseRun?.status === 'open' && goal.corpseRun.dimension === 'nether' && goal.corpseRun.trip?.pick === 'go_now') return true;
   if (bot.game?.gameMode !== 'survival') return true;
   const items = kitItems(bot), valuables = valuablesAt(bot, goal);
   // The food, blocks and pickaxe were the ladder's to top up (kitRungs):

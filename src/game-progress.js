@@ -1236,7 +1236,11 @@ async function gameStep(bot, task, goal, save, actions) {
     // the stage spends (pearls, rods, eyes, the diamonds before the pickaxe).
     // Before the Nether the walk home is offered with the kit instead.
     if (stage.action !== 'enter_nether' && actions.stash_valuables && !await actions.stash_valuables(bot, task, goal, save)) return false;
-    if (stage.action === 'enter_nether' && actions.prepare_combat && !await actions.prepare_combat(bot, task, goal, save)) return false;
+    // Not on the trip chosen for the kit a death left on the far side, as
+    // the bot stands (corpse-run.js kitTrip): 25584 (2026-10-04 15:48Z)
+    // chose it and was sent for oak logs and iron armour first (note 1234).
+    const kitTrip = stage.for === require('./corpse-run').KIT_ERRAND && goal.corpseRun?.status === 'open';
+    if (stage.action === 'enter_nether' && !kitTrip && actions.prepare_combat && !await actions.prepare_combat(bot, task, goal, save)) return false;
     if (stage.action === 'enter_end' && actions.prepare_end && !await actions.prepare_end(bot, task, goal, save)) return false;
     const execute = actions[stage.action];
     if (!execute) throw Object.assign(new Error(`Game progression is blocked at ${stage.phase.replaceAll('_', ' ')}: the ${stage.action.replaceAll('_', ' ')} action is not implemented yet. Earlier progress is saved.`), { name: 'Blocked' });
