@@ -1102,7 +1102,13 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // the forest each time one was left.
   const stalkSays = state.entity !== 'blaze' ? ` Left, the stalk of every ${state.entity.replaceAll('_', ' ')} ends with them for those two minutes, not only these: the way to the ${state.item ? state.item.replaceAll('_', ' ') + 's' : 'goal'} is asked again, the rest of the game beside it.` : '';
   const orderSays = state.entity === 'enderman' && (() => { try { const h = require('./pearl-order').held(goal); return !!h && h.pick === 'hunt_enderman' && !h.ended; } catch (_) { return false; } })() ? ' The endermen were taken up before the rods at pearl_order: left, that way ends and the rods are the step again.' : '';
-  tree.defer = { description: `Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved.${stillShoot}${deferSays}${deferGain}${stalkSays}${orderSays}${deferNext}${fourNear} ${fitSaid}${fit.fit ? '' : ' Left alone, the hunt recovers first: food if any is carried, cover from the shooters, and health while hunger is eighteen or more.'}`, run: async () => {
+  // Said as what it is, with no 'if the situation is unsuitable' (note
+  // 1248): on 2026-10-04 (12:00 to 18:15Z) it was the answer 43 times, the
+  // slot 61 and an open fight 17; 25595 (18:12:01Z), back in the Nether in
+  // its iron and golden boots with a diamond sword after two hours, left a
+  // fight priced at 5 damage of 20 at 0.52 and went back out for pearls in
+  // the Overworld.
+  tree.defer = { description: `Leave these targets alone for now; the resource goal stays saved.${stillShoot}${deferSays}${deferGain}${stalkSays}${orderSays}${deferNext}${fourNear} ${fitSaid}${fit.fit ? '' : ' Left alone, the hunt recovers first: food if any is carried, cover from the shooters, and health while hunger is eighteen or more.'}`, run: async () => {
     for (const target of candidates) setAside(goal, 'hunt_target', target.uuid || target.id, 'Jev chose to leave it for now', 120000);
     // The kind, not only the ones offered (note 959): the stalk had gone on
     // to the next enderman of a forest, asked again and been left again.
