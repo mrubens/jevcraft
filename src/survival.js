@@ -1245,6 +1245,16 @@ function openWhileBuildingSays(bot, over, seconds, what) {
 // way's cells from the first step to its end; null with nothing that can
 // push the bot, { beside: 0 } where no cell of the way is by such a fall.
 const CROUCH_SPEED = 4.317 * 0.3;
+// A walk whose own figures make it the likelier death is not a way on offer
+// (physical safety, note 1237): beside lava or a fall that kills, with a shot
+// more likely than not to land on the way, and a shot that lands there the
+// push over. 25597 (2026-10-04 16:12:54Z), a piglin's crossbow 2.3 blocks
+// off, was offered out_of_sight along two cells over 'a drop into lava 18
+// down ... about 75 in 100 that a arrow lands on the way', took it at 0.49,
+// and was in the lava a second later.
+// Not where the bot stands beside such a drop already (a ridge): the walk
+// adds nothing to what standing there is, and is the way off it (note 610).
+const deadlyEdgeWalk = (edge, onEdgeNow = false) => !!edge && !onEdgeNow && edge.beside > 0 && edge.chance >= 50 && (edge.drop?.into === 'lava' || edge.drop?.into === 'deep' || edge.drop?.deadly === true);
 function routeEdge(bot, cells, { health = bot.health ?? 20 } = {}) {
   const pushers = shotPushers(bot);
   if (!pushers.length || !cells?.length) return null;
@@ -4554,7 +4564,7 @@ class Survival {
     this.state.coverFailed = coverFailed;
     const cover = shooting.length && !inWater(bot) && (seenHere.length || heldHidden)
       ? require('./bunker').coverWithin(bot, shooting, { steps: 8, avoid: biting, skip: c => coverFailed.some(f => f.cell === `${c}`) }) : null;
-    if (cover) {
+    if (cover && !(cover.steps && deadlyEdgeWalk(routeEdge(bot, cover.path), !!require('./movement').fallBeside(bot, feet, bot.health ?? 20)))) {
       // Its way beside a drop a push can put the bot over, said and priced,
       // and walked along those cells as offered, crouched there in the
       // Nether (note 610).
@@ -12198,4 +12208,4 @@ function claim(bot, goal = {}, survival = null) {
   return made;
 }
 
-module.exports = { sprintByHeading, nightEnds, sealThreatNear, scoutBudget, SCOUT_MS, SCOUT_FAR_MS, mealSays, nightMinePickSays, bedSafetyAt, healWaitSays, WAITS_IN, wearGoldOf, piglinGoldClause, blowsLead, pastFollowOf, sealedWaitSaysFor: (bot, opts) => sealedWaitSays(bot, opts), lavaExitCost, nookSaysFor: (bot, nook, opts) => nookSays(bot, nook, opts), nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, chaseCost, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };
+module.exports = { deadlyEdgeWalk, sprintByHeading, nightEnds, sealThreatNear, scoutBudget, SCOUT_MS, SCOUT_FAR_MS, mealSays, nightMinePickSays, bedSafetyAt, healWaitSays, WAITS_IN, wearGoldOf, piglinGoldClause, blowsLead, pastFollowOf, sealedWaitSaysFor: (bot, opts) => sealedWaitSays(bot, opts), lavaExitCost, nookSaysFor: (bot, nook, opts) => nookSays(bot, nook, opts), nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, chaseCost, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };
