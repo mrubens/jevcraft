@@ -57,8 +57,22 @@ function corpseRun(bot, goal, now = Date.now()) {
   const survival = goal.survival || {};
   const death = (survival.deaths || []).at(-1), recovery = survival.recovery;
   if (!death) return null;
-  if (goal.corpseRun?.deathAt !== death.at) {
+  // The deaths before the last keep their drops too, where the bot never
+  // came near them again (note 1183): 25594 (2026-10-04) died at 06:02Z with
+  // twelve eyes of ender 1170 blocks from its bed, and again at 06:41Z in a
+  // cave on the way back for them; the run for the second death took the
+  // first one's place, and the eyes were on no list.
+  if (!goal.corpseRunsEarlier) {
+    const tally = names => names.reduce((o, n) => ({ ...o, [n]: (o[n] || 0) + 1 }), {});
+    goal.corpseRunsEarlier = (survival.deaths || []).slice(0, -1)
+      .filter(d => d.at !== goal.corpseRun?.deathAt && now - Date.parse(d.at) < KEEP_MS && dim(d.dimension) !== 'end' && !d.lava && d.position && Object.keys(worth(tally(d.worn || []))).length)
+      .map(d => ({ deathAt: d.at, position: { ...d.position }, dimension: dim(d.dimension), items: worth(tally(d.worn || [])), more: true, passes: 0, stuck: 0, status: 'open', respawn: null })).slice(-3);
+  }
+  if ((goal.corpseRunFor || goal.corpseRun?.deathAt) !== death.at) {
     if (recovery?.at !== death.at || recovery.status === 'pending') return null;
+    const old = goal.corpseRun;
+    if (old && ['open', 'left', 'unreachable'].includes(old.status) && !old.loadedAt && Object.keys(old.items || {}).length && !goal.corpseRunsEarlier.some(r => r.deathAt === old.deathAt)) goal.corpseRunsEarlier = [...goal.corpseRunsEarlier, old].slice(-3);
+    goal.corpseRunFor = death.at;
     // What was worn drops with the rest (recovery.js records it apart from
     // the pockets): mid-242-aa's iron helmet and chestplate were never on
     // its list (note 559).
@@ -71,7 +85,21 @@ function corpseRun(bot, goal, now = Date.now()) {
       status: where === 'end' ? 'void' : death.lava ? 'burned' : Object.keys(items).length ? 'open' : 'nothing',
       respawn: dim(bot.game?.dimension) === where ? { ...bot.entity.position } : null };
   }
-  const run = goal.corpseRun;
+  let run = goal.corpseRun;
+  const settle = r => {
+    if (r.status === 'unreachable' && !r.loadedAt) { r.status = 'open'; delete r.choice; r.stalled = r.stalled || { walks: r.stuck || 3 }; r.stuck = 0; }
+    if (r.status === 'left' && !r.loadedAt && r.told !== TOLD) { r.status = 'open'; delete r.choice; delete r.stalled; r.stuck = 0; }
+    if (r.status === 'open' && now - Date.parse(r.deathAt) > KEEP_MS) r.status = 'stale';
+  };
+  // The last death's run closed (or none made for it): the latest of the
+  // earlier ones still open is the run in hand, asked of Jev as its own.
+  if (run) settle(run);
+  while (run?.status !== 'open' && goal.corpseRunsEarlier.length) {
+    goal.corpseRunFor = goal.corpseRunFor || run?.deathAt || death.at;
+    run = goal.corpseRun = goal.corpseRunsEarlier.pop(); delete run.choice; delete run.announced;
+    settle(run);
+  }
+  if (!run) return null;
   // A run the code once closed as out of reach, its drops never come near
   // (so not aged a second), is Jev's to close: asked again, told of the
   // walks that failed (note 1179).
@@ -116,7 +144,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
   // against what it would get back.
   const client = task.opportunityClient;
   if (!run.choice) {
-    const death = (goal.survival?.deaths || []).at(-1) || {};
+    const death = (goal.survival?.deaths || []).find(d => d.at === run.deathAt) || (goal.survival?.deaths || []).at(-1) || {};
     const about = (death.about || []).map(t => `a ${t.name.replaceAll('_', ' ')} ${t.distance} blocks off`).join(', ');
     const wornNow = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
     const far = Math.round(flat(bot.entity.position, spot));
@@ -125,11 +153,12 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     // What a chest in the Nether keeps did not drop (rod-stash.js, note 704).
     let kept = ''; try { kept = require('./rod-stash').stashSays(goal); } catch (_) { kept = ''; }
     const keptSays = kept ? ` Not dropped: ${kept}, kept there and counted as held.` : '';
+    const earlier = run.more ? ' This is a death before the last: what else it carried then is not on this list (what lies there is taken with the rest), and its drops last only if the bot has not been within 128 blocks of them since.' : '';
     const stalled = run.stalled ? ` ${run.stalled.walks} walks toward them${run.stalled.at ? ` from about (${run.stalled.at.x}, ${run.stalled.at.z})` : ''} got no nearer, straight and to each side${run.stalled.error ? ` (the last: ${run.stalled.error})` : ''}.` : '';
     const again = madeAgain(run.items), minutes = Math.max(1, Math.round(far / 4.3 / 60));
     run.told = TOLD;
     const tree = {
-      go_back: { description: `Go back for ${listed(run.items)}: ${far} blocks off${far >= 100 ? `, about ${minutes} minute${minutes > 1 ? 's' : ''}' walk` : ''}${Math.abs(spot.y - bot.entity.position.y) > 4 ? `, at y ${Math.round(spot.y)}` : ''}. ${left === null ? 'They last until the bot comes within 128 blocks, then five minutes.' : `About ${left} seconds before they vanish.`} When the bot died there, ${about ? `about it were ${about}` : 'nothing hostile was in view'}; it wore ${death.worn?.length ? death.worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} then and wears ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} now. It is ${night ? 'night' : 'day'}.${stalled}` },
+      go_back: { description: `Go back for ${listed(run.items)}: ${far} blocks off${far >= 100 ? `, about ${minutes} minute${minutes > 1 ? 's' : ''}' walk` : ''}${Math.abs(spot.y - bot.entity.position.y) > 4 ? `, at y ${Math.round(spot.y)}` : ''}. ${left === null ? 'They last until the bot comes within 128 blocks, then five minutes.' : `About ${left} seconds before they vanish.`} When the bot died there, ${about ? `about it were ${about}` : 'nothing hostile was in view'}; it wore ${death.worn?.length ? death.worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} then and wears ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} now. It is ${night ? 'night' : 'day'}.${stalled}${earlier}` },
       leave_them: { description: `Leave them and go on with what is carried: ${listed(worth(Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])))) || 'nothing worth listing'}. What was dropped is made again, or found, later${again ? `: ${again}` : ''}.${keptSays}` },
     };
     const decision = await require('./decisions').decide('corpse_run', { client, bot, task, goal, save, tree,
@@ -184,7 +213,14 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
       save(); return true;
     }
   }
-  // At the spot: what is lying there, a stack at a time while it pays.
+  // At the spot: what is lying there, a stack at a time while it pays. What
+  // lies there and is worth carrying is on the list whether or not the
+  // record had it.
+  for (const e of Object.values(bot.entities || {})) {
+    const it = e?.position && e.isValid !== false ? e.getDroppedItem?.() : null;
+    if (!it || e.position.distanceTo(spot) > 12 || run.items[it.name] || !Object.keys(worth({ [it.name]: it.count || 1 })).length) continue;
+    run.items[it.name] = it.count || 1;
+  }
   let got = 0;
   for (const name of Object.keys(run.items)) {
     for (let tries = 0; tries < 4 && run.items[name] > 0; tries++) {

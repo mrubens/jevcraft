@@ -189,3 +189,51 @@ test('far off and under the rock, the way back goes up to the surface first, and
     assert.equal(goal.corpseRun.stuck, 0);
   } finally { levels.depthHere = depthHere; }
 });
+
+test('a second death does not take the first one\'s drops off the list: when its own run closes, the earlier one is the run in hand and asked (note 1183)', async () => {
+  const { bot, goal } = world();
+  const first = corpseRun(bot, goal);
+  first.choice = 'go_back';
+  // Dead again 200 blocks along the way back, with a pickaxe.
+  const at = new Date().toISOString();
+  goal.survival.deaths.push({ at, position: { x: 200, y: 40, z: 0 }, dimension: 'overworld', worn: [] });
+  goal.survival.recovery = { at, status: 'finished', recovered: {}, inventoryBeforeDeath: { iron_pickaxe: 1 } };
+  const second = corpseRun(bot, goal);
+  assert.deepEqual(second.items, { iron_pickaxe: 1 });
+  assert.deepEqual(goal.corpseRunsEarlier.map(r => r.deathAt), [first.deathAt]);
+  second.status = 'gone';
+  const again = corpseRun(bot, goal);
+  assert.equal(again.deathAt, first.deathAt);
+  assert.deepEqual(again.items, { iron_chestplate: 1, diamond_sword: 1, blaze_rod: 8 });
+  assert.equal(again.choice, undefined);
+  assert.deepEqual(goal.corpseRunsEarlier, []);
+  // And the last death's run is not made over again.
+  again.status = 'done';
+  assert.equal(corpseRun(bot, goal), null);
+});
+
+test('state from before the list was kept: an earlier death in the last three hours is on it by what it wore, and what lies at the spot is taken with the rest (note 1183)', async () => {
+  const { bot, goal, give } = world();
+  const last = goal.survival.deaths[0];
+  goal.survival.deaths.unshift({ at: new Date(Date.now() - 40 * 60000).toISOString(), position: { x: 900, y: 69, z: 700 }, dimension: 'overworld', worn: ['iron_helmet', 'iron_chestplate'] },
+    { at: new Date(Date.now() - 5 * 3600000).toISOString(), position: { x: 1, y: 1, z: 1 }, dimension: 'overworld', worn: ['iron_helmet'] });
+  goal.survival.deaths.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  assert.equal(goal.survival.deaths.at(-1), last);
+  const run = corpseRun(bot, goal);
+  assert.equal(run.deathAt, last.at);
+  assert.equal(goal.corpseRunsEarlier.length, 1);
+  run.status = 'done';
+  const earlier = corpseRun(bot, goal);
+  assert.deepEqual(earlier.items, { iron_helmet: 1, iron_chestplate: 1 });
+  assert.equal(earlier.more, true);
+  // At the spot, twelve eyes of ender lie there too.
+  bot.entity.position = new Vec3(900, 69, 700);
+  bot.entities = { 7: { position: new Vec3(901, 69, 700), getDroppedItem: () => ({ name: 'ender_eye', count: 12 }) }, 8: { position: new Vec3(901, 69, 701), getDroppedItem: () => ({ name: 'dirt', count: 30 }) } };
+  const asked = [];
+  const client = { systemOne: async ({ questions }) => { asked.push(JSON.stringify(Object.values(questions)[0])); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'go_back', confidence: 0.9 }])) }; } };
+  const task = Object.assign(new Task('run'), { opportunityClient: client });
+  const collected = [];
+  await corpseRunStep(bot, task, goal, () => {}, { move: async () => {}, collect: async (b, t, name) => { collected.push(name); give(name, 1); return true; } });
+  assert.match(asked[0], /a death before the last/);
+  assert.ok(collected.includes('ender_eye') && !collected.includes('dirt'));
+});
