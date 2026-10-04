@@ -77,6 +77,19 @@ function climbToSurface(bot, point) {
     const block = bot.blockAt(new Vec3(x, y, z));
     if (!block) return null;
     if (/_leaves$|_log$|_wood$/.test(block.name)) continue;
+    // In water open to the sky the point is not under anything (note 1214):
+    // the water over a swimmer was counted as cover, and a bot two blocks
+    // under the top of the sea read three blocks 'underground'. The
+    // rehearsals of 2026-10-04 (10:54 to 11:05Z and 12:27 to 12:37Z), let
+    // down into open sea, were told 'the bot is underground and has to dig
+    // its way out to open sky', chose a staircase to a hilltop 23 blocks
+    // off, and stood ten minutes in the water each time.
+    if (swimmableWater(block)) {
+      const fy = Math.floor(point.y);
+      let same = fy <= y && swimmableWater(bot.blockAt(new Vec3(x, fy, z)));
+      for (let yy = fy + 1; same && yy < y; yy++) same = swimmableWater(bot.blockAt(new Vec3(x, yy, z)));
+      if (same) return 0;
+    }
     if (block.boundingBox === 'block' || swimmableWater(block) || ['lava', 'bubble_column', 'powder_snow'].includes(block.name)) return Math.max(0, y + 1 - Math.floor(point.y));
   }
   return 0;

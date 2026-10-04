@@ -94,6 +94,15 @@ const bot = mineflayer.createBot({ host: '127.0.0.1', port, username, version: '
 bot.loadPlugin(compatibilityPlugin); bot.loadPlugin(pathfinder); bot.loadPlugin(require('../src/gaze').gazePlugin);
 let client = null;
 if (process.env.ENDGAME_JEV === '1') { const { TypeSafe } = require('../src/typesafe'); client = new TypeSafe(); }
+// ENDGAME_LOG_DECISIONS=1: every question Jev is asked and what it answered, in the drill's log (the trace alone did not say why a walk paced).
+if (client && process.env.ENDGAME_LOG_DECISIONS) {
+  const real0 = client.systemOne.bind(client);
+  client.systemOne = async req => {
+    const out = await real0(req);
+    try { for (const [k, q] of Object.entries(req.questions || {})) log({ asked: Object.keys(q.criteria || {}).slice(0, 14), answer: out?.answers?.[k]?.choice, confidence: out?.answers?.[k]?.confidence, task: String(q.instructions?.task || '').slice(0, 90) }); } catch (_) {}
+    return out;
+  };
+}
 // ENDGAME_EYES_NOW=keep_here: the eyes question (eye-bank.js) is answered so by the rehearsal, to walk the path that choice opens; every other question is Jev's.
 if (client && process.env.ENDGAME_EYES_NOW) {
   const real = client.systemOne.bind(client), forced = process.env.ENDGAME_EYES_NOW;
