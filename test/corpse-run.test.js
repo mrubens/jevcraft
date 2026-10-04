@@ -244,3 +244,30 @@ test('state from before the list was kept: an earlier death in the last three ho
   assert.match(asked[0], /a death before the last/);
   assert.ok(collected.includes('ender_eye') && !collected.includes('dirt'));
 });
+
+test('a death before the last, its list not kept: the eyes the run had made before it and has nowhere now are said, and a run left without that said is asked once more (note 1186)', async () => {
+  const { bot, goal } = world();
+  const before = new Date(Date.now() - 40 * 60000).toISOString();
+  goal.survival.deaths.unshift({ at: before, position: { x: 900, y: 69, z: 700 }, dimension: 'overworld', worn: ['iron_helmet'], cause: 'was shot by Skeleton' });
+  goal.gameProgress = { milestones: { eyes_obtained: { at: Date.now() - 5 * 3600000 }, stronghold_located: { at: 1, frames: Array.from({ length: 12 }, () => ({ eye: false })) } } };
+  goal.endPortal = { neededEyes: 12 };
+  corpseRun(bot, goal).status = 'done';
+  const earlier = corpseRun(bot, goal);
+  Object.assign(earlier, { status: 'left', choice: 'leave_them', told: 3 });
+  const asked = [];
+  const client = { systemOne: async ({ questions }) => { asked.push(JSON.stringify(Object.values(questions)[0])); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'leave_them', confidence: 0.9 }])) }; } };
+  const task = Object.assign(new Task('run'), { opportunityClient: client });
+  await corpseRunStep(bot, task, goal, () => {}, { move: async () => {}, collect: async () => false });
+  assert.equal(asked.length, 1);
+  assert.match(asked[0], /The eyes of ender this run had made before that death are not carried, in a chest or in the portal's frames now: they dropped at a death since, this one or one after it, and the goal wants 12\./);
+  assert.match(asked[0], /made again, or found, later: 12 ender pearls from endermen or piglin barter, 6 blaze rods from a fortress's blazes, 5 iron mined and smelted/);
+  await corpseRunStep(bot, task, goal, () => {}, { move: async () => {}, collect: async () => false });
+  assert.equal(asked.length, 1, 'told and left: that stands');
+  // With eyes carried, nothing of the kind is said.
+  const has = world();
+  has.goal.survival.deaths.unshift({ at: before, position: { x: 900, y: 69, z: 700 }, dimension: 'overworld', worn: ['iron_helmet'] });
+  has.goal.gameProgress = goal.gameProgress; has.give('ender_eye', 12);
+  corpseRun(has.bot, has.goal).status = 'done';
+  Object.assign(corpseRun(has.bot, has.goal), { status: 'left', told: 3 });
+  assert.equal(corpseRun(has.bot, has.goal), null);
+});

@@ -44,6 +44,21 @@ function madeAgain(items = {}) {
   return out.join(', ');
 }
 
+// The eyes of ender a run had before a death and has nowhere now (none
+// carried, in a chest or in the portal's frames): how many the goal still
+// wants, for a death whose own list was not kept (note 1186). 25594
+// (2026-10-04 07:05Z), asked of its death of 06:02Z by the armor it wore
+// alone, left it at 853 blocks; its twelve eyes lay there.
+function eyesLostBy(bot, goal, run) {
+  const made = goal?.gameProgress?.milestones?.eyes_obtained?.at;
+  if (!run?.more || !Number.isFinite(made) || made > Date.parse(run.deathAt)) return 0;
+  let n = null; try { n = require('./eye-need').need(bot, goal); } catch (_) { n = null; }
+  if (!n || n.eyes || n.stashed?.eyes) return 0;
+  const frames = goal.gameProgress.milestones.stronghold_located?.frames;
+  if (Array.isArray(frames) && frames.some(f => f.eye)) return 0;
+  return n.target;
+}
+
 function worth(items = {}) {
   const out = {};
   for (const [name, count] of Object.entries(items)) if (count > 0 && WORTH.test(name) && !CHEAP.test(name)) out[name] = count;
@@ -88,6 +103,7 @@ function corpseRun(bot, goal, now = Date.now()) {
   let run = goal.corpseRun;
   const settle = r => {
     if (r.status === 'unreachable' && !r.loadedAt) { r.status = 'open'; delete r.choice; r.stalled = r.stalled || { walks: r.stuck || 3 }; r.stuck = 0; }
+    if (r.status === 'left' && !r.loadedAt && r.more && !r.toldEyes && eyesLostBy(bot, goal, r)) { r.status = 'open'; delete r.choice; }
     if (r.status === 'left' && !r.loadedAt && r.told !== TOLD) { r.status = 'open'; delete r.choice; delete r.stalled; r.stuck = 0; }
     if (r.status === 'open' && now - Date.parse(r.deathAt) > KEEP_MS) r.status = 'stale';
   };
@@ -157,10 +173,13 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     const others = (goal.corpseRunsEarlier || []).filter(r => r.dimension === run.dimension).map(r => `${listed(r.items)}${r.more ? ' and what else it carried then' : ''}, ${Math.round(flat(bot.entity.position, r.position))} blocks from here and ${Math.round(flat(spot, r.position))} from these`);
     const alsoLying = others.length ? ` From a death before this one there also lie: ${others.join('; ')}; that is asked of after this.` : '';
     const stalled = run.stalled ? ` ${run.stalled.walks} walks toward them${run.stalled.at ? ` from about (${run.stalled.at.x}, ${run.stalled.at.z})` : ''} got no nearer, straight and to each side${run.stalled.error ? ` (the last: ${run.stalled.error})` : ''}.` : '';
-    const again = madeAgain(run.items), minutes = Math.max(1, Math.round(far / 4.3 / 60));
+    const eyes = eyesLostBy(bot, goal, run);
+    if (eyes) run.toldEyes = true;
+    const eyesSay = eyes ? ` The eyes of ender this run had made before that death are not carried, in a chest or in the portal's frames now: they dropped at a death since, this one or one after it, and the goal wants ${eyes}.` : '';
+    const again = madeAgain({ ...run.items, ...(eyes ? { ender_eye: eyes } : {}) }), minutes = Math.max(1, Math.round(far / 4.3 / 60));
     run.told = TOLD;
     const tree = {
-      go_back: { description: `Go back for ${listed(run.items)}: ${far} blocks off${far >= 100 ? `, about ${minutes} minute${minutes > 1 ? 's' : ''}' walk` : ''}${Math.abs(spot.y - bot.entity.position.y) > 4 ? `, at y ${Math.round(spot.y)}` : ''}. ${left === null ? 'They last until the bot comes within 128 blocks, then five minutes.' : `About ${left} seconds before they vanish.`} ${death.cause ? `The bot ${death.cause} there; when it died, ` : 'When the bot died there, '}${about ? `about it were ${about}` : 'nothing hostile was in view'}; it wore ${death.worn?.length ? death.worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} then and wears ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} now. It is ${night ? 'night' : 'day'}.${stalled}${earlier}${alsoLying}` },
+      go_back: { description: `Go back for ${listed(run.items)}: ${far} blocks off${far >= 100 ? `, about ${minutes} minute${minutes > 1 ? 's' : ''}' walk` : ''}${Math.abs(spot.y - bot.entity.position.y) > 4 ? `, at y ${Math.round(spot.y)}` : ''}. ${left === null ? 'They last until the bot comes within 128 blocks, then five minutes.' : `About ${left} seconds before they vanish.`} ${death.cause ? `The bot ${death.cause} there; when it died, ` : 'When the bot died there, '}${about ? `about it were ${about}` : 'nothing hostile was in view'}; it wore ${death.worn?.length ? death.worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} then and wears ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} now. It is ${night ? 'night' : 'day'}.${stalled}${earlier}${eyesSay}${alsoLying}` },
       leave_them: { description: `Leave them and go on with what is carried: ${listed(worth(Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])))) || 'nothing worth listing'}. What was dropped is made again, or found, later${again ? `: ${again}` : ''}.${keptSays}` },
     };
     const decision = await require('./decisions').decide('corpse_run', { client, bot, task, goal, save, tree,
