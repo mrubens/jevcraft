@@ -104,3 +104,18 @@ test('an infested block in the room\'s wall is not the one dug through: it lets 
   await enterEnd(bot, new Task('enter'), goal, () => {}, { navigate: async () => {}, tunnel: async () => {}, dig: async (b, t2, c) => dug.push([c.x, c.y, c.z]) }).catch(() => {});
   assert.deepEqual(dug, [[606, -36, 1546]]);
 });
+
+test('the stair to the ring\'s east side set aside, the next side\'s is dug; with all four set aside the error stands (note 1221)', async () => {
+  const { bot, goal } = far();
+  bot.entity.position = new Vec3(608.5, -31, 1540.5);
+  bot.blockAt = p => ({ name: 'deepslate', position: p.floored(), boundingBox: 'block' });
+  const calls = [];
+  const tunnel = async (b, t2, g, s, target) => { calls.push([target.x, target.y, target.z]); if (calls.length === 1) throw new Error('The staircase toward (607, -36, 1540) is set aside (3 rounds without getting closer than 4 blocks); trying another way'); };
+  await enterEnd(bot, new Task('enter'), goal, () => {}, { navigate: async () => {}, tunnel });
+  assert.deepEqual(calls, [[607, -36, 1540], [601, -36, 1540]]);
+  const all = far(); all.bot.entity.position = new Vec3(608.5, -31, 1540.5);
+  all.bot.blockAt = bot.blockAt;
+  let n = 0;
+  await assert.rejects(enterEnd(all.bot, new Task('enter'), all.goal, () => {}, { navigate: async () => {}, tunnel: async () => { n++; throw new Error('The staircase is set aside'); } }), /set aside/);
+  assert.equal(n, 4);
+});

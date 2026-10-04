@@ -110,7 +110,18 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
       if (flat > UNDER_FAR) return;
     }
     const stood = bot.entity.position.clone();
-    await actions.tunnel(bot, task, goal, save, beside, 'end_portal');
+    // The stair to one side of the ring set aside, the next side's is dug
+    // (note 1221): east of it, then west, south and north. The rehearsal of
+    // 2026-10-04 (13:41 to 14:02Z), its eyes fetched and the stronghold
+    // reached, was eighteen blocks from its ring with the stair toward the
+    // east side 'set aside (3 rounds without getting closer than 4 blocks)',
+    // and asked for that same stair 713 times in twenty minutes.
+    let aside = null;
+    for (const side of [beside, center.offset(-3, 1, 0), center.offset(0, 1, 3), center.offset(0, 1, -3)]) {
+      try { await actions.tunnel(bot, task, goal, save, side, 'end_portal'); aside = null; break; }
+      catch (err) { task.check(); if (!/set aside/.test(String(err.message || err))) throw err; aside = err; }
+    }
+    if (aside) throw aside;
     // The stair stopped at the room's own wall (its bricks and iron bars are
     // no stair's rock): within a dozen blocks of the ring and near its
     // level, the two cells toward it are dug and stepped through (note
