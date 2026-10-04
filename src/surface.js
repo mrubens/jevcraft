@@ -679,7 +679,15 @@ const hasSurface = bot => /overworld/.test(String(bot.game?.dimension || 'overwo
 
 function surfaceReturnComplete(bot, goal, isSurface = surfaceObserver(bot)) {
   if (!hasSurface(bot)) return true;
-  return isSurface(bot.entity.position) && bot.entity.position.y >= (goal.surfaceReturn?.minimumY ?? -Infinity);
+  // Swimming in water open to the sky, the return is done (note 1216): the
+  // observer reads the water over a swimmer as a roof (it keeps a surface
+  // walk from diving), and by it a bot in open sea was 'underground'. The
+  // rehearsals of 2026-10-04 (10:54, 12:27 and 12:45Z), let down into open
+  // sea, were sent to climb to a hilltop 23 blocks off and stood six to
+  // ten minutes in the water each time.
+  const p = bot.entity.position;
+  const swimming = swimmableWater(bot.blockAt(p.floored())) && openSkyOver(bot, p);
+  return (isSurface(p) || swimming) && p.y >= (goal.surfaceReturn?.minimumY ?? -Infinity);
 }
 
 // Gathering stone or cooking can leave us under terrain. Surface-only travel
