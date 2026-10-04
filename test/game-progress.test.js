@@ -400,3 +400,15 @@ test('after the first Nether entry, with a stone pickaxe that works and armour s
   bot.inventory.items = () => kit.filter(i => i.name !== 'stone_pickaxe');
   assert.match(nextGameStage(bot, goal).phase, /_pickaxe$/);
 });
+
+test('a sword with swings left is a sword: the stone sword is not asked for over an iron one at 34 uses, and is at its last few (note 1250)', () => {
+  const registry = require('minecraft-data')('26.1');
+  const max = registry.itemsByName.iron_sword.maxDurability;
+  const stageWith = left => {
+    const { bot, goal } = fixture(); bot.registry = registry; observeProgress(bot, goal);
+    bot.inventory.items = () => [{ name: 'stone_pickaxe', count: 1 }, { name: 'iron_sword', count: 1, durabilityUsed: max - left }];
+    return nextGameStage(bot, goal).phase;
+  };
+  assert.notEqual(stageWith(34), 'stone_sword', '34 swings left');
+  assert.equal(stageWith(5), 'stone_sword', 'five swings left: another is made');
+});

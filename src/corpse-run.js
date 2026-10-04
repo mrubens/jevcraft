@@ -170,6 +170,24 @@ const lying = (bot, spot, name = null) => Object.values(bot.entities || {}).filt
 // -> true when the trip was chosen (the errand set).
 const KIT_ERRAND = 'the kit dropped at the death there';
 const TRIP_RECORD = 'on 2026-10-03 the 4 deaths in the Nether with nothing in the home chest were back in the Nether 22 to 52 minutes later, a median 37, the kit mined and smelted again';
+// The trip come to nothing, the bot in the Nether in next to no armour: out
+// again for a kit, not on with the hunt as it stands (note 1251). Of the
+// eleven trips of 2026-10-04 (15:45 to 19:00Z) nine brought nothing back,
+// and the ladder took the pearls or the rods up again from there: 25592
+// (18:39Z) went on to its warped forest with no sword, no food and no gold
+// and was killed by a piglin at 18:56Z; 25590 died bare in the Nether three
+// times after its trip.
+function tripCameToNothing(bot, goal, run, save, now = Date.now()) {
+  if (run?.dimension !== 'nether' || dim(bot.game?.dimension) !== 'nether' || goal.errand?.dimension === 'overworld') return false;
+  const worn = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
+  if (worn.length >= 2) return false;
+  goal.errand = { dimension: 'overworld', items: [], for: 'a kit made again: what the death dropped was not got back', at: now };
+  bot.chat?.('Nothing of my kit to be had here, and next to nothing on me: back out to make one.');
+  save?.();
+  return true;
+}
+// What is carried to dig or bridge with, said on the trip.
+const TRIPS = 'On 2026-10-04 (15:45 to 19:00Z) eleven such trips were taken as the bot stood: two came back with any of the kit; four were given up at the drops for want of a way to them; three found nothing left, two of those deaths in lava or fire; and five were followed by a death within half an hour, four of them to piglins with no gold on.';
 async function kitTrip(bot, task, goal, save, now = Date.now()) {
   const run = goal.corpseRun;
   // Put off to dawn, it is asked again then, by day.
@@ -214,12 +232,15 @@ async function kitTrip(bot, task, goal, save, now = Date.now()) {
   // four were to piglins, bare (25590 three times, 25584).
   const GOLDEN = /^golden_/, goldOn = wornNow.some(n => GOLDEN.test(n)), goldDropped = Object.keys(run.items || {}).some(n => GOLDEN.test(n));
   const piglinSays = goldOn ? '' : ` No gold is worn: a piglin attacks a player wearing none on sight${goldDropped ? ', and the golden piece lies with the drops' : ''}; on 2026-10-04 (16:00 to 17:25Z) six deaths in the Nether were to piglins or in flight from them, every one with no gold on.`;
+  const carriedNames = (bot.inventory?.items?.() || []);
+  const pickaxe = carriedNames.find(i => /_pickaxe$/.test(i.name))?.name || null, blocks = carriedNames.filter(i => /^(cobblestone|netherrack|dirt|cobbled_deepslate|stone|andesite|diorite|granite)$/.test(i.name)).reduce((n, i) => n + i.count, 0);
+  const waySays = ` ${pickaxe ? `A ${pickaxe.replaceAll('_', ' ')}` : 'No pickaxe'} and ${blocks} building block${blocks === 1 ? '' : 's'} are carried: in the Nether a gap is bridged with blocks and rock is dug with a pickaxe, and a walk without them stops at the first of either.`;
   const toPortal = Math.round(flat(here, out)), fromPortal = Math.round(flat(there, spot));
   const minutes = Math.max(1, Math.round((toPortal + fromPortal) / 4.3 / 60));
   const again = madeAgain(run.items);
   const withSays = `with ${weapon ? `a ${weapon}` : 'no sword or axe'} and ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'}`;
   const tree = {
-    go_now: { description: `Go back for them now, as the bot stands (${withSays}): ${listed(run.items)} lie in the Nether where the bot died, ${fromPortal} blocks from the portal on that side; the portal on this side is ${toPortal} blocks off, about ${minutes} minute${minutes === 1 ? '' : 's'} at a clear walk over level ground, and longer over water, hills or rock.${hourSays}${depthSays} They are not a second older: dropped things age only while a player is within 128 blocks, and they last until the bot comes that near again, then five minutes. ${death.cause ? `The bot ${death.cause} there; when it died, ` : 'When the bot died, '}${about || 'nothing hostile was seen'}${about ? ' was about' : ''}; what was about then may be about still, and a mob the bot had struck forgets it once the bot is gone.${/burn|flame|fire|lava/i.test(death.cause || '') ? ' A death by fire is often on burning ground, and what drops into fire or lava is destroyed: 25593 (2026-10-04) went back 162 blocks for the kit of a death it burned to, and nothing lay there.' : ''} The bot wore ${(death.worn || []).map(n => n.replaceAll('_', ' ')).join(', ') || 'nothing'} then. Taken up, the kit is worn and carried at once and the ladder goes on from there.${foodSays}${piglinSays}` },
+    go_now: { description: `Go back for them now, as the bot stands (${withSays}): ${listed(run.items)} lie in the Nether where the bot died, ${fromPortal} blocks from the portal on that side; the portal on this side is ${toPortal} blocks off, about ${minutes} minute${minutes === 1 ? '' : 's'} at a clear walk over level ground, and longer over water, hills or rock.${hourSays}${depthSays} They are not a second older: dropped things age only while a player is within 128 blocks, and they last until the bot comes that near again, then five minutes. ${death.cause ? `The bot ${death.cause} there; when it died, ` : 'When the bot died, '}${about || 'nothing hostile was seen'}${about ? ' was about' : ''}; what was about then may be about still, and a mob the bot had struck forgets it once the bot is gone.${/burn|flame|fire|lava/i.test(death.cause || '') ? ' A death by fire is often on burning ground, and what drops into fire or lava is destroyed: 25593 (2026-10-04) went back 162 blocks for the kit of a death it burned to, and nothing lay there.' : ''} The bot wore ${(death.worn || []).map(n => n.replaceAll('_', ' ')).join(', ') || 'nothing'} then. Taken up, the kit is worn and carried at once and the ladder goes on from there.${foodSays}${piglinSays}${waySays} ${TRIPS}` },
     kit_first: { description: `Make a kit again here first, and take the drops up on the next trip into the Nether: ${again || 'what the ladder asks for'}. In the record, ${TRIP_RECORD}. The drops do not age meanwhile, and the bot comes to them ${withSays.replace(/^with /, 'no longer with ')}, in whatever it has made.` },
   };
   if (night && toDawn !== null) tree.go_at_dawn = { description: `Go back for them at dawn, about ${toDawn} real minute${toDawn === 1 ? '' : 's'} off: the night is seen out first as the night's own question has it (a shelter, a bed), and this is asked again by day. The drops do not age meanwhile.` };
@@ -308,7 +329,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     if (decision.stale) return false;
     if (decision.path.at(-1) === 'wait_for_day') { run.waitUntil = Date.now() + toDawn * 60000; save(); return false; }
     run.choice = decision.path.at(-1); save();
-    if (run.choice === 'leave_them') { run.status = 'left'; save(); return false; }
+    if (run.choice === 'leave_them') { run.status = 'left'; tripCameToNothing(bot, goal, run, save); save(); return false; }
   }
   if (!run.announced) {
     run.announced = true;
@@ -401,6 +422,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
   else if (!got || run.passes >= 2) {
     run.status = got ? 'partial' : 'gone';
     bot.chat?.(got ? `Got some of it back. The rest is gone: ${listed(run.items)}.` : `Nothing left where I died. Lava or time took it.`);
+    tripCameToNothing(bot, goal, run, save);
   }
   save();
   return true;
@@ -417,4 +439,4 @@ function underWay(bot, goal, now = Date.now()) {
     secondsLeft: run.loadedAt ? Math.max(0, Math.round((DESPAWN_MS - (now - Date.parse(run.loadedAt))) / 1000)) : null };
 }
 
-module.exports = { KIT_ERRAND, kitTrip, corpseRun, corpseRunStep, worth, madeAgain, underWay };
+module.exports = { tripCameToNothing, KIT_ERRAND, kitTrip, corpseRun, corpseRunStep, worth, madeAgain, underWay };

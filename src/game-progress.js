@@ -378,7 +378,16 @@ function ladderRung(bot, goal, waiting, { allOptional = false } = {}) {
   // both of its diamond pickaxes spent and made stone ones for an hour.
   const usable = item => { const max = bot.registry?.itemsByName?.[item.name]?.maxDurability; return !max || max - (item.durabilityUsed || 0) >= Math.min(max * 0.2, 64); };
   const sound = [...inHand, ...equipped].filter(usable).map(i => i.name);
-  const best = kind => Math.max(0, ...sound.filter(n => n.endsWith(`_${kind}`)).map(tierOf));
+  // A sword is a sword to its last ten swings (note 1250): the fifth of its
+  // uses kept back for a pickaxe is a trip out of a mine, and a sword wants
+  // none. 25593 (2026-10-04 18:13 to 19:00Z), five pearls and seven rods
+  // just banked, an iron sword with 34 swings left in its hand, was asked
+  // 'stone sword ... every fight is with bare hands' 58 times in 47 minutes
+  // under the rock with no wood for the stick; 25591 the same at 16:25Z with
+  // an iron sword at 40.
+  const swings = item => { const max = bot.registry?.itemsByName?.[item.name]?.maxDurability; return !max || max - (item.durabilityUsed || 0) >= 10; };
+  const swords = [...inHand, ...equipped].filter(i => /_sword$/.test(i.name) && swings(i)).map(i => i.name);
+  const best = kind => Math.max(0, ...(kind === 'sword' ? swords : sound.filter(n => n.endsWith(`_${kind}`))).map(tierOf));
   // A worn tool is still in the inventory, so the replacement is one more
   // than what is carried; asking for one would be satisfied by the worn one.
   const another = item => ({ phase: item, action: 'acquire', item, count: carried.filter(n => n === item).length + 1 });
@@ -1240,6 +1249,7 @@ async function gameStep(bot, task, goal, save, actions) {
     // the bot stands (corpse-run.js kitTrip): 25584 (2026-10-04 15:48Z)
     // chose it and was sent for oak logs and iron armour first (note 1234).
     const kitTrip = stage.for === require('./corpse-run').KIT_ERRAND && goal.corpseRun?.status === 'open';
+    if (stage.action === 'enter_nether' && await require('./mob-hunt').goldForPiglins(bot, task, goal, save, actions, { crossing: true })) return false;
     if (stage.action === 'enter_nether' && !kitTrip && actions.prepare_combat && !await actions.prepare_combat(bot, task, goal, save)) return false;
     if (stage.action === 'enter_end' && actions.prepare_end && !await actions.prepare_end(bot, task, goal, save)) return false;
     const execute = actions[stage.action];

@@ -384,7 +384,14 @@ function noneGood(id, decision, listed, { bot, goal, state, last = null }) {
   const calmAlways = CALM_WHEN_NONE_GOOD.has(id) && ng > 0 && ng >= bestW;
   if (!why && !SAY_ONLY.has(id) && (ng >= 2 * bestW || calmAlways) && ng > 0) {
     const KEEP = require('../intention').KEEP;
-    const calm = keys.find(k => k !== NONE_GOOD_KEY && (listed[k]?.ladderNext || KEEP.test(k) || CALM_KEY[id] === k));
+    const calm = keys.find(k => k !== NONE_GOOD_KEY && (listed[k]?.ladderNext || KEEP.test(k) || CALM_KEY[id] === k))
+      // A stall's detour has no 'keep on' of its own: none good at twice the
+      // best listed is the rest waited out or another way at it from here,
+      // not the listed way that leaves (note 1252). 25593 (2026-10-04
+      // 18:08:26Z), five pearls from its forest in six minutes, answered
+      // none good 0.40 over pearls_overworld 0.15, was sent out to the
+      // Overworld on the 0.15, and took no pearl in the next fifty minutes.
+      || (CALM_ORDER[id] || []).find(k => keys.includes(k));
     const r = n => Math.round(n * 100) / 100;
     if (calm && calm !== path[0]) { passedOver = `none good at ${r(ng)} was ${ng >= 2 * bestW ? 'twice the best listed or more' : (id === 'upkeep' ? 'over the best listed, and at upkeep that is carrying on' : 'over the best listed, and here that is what changes nothing')} (${bestKey.replaceAll('_', ' ')} ${r(bestW)}): ${calm.replaceAll('_', ' ')}, which changes nothing, was taken rather than a guess`; path = down(calm).path; }
     else if (!calm) weak = { key: path[0], p: r(weights[path[0]] || 0), noneGood: r(ng) };
@@ -535,6 +542,7 @@ const SAY_ONLY = new Set(['encounter_stance', 'body_way', 'shot_answer', 'ranged
 // outside came to nothing, and a zombie had it at 10:12:24.
 const CALM_WHEN_NONE_GOOD = new Set(['upkeep', 'pocket_next']);
 const CALM_KEY = Object.freeze({ pocket_next: 'stay' });
+const CALM_ORDER = Object.freeze({ stillness_detour: ['until_rest_ends', 'differently', 'work_free'] });
 // The questions about the plan, which wait while a fight is on (danger.js
 // fightOn, note 696): the legs, the fortress's questions, the detours, the
 // upkeep and the stage. Survival's turn comes first; asked at the end of the

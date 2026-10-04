@@ -69,3 +69,12 @@ test('no gold carried, a pickaxe, and nether gold ore in view: it is mined for t
   far.findBlocks = () => [];
   assert.equal(await goldForPiglins(far, task, {}, () => {}, { acquireStep: async () => assert.fail('nothing is made') }), false);
 });
+
+test('at the crossing in the Overworld the boots the pack makes by crafts are made before stepping through; elsewhere in the Overworld nothing (note 1253)', async () => {
+  const b = bot({ gold_ingot: 4, crafting_table: 1 }, { dimension: 'overworld' });
+  const asked = [];
+  const acquireStep = async (bt, t, item, count) => { asked.push([item, count]); b._list.push({ name: 'golden_boots', count: 1, type: registry.itemsByName.golden_boots.id }); };
+  assert.equal(await goldForPiglins(b, task, {}, () => {}, { acquireStep }), false, 'not at the crossing');
+  assert.equal(await goldForPiglins(b, task, {}, () => {}, { acquireStep }, { crossing: true }), true);
+  assert.deepEqual(asked, [['golden_boots', 1]]);
+});

@@ -378,6 +378,8 @@ test('a death in the Nether, back to life in the Overworld: straight back for th
   assert.match(asked[0], /The bot was slain by Zombified Piglin there; when it died, a zombified piglin 1 blocks off was about/);
   assert.match(asked[0], /no sword or axe and no armour/);
   assert.match(asked[0], /a median 37/);
+  assert.match(asked[0], /No pickaxe and 0 building blocks are carried/);
+  assert.match(asked[0], /eleven such trips were taken as the bot stood: two came back with any of the kit/);
   assert.match(asked[0], /No food is carried, and none was in the pack that dropped: in the Nether health comes back only at hunger eighteen or more/);
   assert.deepEqual({ dimension: goal.errand.dimension, items: goal.errand.items, for: goal.errand.for }, { dimension: 'nether', items: [], for: 'the kit dropped at the death there' });
   assert.equal(goal.corpseRun.choice, 'go_back', 'not asked again on the far side');
@@ -434,4 +436,19 @@ test('by night the kit trip says the hour and offers the dawn, and is asked agai
   const n = asked.length;
   assert.equal(await corpseRunStep(kitted.bot, task, kitted.goal, () => {}, {}), false);
   assert.equal(asked.length, n);
+});
+
+test('a trip for the kit come to nothing, the bot in the Nether in next to no armour: out again for a kit (note 1251)', () => {
+  const { tripCameToNothing } = require('../src/corpse-run');
+  const said = [];
+  const bot = { game: { dimension: 'the_nether' }, inventory: { slots: { 6: { name: 'iron_chestplate' } } }, chat: m => said.push(m) };
+  const goal = {};
+  assert.equal(tripCameToNothing(bot, goal, { dimension: 'nether' }, () => {}), true);
+  assert.deepEqual({ dimension: goal.errand.dimension, items: goal.errand.items }, { dimension: 'overworld', items: [] });
+  assert.match(said[0], /back out to make one/);
+  const kitted = { game: { dimension: 'the_nether' }, inventory: { slots: { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 8: { name: 'golden_boots' } } } };
+  const g2 = {};
+  assert.equal(tripCameToNothing(kitted, g2, { dimension: 'nether' }, () => {}), false, 'in a kit it goes on');
+  assert.equal(g2.errand, undefined);
+  assert.equal(tripCameToNothing({ ...bot, game: { dimension: 'overworld' } }, {}, { dimension: 'overworld' }, () => {}), false);
 });

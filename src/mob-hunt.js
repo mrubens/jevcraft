@@ -106,8 +106,12 @@ function kitPieces(bot, missing) {
 // forty minutes ("shot by Piglin", "slain by Piglin" twice) and struck the
 // rod carriers on their walks out. -> true when a step was taken.
 const GOLD_PIECES = ['golden_helmet', 'golden_chestplate', 'golden_leggings', 'golden_boots'];
-async function goldForPiglins(bot, task, goal, save, actions = {}) {
-  if (dimension(bot) !== 'nether' || bot.game?.gameMode !== 'survival' || typeof actions.acquireStep !== 'function') return false;
+// `crossing`: at the portal in the Overworld, about to step through (note
+// 1253): the boots the pack makes by crafts alone are made on this side.
+// 25592 (2026-10-04 18:02Z) went through with gold in its pack and none on,
+// and was shot by a piglin from 20 to 14 seven minutes in.
+async function goldForPiglins(bot, task, goal, save, actions = {}, { crossing = false } = {}) {
+  if ((dimension(bot) !== 'nether' && !(crossing && dimension(bot) === 'overworld')) || bot.game?.gameMode !== 'survival' || typeof actions.acquireStep !== 'function') return false;
   const worn = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name);
   if (worn.some(n => GOLD_PIECES.includes(n))) return false;
   if (isSetAside(goal, 'gold_for_piglins', 'nether')) return false;
