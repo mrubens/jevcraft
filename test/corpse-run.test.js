@@ -201,6 +201,13 @@ test('a second death does not take the first one\'s drops off the list: when its
   const second = corpseRun(bot, goal);
   assert.deepEqual(second.items, { iron_pickaxe: 1 });
   assert.deepEqual(goal.corpseRunsEarlier.map(r => r.deathAt), [first.deathAt]);
+  // Asked of the second, Jev is told how it died there and what lies further on from the first.
+  goal.survival.deaths.at(-1).cause = 'burned to death';
+  const asked = [];
+  const client = { systemOne: async ({ questions }) => { asked.push(JSON.stringify(Object.values(questions)[0])); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'go_back', confidence: 0.9 }])) }; } };
+  await corpseRunStep(bot, Object.assign(new Task('run'), { opportunityClient: client }), goal, () => {}, { move: async () => {}, collect: async () => false });
+  assert.match(asked[0], /The bot burned to death there; when it died, nothing hostile was in view/);
+  assert.match(asked[0], /From a death before this one there also lie: iron chestplate, diamond sword, 8 blaze rod, 400 blocks from here and 201 from these; that is asked of after this\./);
   second.status = 'gone';
   const again = corpseRun(bot, goal);
   assert.equal(again.deathAt, first.deathAt);
