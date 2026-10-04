@@ -59,10 +59,20 @@ function endHazards(bot) {
     .map(e => ({ entity: e, radius: e.name === 'end_crystal' ? 12 : e.name === 'area_effect_cloud' ?
       cloudRadius(bot, e) : e.name === 'ender_dragon' ? 16 : 6 }));
 }
+// The mobs a place in the End is judged by: the dragon is not one of them
+// (note 1156). Its flight, its charge and its breath are the hazards'
+// own (endHazards, end-safety.js dragonThreat), and perched it is what the
+// sword came for: counted as a mob within twenty blocks, it made the
+// ground under its own head unsafe. The rehearsal of 2026-10-04 (02:25 to
+// 02:33Z) ran under the perched head nine times: five too late, four
+// "head moved out of reach" with no swing, the last "head 4.1 blocks off
+// ... safe false (ender_dragon 9), strike in reach, not offered".
+const endMobs = bot => hostileEntities(bot, 64).filter(e => e.name !== 'ender_dragon');
 function safeEndPoint(bot, p, hazards = endHazards(bot)) {
   // Navigation allows retreat from an already close mob. A place to stand,
   // draw or heal must satisfy the full buffer, not that retreat exception.
-  return safeFromHostiles(bot, p) && hostileEntities(bot, 64).every(e => p.distanceTo(e.position) >= 20) &&
+  const mobs = endMobs(bot);
+  return safeFromHostiles(bot, p, mobs) && mobs.every(e => p.distanceTo(e.position) >= 20) &&
     hazards.every(({ entity, radius }) => hazardDistance(p, entity) > radius);
 }
 
@@ -124,8 +134,8 @@ function endermenNearRoute(bot, from, to, width = 6) {
 // Why a point is not safe, for the record when nothing can be done.
 function unsafeBecause(bot, p, hazards = endHazards(bot)) {
   const out = [];
-  if (!safeFromHostiles(bot, p)) out.push('hostile path');
-  for (const e of hostileEntities(bot, 64)) if (p.distanceTo(e.position) < 20) out.push(`${e.name} ${Math.round(p.distanceTo(e.position))}`);
+  if (!safeFromHostiles(bot, p, endMobs(bot))) out.push('hostile path');
+  for (const e of endMobs(bot)) if (p.distanceTo(e.position) < 20) out.push(`${e.name} ${Math.round(p.distanceTo(e.position))}`);
   for (const { entity, radius } of hazards) if (hazardDistance(p, entity) <= radius) out.push(`${entity.name} ${Math.round(hazardDistance(p, entity))}<=${radius}`);
   return out;
 }
@@ -323,7 +333,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     const p = bot.entity.position;
     if (safeEndPoint(bot, p)) return true;
     if (!inWater()) return false;
-    const others = hostileEntities(bot, 64).filter(e => e.name !== 'enderman');
+    const others = endMobs(bot).filter(e => e.name !== 'enderman');
     return safeFromHostiles(bot, p, others) && others.every(e => p.distanceTo(e.position) >= 20) && endHazards(bot).every(({ entity, radius }) => hazardDistance(p, entity) > radius);
   };
   try {
