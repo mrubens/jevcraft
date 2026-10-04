@@ -61,7 +61,12 @@ function checkEndEmergency(bot) {
 // square and nine from the island, dodged the dragon's fireball at a sprint
 // to the platform's corner cell, went over its edge at (102.6, 47, -2.9)
 // and "fell out of the world", 36 seconds into the fight.
-const LANDING_CLEAR = 5;
+// The landing dragon's head leads its body by six and a half blocks and
+// hurts what it passes through, ten a touch (note 1159): the rehearsal of
+// 2026-10-04 (02:48:26 to 02:48:32Z), waiting seven blocks from the
+// fountain's middle, was hit there as the dragon came down, 20 health to
+// 10 to 5 to none.
+const LANDING_CLEAR = 10;
 const DEEP = 24, ROUND = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 function deepBeside(bot, p) {
   const fx = Math.floor(p.x), fy = Math.floor(p.y), fz = Math.floor(p.z);

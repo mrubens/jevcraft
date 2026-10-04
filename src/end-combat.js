@@ -57,7 +57,7 @@ function endHazards(bot) {
   return Object.values(bot.entities).filter(e => live(bot, e) && (['end_crystal', 'area_effect_cloud', 'dragon_fireball'].includes(e.name) ||
     e.name === 'ender_dragon' && !perched(bot, e) && metadata(bot, e, 'phase') !== 9))
     .map(e => ({ entity: e, radius: e.name === 'end_crystal' ? 12 : e.name === 'area_effect_cloud' ?
-      cloudRadius(bot, e) : e.name === 'ender_dragon' ? ([2, 3].includes(metadata(bot, e, 'phase')) ? 5 : 16) : 6 }));
+      cloudRadius(bot, e) : e.name === 'ender_dragon' ? ([2, 3].includes(metadata(bot, e, 'phase')) ? 10 : 16) : 6 }));
 }
 // The mobs a place in the End is judged by: the dragon is not one of them
 // (note 1156). Its flight, its charge and its breath are the hazards'
@@ -189,8 +189,8 @@ function enclosed(bot) {
 // three; a water bucket carried breaks it, fall-recovery.js). Walked off
 // upright, the landing waited for. -> true when the bot came down.
 const DROP_MOST = 14, DROP_KEEPS = 8;
-// Few arrows: a stack or less. By the fountain: this far from its middle, clear of the landing and in a few steps of the head.
-const FEW_ARROWS = 64, PERCH_RANGE = 7;
+// Few arrows: a stack or less. By the fountain: this far from its middle, clear of the landing dragon's head (six and a half blocks before its body, ten health a touch), within the twenty it stays seated for, and a few steps from the head once it sits.
+const FEW_ARROWS = 64, PERCH_RANGE = 12;
 function dropOffs(bot, center = null) {
   const here = bot.entity.position, feet = here.floored();
   const solid = c => bot.blockAt(c)?.boundingBox === 'block';
@@ -436,6 +436,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       return `The bot stands in the water it poured at its feet, ${turned.length} turned enderm${turned.length === 1 ? 'an' : 'en'} within twenty blocks, the nearest ${Math.round(turned[0]?.position.distanceTo(bot.entity.position) ?? 0)} off: water hurts an enderman and it teleports off rather than cross it, and the shot is drawn standing in it.`; };
     // The sword at the perched head, swing after swing at its pace, while
     // the dragon sits, the head is in reach and the place is safe.
+    const strikeSafeNow = () => !endMobs(bot).some(e => live(bot, e) && e.position.distanceTo(bot.entity.position) < 8) && endHazards(bot).every(({ entity, radius }) => hazardDistance(bot.entity.position, entity) > radius);
     const strikeWhilePerched = async ms => {
       const sword = bot.inventory.items().find(i => /_sword$/.test(i.name) && durable(bot.registry, i));
       if (!sword) throw new Error('No sword carried for the perched head');
@@ -445,7 +446,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
         while (Date.now() < until) {
           check(); checkEndEmergency(bot);
           const fresh = live(bot, dragon) && perchedHead(bot, dragon);
-          if (!fresh || !safeHere() || !canStrike(bot, fresh)) break;
+          if (!fresh || !(safeHere() || strikeSafeNow()) || !canStrike(bot, fresh)) break;
           if (typeof bot.lookAt === 'function') await bot.lookAt(fresh.position.offset(0, .5, 0), true);
           bot.attack(fresh); swings++;
           for (let n = 0; n < 7; n++) { check(); await sleep(100); }
@@ -471,7 +472,16 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       }
     }
     const head = dragon && perchedHead(bot, dragon);
-    if (safe && head && canStrike(bot, head) && bot.inventory.items().some(i => /_sword$/.test(i.name) && durable(bot.registry, i))) {
+    // For the sword at the perched head the place is judged by what is at
+    // hand (note 1159): no mob within eight blocks, no breath or crystal
+    // over it. The twenty blocks kept from a turned enderman are for a bow
+    // drawn standing still; the rehearsal of 2026-10-04 (02:48:30Z) stood
+    // under the head, "strike in reach, not offered", for an enderman
+    // twenty blocks off.
+    const strikeSafe = () => !endMobs(bot).some(e => live(bot, e) && e.position.distanceTo(bot.entity.position) < 8) &&
+      endHazards(bot).every(({ entity, radius }) => hazardDistance(bot.entity.position, entity) > radius);
+    const atHand = safe || strikeSafe();
+    if (atHand && head && canStrike(bot, head) && bot.inventory.items().some(i => /_sword$/.test(i.name) && durable(bot.registry, i))) {
       const edge = voidEdge(bot, bot.entity.position);
       tree.strike_head = { description: `Strike the reachable head of the perched dragon with the carried sword, and keep striking for as long as it sits and the place stays safe, up to ten seconds${edge ? `: the void is ${edge} block${edge === 1 ? '' : 's'} from where the bot stands, and the dragon's wing throws a player` : ''}`, run: () => strikeWhilePerched(10000) };
     }
@@ -482,7 +492,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     // was 8 to 20 blocks from the head at each of six perches and never
     // under it.
     const swordCarried = bot.inventory.items().some(i => /_sword$/.test(i.name) && durable(bot.registry, i));
-    if (safe && head && !canStrike(bot, head) && swordCarried && head.position.distanceTo(bot.entity.position) <= 40) {
+    if (atHand && head && !canStrike(bot, head) && swordCarried && head.position.distanceTo(bot.entity.position) <= 40) {
       let ground = null;
       for (let y = Math.floor(head.position.y); y >= Math.floor(head.position.y) - 8 && !ground; y--) {
         const p = new Vec3(Math.floor(head.position.x) + .5, y, Math.floor(head.position.z) + .5);
