@@ -53,11 +53,16 @@ const KEPT_LIMIT_MS = Math.max(LIMIT_MS, Number(process.env.MIDGAME_KEPT_HOURS |
 // 1082): mid-242-xh-fortress-9 (25593), six rods counted in its chests and
 // a seventh in a chest not counted, was ended at its six hours at 15:44Z on
 // 2026-10-03 on its way into the Nether for pearls.
-const RODS_WANTED = 6;
-const FULL_LIMIT_MS = Math.max(KEPT_LIMIT_MS, Number(process.env.MIDGAME_FULL_HOURS || 12) * 3600000);
+const RODS_WANTED = 6, PEARLS_HALF = 6;
+// Twenty-four hours, and with six pearls kept as with the rods (note 1199):
+// the pearls are the longer half of the eyes. mid-242-jg-fortress-11 (25590,
+// 2026-10-04 09:06Z) was ended at its six hours with eight ender pearls and
+// a rod in its chests, the most pearls any trial then held, and a fresh
+// world put in its place.
+const FULL_LIMIT_MS = Math.max(KEPT_LIMIT_MS, Number(process.env.MIDGAME_FULL_HOURS || 24) * 3600000);
 // With the rods wanted and twelve pearls kept or carried, the End's hours.
-const END_LIMIT_MS = Math.max(FULL_LIMIT_MS, Number(process.env.MIDGAME_END_HOURS || 24) * 3600000);
-const limitFor = kept => kept && kept.rods >= RODS_WANTED && kept.pearls >= 12 ? END_LIMIT_MS : kept && kept.rods >= RODS_WANTED ? FULL_LIMIT_MS : kept && (kept.rods >= 1 || kept.pearls >= 1) ? KEPT_LIMIT_MS : LIMIT_MS;
+const END_LIMIT_MS = Math.max(FULL_LIMIT_MS, Number(process.env.MIDGAME_END_HOURS || 48) * 3600000);
+const limitFor = kept => kept && kept.rods >= RODS_WANTED && kept.pearls >= 12 ? END_LIMIT_MS : kept && (kept.rods >= RODS_WANTED || kept.pearls >= PEARLS_HALF) ? FULL_LIMIT_MS : kept && (kept.rods >= 1 || kept.pearls >= 1) ? KEPT_LIMIT_MS : LIMIT_MS;
 const BLAZE_RODS = 6, PEARLS = 12;
 const trials = () => { try { return fs.readdirSync(LOG_DIR).filter(f => f.endsWith('.json')).map(f => JSON.parse(fs.readFileSync(path.join(LOG_DIR, f), 'utf8'))).sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt)); } catch (_) { return []; } };
 const saveTrial = t => { fs.mkdirSync(LOG_DIR, { recursive: true }); fs.writeFileSync(path.join(LOG_DIR, `${t.world}.json`), JSON.stringify(t, null, 2)); };

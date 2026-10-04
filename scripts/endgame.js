@@ -79,7 +79,8 @@ const dragonKilled = async () => await serverCount(`if entity @a[name=${username
 
 // ENDGAME_ARROWS: the arrows carried into the dragon's fight in all (192 unless set): a trial's bot has few.
 const ARROWS = process.env.ENDGAME_ARROWS != null ? Math.max(0, Number(process.env.ENDGAME_ARROWS)) : 192;
-const KIT = [['ender_eye', 20], ['diamond_pickaxe', 1], ['diamond_sword', 1], ['bow', 1], ...(ARROWS ? [['arrow', Math.min(64, ARROWS)]] : []), ['cooked_beef', 64], ['water_bucket', 1],
+// ENDGAME_EYES: the eyes carried (20 unless set): a trial's bot has thirteen.
+const KIT = [['ender_eye', Math.max(0, Number(process.env.ENDGAME_EYES || 20))], ['diamond_pickaxe', 1], ['diamond_sword', 1], ['bow', 1], ...(ARROWS ? [['arrow', Math.min(64, ARROWS)]] : []), ['cooked_beef', 64], ['water_bucket', 1],
   ['cobblestone', 64], ['cobblestone', 64], ['torch', 32], ['water_bucket', 1], ['white_bed', 1], ['oak_log', 16]];
 const ARMOUR = { 'armor.head': 'iron_helmet', 'armor.chest': 'iron_chestplate', 'armor.legs': 'iron_leggings', 'armor.feet': 'iron_boots', 'weapon.offhand': 'shield' };
 async function kit(extra = []) {
@@ -93,6 +94,16 @@ const bot = mineflayer.createBot({ host: '127.0.0.1', port, username, version: '
 bot.loadPlugin(compatibilityPlugin); bot.loadPlugin(pathfinder); bot.loadPlugin(require('../src/gaze').gazePlugin);
 let client = null;
 if (process.env.ENDGAME_JEV === '1') { const { TypeSafe } = require('../src/typesafe'); client = new TypeSafe(); }
+// ENDGAME_EYES_NOW=keep_here: the eyes question (eye-bank.js) is answered so by the rehearsal, to walk the path that choice opens; every other question is Jev's.
+if (client && process.env.ENDGAME_EYES_NOW) {
+  const real = client.systemOne.bind(client), forced = process.env.ENDGAME_EYES_NOW;
+  client.systemOne = async req => {
+    const eyesQ = Object.entries(req.questions || {}).filter(([, q]) => q?.criteria && 'keep_here' in q.criteria && 'carry_on' in q.criteria && /eyes? of ender/.test(String(q.criteria.keep_here)));
+    if (!eyesQ.length) return real(req);
+    log({ eyesNow: forced, said: String(eyesQ[0][1].criteria.keep_here).slice(0, 400) });
+    return { answers: Object.fromEntries(Object.keys(req.questions).map(k => [k, { choice: forced, confidence: 0.9 }])) };
+  };
+}
 let died = false;
 bot.on('death', () => { died = true; });
 // The moment an enderman turns, and what the bot was doing and looking at.
@@ -176,6 +187,35 @@ const DRILLS = {
       throws: search.throws || 0, moves: search.moves || 0, eyesLeft: countOf(bot, 'ender_eye'), ...outcome };
     if (goal.endPortal) remember({ endPortal: goal.endPortal, truth });
     return result;
+  },
+  // The ladder itself from the eyes made to the End (gameStep, every stage
+  // and question as a trial has them): the search, the eyes put away or
+  // carried, the portal found, the kit's question, the way down, the ring.
+  async ladder(task) {
+    const truth = await locateStronghold();
+    const start = { x: truth.x + 280, z: truth.z + 110 };
+    await kit();
+    await commands(['time set 1000', `execute in minecraft:overworld run spreadplayers ${start.x} ${start.z} 0 8 false ${username}`]);
+    await sleep(4000); await bot.waitForChunksToLoad();
+    const from = where();
+    const goal = { kind: 'win', request: 'beat the game', gameProgress: { version: 1, milestones: { nether_entered: { at: 1 }, eyes_obtained: { at: 1 } } }, strongholdSearch: { bearings: [], throws: 0, moves: 0, visited: {} } };
+    const handlers = gameHandlers(bot, client);
+    // The stages of this stretch in the ladder's order (game-progress.js
+    // nextGameStage): the search until the portal is found, the eyes put
+    // away taken out again, the way down and the ring. The whole ladder
+    // wants a trial's own state (its Nether, its kit rungs) and is not run.
+    const stages = [];
+    const step = async (b, t, g, s) => {
+      const banked = require('../src/rod-bank').collectHere(b, g);
+      const stage = !g.gameProgress.milestones.stronghold_located ? 'find_stronghold' : banked ? 'collect_rod_stash' : 'enter_end';
+      if (stages.at(-1) !== stage) { stages.push(stage); log({ stage, where: where(), eyes: countOf(bot, 'ender_eye') }); }
+      if (stage === 'find_stronghold') return handlers.find_stronghold(b, t, g, s);
+      if (stage === 'collect_rod_stash') return require('../src/rod-stash').collect(b, t, g, s, handlers.stashActions);
+      return handlers.enter_end(b, t, g, s);
+    };
+    const outcome = await runUntil(task, goal, () => {}, step, () => /end$/.test(dimension()), { minutes: Number(process.env.ENDGAME_MINUTES || 40) });
+    return { drill: 'ladder', pass: /end$/.test(dimension()) && !died, died, dimension: dimension(), from, truth, portal: goal.endPortal?.center, at: where(), eyesLeft: countOf(bot, 'ender_eye'),
+      stages, eyeBank: goal.eyeBank || null, chests: (goal.rodStashes || []).map(c => ({ at: c.position, contents: c.contents })), kit: goal.endKit?.choice || null, throws: goal.strongholdSearch?.throws || 0, ...outcome };
   },
   async enter_end(task) {
     const portal = known().endPortal;
