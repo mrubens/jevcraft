@@ -38,8 +38,11 @@ const HOLD_MS = 15 * 60000, ARROW_STEP = 32;
 // time it perched on the fountain, the bot alive at full health. Both ended
 // "Free the End". The crystals are the arrows' work: each stands on a
 // pillar out of the sword's reach and heals the dragon while it stands.
-const REHEARSED = { day: '2026-10-04', bow: { arrows: 143, minutes: 25 }, sword: { arrows: 16, health: 146, minutes: 13 } };
-const rehearsedSays = () => `In the rehearsals of ${REHEARSED.day} (a bow, a diamond sword, iron armour and a shield, no bed used): by the bow, on a fresh End, ${REHEARSED.bow.arrows} arrows loosed in ${REHEARSED.bow.minutes} minutes took the ten crystals and the dragon's whole 200 health; by the sword, with every crystal already down and ${REHEARSED.sword.arrows} arrows carried, the dragon's last ${REHEARSED.sword.health} went in ${REHEARSED.sword.minutes} minutes, struck at its head each time it perched on the fountain; the bot alive both times. The crystals are the arrows' work: each stands on a pillar out of the sword's reach and heals the dragon while it stands, an arrow or a few for each of the ten.`;
+// With fewer arrows on a fresh End: 32 (03:00 to 03:13Z) took seven of the
+// ten crystals; 21 (04:41 to 04:48Z) took three, and with none left the
+// dragon stood at 187 of 200 and the bot died by the fountain.
+const REHEARSED = { day: '2026-10-04', bow: { arrows: 143, minutes: 25 }, sword: { arrows: 16, health: 146, minutes: 13 }, few: [{ arrows: 32, crystals: 7 }, { arrows: 21, crystals: 3, dragon: 187, minutes: 8 }] };
+const rehearsedSays = () => `In the rehearsals of ${REHEARSED.day} (a bow, a diamond sword, iron armour and a shield, no bed used): by the bow, on a fresh End, ${REHEARSED.bow.arrows} arrows loosed in ${REHEARSED.bow.minutes} minutes took the ten crystals and the dragon's whole 200 health; by the sword, with every crystal already down and ${REHEARSED.sword.arrows} arrows carried, the dragon's last ${REHEARSED.sword.health} went in ${REHEARSED.sword.minutes} minutes, struck at its head each time it perched on the fountain; the bot alive both times. The crystals are the arrows' work: each stands on a pillar out of the sword's reach and heals the dragon while it stands, an arrow or a few for each of the ten. With fewer arrows, on a fresh End: ${REHEARSED.few[0].arrows} took ${REHEARSED.few[0].crystals} of the ten crystals before they were gone, and ${REHEARSED.few[1].arrows} took ${REHEARSED.few[1].crystals}, the dragon healed to ${REHEARSED.few[1].dragon} of 200 and the bot dead by the fountain ${REHEARSED.few[1].minutes} minutes in.`;
 
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const bedsOf = bot => bot.inventory.items().filter(i => /_bed$/.test(i.name)).reduce((n, i) => n + i.count, 0);
