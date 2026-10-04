@@ -46,15 +46,20 @@ const ORE = /_ore$/;
 // stranded on their own spans carried fifteen oak fences the whole time
 // (25586, 25598): "0 carried that can be laid".
 const FENCE = /_fence$/;
+// Whole blocks carried for their use, a floor cell when put in a gap (note
+// 1236: 25590 on its span piece carried a furnace and a chest, and was told
+// '2 fences carried, 6 short').
+const WHOLE = ['crafting_table', 'furnace', 'chest', 'barrel', 'smoker', 'blast_furnace'];
 function bridgeStock(view) {
   const carried = view.carried || {}, count = names => names.reduce((n, k) => n + (carried[k] || 0), 0);
   const full = PLACEABLE.filter(n => !falls(n) && carried[n] > 0);
   const fences = Object.keys(carried).filter(n => FENCE.test(n) && carried[n] > 0);
   // The fences and the table behind the blocks: what floors a gap once the
   // blocks are down (note 1230).
-  if (full.length) return { name: full[0], count: count(full), kind: 'block', after: count(fences) + (carried.crafting_table > 0 ? 1 : 0) };
+  const whole = WHOLE.filter(n => carried[n] > 0);
+  if (full.length) return { name: full[0], count: count(full), kind: 'block', after: count(fences) + count(whole) };
   if (fences.length) return { name: fences[0], count: count(fences.filter(n => n === fences[0])), kind: 'fence' };
-  if (carried.crafting_table > 0) return { name: 'crafting_table', count: carried.crafting_table, kind: 'table' };
+  if (whole.length) return { name: whole[0], count: count(whole), kind: 'table', own: carried[whole[0]] };
   return null;
 }
 
@@ -665,12 +670,12 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
       // from rock it could have crossed to with the fifteen fences it carried.
       const run = groundRun(view, gap, ownIsland());
       const ground = !ownIsland() ? '' : run
-        ? `By way of this cell the nearest ${run.floor ? `floor larger than the one stood on (${run.floor} cells, itself joined to no ground: a longer piece of span)` : 'ground that is not part of what the bot stands on'} is ${run.cells} cell${run.cells === 1 ? '' : 's'} of gap away, at (${run.to.x}, ${run.to.y}, ${run.to.z}): ${stock.count >= run.cells ? `${run.cells} of the ${pieces(stock.count, stock.kind)} carried would reach it` : `${pieces(stock.count, stock.kind)} carried, ${run.cells - stock.count} short of it${stock.after ? `; the ${stock.after} fence${stock.after === 1 ? '' : 's'} or table carried besides floor a gap too, offered once the blocks are laid${stock.count + stock.after >= run.cells ? ', and with them it is reached' : ''}` : ''}`}. `
+        ? `By way of this cell the nearest ${run.floor ? `floor larger than the one stood on (${run.floor} cells, itself joined to no ground: a longer piece of span)` : 'ground that is not part of what the bot stands on'} is ${run.cells} cell${run.cells === 1 ? '' : 's'} of gap away, at (${run.to.x}, ${run.to.y}, ${run.to.z}): ${stock.count >= run.cells ? `${run.cells} of the ${pieces(stock.count, stock.kind)} carried would reach it` : `${pieces(stock.count, stock.kind)} carried, ${run.cells - stock.count} short of it${stock.after ? `; the ${stock.after} fence${stock.after === 1 ? '' : 's'}, table, furnace or chest carried besides floor a gap too, offered once the blocks are laid${stock.count + stock.after >= run.cells ? ', and with them it is reached' : ''}` : ''}`}. `
         : `By way of this cell no ground that is not part of what the bot stands on lies within 24 cells of open air (${pieces(stock.count, stock.kind)} carried). `;
       const what = stock.kind === 'fence'
         ? `Put ${/^[aeiou]/.test(stock.name) ? 'an' : 'a'} ${stock.name.replaceAll('_', ' ')} into the gap in the floor ${dir}, against the floor stood on: a floor cell to walk onto, not a whole block: a bar a quarter of a block wide and a block and a half tall, its top half a block over the floor beside it, so it is walked crouched (a step up of half a block, no jump; a crouched body is held at the edge of the bar and does not walk off it), one bar wide, and a fence cannot be pillared on`
         : stock.kind === 'table'
-          ? `Put the crafting table into the gap in the floor ${dir}, against the floor stood on: a whole block to walk onto; it is the crafting table${stock.count === 1 ? ' carried, the only one' : ''}, and it stays where it is put`
+          ? `Put the ${carriedBlock.replaceAll('_', ' ')} into the gap in the floor ${dir}, against the floor stood on: a whole block to walk onto; it is the ${carriedBlock.replaceAll('_', ' ')}${stock.own === 1 ? ' carried, the only one' : ' carried'}, and it stays where it is put`
           : `Put a ${carriedBlock.replaceAll('_', ' ')} into the gap in the floor ${dir}, against the floor stood on: a floor cell to walk onto`;
       moves.push({ key: `bridge_${dir}`, does: `${ground}${what}; ${leads}; ${dropBelow(view, gap) ? `under it, ${dropBelow(view, gap)}` : 'ground close under it'}.`, kind: 'place', cell: gap, block: carriedBlock, to: null, groundCells: run?.cells ?? null, groundSays: ground });
     }

@@ -32,3 +32,10 @@ test('no new build is taken while the bot is in the End, however long it was ask
   assert.equal(b.quitted, true, 'out of the End and quiet: taken');
   if (typeof stop === 'function') stop();
 });
+
+test('health that is not coming back does not hold a new build off: hungry with nothing to eat, the wait heals nothing (note 1236)', () => {
+  const foods = { registry: { foodsByName: { cooked_beef: { foodPoints: 8 } } } };
+  assert.equal(quiet(bot({ health: 9, food: 20, ...foods, inventory: { items: () => [] } })), false, 'healing: fed');
+  assert.equal(quiet(bot({ health: 9, food: 12, ...foods, inventory: { items: () => [{ name: 'cooked_beef', count: 2 }] } })), false, 'healing: food carried');
+  assert.equal(quiet(bot({ health: 5, food: 12, ...foods, inventory: { items: () => [{ name: 'stone_sword', count: 1 }] } })), true);
+});

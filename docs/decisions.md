@@ -1081,6 +1081,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
 | `go_now` (trip: the drops) | root | through the portal now for the drops, as the bot stands | always here; said with both walks, what lies there, what was about at the death and what the bot wears now |
+| `go_at_dawn` (trip: the drops) | root | see the night out, and be asked again at dawn | by night |
 | `kit_first` | root | make a kit again first; the drops on the next Nether trip | always here; said with what the kit takes to make again and the record |
 
 ### `spare_kit_now`

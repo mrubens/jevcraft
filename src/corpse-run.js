@@ -172,6 +172,8 @@ const KIT_ERRAND = 'the kit dropped at the death there';
 const TRIP_RECORD = 'on 2026-10-03 the 4 deaths in the Nether with nothing in the home chest were back in the Nether 22 to 52 minutes later, a median 37, the kit mined and smelted again';
 async function kitTrip(bot, task, goal, save, now = Date.now()) {
   const run = goal.corpseRun;
+  // Put off to dawn, it is asked again then, by day.
+  if (run?.trip?.pick === 'go_at_dawn' && now >= run.trip.until) delete run.trip;
   if (!run || run.status !== 'open' || run.trip || run.loadedAt || run.dimension !== 'nether' || dim(bot.game?.dimension) !== 'overworld' || !bot.entity?.position) return false;
   if (!Object.keys(run.items || {}).length || now - Date.parse(run.deathAt) > KEEP_MS) return false;
   const here = bot.entity.position, spot = run.position;
@@ -182,20 +184,37 @@ async function kitTrip(bot, task, goal, save, now = Date.now()) {
   const death = (goal.survival?.deaths || []).find(d => d.at === run.deathAt) || {};
   const about = (death.about || []).map(t => `a ${t.name.replaceAll('_', ' ')} ${t.distance} blocks off`).join(', ');
   const wornNow = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
+  // In a kit already (three pieces of armour worn), the drops are the next
+  // trip's, as they were: 25595 (2026-10-04 15:50Z), in full iron 517 blocks
+  // from its portal, was asked and told 'about 2 minutes' walk' (note 1236).
+  if (wornNow.length >= 3) return false;
   const weapon = (bot.inventory?.items?.() || []).filter(i => /_(sword|axe)$/.test(i.name)).map(i => i.name.replaceAll('_', ' '))[0] || null;
+  // The hour and the depth, as corpse_run says them: of the first four
+  // askings three were at night or under the rock, each answered go_now on
+  // a walk said as a minute or two, and none had reached its portal twenty
+  // minutes later (25593 chose it at y 16 by night and died to a zombie on
+  // the way up; 25589 and 25584 sealed in for the night).
+  const { DAY } = require('./day');
+  const t = bot.time?.timeOfDay, night = require('./day').night(bot);
+  const toDawn = Number.isFinite(t) ? Math.max(1, Math.round(((DAY.DAWN - t + 24000) % 24000) / 1200)) : null;
+  const toNight = Number.isFinite(t) ? Math.max(1, Math.round(((DAY.NIGHT - t + 24000) % 24000) / 1200)) : null;
+  let depth = 0; try { depth = require('./levels').depthHere(bot) || 0; } catch (_) { depth = 0; }
+  const hourSays = toDawn === null ? '' : night ? ` It is night: dawn in about ${toDawn} real minute${toDawn === 1 ? '' : 's'}, and mobs spawn in the open along the walk to the portal until then.` : ` It is day: night in about ${toNight} real minute${toNight === 1 ? '' : 's'}.`;
+  const depthSays = depth >= 3 ? ` The bot is ${Math.round(depth)} blocks under the ground: the climb to the surface comes first.` : '';
   const toPortal = Math.round(flat(here, out)), fromPortal = Math.round(flat(there, spot));
   const minutes = Math.max(1, Math.round((toPortal + fromPortal) / 4.3 / 60));
   const again = madeAgain(run.items);
   const withSays = `with ${weapon ? `a ${weapon}` : 'no sword or axe'} and ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'}`;
   const tree = {
-    go_now: { description: `Go back for them now, as the bot stands (${withSays}): ${listed(run.items)} lie in the Nether where the bot died, ${fromPortal} blocks from the portal on that side; the portal on this side is ${toPortal} blocks off, about ${minutes} minute${minutes === 1 ? '' : 's'}' walk in all if nothing stops it. They are not a second older: dropped things age only while a player is within 128 blocks, and they last until the bot comes that near again, then five minutes. ${death.cause ? `The bot ${death.cause} there; when it died, ` : 'When the bot died, '}${about || 'nothing hostile was seen'}${about ? ' was about' : ''}; what was about then may be about still, and a mob the bot had struck forgets it once the bot is gone. The bot wore ${(death.worn || []).map(n => n.replaceAll('_', ' ')).join(', ') || 'nothing'} then. Taken up, the kit is worn and carried at once and the ladder goes on from there.` },
+    go_now: { description: `Go back for them now, as the bot stands (${withSays}): ${listed(run.items)} lie in the Nether where the bot died, ${fromPortal} blocks from the portal on that side; the portal on this side is ${toPortal} blocks off, about ${minutes} minute${minutes === 1 ? '' : 's'} at a clear walk over level ground, and longer over water, hills or rock.${hourSays}${depthSays} They are not a second older: dropped things age only while a player is within 128 blocks, and they last until the bot comes that near again, then five minutes. ${death.cause ? `The bot ${death.cause} there; when it died, ` : 'When the bot died, '}${about || 'nothing hostile was seen'}${about ? ' was about' : ''}; what was about then may be about still, and a mob the bot had struck forgets it once the bot is gone. The bot wore ${(death.worn || []).map(n => n.replaceAll('_', ' ')).join(', ') || 'nothing'} then. Taken up, the kit is worn and carried at once and the ladder goes on from there.` },
     kit_first: { description: `Make a kit again here first, and take the drops up on the next trip into the Nether: ${again || 'what the ladder asks for'}. In the record, ${TRIP_RECORD}. The drops do not age meanwhile, and the bot comes to them ${withSays.replace(/^with /, 'no longer with ')}, in whatever it has made.` },
   };
+  if (night && toDawn !== null) tree.go_at_dawn = { description: `Go back for them at dawn, about ${toDawn} real minute${toDawn === 1 ? '' : 's'} off: the night is seen out first as the night's own question has it (a shelter, a bed), and this is asked again by day. The drops do not age meanwhile.` };
   const decision = await require('./decisions').decide('kit_trip', { client: task.opportunityClient, bot, task, goal, save, tree,
-    state: { toPortal, fromPortalToDrops: fromPortal, wornNow, weapon, aboutAtDeath: death.about || [], wornAtDeath: death.worn || [], drops: run.items } });
+    state: { night, ...(night ? { minutesToDawn: toDawn } : {}), depth: Math.round(depth), toPortal, fromPortalToDrops: fromPortal, wornNow, weapon, aboutAtDeath: death.about || [], wornAtDeath: death.worn || [], drops: run.items } });
   if (decision.stale) return false;
   const pick = decision.path.at(-1);
-  run.trip = { pick, at: now };
+  run.trip = { pick, at: now, ...(pick === 'go_at_dawn' ? { until: now + toDawn * 60000 } : {}) };
   if (pick !== 'go_now') { save(); return false; }
   // Chosen here, it is not asked again on the far side.
   run.choice = 'go_back'; run.told = TOLD;

@@ -401,3 +401,36 @@ test('the kit made again first is the other answer: no trip, the drops left for 
   assert.equal(goal.corpseRun.trip.pick, 'kit_first');
   assert.equal(goal.corpseRun.status, 'open');
 });
+
+test('by night the kit trip says the hour and offers the dawn, and is asked again then; in a kit already it is not asked (note 1236)', async () => {
+  const { bot, goal } = world({ dimension: 'overworld', deathDimension: 'the_nether' });
+  bot.time.timeOfDay = 18000;
+  goal.portals = [{ x: 30, y: 64, z: 40, dimension: 'overworld' }, { x: 300, y: 64, z: 0, dimension: 'nether' }];
+  const asked = [];
+  let answer = 'go_at_dawn';
+  const client = { systemOne: async ({ questions }) => { asked.push(JSON.stringify(Object.values(questions)[0])); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: answer, confidence: 0.9 }])) }; } };
+  const task = Object.assign(new Task('run'), { opportunityClient: client });
+  const realNow = Date.now;
+  try {
+    assert.equal(await corpseRunStep(bot, task, goal, () => {}, {}), false);
+    assert.match(asked[0], /It is night: dawn in about 4 real minutes, and mobs spawn in the open along the walk to the portal until then/);
+    assert.match(asked[0], /go_at_dawn/);
+    assert.equal(goal.errand, undefined);
+    assert.equal(await corpseRunStep(bot, task, goal, () => {}, {}), false);
+    assert.equal(asked.length, 1, 'not again before dawn');
+    const later = realNow() + 5 * 60000;
+    Date.now = () => later;
+    bot.time.timeOfDay = 1000; answer = 'go_now';
+    assert.equal(await corpseRunStep(bot, task, goal, () => {}, {}), false);
+    assert.equal(asked.length, 2, 'asked again by day');
+    assert.match(asked[1], /It is day/);
+    assert.doesNotMatch(asked[1], /go_at_dawn/);
+    assert.equal(goal.errand.dimension, 'nether');
+  } finally { Date.now = realNow; }
+  const kitted = world({ dimension: 'overworld', deathDimension: 'the_nether' });
+  kitted.goal.portals = goal.portals;
+  kitted.bot.inventory.slots = { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 7: { name: 'iron_leggings' } };
+  const n = asked.length;
+  assert.equal(await corpseRunStep(kitted.bot, task, kitted.goal, () => {}, {}), false);
+  assert.equal(asked.length, n);
+});

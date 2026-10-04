@@ -30,11 +30,21 @@ const LAST_MS = 45 * 60000, CALM_HEALTH = 10;
 const QUIET_HEALTH = 16, SHOOTER_REACH = 48, FIGHT_MS = 30000;
 const SHOOTERS = /^(blaze|ghast|skeleton|stray|bogged|pillager|wither_skeleton|piglin|piglin_brute|hoglin)$/;
 
+function healing(bot) {
+  if ((bot.food ?? 20) >= 18) return true;
+  const foods = bot.registry?.foodsByName || {};
+  return (bot.inventory?.items?.() || []).some(i => foods[i.name]);
+}
 function quiet(bot) {
   const e = bot.entity;
   if (!e || !bot.isAlive) return false;
   if (e.onGround === false || e.isInWater || e.isInLava || bot.vehicle || bot._seatedIn != null || bot._spanning) return false;
-  if ((bot.health ?? 20) < QUIET_HEALTH) return false;
+  // Healed, or health that is not coming back (hunger under eighteen and
+  // nothing carried to eat): waiting heals nothing then, and the wait kept
+  // a bot on its old build as long as it starved. 25592 (2026-10-04 15:48
+  // to 16:08Z), at 9 health and then 5 and 2 with no food, was three builds
+  // behind, the one with its way back to its kit among them (note 1236).
+  if ((bot.health ?? 20) < QUIET_HEALTH && healing(bot)) return false;
   // Not in the half minute after the bot last answered a mob, or was hurt,
   // nor while a hunt has its target staked: the fight is still on though
   // the mob is out of the count for a moment (an enderman teleported off,
