@@ -3626,7 +3626,14 @@ class Survival {
     // How many can reach at once here: two in a tunnel, eight in the open.
     // Unless the column over the bot opens onto ground: then they drop in on
     // top of it, and nothing bounds how many (columnOpening).
-    const open = openCells(bot, feet);
+    // On its own pillar's top, the fight is fought at the foot, where it
+    // comes down among them: the cells counted are the foot's (note 1191).
+    // 25594 (2026-10-04 06:01:55Z), two blocks up with two zombies under
+    // it, was told 'one of the eight cells round the bot is open ground: at
+    // most one at arm's length', the fight 2.1 damage; it came down between
+    // them and took five blows, 12.2 health to 5.3 in four seconds.
+    const pillarAt = this.state.pillar, fromPillar = onPillarTop(bot, pillarAt, 1);
+    const open = fromPillar ? Math.max(openCells(bot, feet), openCells(bot, new Vec3(pillarAt.x, pillarAt.y, pillarAt.z))) : openCells(bot, feet);
     const opening = columnOpening(bot, feet);
     const inCell = inOwnCells(bot, danger, feet), inCellIds = new Set(inCell.map(t => t.entity.id));
     const shielded = bot.inventory?.slots?.[45]?.name === 'shield';
@@ -3786,7 +3793,7 @@ class Survival {
     // them: in a tunnel a crowd comes one or two at a time.
     const inCellSays = inCell.length ? ` ${ownCellsSays(inCell)}, at arm's length whatever the cells round it hold.` : '';
     const openingSays = opening ? `, but the column over the bot is open ${opening.up} up onto ground beside it at ${opening.ground}: mobs walk to its edge and drop in, into the bot's own cells, as many as come, and all of them are at arm's length at once` : '';
-    const atOnceNote = (bitersHere >= 2 ? (open >= 8 ? ' Open ground all round: every biter can be at arm\'s length at once.' : opening ? ` ${open} of the eight cells round the bot are open ground${openingSays}.` : ` ${open} of the eight cells round the bot are open ground: at most ${open + inCell.length} at arm's length at once${inCell.length ? ', counting those in its own cells' : ''}.`) : '') + inCellSays;
+    const atOnceNote = (fromPillar && bitersHere >= 2 ? ' The fight is fought at the pillar\'s foot, where the bot comes down among them; the cells counted are those round the foot.' : '') + (bitersHere >= 2 ? (open >= 8 ? ' Open ground all round: every biter can be at arm\'s length at once.' : opening ? ` ${open} of the eight cells round the bot are open ground${openingSays}.` : ` ${open} of the eight cells round the bot are open ground: at most ${open + inCell.length} at arm's length at once${inCell.length ? ', counting those in its own cells' : ''}.`) : '') + inCellSays;
     // What the estimate leaves out, said wherever it is quoted: the charge
     // quoted it without, and mid-110-k's replay went from the pillar to the
     // charge past a creeper six blocks off.

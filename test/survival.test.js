@@ -2799,6 +2799,23 @@ test('a skeleton at the sword\'s reach is said in what is built, and one that wa
   assert.doesNotMatch(far.seal.description, /it shoots from there while the blocks go down/);
 });
 
+test('on its pillar\'s top the fight is priced at the foot, where it is fought: every biter at arm\'s length at once on open ground (note 1191)', () => {
+  const up = () => {
+    const bot = crowdBot({ health: 12.2 });
+    // Two blocks of cobblestone under it at (0, 64..65, 0); the bot stands at y 66.
+    bot.entity.position = new Vec3(0.5, 66, 0.5);
+    const base = bot.blockAt;
+    bot.blockAt = p => (p.floored().x === 0 && p.floored().z === 0 && p.y >= 64 && p.y < 66 ? { position: p.floored(), name: 'cobblestone', boundingBox: 'block', diggable: true } : base(p));
+    return bot;
+  };
+  const zombies = [{ entity: { id: 1, name: 'zombie', position: new Vec3(2.9, 64, 0.5), height: 1.95 }, distance: 3.1, visible: true }, { entity: { id: 2, name: 'zombie', position: new Vec3(-2.9, 64, 0.5), height: 1.95 }, distance: 3.6, visible: true }];
+  const told = new Survival(up(), { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [], pillar: { x: 0, y: 64, z: 0, at: Date.now() } } });
+  const untold = new Survival(up(), { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const a = told.stanceOptions(new Task('night'), {}, () => {}, zombies, false).fight, b = untold.stanceOptions(new Task('night'), {}, () => {}, zombies, false).fight;
+  assert.match(a.description, /The fight is fought at the pillar's foot, where the bot comes down among them; the cells counted are those round the foot\. Open ground all round: every biter can be at arm's length at once\./);
+  assert.ok(a.expects.damage > b.expects.damage, `${a.expects.damage} at the foot, ${b.expects.damage} counted on the top`);
+});
+
 test('in a crowd every stance says what the mobs cost it over the same fifteen seconds, the pillar and the pocket as well as the fight', () => {
   const bot = crowdBot();
   const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
