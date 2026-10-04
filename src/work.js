@@ -8870,7 +8870,7 @@ function gameHandlers(bot, decisionClient) {
           if (!made) { setAside(goal, 'rung', 'trade_pearls', 'no trade made', 1800000); save(); }
           return made;
         },
-        prepare_end: (bot, task, goal, save) => prepareEndSupplies(bot, task, goal, save, { acquireStep, navigate, enchant: (b, t, g, sv) => enchantStep(b, t, g, sv, { workstation }) }, decisionClient),
+        prepare_end: (bot, task, goal, save) => prepareEndSupplies(bot, task, goal, save, { acquireStep, navigate, gatherFood: async (b, t, g, sv) => { const was = g.preparingNether; try { await gatherNetherFood(b, t, g, sv, Date.now()); } finally { if (!was) { delete g.preparingNether; sv(); } } }, enchant: (b, t, g, sv) => enchantStep(b, t, g, sv, { workstation }) }, decisionClient),
         home: (bot, task, goal, save, stage) => homeStep(bot, task, goal, save, stage, homeActions()),
         // A bed from a remembered village: dug up, it drops itself.
         village_bed: (bot, task, goal, save, stage) => takeVillageBed(bot, task, goal, save, stage.village, homeActions()),

@@ -57,7 +57,7 @@ function endHazards(bot) {
   return Object.values(bot.entities).filter(e => live(bot, e) && (['end_crystal', 'area_effect_cloud', 'dragon_fireball'].includes(e.name) ||
     e.name === 'ender_dragon' && !perched(bot, e) && metadata(bot, e, 'phase') !== 9))
     .map(e => ({ entity: e, radius: e.name === 'end_crystal' ? 12 : e.name === 'area_effect_cloud' ?
-      cloudRadius(bot, e) : e.name === 'ender_dragon' ? 16 : 6 }));
+      cloudRadius(bot, e) : e.name === 'ender_dragon' ? ([2, 3].includes(metadata(bot, e, 'phase')) ? 5 : 16) : 6 }));
 }
 // The mobs a place in the End is judged by: the dragon is not one of them
 // (note 1156). Its flight, its charge and its breath are the hazards'
@@ -190,7 +190,7 @@ function enclosed(bot) {
 // upright, the landing waited for. -> true when the bot came down.
 const DROP_MOST = 14, DROP_KEEPS = 8;
 // Few arrows: a stack or less. By the fountain: this far from its middle, clear of the landing and in a few steps of the head.
-const FEW_ARROWS = 64, PERCH_RANGE = 8;
+const FEW_ARROWS = 64, PERCH_RANGE = 7;
 function dropOffs(bot, center = null) {
   const here = bot.entity.position, feet = here.floored();
   const solid = c => bot.blockAt(c)?.boundingBox === 'block';
@@ -544,7 +544,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     // Reposition when arcs are blocked or the dragon is perched, and always
     // expose escape positions when healing or avoiding a breath cloud.
     // By the fountain already, the wait is there: no walk to another cell of its ring.
-    const waitingThere = focus === fountain && fountain && Math.abs(byFountain - PERCH_RANGE) <= 4 && safe;
+    const waitingThere = focus === fountain && fountain && Math.abs(byFountain - PERCH_RANGE) <= 3 && safe;
     if ((!Object.keys(tree).some(key => key.startsWith('crystal_')) || bot.health < 16) && !waitingThere && !(tree.under_head || tree.strike_head)) for (const route of await arenaRoutes(bot, task, goal, policy, focus)) {
       tree[`move_${route.key}`] = { description: { action: focus?.name === 'unresolved_crystal_location'
         ? 'Approach a previously observed crystal location to check whether the crystal remains. Loss of entity tracking did not establish destruction.'

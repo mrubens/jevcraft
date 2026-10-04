@@ -31,6 +31,13 @@ function dragonThreat(bot) {
     // the explicit charging phase need an immediate movement response.
     if ([5, 6, 7, 9].includes(phase)) return false;
     const height = e.position.y - p.y, distance = Math.hypot(e.position.x - p.x, e.position.z - p.z);
+    // Coming down to its perch (the landing approach and the landing, phases
+    // 2 and 3) it is not charging: only right over the bot is it run from
+    // (note 1157). Run from at eighteen blocks, the bot waiting by the
+    // fountain for the sword's turn left as the dragon came to sit: in the
+    // rehearsals of 2026-10-04 (02:25 to 02:40Z) nine of fourteen runs to
+    // the perched head began too far off and ended "took off before".
+    if ([2, 3].includes(phase)) return distance < LANDING_CLEAR && height > -6 && height < 14;
     return phase === 8 && distance < 72 && height > -12 && height < 32 ||
       distance < 18 && height > -6 && height < 14;
   });
@@ -54,6 +61,7 @@ function checkEndEmergency(bot) {
 // square and nine from the island, dodged the dragon's fireball at a sprint
 // to the platform's corner cell, went over its edge at (102.6, 47, -2.9)
 // and "fell out of the world", 36 seconds into the fight.
+const LANDING_CLEAR = 5;
 const DEEP = 24, ROUND = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 function deepBeside(bot, p) {
   const fx = Math.floor(p.x), fy = Math.floor(p.y), fz = Math.floor(p.z);

@@ -77,7 +77,19 @@ const kitSays = items => items.map(i => i.key === 'bow' ? (i.carried ? 'a bow' :
   : `${i.key} ${i.carried} of ${i.wants}`).filter(Boolean).join(', ');
 
 async function topUp(bot, task, goal, save, actions, item) {
-  if (item.key === 'food') { goal.step = { action: 'prepare_end_supplies', item: 'food', count: WANTS.food }; save(); return; }
+  // The food is gathered here, as the crossing's is (work.js gatherNetherFood:
+  // the chest, the plot, the hunt), not left to the survival layer's own
+  // errand (note 1158): chosen, the step set its name and came back, the
+  // layer had no claim, and the loop spun. 25594 (2026-10-04 02:27:59 to
+  // 02:47Z), at its stronghold with twelve eyes, chose the food first at
+  // 0.61 and stood fifteen minutes in its pocket, "spinning: 21 passes in a
+  // second", then chose it again.
+  if (item.key === 'food') {
+    goal.step = { action: 'prepare_end_supplies', item: 'food', count: WANTS.food }; save();
+    if (actions.gatherFood) await actions.gatherFood(bot, task, goal, save);
+    else await new Promise(resolve => setTimeout(resolve, 250));
+    return;
+  }
   if (item.key === 'health') {
     goal.step = { action: 'recover_before_end', health: bot.health, food: bot.food }; save();
     for (let n = 0; n < 5; n++) { task.check(); checkThreats(bot); await new Promise(resolve => setTimeout(resolve, 100)); }

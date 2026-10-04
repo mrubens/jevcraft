@@ -48,7 +48,8 @@ test('a provoked Enderman permits retreat but does not leave the current firing 
 test('continuous evasions between a dragon and cloud are not rejected by voxel-center rounding', () => {
   const { bot } = fixture();
   bot.entity.position = new Vec3(-8.134908614838846, 64, 16.52985303765932);
-  const dragon = entity(bot, 20, 'ender_dragon', new Vec3(-1.1656053750352129, 68.76007488966775, 2.783597633921879), { phase: 3 });
+  // In flight (the holding pattern): coming down to its perch it is run from only right overhead (note 1157).
+  const dragon = entity(bot, 20, 'ender_dragon', new Vec3(-1.1656053750352129, 68.76007488966775, 2.783597633921879), { phase: 0 });
   entity(bot, 21, 'area_effect_cloud', new Vec3(-15.5, 64, 20.5), { radius: 7 });
   const policy = arenaMovement(bot);
   try {

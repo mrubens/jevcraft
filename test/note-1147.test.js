@@ -53,3 +53,14 @@ test('with the whole kit carried nothing is asked', async () => {
   const { bot, goal, task } = fixture();
   assert.equal(await prepareEndSupplies(bot, task, goal, () => {}, { acquireStep: async () => assert.fail('nothing to fetch') }, { systemOne: async () => assert.fail('not asked') }), true);
 });
+
+test('food chosen for the End is gathered by the step itself, not left to the survival layer (note 1158)', async () => {
+  const { bot, items, goal, task } = fixture();
+  items.find(i => i.name === 'cooked_beef').count = 2;
+  const asked = [], calls = [];
+  const actions = { acquireStep: async () => assert.fail('no item to fetch'), gatherFood: async () => { calls.push('food'); } };
+  assert.equal(await prepareEndSupplies(bot, task, goal, () => {}, actions, jev(['top_up_food'], asked)), false);
+  assert.deepEqual(calls, ['food']);
+  assert.equal(goal.step.action, 'prepare_end_supplies');
+  assert.equal(goal.step.item, 'food');
+});

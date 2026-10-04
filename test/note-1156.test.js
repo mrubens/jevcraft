@@ -31,3 +31,15 @@ test('under the perched dragon\'s head the place is not unsafe for the dragon it
   assert.deepEqual(swings, [21, 21]);
   assert.equal(goal.endCombat.headSwings, 2);
 });
+
+test('the dragon coming down to its perch is run from only right overhead; in flight at the same range it is (note 1157)', () => {
+  const { dragonThreat } = require('../src/end-safety');
+  const phase = registry.entitiesByName.ender_dragon.metadataKeys.indexOf('phase');
+  const bot = { registry, entity: { position: new Vec3(7.5, 64, 0.5) }, entities: {} };
+  const dragon = { id: 20, name: 'ender_dragon', position: new Vec3(0.5, 70, 0.5), metadata: { [phase]: 2 }, isValid: true };
+  bot.entities[20] = dragon;
+  assert.equal(dragonThreat(bot), undefined, 'landing approach seven blocks off: the wait by the fountain holds');
+  dragon.metadata[phase] = 3; assert.equal(dragonThreat(bot), undefined);
+  dragon.position = new Vec3(5.5, 68, 0.5); assert.equal(dragonThreat(bot), dragon, 'landing two blocks off, overhead: run from');
+  dragon.position = new Vec3(0.5, 70, 0.5); dragon.metadata[phase] = 0; assert.equal(dragonThreat(bot), dragon, 'in flight seven blocks off: run from as before');
+});
