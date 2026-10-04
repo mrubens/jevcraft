@@ -47,6 +47,24 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
   if (dimension(bot) === 'end') { observeProgress(bot, goal); save(); return; }
   if (dimension(bot) !== 'overworld' || !goal.endPortal?.center) throw blocked('End entry requires an observed Overworld portal ring');
   const center = vector(goal.endPortal.center), portal = portalAt(bot, center);
+  // Far from the ring, or the ring out of view: the way to it first, a walk
+  // where one is found and the stair dug toward it where none is (note
+  // 1161). The ring is seen from as far as 160 blocks (stronghold.js), the
+  // kit is made up wherever the bot then is, and the step began by asking
+  // the ring to be in view: from the surface over a stronghold it ended
+  // "not fully visible" at every pass. 25594 (2026-10-04 02:27Z) saw its
+  // ring at (604, -37, 1540) from (778, 85, 1660), 210 blocks off and 122
+  // under it.
+  const here = bot.entity.position, flat = Math.hypot(here.x - (center.x + .5), here.z - (center.z + .5)), down = here.y - center.y;
+  if ((flat > 8 || Math.abs(down) > 6 || !portal) && (flat > 4 || Math.abs(down) > 4) && actions.tunnel) {
+    const beside = center.offset(3, 1, 0);
+    goal.step = { action: 'go_to_end_portal', target: { x: center.x, y: center.y, z: center.z }, blocksOff: Math.round(flat), blocksUnder: Math.round(down) }; save();
+    const near = new goals.GoalNear(beside.x, beside.y, beside.z, 2);
+    const route = await surveyRoute(bot, task, bot.pathfinder.movements, near, 600);
+    if (route.status === 'success') await actions.navigate(bot, task, near, { timeoutMs: 60000, stallMs: 8000 });
+    else await actions.tunnel(bot, task, goal, save, beside, 'end_portal');
+    return;
+  }
   if (!portal) throw blocked('The saved End portal ring is not fully visible or has changed');
   goal.endPortal = { ...goal.endPortal, ...portal, neededEyes: portal.frames.filter(f => !f.eye).length }; save();
   // Persist the real requirement so the progression controller can replenish
