@@ -27,7 +27,7 @@ const WAIT_MS = 15 * 60000;
 // quiet by the rule above, the fifteen minutes ran out inside it, and 25589
 // (2026-10-03 07:06:43Z) was quit at 3 health with a skeleton shooting it.
 const LAST_MS = 45 * 60000, CALM_HEALTH = 10;
-const QUIET_HEALTH = 16, SHOOTER_REACH = 48;
+const QUIET_HEALTH = 16, SHOOTER_REACH = 48, FIGHT_MS = 30000;
 const SHOOTERS = /^(blaze|ghast|skeleton|stray|bogged|pillager|wither_skeleton|piglin|piglin_brute|hoglin)$/;
 
 function quiet(bot) {
@@ -35,6 +35,16 @@ function quiet(bot) {
   if (!e || !bot.isAlive) return false;
   if (e.onGround === false || e.isInWater || e.isInLava || bot.vehicle || bot._seatedIn != null || bot._spanning) return false;
   if ((bot.health ?? 20) < QUIET_HEALTH) return false;
+  // Not in the half minute after the bot last answered a mob, or was hurt,
+  // nor while a hunt has its target staked: the fight is still on though
+  // the mob is out of the count for a moment (an enderman teleported off,
+  // one stalked and not yet turned). 25591 (2026-10-03 23:37:39 to
+  // 23:37:57Z) met an enderman at three blocks, chose its stance, and the
+  // build was taken eighteen seconds later, as at 23:28:53Z: "I'm back!",
+  // and the enderman hunt left at the next question (note 1139).
+  const at = Date.now();
+  if (at - Math.max(bot._threatResponseAt || 0, bot._recentHurtAt || 0) < FIGHT_MS) return false;
+  if (bot._closingOn?.until > at) return false;
   try {
     const danger = require('./danger');
     if (danger.hostileEntities(bot, 24).length) return false;

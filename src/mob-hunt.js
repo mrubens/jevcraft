@@ -963,7 +963,14 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // fight was offered, only the holds and defer: of 21 blaze hunts asked on
   // 2026-10-02 from 13:00Z, 14 offered no strike, 11 of them answered
   // defer, and 25590 held its cage 25 minutes without a kill.
-  if (state.entity === 'blaze' && unreached.length) { const open = openWallOption(bot, task, goal, save, candidates[0]); if (open) tree.open_the_wall = open; }
+  // And of any hunt: 25591 (2026-10-03 23:33 to 2026-10-04 00:02Z), walled
+  // in cobblestone it had laid against a ghast at 23:36Z, two endermen
+  // twenty blocks off, was asked the enderman hunt with "keep_pearls,
+  // defer" and nothing else ("no way on foot ... the bot is walled in by
+  // its own blocks"), answered defer at 0.7 to 0.77, and the hunt's step
+  // failed 166 times running, each defer two minutes' rest and then the
+  // stall's question with the Overworld in it (note 1140).
+  if (unreached.length) { const open = openWallOption(bot, task, goal, save, candidates[0]); if (open) tree.open_the_wall = open; }
   if (!Object.keys(tree).length) return false;
   // The bot's fitness, on every option and in the state: what the code
   // once refused a fight for, as facts for Jev's choice (fitness, above).
@@ -1094,7 +1101,7 @@ function openWallOption(bot, task, goal, save, target) {
   let secs = null; try { secs = u.digSeconds(name, view, false, side.cells[0]); } catch (_) { secs = null; }
   const n = side.cells.length, d = Math.round(target.position.distanceTo(bot.entity.position));
   return { secs: Math.max(1, Math.round((secs || 1) * n)),
-    description: `Open the wall: dig the ${n === 1 ? 'block' : `${n} blocks`} of its own ${name.replaceAll('_', ' ')} on the side toward the ${target.name.replaceAll('_', ' ')} ${d} blocks off${secs ? `, about ${Math.max(1, Math.round(secs * n))} second${Math.max(1, Math.round(secs * n)) === 1 ? '' : 's'}` : ''}, and be asked again from the opening. Walled in by its own blocks, no walk reaches a blaze and no fight with one is offered from in here; with the side open the walks are counted again, and the strikes the ground allows are offered. Open, the blazes with a line to the gap shoot through it. In the trials the box holds that ended killed no blaze.`,
+    description: `Open the wall: dig the ${n === 1 ? 'block' : `${n} blocks`} of its own ${name.replaceAll('_', ' ')} on the side toward the ${target.name.replaceAll('_', ' ')} ${d} blocks off${secs ? `, about ${Math.max(1, Math.round(secs * n))} second${Math.max(1, Math.round(secs * n)) === 1 ? '' : 's'}` : ''}, and be asked again from the opening. Walled in by its own blocks, no walk reaches ${target.name === 'blaze' ? 'a blaze' : `the ${target.name.replaceAll('_', ' ')}`} and no fight with one is offered from in here; with the side open the walks are counted again, and the strikes the ground allows are offered.${target.name === 'blaze' ? ' Open, the blazes with a line to the gap shoot through it. In the trials the box holds that ended killed no blaze.' : ' Open, what the wall was laid against has its line to the bot again, if it is still about.'}`,
     run: async () => {
       goal.step = { action: 'open_the_wall', toward: { x: Math.floor(target.position.x), y: Math.floor(target.position.y), z: Math.floor(target.position.z) }, blocks: n }; save?.();
       for (const c of side.cells.slice().reverse()) {
