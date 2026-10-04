@@ -26,3 +26,16 @@ test('from the longer piece the five cells cut off are not a floor to go to', ()
   const v = view(), island = islandOf(v, new Vec3(-2, 52, 0));
   assert.strictEqual(groundRun(v, new Vec3(-1, 52, 0), island), null);
 });
+
+test('cut off with a furnace, a chest and a wool carried, the way back is one move: to the floor\'s near cell and the gap laid from there (note 1242)', () => {
+  const { localMoves } = require('../src/unstuck');
+  const v = { ...view(), carried: { furnace: 1, chest: 1, black_wool: 1, diamond_sword: 1 }, laid: () => null, block: () => null, health: 1, pickaxe: 'iron_pickaxe', pickaxeUses: 100 };
+  const { moves } = localMoves(v, new Vec3(3, 53, 0), { goal: 'away', visits: {}, from: new Vec3(3, 53, 0), breathS: 15 });
+  const back = moves.find(m => m.key === 'bridge_back');
+  assert.ok(back, moves.map(m => m.key).join(', '));
+  assert.deepStrictEqual([back.edge.x, back.edge.y, back.edge.z, back.cells], [0, 52, 0, 1]);
+  assert.match(back.does, /^Bridge back in one go: walk 3 steps along this floor to its cell at \(0, 52, 0\), the nearest to it, and lay the 1 cell of gap from there to the larger floor \(44 cells, a longer piece of span\) at \(-2, 52, 0\), a block a step, crouched/);
+  assert.match(back.does, /with the 3 carried that hold \(1 black wool, 1 furnace, 1 chest\)/);
+  const none = localMoves({ ...v, carried: { diamond_sword: 1 } }, new Vec3(3, 53, 0), { goal: 'away', visits: {}, from: new Vec3(3, 53, 0), breathS: 15 }).moves;
+  assert.ok(!none.some(m => m.key === 'bridge_back'), 'nothing carried that holds: not offered');
+});

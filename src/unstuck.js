@@ -700,6 +700,25 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
     const best = runs.reduce((a, b) => b.groundCells < a.groundCells ? b : a);
     for (const m of runs) if (m.groundCells > best.groundCells) m.does = m.does.replace(m.groundSays, `${m.groundSays.trimEnd()} The shortest of the ways from here is ${best.key.replace('bridge_', '')}, ${best.groundCells} cells. `);
   }
+  // The whole way back at once (note 1242): from the cell of this floor
+  // nearest the larger floor or the ground, the gap laid a block a step with
+  // what is carried, wool and the whole blocks carried for their use among
+  // it. A move at a time, 25590 (2026-10-04 15:38 to 16:41Z) put its fences,
+  // its wool and its chest down east, north and underfoot, the larger floor
+  // lying west, and was no nearer in an hour.
+  if (ownIsland() && !inWater) {
+    const starts = [];
+    for (const c of ownIsland().cells) for (const d of Object.values(DIRS)) starts.push({ c: c.plus(d), n: 1, from: c });
+    const found = groundSearch(view, starts, ownIsland(), { nodes: 12000 });
+    const kinds = [...PLACEABLE.filter(n => !falls(n)), ...WHOLE].filter(n => (view.carried?.[n] || 0) > 0);
+    const have = kinds.reduce((n, k) => n + view.carried[k], 0);
+    // A cell short where the last of the way is corner to corner.
+    if (found?.from && have >= Math.max(1, found.cells - 1)) {
+      const along = ownIsland().dist.get(`${found.from}`) || 0;
+      moves.push({ key: 'bridge_back', kind: 'bridge_back', edge: found.from, target: found.to, cells: found.cells, to: null, effects: [],
+        does: `Bridge back in one go: ${along ? `walk ${along} step${along === 1 ? '' : 's'} along this floor to its cell at (${found.from.x}, ${found.from.y}, ${found.from.z}), the nearest to it, and ` : ''}lay the ${found.cells} cell${found.cells === 1 ? '' : 's'} of gap from there to ${found.floor ? `the larger floor (${found.floor} cells, a longer piece of span)` : 'the ground'} at (${found.to.x}, ${found.to.y}, ${found.to.z}), a block a step, crouched (a crouched step does not go over an edge; a push still throws the body), with the ${have} carried that hold (${kinds.map(n => `${view.carried[n]} ${n.replaceAll('_', ' ')}`).join(', ')}); a whole block laid stays where it is put. It stops if a shooter has a line to the bot; ${(() => { const gap0 = Object.values(DIRS).map(d => found.from.plus(d)).find(c => open(view.name(c))); const d = gap0 ? dropBelow(view, gap0) : null; return d ? `under the gap, ${d}` : 'ground lies close under the gap'; })()}.` });
+    }
+  }
   if (lostTakes.length) notOffered.push(`take up the floor beside (${lostTakes.map(([dir]) => dir).join(', ')}): the block dug drops out of its cell with nothing under the cell to hold it, into ${lostTakes.some(([, into]) => into === 'lava') ? 'lava, and burns' : 'a fall'}; nothing is picked up and that cell of the floor is gone`);
   // Straight up: dig what is over the head, swim up, or pillar.
   const over = feet.offset(0, 2, 0), overName = view.name(over);
@@ -991,6 +1010,22 @@ function moveReached(m, feet, after, { failure = null, changed = false } = {}) {
 async function perform(bot, task, m, { dig }) {
   const { move } = require('./motion');
   const feet = bot.entity.position.floored();
+  if (m.kind === 'bridge_back') {
+    const { goals } = require('mineflayer-pathfinder');
+    const bridging = require('./bridging');
+    const stand = new Vec3(m.edge.x, m.edge.y + 1, m.edge.z), goalCell = new Vec3(m.target.x, m.target.y + 1, m.target.z);
+    if (!feet.equals(stand)) await require('./skills').navigate(bot, task, new goals.GoalBlock(stand.x, stand.y, stand.z), { timeoutMs: 15000, stallMs: 4000 });
+    if (!bot.entity.position.floored().equals(stand)) throw new Error(`Not at the floor's cell at (${m.edge.x}, ${m.edge.y}, ${m.edge.z}) to bridge from`);
+    await bridging.bridgeTo(bot, task, goalCell, { maxBlocks: m.cells + 1, whole: true });
+    // The last of it corner to corner, crouched.
+    if (!bot.entity.position.floored().equals(goalCell)) {
+      bot.setControlState('sneak', true);
+      try { await bridging.creepTo(bot, task, goalCell, 3000); } finally { bot.setControlState('forward', false); bot.setControlState('sneak', false); }
+    }
+    const at = bot.entity.position.floored();
+    if (Math.abs(at.x - goalCell.x) > 1 || Math.abs(at.z - goalCell.z) > 1) throw new Error(`The bridge back ended at (${at.x}, ${at.y}, ${at.z}), short of (${goalCell.x}, ${goalCell.y}, ${goalCell.z})`);
+    return;
+  }
   const inWater = isWater(bot.blockAt(feet)?.name);
   const equipBlock = async name => { const item = bot.inventory.items().find(i => i.name === name); if (!item) throw new Error(`No ${name} carried`); await bot.equip(item, 'hand'); };
   // Asking the server is not a move from a cell: the body jitters over a

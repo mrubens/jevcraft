@@ -71,7 +71,7 @@ const laidOrder = bot => /nether/.test(String(bot?.game?.dimension || '')) ? [..
 // pickaxe and not a block of cobblestone, every one laid.
 const HEAD_KINDS = ['cobblestone', 'cobbled_deepslate', 'blackstone'], HEAD_KEEP = 3;
 const headsKept = bot => /nether/.test(String(bot?.game?.dimension || '')) ? Math.min(HEAD_KEEP, (bot.inventory?.items?.() || []).filter(i => HEAD_KINDS.includes(i.name)).reduce((n, i) => n + i.count, 0)) : 0;
-const material = bot => {
+const material = (bot, { whole = false } = {}) => {
   const items = bot.inventory.items(), heads = items.filter(i => HEAD_KINDS.includes(i.name)).reduce((n, i) => n + i.count, 0);
   const spare = /nether/.test(String(bot?.game?.dimension || '')) ? heads > HEAD_KEEP : true;
   return laidOrder(bot).filter(n => spare || !HEAD_KINDS.includes(n)).map(n => items.find(i => i.name === n)).find(Boolean)
@@ -80,8 +80,12 @@ const material = bot => {
     // against no blast, so it is laid only when nothing else is carried. 25590 (2026-10-04 13:51 to 15:11Z) stood eighty
     // minutes at 1 health on its own span over a lava sea, three blocks
     // gone from it behind and no rock in reach, with five wool in its pack.
-    || items.find(i => LAST_RESORT.test(i.name));
+    || items.find(i => LAST_RESORT.test(i.name))
+    // And on the way back from a cut span (unstuck.js bridge_back, note
+    // 1242), a whole block carried for its use: a furnace, a chest, a table.
+    || (whole ? items.find(i => WHOLE_BLOCKS.includes(i.name)) : undefined);
 };
+const WHOLE_BLOCKS = ['furnace', 'smoker', 'blast_furnace', 'barrel', 'crafting_table', 'chest'];
 const LAST_RESORT = /_wool$/;
 // A biter or a hopper that can push the bot off the span within its charge
 // (narrow-footing.js, note 769): the span is walled on both sides as it is
@@ -313,11 +317,11 @@ function spanRefused(bot) {
 // its survey saw.
 // While it is laid the bot is on the span (terrain.js onSpan): no reflex
 // swings at a mob or turns to one until it is done.
-async function bridgeTo(bot, task, target, { maxBlocks = 64, maxSteps = maxBlocks * 2, wall = false } = {}) {
+async function bridgeTo(bot, task, target, { maxBlocks = 64, maxSteps = maxBlocks * 2, wall = false, whole = false } = {}) {
   const spanning = { target: { x: target.x, y: target.y, z: target.z }, since: Date.now() };
   bot._spanning = spanning;
   bot.setControlState('sneak', true);
-  try { return await span(bot, task, target, maxBlocks, maxSteps, { wall }); }
+  try { return await span(bot, task, target, maxBlocks, maxSteps, { wall, whole }); }
   finally {
     // The crouch let go only once the body has stopped: let go with the
     // walk, the step's way on carried mid-227-h off the end of its span, no
@@ -328,7 +332,7 @@ async function bridgeTo(bot, task, target, { maxBlocks = 64, maxSteps = maxBlock
     if (bot._spanning === spanning) bot._spanning = null;
   }
 }
-async function span(bot, task, target, maxBlocks, maxSteps, { wall = false } = {}) {
+async function span(bot, task, target, maxBlocks, maxSteps, { wall = false, whole = false } = {}) {
   let placed = 0;
   for (let steps = 0; steps < maxSteps; steps++) {
     task.check();
@@ -351,7 +355,7 @@ async function span(bot, task, target, maxBlocks, maxSteps, { wall = false } = {
     await clear(bot, task, next, { wall }); await clear(bot, task, next.offset(0, 1, 0), { wall });
     if (!solid(bot.blockAt(next.offset(0, -1, 0)))) {
       if (placed >= maxBlocks) return placed;
-      const item = material(bot);
+      const item = material(bot, { whole });
       if (!item) throw new Error('No blocks to bridge with');
       const centre = here.offset(0.5, 0, 0.5), p = bot.entity.position;
       if (Math.hypot(p.x - centre.x, p.z - centre.z) > 0.3) await creepTo(bot, task, here, 1200);
@@ -982,4 +986,4 @@ async function quarryHere(bot, task, want, { names = LAID } = {}) {
   return out;
 }
 
-module.exports = { creepTo, quarryHere, HEAD_KEEP, headsKept, spanMaterial: material, BLAST_PROOF, tunnelStraight, stairsDown, spanPusher, spanWallsAt, clearCell: clear, stepOntoFooting, bridgeTo, crossAlong, underFire, spanRefused, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, LAID, NETHER_WOOD, NATURAL };
+module.exports = { WHOLE_BLOCKS, creepTo, quarryHere, HEAD_KEEP, headsKept, spanMaterial: material, BLAST_PROOF, tunnelStraight, stairsDown, spanPusher, spanWallsAt, clearCell: clear, stepOntoFooting, bridgeTo, crossAlong, underFire, spanRefused, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, LAID, NETHER_WOOD, NATURAL };
