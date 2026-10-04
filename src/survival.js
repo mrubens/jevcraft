@@ -5022,7 +5022,14 @@ class Survival {
       // 25585's phantoms (19:26:13 to 19:26:52Z): each run ended with them
       // still on it, asked again five times (note 752h).
       ? ' A phantom flies and swoops from above at the bot wherever it runs: no footing on the ground is out of its reach, and the run ends with it still there.' : '');
-    options.retreat = { ...(runExpects ? { expects: runExpects } : {}), description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.' + backShots + riderSays + endermanSays + footing + chase + runChase.says + unseen,
+    // What the figure covers, beside the fight's (note 1195): the fight is
+    // priced to the last of them dead, the run to its last step, and a
+    // shooter that walks is still there at the end of it. 25593 (2026-10-04
+    // 05:45:43Z), a skeleton at 2.8 blocks, read the fight at 5 damage and
+    // the run at 2.3, ran at 0.60, and took two arrows more after it.
+    const follower = danger.filter(t => WALKING_SHOOTERS.test(t.entity.name) && t.visible !== false && t.distance <= 16).sort((a, b) => a.distance - b.distance)[0];
+    const afterRun = follower ? ` The figure is for the run alone: the ${follower.entity.name.replaceAll('_', ' ')} ${Math.round(follower.distance)} blocks off is alive at the end of it, comes after a player it has seen and shoots again from wherever it has a line; the fight's figure is to the last of them dead.` : '';
+    options.retreat = { ...(runExpects ? { expects: runExpects } : {}), description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.' + afterRun + backShots + riderSays + endermanSays + footing + chase + runChase.says + unseen,
       run: () => this.runAway(task, goal, save, danger) };
     // Run from them with no footing picked first (note 1051): to the first
     // cell the walk reaches sixteen blocks or more from the nearest that

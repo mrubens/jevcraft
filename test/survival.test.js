@@ -2797,6 +2797,8 @@ test('a skeleton at the sword\'s reach is said in what is built, and one that wa
   if (close.take_cover) assert.match(close.take_cover.description, /The skeleton 2\.2 blocks off walks: from there it is round a block in its line in a second or two and shooting again/);
   const far = survival.stanceOptions(new Task('night'), {}, () => {}, [crowdMob(4, 'skeleton', 12)], false);
   assert.doesNotMatch(far.seal.description, /it shoots from there while the blocks go down/);
+  // The run's figure is for the run alone, said beside the fight's (note 1195).
+  if (close.retreat) assert.match(close.retreat.description, /The figure is for the run alone: the skeleton 2 blocks off is alive at the end of it, comes after a player it has seen and shoots again from wherever it has a line; the fight's figure is to the last of them dead\./);
 });
 
 test('on its pillar\'s top the fight is priced at the foot, where it is fought: every biter at arm\'s length at once on open ground (note 1191)', () => {
