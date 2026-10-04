@@ -229,7 +229,13 @@ async function findStronghold(bot, task, goal, save, actions, client) {
       search.moves++; save(); return;
     }
   }
-  if (throwAgain && !noSpare) {
+  // In the water, with a place to go on toward, the Eye waits for dry
+  // footing and the way goes on (note 1172): an Eye is thrown standing, and
+  // asked for there it was an error at every pass. The rehearsal of
+  // 2026-10-04 (04:01 to 04:07Z), in the sea over its stronghold, ended
+  // twenty-four passes "Need dry stable footing to observe an Eye of Ender".
+  const afloat = throwAgain && !noSpare && !!target && !dryStanding(bot, bot.entity.position);
+  if (throwAgain && !noSpare && !afloat) {
     // A throw is counted when an Eye has flown (note 1168): the rehearsal of
     // 2026-10-04 (04:01 to 04:07Z), in the sea over its stronghold with no
     // dry footing to throw from, counted twenty-four of its sixty-four with

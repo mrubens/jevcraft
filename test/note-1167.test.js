@@ -23,3 +23,19 @@ test('the thrown eye still coming down when its flight ends is waited for and pi
   assert.deepEqual(goal.strongholdSearch.lastPickup.pickedUp, 1);
   assert.equal(goal.strongholdSearch.pendingPickup, undefined);
 });
+
+test('in the water with a place to go on toward, no Eye is asked for: the way goes on (note 1172)', async () => {
+  const items = [{ name: 'ender_eye', count: 16 }];
+  const bot = { registry, game: { dimension: 'overworld', difficulty: 'peaceful', gameMode: 'survival' }, health: 20, food: 20, oxygenLevel: 20, entities: {},
+    entity: { position: new Vec3(-983.5, 62, -950.5), isInWater: true }, inventory: { items: () => items, slots: [] }, findBlocks: () => [],
+    blockAt: p => ({ name: p.y < 55 ? 'stone' : p.y < 63 ? 'water' : 'air', position: p, boundingBox: p.y < 55 ? 'block' : 'empty', skyLight: 15 }),
+    activateItem: () => assert.fail('no Eye thrown from the water'),
+    pathfinder: { movements: { scafoldingBlocks: [1], allow1by1towers: true, blocksCantBreak: new Set() }, getPathTo: () => ({ status: 'noPath', path: [] }), setGoal() {} } };
+  const goal = { kind: 'win', gameProgress: { milestones: {} }, strongholdSearch: { throws: 2, moves: 0, visited: {}, estimate: { x: -1024, z: -976, strength: 0.1, residual: 0 },
+    bearings: [{ origin: { x: -700, y: 70, z: -976 }, direction: { x: -1, z: 0 }, end: { x: -712, y: 74, z: -976 } }, { origin: { x: -700, y: 70, z: -900 }, direction: { x: -324 / Math.hypot(324, 76), z: -76 / Math.hypot(324, 76) }, end: { x: -712, y: 74, z: -903 } }] } };
+  let error = null;
+  try { await findStronghold(bot, new Task('find'), goal, () => {}, { navigate: async () => {}, explore: async () => {}, surfaceStep: async () => {}, tunnel: async () => {}, acquireStep: async () => {} }, null); }
+  catch (err) { error = err; }
+  assert.ok(!error || !/dry stable footing/.test(error.message), error?.message);
+  assert.equal(goal.strongholdSearch.throws, 2, 'no throw counted');
+});

@@ -458,7 +458,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     let noShot = !safe ? `not safe here (${unsafeBecause(bot, bot.entity.position).slice(0, 3).join(', ')})` : bot.health < 12 ? 'health under twelve' : !bow || !countOf(bot, 'arrow') ? 'no bow or arrows' : !dragon ? 'no dragon in view' : perched(bot, dragon) ? 'perched' : null;
     if (safe && bot.health >= 12 && bow && countOf(bot, 'arrow') > 0) {
       for (const target of crystals) if (!repeatedCrystalMiss(state, target, bot.entity.position) && aimAtEntity(bot, target)) tree[`crystal_${target.id}`] = {
-        description: { action: 'Destroy an observed healing crystal with a clear bow trajectory, removing a source of dragon health regeneration', position: { ...target.position } }, run: () => shoot(target),
+        description: { action: 'Destroy an observed healing crystal with a clear bow trajectory, removing a source of dragon health regeneration', position: { ...target.position }, arrowsLeft: countOf(bot, 'arrow'), crystalsInView: crystals.length }, run: () => shoot(target),
       };
       if (dragon && !perched(bot, dragon)) {
         for (let n = 0; n < 6; n++) { check(); await sleep(50); }
@@ -467,7 +467,9 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
         if (motionNow && !trajectory) noShot = `no clear arrow trajectory to it ${Math.round(dragon.position.distanceTo(bot.entity.position))} blocks off`;
         if (trajectory) tree.shoot_dragon = {
           description: { action: 'Shoot the currently arrow-vulnerable flying dragon along the checked clear trajectory',
-            safeFiringPosition: true, flightSeconds: trajectory.ticks / 20, dragonHealth: beforeDragon, observedHealingCrystals: crystals.length, ...(wet ? { fromItsWater: wetSays() } : {}) }, run: () => shoot(dragon),
+            safeFiringPosition: true, flightSeconds: trajectory.ticks / 20, dragonHealth: beforeDragon, observedHealingCrystals: crystals.length, arrowsLeft: countOf(bot, 'arrow'),
+            // The arrows against the crystals (note 1172): one loosed at the dragon is one fewer for a crystal, and a crystal standing heals back what the arrow took.
+            ...(crystals.length ? { crystalsHealIt: `${crystals.length} healing crystal${crystals.length === 1 ? '' : 's'} in view still stand${crystals.length === 1 ? 's' : ''}: each heals the dragon while it flies near, only an arrow reaches one on its pillar, and ${countOf(bot, 'arrow')} arrow${countOf(bot, 'arrow') === 1 ? ' is' : 's are'} left` } : {}), ...(wet ? { fromItsWater: wetSays() } : {}) }, run: () => shoot(dragon),
         };
       }
     }
