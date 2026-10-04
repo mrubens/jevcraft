@@ -1810,6 +1810,21 @@ async function maintainVitals(bot, task, onAction = () => {}, { client = null, g
 // are reflexes; powder snow and a submerged head are pressing; the meal is
 // routine, pressing once sprinting is gone. A meal that waits on a renewing
 // shelter plan is a claim beside it now, not a turn that never comes.
+// Raw meat eaten as it is found is the lesser half of it (note 1243): raw
+// beef is 3 points and cooked 8. 25592 (2026-10-04 16:14 to 16:26Z) had
+// five raw mutton and four raw beef, 22 points raw and 62 cooked, ate them
+// one at a time at hunger 18 and 19 with its health full, and was 'hungry.
+// Looking around for something to eat' fourteen minutes later; 25595 ate
+// each beef and mutton raw as it got it for an hour. Said, where nothing
+// presses: hunger still above six.
+const COOKED = { beef: 'cooked_beef', mutton: 'cooked_mutton', rabbit: 'cooked_rabbit', cod: 'cooked_cod', salmon: 'cooked_salmon', chicken: 'cooked_chicken', porkchop: 'cooked_porkchop', potato: 'baked_potato' };
+function rawFacts(bot, food) {
+  const cooked = COOKED[food?.name], f = bot.registry?.foodsByName || {};
+  if (!cooked || !f[cooked] || !f[food.name] || bot.food <= 6) return {};
+  const items = bot.inventory?.items?.() || [];
+  const carried = items.filter(i => i.name === food.name).reduce((n, i) => n + i.count, 0);
+  return { raw: { points: f[food.name].foodPoints, cooked: f[cooked].foodPoints, carried, furnace: items.some(i => i.name === 'furnace'), fuel: items.some(i => /^(coal|charcoal)$|_planks$|_log$/.test(i.name)) } };
+}
 function claim(bot) {
   if (!bot?.entity?.position || bot.game?.gameMode === 'creative') return null;
   const reflex = require('./arbiter').observeReflexes(bot).find(r => r.layer === 'vitals');
@@ -1839,7 +1854,7 @@ function claim(bot) {
   if (!food) return null;
   const effect = sideEffectSays(food.name);
   const coming = comingWhileEating(bot);
-  return { layer: 'vitals', action: 'eat', urgency: bot.food <= 6 || unhealing ? 'pressing' : 'routine', facts: { ...facts, ...(unhealing ? { healthComesBackOnlyAfterAMeal: `hunger ${bot.food} is under eighteen: nothing heals until it is eighteen or more, and a meal eaten to twenty heals a health each half second while its saturation lasts` } : {}), item: food.name, foodPoints: bot.registry.foodsByName?.[food.name]?.foodPoints, ...(effect ? { effect } : {}),
+  return { layer: 'vitals', action: 'eat', urgency: bot.food <= 6 || unhealing ? 'pressing' : 'routine', facts: { ...facts, ...(unhealing ? { healthComesBackOnlyAfterAMeal: `hunger ${bot.food} is under eighteen: nothing heals until it is eighteen or more, and a meal eaten to twenty heals a health each half second while its saturation lasts` } : {}), item: food.name, foodPoints: bot.registry.foodsByName?.[food.name]?.foodPoints, ...rawFacts(bot, food), ...(effect ? { effect } : {}),
     ...(coming.length ? { comingAtTheBot: coming } : {}) }, cost: { seconds: EAT_MEAL_SECONDS } };
 }
 
@@ -1847,4 +1862,4 @@ function claim(bot) {
 // stepOnce runs it too): the turn they took was the vitals'.
 const ACTIONS = new Set(['dig_out_of_block', 'douse', 'eat', 'out_of_fire', 'off_hot_floor', 'out_of_powder_snow', 'surface']);
 
-module.exports = { bodyColumns, wayOutRunning, atWaterTop, bobUp, blowsAtBody, blowsDuring, strikeAtArm, strikeWay, BLOW_REACH, shootersAtBody, flamesAbout, pourFloor, claim, checkMeal, closeHostile, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, creeperAtFuse, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, straightUp, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };
+module.exports = { rawFacts, bodyColumns, wayOutRunning, atWaterTop, bobUp, blowsAtBody, blowsDuring, strikeAtArm, strikeWay, BLOW_REACH, shootersAtBody, flamesAbout, pourFloor, claim, checkMeal, closeHostile, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, creeperAtFuse, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, straightUp, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };
