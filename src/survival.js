@@ -2698,6 +2698,16 @@ function creeperRace(bot, blocks) {
     blocks * BLOCK_SECONDS > Math.max(0, (t.distance - LIGHTS_AT) / APPROACH) + FUSE);
 }
 
+// A biter at arm's length of a pass half laid (note 1187): it hits freely
+// while the blocks go down, and the cell it stands by will not take one.
+// 25594 (2026-10-04 07:03:43 to 52Z), no armour, chose the pocket with its
+// zombie 18 blocks off; three blocks would not go in at :48 with the zombie
+// at 4.5, the pass was called a pocket, no stance was asked, and three blows
+// of 3 took it from 9 to none.
+function biterAtPass(bot) {
+  return threats(bot, 4).find(t => t.distance <= 3 && t.visible !== false && !shooter(t.entity) && t.entity.name !== 'creeper') || null;
+}
+
 function creeperSays(bot) {
   const { APPROACH, LIGHTS_AT, FUSE } = require('./combat-estimate');
   const near = threats(bot, 16).filter(t => t.entity.name === 'creeper' && (t.visible || t.distance <= 5)).sort((a, b) => a.distance - b.distance)[0];
@@ -7753,7 +7763,7 @@ class Survival {
     const stay = dropWithin(bot, origin, 2);
     // Three placements that fail in a row end the pass: trial 53 spent fifty
     // seconds in one, each block of the shell failing slowly and silently.
-    let failedInRow = 0;
+    let failedInRow = 0, failedPass = false;
     const passEnds = Date.now() + 20000;
     // A body in the cell by its hitbox, any mob's, not the feet of the
     // danger: mid-226-h's skeleton at z 262.8 stood in the cell at z 263
@@ -7773,16 +7783,25 @@ class Survival {
         console.log(`[seal] a creeper would go off before the ${cells.length - i} cells left are laid: the pass ends, the encounter is asked`);
         return false;
       }
+      const biter = i > 0 ? biterAtPass(bot) : null;
+      if (biter && shelter.missingShell(bot, refuge).length) {
+        this.report(goal, save, { action: 'seal_cut_by_biter', mob: biter.entity.name, cells: cells.length - i, origin: { ...origin } });
+        console.log(`[seal] a ${biter.entity.name} is at arm's length with ${cells.length - i} cells left to lay: the pass ends, the encounter is asked`);
+        return false;
+      }
       const name = material(); if (!name) break;
       if (occupant(bot, p) || danger.some(t => t.entity.position.floored().equals(p))) continue;
       try { await this.actions.place(bot, task, p, name, { stay }); failedInRow = 0; bot._sealPlaced = { at: Date.now(), cell: { x: p.x, y: p.y, z: p.z } }; }
       catch (err) {
         task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err;
         this.state.lastSealError = err.message;
-        if (++failedInRow >= 3) { this.sealFailedFact(goal, save, origin, `three blocks in a row would not go in (${err.message.slice(0, 160)})`); break; }
+        if (++failedInRow >= 3) { this.sealFailedFact(goal, save, origin, `three blocks in a row would not go in (${err.message.slice(0, 160)})`); failedPass = true; break; }
       }
     }
     if (shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) { refuge.verifiedAt = new Date().toISOString(); save(); return true; }
+    // A pass that ended on blocks that would not go in is not a pocket with
+    // mobs about: the encounter is asked, the failure said (note 1187).
+    if (failedPass && threats(bot, 16).length) return false;
     // A pass that closed nothing is not a pocket: saying it was sent the
     // caller straight back here, fourteen times a second, all evening.
     // Nor is one with nothing to close and the bot still not sealed in: trial

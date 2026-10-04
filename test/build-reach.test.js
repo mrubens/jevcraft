@@ -136,3 +136,21 @@ test('25594 (22:27Z): a creeper coming into sight while the pocket goes up ends 
   const all = pocketPlan(netherBot({ entities: {} }), bot.entity.position.floored(), []).cells.length;
   assert(placed.length > 0 && placed.length < all, `${placed.length} of ${all} laid`);
 });
+
+test('a biter at arm\'s length with the pocket half laid ends the pass, and so do three blocks that will not go in with mobs about: the encounter is asked (note 1187)', async () => {
+  const zombie = mob(902, 'zombie', 0.5, 41, -14);
+  const bot = netherBot({ entities: { 902: zombie } });
+  const placed = [];
+  // Each block laid, the zombie walks three blocks nearer.
+  const survival = new Survival(bot, { navigate: async () => {}, place: async (b, task, p) => { placed.push(p); zombie.position = zombie.position.offset(0, 0, 3); } }, { state: { shelters: [] } });
+  assert.equal(await survival.sealHere(new Task('t'), {}, () => {}, []), false);
+  const all = pocketPlan(netherBot({ entities: {} }), bot.entity.position.floored(), []).cells.length;
+  assert(placed.length > 0 && placed.length < all, `${placed.length} of ${all} laid`);
+  // Blocks that will not go in, a zombie twelve blocks off: not called a pocket.
+  const far = mob(903, 'zombie', 0.5, 41, -12);
+  const stuck = netherBot({ entities: { 903: far } });
+  let tries = 0;
+  const failing = new Survival(stuck, { navigate: async () => {}, place: async () => { if (++tries > 2) throw new Error('the block is still air'); } }, { state: { shelters: [] } });
+  assert.equal(await failing.sealHere(new Task('t'), {}, () => {}, []), false);
+  assert.equal(tries, 5);
+});
