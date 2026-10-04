@@ -312,4 +312,15 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
   return true;
 }
 
-module.exports = { corpseRun, corpseRunStep, worth, madeAgain };
+// The walk back under way, for a question asked in the middle of it (the
+// upkeep's, note 1211): what is gone back for, how far, and what is left
+// of the game's five minutes. -> { list, far, secondsLeft } or null
+function underWay(bot, goal, now = Date.now()) {
+  const run = goal?.corpseRun;
+  if (!run || run.status !== 'open' || run.choice !== 'go_back' || run.waitUntil > now || !bot?.entity?.position) return null;
+  if (dim(bot.game?.dimension) !== run.dimension) return null;
+  return { list: listed(run.items), far: Math.round(flat(bot.entity.position, run.position)),
+    secondsLeft: run.loadedAt ? Math.max(0, Math.round((DESPAWN_MS - (now - Date.parse(run.loadedAt))) / 1000)) : null };
+}
+
+module.exports = { corpseRun, corpseRunStep, worth, madeAgain, underWay };

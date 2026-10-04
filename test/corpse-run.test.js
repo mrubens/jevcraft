@@ -337,3 +337,17 @@ test('at the spot the eyes and the kit are taken before the rest, room is made f
   assert.equal(goal.corpseRun.status, 'open', 'the chestplate, the arrows and the emerald still lie there');
   assert.deepEqual(Object.keys(goal.corpseRun.items).sort(), ['arrow', 'emerald', 'iron_chestplate']);
 });
+
+test('the walk back under way is said for a question asked in the middle of it: what, how far, and the time left (note 1211)', () => {
+  const { underWay } = require('../src/corpse-run');
+  const { bot, goal } = world();
+  assert.equal(underWay(bot, goal), null, 'no run yet');
+  corpseRun(bot, goal);
+  assert.equal(underWay(bot, goal), null, 'not chosen yet');
+  goal.corpseRun.choice = 'go_back';
+  assert.deepEqual(underWay(bot, goal), { list: 'iron chestplate, diamond sword, 8 blaze rod', far: 400, secondsLeft: null });
+  goal.corpseRun.loadedAt = new Date(Date.now() - 100000).toISOString();
+  assert.equal(underWay(bot, goal).secondsLeft, 200);
+  goal.corpseRun.status = 'done';
+  assert.equal(underWay(bot, goal), null);
+});

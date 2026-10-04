@@ -1145,7 +1145,22 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   if (atCage) { const first = { carry_on: options.carry_on, ...options }; for (const k of Object.keys(options)) delete options[k]; Object.assign(options, first); }
   const step = goal.step;
   let chosen = null;
-  const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, run: async () => { chosen = k; await o.run(); } }]));
+  // On the way back for what a death dropped, each answer says what it does
+  // to that walk and the drops' time (note 1211): the chores were offered
+  // as on any walk. 25594 (2026-10-04 12:01:58 to 12:04:34Z), 147 blocks
+  // from its iron kit, bow and bucket with go_back chosen at 0.81, took the
+  // wood owed and then a spare pickaxe and a stone axe on the way; on
+  // 06:36Z the same chore took it into a cave where it died.
+  let dropsSay = { chore: '', carry: '' };
+  try {
+    const u = require('./corpse-run').underWay(bot, goal);
+    if (u) {
+      const time = u.secondsLeft === null ? 'they last until the bot comes within 128 blocks, then five minutes' : `about ${u.secondsLeft} seconds are left before they vanish`;
+      dropsSay = { chore: ` This is in the middle of the walk back for what the bot dropped at its death (${u.list}), ${u.far} blocks off: ${time}, and this comes before the walk goes on.`,
+        carry: ` The work in hand is the walk back for what the bot dropped at its death (${u.list}), ${u.far} blocks off: ${time}.` };
+    }
+  } catch (_) { dropsSay = { chore: '', carry: '' }; }
+  const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description + (k === 'carry_on' ? dropsSay.carry : dropsSay.chore), run: async () => { chosen = k; await o.run(); } }]));
   try { await decideAction(bot, task, goal, save, client, onStep, tree, { situation: `${lead ? `${lead} ` : ''}${due.every(k => ['fetch_batch', 'leave_batch'].includes(k)) ? 'A batch left cooking in a furnace far off is done. Choose whether to go back for it, leave it for good, or carry on with the work.' : 'Something the bot keeps in its pockets is running short. Choose whether to see to it now or carry on with the work.'}` }, 'upkeep'); }
   finally { if (chosen === 'carry_on') goal.step = step; }
   // A pickaxe made is done: the work it was made for is the step again. Left
