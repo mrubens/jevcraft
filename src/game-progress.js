@@ -907,6 +907,9 @@ function nextGameStage(bot, goal, skip = new Set()) {
   const where = dimension(bot), m = goal.gameProgress?.milestones || {};
   const errand = errandStage(bot, goal, where);
   if (errand) return errand;
+  // In the Nether with eyes of ender in the pack: out with them, before anything else there (note 1264).
+  // (Eight eyes or more, or the search begun: a few eyes made early are the hunt's own business.)
+  if (where === 'nether' && (count(bot, 'ender_eye') >= 8 || (count(bot, 'ender_eye') > 0 && (goal.strongholdSearch?.bearings || []).length >= 1))) return { phase: 'eyes_out', action: 'return_overworld', for: 'the eyes of ender carried: nothing in the Nether takes one' };
   // Rods banked (rod-bank.js, note 760): out through the portal and into a
   // chest on the Overworld side while that is under way; taken out there once
   // the rods carried and banked are what the goal wants.
@@ -1267,6 +1270,12 @@ async function gameStep(bot, task, goal, save, actions) {
     // chose it and was sent for oak logs and iron armour first (note 1234).
     const kitTrip = stage.for === require('./corpse-run').KIT_ERRAND && goal.corpseRun?.status === 'open';
     if (stage.action === 'enter_nether' && await require('./mob-hunt').goldForPiglins(bot, task, goal, save, actions, { crossing: true })) return false;
+    // No eye of ender goes through the portal to the Nether (eye-bank.js bankBeforeNether, note 1264).
+    if (stage.action === 'enter_nether' && dimension(bot) === 'overworld' && (count(bot, 'ender_eye') >= 8 || (count(bot, 'ender_eye') > 0 && (goal.strongholdSearch?.bearings || []).length >= 1))) {
+      await require('./eye-bank').bankBeforeNether(bot, task, goal, save, actions.stashActions || actions);
+      // Put away or not, the step ends here: with an eye still in the pack the portal is not walked through.
+      return false;
+    }
     if (stage.action === 'enter_nether' && !kitTrip && actions.prepare_combat && !await actions.prepare_combat(bot, task, goal, save)) return false;
     if (stage.action === 'enter_end' && actions.prepare_end && !await actions.prepare_end(bot, task, goal, save)) return false;
     const execute = actions[stage.action];

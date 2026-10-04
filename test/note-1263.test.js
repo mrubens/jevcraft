@@ -20,3 +20,12 @@ test('every pearl had and the rods short only in the pack, the rest in the chest
   assert.equal(stage.action, 'collect_rod_stash', JSON.stringify(stage));
   assert.deepEqual(stage.at, { x: -33, y: 94, z: 135 });
 });
+
+test('in the Nether with eyes of ender in the pack, the step is out with them (note 1264)', () => {
+  const bot = world([['ender_eye', 12], ['blaze_powder', 1]]);
+  bot.game.dimension = 'the_nether';
+  const goal = { version: 1, kind: 'win', request: 'beat the game', gameProgress: { milestones: { nether_entered: { at: 1 }, eyes_obtained: { at: 2 } } }, strongholdSearch: { bearings: [{}] } };
+  const stage = nextGameStage(bot, goal);
+  assert.equal(stage.action, 'return_overworld', JSON.stringify(stage));
+  assert.equal(stage.phase, 'eyes_out');
+});

@@ -68,6 +68,26 @@ async function eyesNow(bot, task, goal, save, actions, client, { errand = 'the e
 // Put away for the stronghold's search, they stay until the portal is found
 // (the spare lost, the ladder makes another, or the walk goes on to where
 // the bearings meet with none thrown).
+// The eyes put away before the portal to the Nether, not asked (note 1264):
+// nothing in the Nether takes an eye of ender, and a death there drops them
+// a dimension from the bed. 25593 (2026-10-04 23:18 to 23:19Z), the first
+// thirteen eyes of the day made, threw one for its first bearing, was one
+// short of the thirteen with twelve in its pack, and went through its portal
+// for a pearl with the twelve, into a warped forest's slot fight.
+// -> 'kept', 'none' (no eye carried) or 'failed'.
+async function bankBeforeNether(bot, task, goal, save, actions) {
+  const o = offer(bot, goal);
+  if (!o || !o.eyes) return 'none';
+  const acts = { ...actions, place: actions?.place || require('./work').place, acquireStep: actions?.acquireStep || require('./work').acquireStep, navigate: actions?.navigate || require('./skills').navigate };
+  let stored = false;
+  try { stored = await rs().stashRods(bot, task, goal, save, acts, o, { step: 'bank_eyes', rest: ['eye_bank', 'here'],
+    chat: (list, where) => `Put ${list} in a chest at ${where} before the Nether: nothing there takes an eye.` }); }
+  catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; stored = false; }
+  if (!stored) return 'failed';
+  goal.eyeBank = { at: Date.now(), chestAt: o.existing ? o.existing.position : P(o.site.cell), forNether: true }; save?.();
+  return 'kept';
+}
+
 function held(goal, bot = null) {
   if (!goal?.eyeBank) return false;
   if (goal.eyeBank.forSearch && !goal.gameProgress?.milestones?.stronghold_located) return true;
@@ -81,4 +101,4 @@ function banked(goal) {
   return (rs().stashes(goal) || []).filter(c => c.dimension === 'overworld').reduce((n, c) => n + (c.contents?.ender_eye || 0), 0);
 }
 
-module.exports = { eyesNow, offer, held, banked, LOST };
+module.exports = { bankBeforeNether, eyesNow, offer, held, banked, LOST };
