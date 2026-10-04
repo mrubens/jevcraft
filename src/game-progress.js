@@ -1003,6 +1003,21 @@ function nextGameStage(bot, goal, skip = new Set()) {
     const order = require('./pearl-order').orderStage(bot, goal, { count: target - eyes, phase: 'reach_nether' });
     if (order) return order;
   }
+  // In the Overworld with every pearl had and the rods short only in the
+  // pack, the rest in the bot's chest on this side: the chest is the step,
+  // resting from a take that failed or not, not the Nether (note 1263).
+  // 25593 (2026-10-04 23:04 to 23:13Z), five rods and seven pearls carried
+  // and two rods and six pearls in its chest a block off, a take refused
+  // ('Still in the chest') and the chest rested ten minutes, went through
+  // its portal and back twice 'for rods' with all of it in its pack.
+  if (rodsShort && where === 'overworld' && keptAll && !pearlsWanting) {
+    const over = require('./rod-stash').stashes(goal).filter(c => c.dimension === 'overworld' && require('./rod-stash').withContents(c));
+    const rodsOver = over.reduce((n, c) => n + (c.contents?.blaze_rod || 0), 0), powderOver = over.reduce((n, c) => n + (c.contents?.blaze_powder || 0), 0), eyesOver = over.reduce((n, c) => n + (c.contents?.ender_eye || 0), 0);
+    if (count(bot, 'blaze_rod') + rodsOver >= rodsFor(target - eyes - eyesOver, count(bot, 'blaze_powder') + powderOver)) {
+      const take = require('./rod-stash').collectStage(bot, goal, Date.now(), { resting: true });
+      if (take) return take;
+    }
+  }
   if (rodsShort && where !== 'nether' && !overworldPearls) return { phase: 'reach_nether', action: 'enter_nether' };
   // Out for the Overworld's endermen (the route held): the hunt here, not the
   // rods' stage, whose acquire walked straight back to the portal (note 831:

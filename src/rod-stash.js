@@ -364,10 +364,10 @@ async function withStash(bot, task, entry, save, work) {
 
 // The stage before the portal walk: the nearest chest in this dimension with
 // something in it, not resting. -> stage or null
-function collectStage(bot, goal, now = Date.now()) {
+function collectStage(bot, goal, now = Date.now(), { resting = false } = {}) {
   const here = bot?.entity?.position, dim = dimOf(bot);
   if (!here) return null;
-  const all = stashes(goal).filter(c => c.dimension === dim && withContents(c) && !isSetAside(goal, 'rod_stash_take', at(c.position), now))
+  const all = stashes(goal).filter(c => c.dimension === dim && withContents(c) && (resting || !isSetAside(goal, 'rod_stash_take', at(c.position), now)))
     .map(c => ({ c, d: Math.round(here.distanceTo(V(c.position))) })).sort((a, b) => a.d - b.d);
   // The chest just filled beside the bot is the last taken, not the first
   // (note 1261): put down 'to take on the way out', it was the nearest with
@@ -383,7 +383,7 @@ function collectStage(bot, goal, now = Date.now()) {
 
 // Take out what the chest at the stage holds. -> true when taken.
 async function collect(bot, task, goal, save, actions = {}) {
-  const stage = collectStage(bot, goal);
+  const stage = collectStage(bot, goal) || collectStage(bot, goal, Date.now(), { resting: true });
   if (!stage) return false;
   const entry = stashes(goal).find(c => c.position.x === stage.at.x && c.position.y === stage.at.y && c.position.z === stage.at.z);
   const key = at(entry.position), cell = V(entry.position);
@@ -436,12 +436,20 @@ async function collect(bot, task, goal, save, actions = {}) {
       const done = [];
       for (const i of window.containerItems().filter(i => KEPT.includes(i.name))) {
         task?.check?.();
-        try { await window.withdraw(i.type, null, i.count); done.push({ item: i.name, count: i.count }); } catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+        try { await window.withdraw(i.type, null, i.count); done.push({ item: i.name, count: i.count }); }
+        catch (err) {
+          task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+          // The withdrawal refused: the stack shift-clicked out, as a player
+          // does, and why it was refused kept for the record (note 1263).
+          entry.lastWithdrawError = String(err.message || err).slice(0, 160);
+          try { if (typeof bot.clickWindow === 'function') { const before = countOf(bot, i.name); await bot.clickWindow(i.slot, 0, 1); await new Promise(r => setTimeout(r, 250)); const got = countOf(bot, i.name) - before; if (got > 0) done.push({ item: i.name, count: got }); } }
+          catch (e2) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(e2.name)) throw e2; entry.lastWithdrawError += `; shift-click: ${String(e2.message || e2).slice(0, 80)}`; }
+        }
       }
       return done;
     });
     if (taken.length) { entry.takenAt = new Date().toISOString(); bot.chat?.(`Took ${listed(Object.fromEntries(taken.map(m => [m.item, m.count])))} back out of the chest.`); }
-    if (withContents(entry)) throw new Error(`Still in the chest: ${listed(entry.contents)} (no room in the pockets?)`);
+    if (withContents(entry)) throw new Error(`Still in the chest: ${listed(entry.contents)} (${entry.lastWithdrawError || 'no room in the pockets?'})`);
     save?.();
     return true;
   } catch (err) {
@@ -451,7 +459,8 @@ async function collect(bot, task, goal, save, actions = {}) {
     // up, said, and no longer counted, so the ladder does not cross the
     // portal and back for it.
     if (entry.lostAt) bot.chat?.(`The chest at ${key} is gone, and ${listed(entry.contents)} with it.`);
-    else if (entry.takeFails >= TAKE_TRIES) { entry.unreachable = new Date().toISOString(); bot.chat?.(`I can't get back to the chest at ${key}; going on without ${listed(entry.contents)}.`); }
+    // A chest stood at whose things would not come out is not written off: it rests, and is tried again.
+    else if (entry.takeFails >= TAKE_TRIES && !/^Still in the chest/.test(String(err.message || ''))) { entry.unreachable = new Date().toISOString(); bot.chat?.(`I can't get back to the chest at ${key}; going on without ${listed(entry.contents)}.`); }
     else setAside(goal, 'rod_stash_take', key, err, TAKE_REST_MS);
     save?.();
     return false;
