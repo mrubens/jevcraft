@@ -8,7 +8,7 @@ One rule holds for every question about playing the game (`src/decisions/unchang
 
 Three more rules from note 749 (`src/decisions/loops.js`, `src/decisions/keys.js`, `src/intention.js`). A key names its thing: every dynamic option says what its key names (`names`: by name, by where it is, by entity id), never its place in the list, so what came of an option is said on the same thing at the next asking. A question asked round and round goes up: its askings each within a minute of the one before are its spell, said from the third (`spellSoFar`: how many, what was answered, how far the bot walked and how far it is from where they began, whether anything new is carried, how often none of the options was good); when none good was Jev's likeliest at three of its last five askings, or six askings over ninety seconds or more have left the bot within 48 blocks of where they began with nothing new carried, the answers it gave rest from there and the question above is asked with that said (not the stance, the body's way, the shield or the routing, which are said only). And a trip holds: an answer to a question about the plan whose option walks to a target, or whose catalogue entry says where it goes (`trip`), is the intention until it arrives, is done, fails, the dimension changes, health falls a blow's worth, a walk brings nothing for three minutes or ten minutes pass; its own question asked again offers only it. A rung set aside holds the same way (`src/decisions/asides.js`): an option that would take it back (`takeBack` on its node) is not offered for five minutes unless the bot is 16 blocks from where it was set aside, carries a new kind of thing or its health band changes (`asideHolds`). An answer thrown away as stale that keeps on with what is under way is kept, and from the second stale answer in a row within 30 seconds a question is watched a second first and not sent while its facts are still changing.
 
-104 questions: 54 decision trees and 50 batched questions.
+105 questions: 55 decision trees and 50 batched questions.
 
 ## Batches
 
@@ -813,6 +813,22 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `keep_here` | root | put the pearls in a chest here and hunt on with nothing to lose | always here (the question is asked only where a chest can go down or one is in reach); said with the chest, the seconds, what a death does to pearls carried and the record of pearls lost at deaths |
 | `carry_on` | root | hunt on with the pearls in the pack | always here; said with what a death takes, the record of pearls lost at deaths and the pearls still needed |
+
+### `eyes_now`
+
+**Eyes of ender are carried in the Overworld and an errand for the End's kit is next: put them in a chest here first, or go with them in the pack?**
+
+- When: end_kit answered with a top-up (not health), eyes of ender carried, and a chest that can go down here or one of the bot's within twelve blocks; asked once for each count of eyes carried and again after ten minutes.
+- Decision tree, choice; stakes medium; ledger kind `strategy`
+- Bar: none
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
+- Options built in: src/eye-bank.js (eyesNow), src/end-supplies.js (prepareEndSupplies), src/rod-bank.js (collectHere holds the take-out)
+- Nothing left to try: asks `end_kit` next up, with this one's failure said
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `keep_here` | root | put the eyes in a chest here, then the errand | always here; said with the chest, what a death does to what is carried, when they are taken out again and the record of eyes lost |
+| `carry_on` | root | go on the errand with the eyes in the pack | always here; said with what a death takes and the record of eyes lost |
 
 ## work
 

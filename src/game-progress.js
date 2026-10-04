@@ -924,7 +924,9 @@ function nextGameStage(bot, goal, skip = new Set()) {
   // after each throw while it still has a spare and twelve portal eyes. A
   // pending pickup gets a chance before deciding whether supplies are short.
   const portalNeed = m.stronghold_located && goal.endPortal?.neededEyes;
-  if (where === 'overworld' && m.stronghold_located && (!Number.isInteger(portalNeed) || count(bot, 'ender_eye') >= portalNeed)) return { phase: 'enter_end', action: 'enter_end' };
+  // Eyes in the bot's Overworld chest are held (eye-bank.js, note 1193): the End's kit is seen to with them put away.
+  const eyesBanked = goal.eyeBank ? (require('./rod-stash').stashes(goal) || []).filter(c => c.dimension === 'overworld').reduce((n, c) => n + (c.contents?.ender_eye || 0), 0) : 0;
+  if (where === 'overworld' && m.stronghold_located && (!Number.isInteger(portalNeed) || count(bot, 'ender_eye') + eyesBanked >= portalNeed)) return { phase: 'enter_end', action: 'enter_end' };
   if (where === 'overworld' && !m.stronghold_located && goal.strongholdSearch && (count(bot, 'ender_eye') >= EYES_WANTED || goal.strongholdSearch.pendingPickup)) {
     return { phase: 'find_stronghold', action: 'find_stronghold' };
   }

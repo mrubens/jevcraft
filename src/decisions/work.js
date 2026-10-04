@@ -522,6 +522,18 @@ define({
   instructions: workInstructions('The bot carries ender pearls in the Nether and needs more. A death drops every pearl carried; a chest keeps them. Choose whether to put them in a chest now or hunt on. Each option says its record.'),
 });
 
+define({
+  id: 'eyes_now', area: 'strategy', parent: 'end_kit', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'Eyes of ender are carried in the Overworld and an errand for the End\'s kit is next: put them in a chest here first, or go with them in the pack?',
+  trigger: 'end_kit answered with a top-up (not health), eyes of ender carried, and a chest that can go down here or one of the bot\'s within twelve blocks; asked once for each count of eyes carried and again after ten minutes.',
+  source: 'src/eye-bank.js (eyesNow), src/end-supplies.js (prepareEndSupplies), src/rod-bank.js (collectHere holds the take-out)',
+  options: [
+    { key: 'keep_here', label: 'put the eyes in a chest here, then the errand', when: 'always here; said with the chest, what a death does to what is carried, when they are taken out again and the record of eyes lost', level: 'root' },
+    { key: 'carry_on', label: 'go on the errand with the eyes in the pack', when: 'always here; said with what a death takes and the record of eyes lost', level: 'root' },
+  ],
+  instructions: workInstructions('The bot carries eyes of ender, what the End portal is opened with, and is about to go on an errand for its kit. A death drops everything carried; a chest keeps what is in it. Choose whether the eyes go in a chest first. Each option says its record.'),
+});
+
 // Upkeep between steps: a spare pickaxe, a wood reserve, a block reserve.
 define({
   id: 'upkeep', area: 'resources', parent: null, kind: 'upkeep', primitive: 'choice', stakes: 'low', tree: true,

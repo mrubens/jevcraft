@@ -168,6 +168,11 @@ async function prepareEndSupplies(bot, task, goal, save, actions, client = task.
   if (pick === 'enter_now') { delete goal.preparingEnd; save(); return true; }
   const item = short.find(i => `top_up_${i.key}` === pick);
   if (!item) { delete kit.choice; save(); return false; }
+  // The eyes carried, asked of before the errand (eye-bank.js, note 1193).
+  if (!['health'].includes(item.key)) {
+    try { await require('./eye-bank').eyesNow(bot, task, goal, save, actions, client, { errand: `for the End's kit (${item.key})` }); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[eyes_now] ${String(err.message || err).slice(0, 200)}`); }
+  }
   await topUp(bot, task, goal, save, actions, kit.choice?.target != null ? { ...item, target: kit.choice.target } : item);
   return false;
 }
