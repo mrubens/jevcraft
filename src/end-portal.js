@@ -37,6 +37,8 @@ function activePortal(bot, center) {
   return true;
 }
 
+// The way to the ring: over the ground while it is more than this far off and the bot at this height or over, a leg of this many blocks at a time.
+const SURFACE_FIRST = 48, SURFACE_Y = 50, LEG = 48;
 async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000, entryMs = 12000 } = {}) {
   const check = () => {
     task.check(); checkAir(bot); checkThreats(bot);
@@ -61,8 +63,24 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
     goal.step = { action: 'go_to_end_portal', target: { x: center.x, y: center.y, z: center.z }, blocksOff: Math.round(flat), blocksUnder: Math.round(down) }; save();
     const near = new goals.GoalNear(beside.x, beside.y, beside.z, 2);
     const route = await surveyRoute(bot, task, bot.pathfinder.movements, near, 600);
-    if (route.status === 'success') await actions.navigate(bot, task, near, { timeoutMs: 60000, stallMs: 8000 });
-    else await actions.tunnel(bot, task, goal, save, beside, 'end_portal');
+    if (route.status === 'success') { await actions.navigate(bot, task, near, { timeoutMs: 60000, stallMs: 8000 }); return; }
+    // Far off across the ground and still up on it, the walk over the
+    // surface comes first, a leg at a time toward the place over the ring,
+    // and the stair is dug from there (note 1168): a stair dug from where
+    // the bot stood ran level through the rock the whole way. 25594
+    // (2026-10-04 03:58 to 04:07Z), 620 blocks from its ring, went down to
+    // y -36 in seven minutes and on toward it through deepslate at fourteen
+    // blocks a minute, its pickaxe wearing out on the way.
+    if (flat > SURFACE_FIRST && here.y >= SURFACE_Y) {
+      const d = Math.min(LEG, flat - 8), k = d / flat;
+      const leg = new goals.GoalNearXZ(Math.round(here.x + (center.x + .5 - here.x) * k), Math.round(here.z + (center.z + .5 - here.z) * k), 4);
+      goal.step = { ...goal.step, way: 'surface', leg: { x: leg.x, z: leg.z } }; save();
+      const from = here.clone();
+      try { await actions.navigate(bot, task, leg, { timeoutMs: 45000, stallMs: 8000 }); }
+      catch (err) { task.check(); if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
+      if (bot.entity.position.distanceTo(from) >= 8) return;
+    }
+    await actions.tunnel(bot, task, goal, save, beside, 'end_portal');
     return;
   }
   if (!portal) throw blocked('The saved End portal ring is not fully visible or has changed');

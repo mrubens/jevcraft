@@ -22,7 +22,10 @@ test('far from the End portal\'s ring and it out of view, the step goes to it: t
   const { bot, goal } = far();
   const calls = [];
   await enterEnd(bot, new Task('enter'), goal, () => {}, { navigate: async () => calls.push('walk'), tunnel: async (b, t, g, s, target, resource) => calls.push({ target: [target.x, target.y, target.z], resource }) });
-  assert.deepEqual(calls, [{ target: [607, -36, 1540], resource: 'end_portal' }]);
+  // The walk over the ground first, a leg toward the place over the ring; it gained nothing here (the stub does not move), so the stair is dug.
+  assert.equal(calls[0], 'walk');
+  assert.deepEqual(calls[1], { target: [607, -36, 1540], resource: 'end_portal' });
+  assert.equal(goal.step.way, 'surface');
   assert.equal(goal.step.action, 'go_to_end_portal');
   assert.deepEqual([goal.step.blocksOff, goal.step.blocksUnder], [211, 122]);
 });
@@ -34,4 +37,18 @@ test('where a walk to it is found, it is walked; with no way to dig, the step sa
   assert.deepEqual(calls, ['walk']);
   const none = far();
   await assert.rejects(enterEnd(none.bot, new Task('enter'), none.goal, () => {}, { navigate: async () => {} }), /not fully visible/);
+});
+
+test('far off across the ground, the leg walked over the surface is the step, and the stair waits until the bot is over the ring (note 1168)', async () => {
+  const { bot, goal } = far();
+  const calls = [];
+  await enterEnd(bot, new Task('enter'), goal, () => {}, { navigate: async (b, t, leg) => { calls.push(['walk', leg.x, leg.z]); bot.entity.position = new Vec3(leg.x + .5, 85, leg.z + .5); }, tunnel: async () => calls.push('tunnel') });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], 'walk');
+  assert.ok(Math.hypot(calls[0][1] - 604, calls[0][2] - 1540) < Math.hypot(778 - 604, 1660 - 1540) - 40, 'forty blocks or more nearer the place over the ring');
+  // Underground already, it is the stair as before.
+  const under = far(); under.bot.entity.position = new Vec3(778.5, 20, 1660.5);
+  const dug = [];
+  await enterEnd(under.bot, new Task('enter'), under.goal, () => {}, { navigate: async () => dug.push('walk'), tunnel: async () => dug.push('tunnel') });
+  assert.deepEqual(dug, ['tunnel']);
 });

@@ -230,8 +230,13 @@ async function findStronghold(bot, task, goal, save, actions, client) {
     }
   }
   if (throwAgain && !noSpare) {
-    search.throws++; goal.step = { action: 'throw_ender_eye', attempt: search.throws }; save();
+    // A throw is counted when an Eye has flown (note 1168): the rehearsal of
+    // 2026-10-04 (04:01 to 04:07Z), in the sea over its stronghold with no
+    // dry footing to throw from, counted twenty-four of its sixty-four with
+    // none thrown.
+    goal.step = { action: 'throw_ender_eye', attempt: search.throws + 1 }; save();
     const bearing = await throwEye(bot, task);
+    search.throws++;
     search.bearings = [...search.bearings, bearing].slice(-32); search.pendingPickup = bearing;
     search.estimate = triangulate(search.bearings);
     bot.emit('stronghold_search', { kind: 'eye_bearing', bearing, estimate: search.estimate }); save(); return;
