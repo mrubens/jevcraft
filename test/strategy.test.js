@@ -538,3 +538,17 @@ test('the rods\' bank under way is the step: a held answer does not go on over i
   assert.equal((await strategyStep(bot, task, goal, () => {}, stage, { decide, now: () => now + 120000 })).stage.phase, 'diamond_sword');
   assert.equal(asked.length, 1);
 });
+
+test('the trip chosen for the kit a death left in the Nether is the step: no rung is asked over it (note 1235)', async () => {
+  const { bot, goal, task } = fixture(['golden_boots', 'diamond_sword']);
+  bot.chat = () => {};
+  const { asked, decide } = picking('rung_diamond_sword');
+  const { KIT_ERRAND } = require('../src/corpse-run');
+  goal.corpseRun = { status: 'open', dimension: 'nether', items: { iron_chestplate: 1 }, trip: { pick: 'go_now', at: 1e12 } };
+  const stage = { phase: 'errand', action: 'enter_nether', for: KIT_ERRAND };
+  assert.equal(await strategyStep(bot, task, goal, () => {}, stage, { decide, now: () => 1e12 }), null);
+  assert.equal(asked.length, 0);
+  goal.corpseRun.status = 'done';
+  await strategyStep(bot, task, goal, () => {}, stage, { decide, now: () => 1e12 });
+  assert.equal(asked.length, 1, 'with the run closed the errand is a stage among the rungs again');
+});

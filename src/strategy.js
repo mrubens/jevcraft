@@ -637,6 +637,11 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
   // Nether held from five minutes before walked it through its portal with
   // both rods in the pack (note 875).
   if (stage?.phase === 'bank_rods') return null;
+  // So the trip back for the kit a death left in the Nether, chosen at its
+  // own question (corpse-run.js kitTrip): 25589 (2026-10-04 15:55 to
+  // 15:59Z), the trip chosen at 15:47Z, was asked of an iron pickaxe, a
+  // bucket and a bed over it, the trip said as 'errand' (note 1235).
+  if (stage?.phase === 'errand' && stage.for === require('./corpse-run').KIT_ERRAND && goal.corpseRun?.status === 'open' && goal.corpseRun.trip?.pick === 'go_now') return null;
   const options = strategyOptions(bot, goal, stage, sides, planFor);
   if (!options) { delete goal.strategy; return null; }
   const tree = strategyTree(options);
