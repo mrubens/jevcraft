@@ -1173,6 +1173,11 @@ async function gameStep(bot, task, goal, save, actions) {
     try { banked = await require('./rod-bank').askBank(bot, task, goal, save, actions, actions?.client || task.opportunityClient); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
     if (banked === 'banked') return false;
+    // The pearls carried are asked about at the ladder's own step too, whatever the rung in hand (mob-hunt.js pearlsNow, note 1266).
+    let kept = null;
+    try { kept = await require('./mob-hunt').pearlsNow(bot, task, goal, save, actions.stashActions || actions, actions?.client || task.opportunityClient, { any: true }); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
+    if (kept === 'kept') return false;
   }
   // The spare kit by the bed, asked on its own where it can be left (home-
   // stash.js askSpareKit, note 1222).

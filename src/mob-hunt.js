@@ -829,9 +829,13 @@ function noWayFromHere(state, bot, target) {
 // carried, and again after ten minutes, where a chest can go down or one of
 // the bot's is in reach. -> 'kept' | 'carry' | null (not asked)
 const PEARLS_NOW_MS = 10 * 60000;
-async function pearlsNow(bot, task, goal, save, actions, client) {
+// `any`: asked whatever the hunt in hand is (note 1266): 25597 (2026-10-04
+// 23:36Z), fifteen pearls had and one rod wanted, went to its fortress for
+// the rod with eleven pearls in its pack, the hunt's item a blaze rod and
+// the pearls asked of at no step.
+async function pearlsNow(bot, task, goal, save, actions, client, { any = false } = {}) {
   const state = goal?.mobHunt;
-  if (!state || state.item !== 'ender_pearl' || goal.kind !== 'win' || dimension(bot) !== 'nether') return null;
+  if ((!any && (!state || state.item !== 'ender_pearl')) || goal.kind !== 'win' || dimension(bot) !== 'nether') return null;
   // Eyes of ender carried are asked of with the pearls (note 1150): the
   // chest keeps both (rod-stash.js KEPT).
   const eyes = countOf(bot, 'ender_eye'), n = countOf(bot, 'ender_pearl') + eyes;
@@ -842,7 +846,7 @@ async function pearlsNow(bot, task, goal, save, actions, client) {
   let keep = null; try { keep = stash.keepOption(bot, task, goal, save, actions, { thenSays: 'Then the hunt goes on with nothing in the pack to lose.' }); } catch (_) { keep = null; }
   if (!keep) return null;
   goal.pearlsNow = { count: n, at: Date.now() }; save();
-  const left = huntLeft(bot, goal), np = n - eyes, pearls = [np ? `${np} ender pearl${np === 1 ? '' : 's'}` : null, eyes ? `${eyes} eye${eyes === 1 ? '' : 's'} of ender` : null].filter(Boolean).join(' and ');
+  const left = state?.item === 'ender_pearl' ? huntLeft(bot, goal) : (() => { try { return require('./eye-need').need(bot, goal).pearlsLeft; } catch (_) { return 0; } })(), np = n - eyes, pearls = [np ? `${np} ender pearl${np === 1 ? '' : 's'}` : null, eyes ? `${eyes} eye${eyes === 1 ? '' : 's'} of ender` : null].filter(Boolean).join(' and ');
   const tree = {
     keep_here: { description: keep.description, run: keep.run },
     carry_on: { description: `Hunt on with the ${pearls} in the pack: nothing is put down, and every ${eyes ? 'pearl and eye' : 'pearl'} carried is lost with a death here (the bot comes back to life in the Overworld, far from them).${stash.pearlsLostSays()} ${left} still needed. Asked again when another pearl is carried, or in ten minutes.`, run: async () => {} },

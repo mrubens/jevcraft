@@ -34,3 +34,16 @@ test('with no chest to put down or in reach, it is not asked', async () => {
   try { assert.equal(await pearlsNow(botOf(4), task, goalOf(), () => {}, {}, { systemOne: async () => { throw new Error('not asked'); } }), null); }
   finally { stash.keepOption = keepOption; }
 });
+
+test('with the hunt on blaze rods, pearls carried are asked of all the same at the ladder\'s step (note 1266)', async () => {
+  const keepOption = stash.keepOption;
+  let kept = 0;
+  stash.keepOption = () => ({ description: 'Keep the 11 ender pearls safe from a death first.', run: async () => { kept++; return true; } });
+  try {
+    const client = { systemOne: async () => ({ answers: { branch_0: { choice: 'keep_here' } } }) };
+    const goal = { kind: 'win', gameProgress: { milestones: {} }, mobHunt: { item: 'blaze_rod', entity: 'blaze', targetCount: 7 } };
+    assert.equal(await pearlsNow(botOf(11), task, goal, () => {}, {}, client), null, 'the hunt\'s own asking is the pearl hunt\'s');
+    assert.equal(await pearlsNow(botOf(11), task, goal, () => {}, {}, client, { any: true }), 'kept');
+    assert.equal(kept, 1);
+  } finally { stash.keepOption = keepOption; }
+});

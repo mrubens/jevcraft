@@ -391,7 +391,7 @@ async function collect(bot, task, goal, save, actions = {}) {
   // A long walk for it in the Nether with pearls or eyes in the pack: asked
   // first whether they are put down here (pearls_now), to take on the way out.
   if (entry.dimension === 'nether' && stage.distance >= 64 && goal.kind === 'win' && task?.opportunityClient) {
-    try { if (await require('./mob-hunt').pearlsNow(bot, task, goal, save, actions, task.opportunityClient) === 'kept') return true; }
+    try { if (await require('./mob-hunt').pearlsNow(bot, task, goal, save, actions, task.opportunityClient, { any: true }) === 'kept') return true; }
     catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
   }
   if (!entry.announced) { entry.announced = true; bot.chat?.(`Taking ${listed(entry.contents)} out of the chest at ${key}${entry.dimension === 'nether' ? ' before the portal' : ''}.`); }
