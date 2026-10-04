@@ -247,7 +247,12 @@ async function findStronghold(bot, task, goal, save, actions, client) {
     // dry footing to throw from, counted twenty-four of its sixty-four with
     // none thrown.
     goal.step = { action: 'throw_ender_eye', attempt: search.throws + 1 }; save();
-    const bearing = await throwEye(bot, task);
+    // The portal's twelve are the reserve wherever they are: put away in the
+    // bot's chest, the spare in the pack is thrown (note 1200). The rehearsal
+    // of 2026-10-04 (09:22 to 09:29Z), twelve in its chest and one carried,
+    // was refused the throw at every pass, 'Need a spare Eye of Ender beyond
+    // the 12 reserved', and stood seven minutes where it had put them.
+    const bearing = await throwEye(bot, task, { reserve: Math.max(0, 12 - require('./eye-bank').banked(goal)) });
     search.throws++;
     search.bearings = [...search.bearings, bearing].slice(-32); search.pendingPickup = bearing;
     search.estimate = triangulate(search.bearings);
