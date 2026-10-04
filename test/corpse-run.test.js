@@ -253,7 +253,7 @@ test('a death before the last, its list not kept: the eyes the run had made befo
   goal.endPortal = { neededEyes: 12 };
   corpseRun(bot, goal).status = 'done';
   const earlier = corpseRun(bot, goal);
-  Object.assign(earlier, { status: 'left', choice: 'leave_them', told: 4 });
+  Object.assign(earlier, { status: 'left', choice: 'leave_them', told: 5 });
   const asked = [];
   const client = { systemOne: async ({ questions }) => { asked.push(JSON.stringify(Object.values(questions)[0])); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'leave_them', confidence: 0.9 }])) }; } };
   const task = Object.assign(new Task('run'), { opportunityClient: client });
@@ -268,7 +268,7 @@ test('a death before the last, its list not kept: the eyes the run had made befo
   has.goal.survival.deaths.unshift({ at: before, position: { x: 900, y: 69, z: 700 }, dimension: 'overworld', worn: ['iron_helmet'] });
   has.goal.gameProgress = goal.gameProgress; has.give('ender_eye', 12);
   corpseRun(has.bot, has.goal).status = 'done';
-  Object.assign(corpseRun(has.bot, has.goal), { status: 'left', told: 4 });
+  Object.assign(corpseRun(has.bot, has.goal), { status: 'left', told: 5 });
   assert.equal(corpseRun(has.bot, has.goal), null);
 });
 
@@ -302,4 +302,19 @@ test('by night, with drops that do not age, going back when it is day is a choic
   const day = world(); let text = '';
   await corpseRunStep(day.bot, Object.assign(new Task('run'), { opportunityClient: { systemOne: async ({ questions }) => { text = JSON.stringify(Object.values(questions)[0]); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'leave_them', confidence: 0.9 }])) }; } } }), day.goal, () => {}, { move: async () => {}, collect: async () => false });
   assert.doesNotMatch(text, /wait_for_day/);
+});
+
+test('by day with less day left than the walk, setting out at the next dawn is offered; and what the eyes took on the run\'s clock is said beside leaving them (note 1189)', async () => {
+  const { bot, goal } = world();
+  goal.survival.deaths[0].position = { x: 1100, y: 64, z: 0 };
+  goal.survival.recovery.inventoryBeforeDeath.ender_eye = 12;
+  goal.gameProgress = { milestones: {}, clock: { byDoing: { 'obtain_blaze_rods: find fortress': 57 * 60000, 'obtain_ender_pearls: stalk mob': 87 * 60000, 'eat': 29 * 60000 } } };
+  bot.time = { timeOfDay: 8000 };
+  let q = null;
+  const client = { systemOne: async ({ questions }) => { q = Object.values(questions)[0]; return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'wait_for_day', confidence: 0.9 }])) }; } };
+  await corpseRunStep(bot, Object.assign(new Task('run'), { opportunityClient: client }), goal, () => {}, { move: async () => {}, collect: async () => false });
+  const text = JSON.stringify(q);
+  assert.match(text, /Set out for them at the next dawn, about 13 real minutes off, with the day ahead for the walk \(the day left now, about 3, is shorter than the walk, about 4\)/);
+  assert.match(text, /On this run's clock the rods and pearls for its eyes were 144 minutes of play\./);
+  assert.ok(goal.corpseRun.waitUntil > Date.now() + 12 * 60000);
 });

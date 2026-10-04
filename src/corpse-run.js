@@ -17,7 +17,7 @@ const { collectNearbyDrops } = require('./drop-collection');
 
 const WORTH = /^(diamond|emerald|iron_ingot|gold_ingot|raw_iron|raw_gold|blaze_rod|blaze_powder|ender_pearl|ender_eye|obsidian|shield|bow|crossbow|arrow|bucket|water_bucket|lava_bucket|flint_and_steel|golden_apple|enchanted_golden_apple|trial_key|ominous_trial_key|ancient_debris|netherite_ingot|netherite_scrap|diamond_block|iron_block|gold_block|golden_carrot|cooked_beef|cooked_porkchop|cooked_mutton|bread)$|_(helmet|chestplate|leggings|boots|sword|pickaxe|axe)$/;
 const CHEAP = /^(wooden|stone)_(sword|pickaxe|axe)$/;
-const TICKING = 128, DESPAWN_MS = 5 * 60000, MARGIN_MS = 20000, KEEP_MS = 3 * 3600000, LEG_MS = 120000, ARRIVE = 6, FAR = 96, LEG = 64, TURNS = [0, 50, -50, 90, -90];
+const TICKING = 128, DESPAWN_MS = 5 * 60000, MARGIN_MS = 20000, KEEP_MS = 12 * 3600000 /* drops the bot is not near do not age: this bounds the list, not the drops */, LEG_MS = 120000, ARRIVE = 6, FAR = 96, LEG = 64, TURNS = [0, 50, -50, 90, -90];
 const ARMOUR = { helmet: 'head', chestplate: 'torso', leggings: 'legs', boots: 'feet' };
 const dim = name => String(name || 'overworld').replace(/^minecraft:/, '').replace(/^the_/, '');
 // Three dimensions: a death in a mine under the bed is not beside the bed.
@@ -28,7 +28,7 @@ const flat = (a, b) => Math.hypot(a.x - b.x, (a.y ?? b.y) - (b.y ?? a.y), a.z - 
 // ender, a diamond sword and its iron armor against 'what was dropped is
 // made again, or found, later', left them at 0.56 to 0.42. The eyes were
 // ninety hours of the run.
-const TOLD = 4;
+const TOLD = 5;
 function madeAgain(items = {}) {
   const out = [];
   const n = name => items[name] || 0;
@@ -80,7 +80,7 @@ function corpseRun(bot, goal, now = Date.now()) {
   if (!goal.corpseRunsEarlier) {
     const tally = names => names.reduce((o, n) => ({ ...o, [n]: (o[n] || 0) + 1 }), {});
     goal.corpseRunsEarlier = (survival.deaths || []).slice(0, -1)
-      .filter(d => d.at !== goal.corpseRun?.deathAt && now - Date.parse(d.at) < KEEP_MS && dim(d.dimension) !== 'end' && !d.lava && d.position && Object.keys(worth(tally(d.worn || []))).length)
+      .filter(d => d.at !== goal.corpseRun?.deathAt && now - Date.parse(d.at) < 3 * 3600000 && dim(d.dimension) !== 'end' && !d.lava && d.position && Object.keys(worth(tally(d.worn || []))).length)
       .map(d => ({ deathAt: d.at, position: { ...d.position }, dimension: dim(d.dimension), items: worth(tally(d.worn || [])), more: true, passes: 0, stuck: 0, status: 'open', respawn: null })).slice(-3);
   }
   if ((goal.corpseRunFor || goal.corpseRun?.deathAt) !== death.at) {
@@ -184,19 +184,29 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     const eyes = eyesLostBy(bot, goal, run);
     if (eyes) run.toldEyes = true;
     const eyesSay = eyes ? ` The eyes of ender this run had made before that death are not carried, in a chest or in the portal's frames now: they dropped at a death since, this one or one after it, and the goal wants ${eyes}.` : '';
+    // What the eyes were on this run's own clock (note 1189): the minutes of
+    // play its rods and pearls took.
+    let took = '';
+    if (eyes || run.items.ender_eye) {
+      const by = goal.gameProgress?.clock?.byDoing || {};
+      const ms = Object.entries(by).filter(([k]) => /^(obtain_blaze_rods|obtain_ender_pearls|craft_eyes)\b/.test(k)).reduce((n, [, v]) => n + v, 0);
+      if (ms >= 60000) took = ` On this run's clock the rods and pearls for its eyes were ${Math.round(ms / 60000)} minutes of play.`;
+    }
     const again = madeAgain({ ...run.items, ...(eyes ? { ender_eye: eyes } : {}) }), minutes = Math.max(1, Math.round(far / 4.3 / 60));
     run.told = TOLD;
     const tree = {
       go_back: { description: `Go back for ${listed(run.items)}: ${far} blocks off${far >= 100 ? `, about ${minutes} minute${minutes > 1 ? 's' : ''}' walk` : ''}${Math.abs(spot.y - bot.entity.position.y) > 4 ? `, at y ${Math.round(spot.y)}` : ''}. ${left === null ? 'They last until the bot comes within 128 blocks, then five minutes.' : `About ${left} seconds before they vanish.`} ${death.cause ? `The bot ${death.cause} there; when it died, ` : 'When the bot died there, '}${about ? `about it were ${about}` : 'nothing hostile was in view'}; it wore ${death.worn?.length ? death.worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} then and wears ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} now. ${hour}${stalled}${earlier}${eyesSay}${alsoLying}` },
-      leave_them: { description: `Leave them and go on with what is carried: ${listed(worth(Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])))) || 'nothing worth listing'}. What was dropped is made again, or found, later${again ? `: ${again}` : ''}.${keptSays}` },
+      leave_them: { description: `Leave them and go on with what is carried: ${listed(worth(Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])))) || 'nothing worth listing'}. What was dropped is made again, or found, later${again ? `: ${again}` : ''}.${took}${keptSays}` },
     };
     // By night, and the drops not ageing (the bot not within 128 blocks of
     // them): going when it is day is a choice of its own, not leaving them.
-    if (night && until !== null && !run.loadedAt && /overworld/.test(run.dimension)) tree.wait_for_day = { description: `Go back for them when it is day, about ${until} real minute${until === 1 ? '' : 's'} off, and go on with the night as it is until then: the drops do not age while the bot is not within 128 blocks of them. Asked again at dawn.` };
+    // By day too, when the walk is longer than the day that is left.
+    const toDawn = Number.isFinite(t) ? Math.max(1, Math.round(((DAY.DAWN - t + 24000) % 24000) / 1200)) : null;
+    if (toDawn !== null && (night || minutes >= until) && !run.loadedAt && /overworld/.test(run.dimension)) tree.wait_for_day = { description: `Set out for them at ${night ? 'dawn' : 'the next dawn'}, about ${toDawn} real minute${toDawn === 1 ? '' : 's'} off, with the day ahead for the walk${night ? '' : ` (the day left now, about ${until}, is shorter than the walk, about ${minutes})`}, and go on with other things until then: the drops do not age while the bot is not within 128 blocks of them. Asked again at dawn.` };
     const decision = await require('./decisions').decide('corpse_run', { client, bot, task, goal, save, tree,
       state: { distance: far, secondsLeft: left, aboutAtDeath: death.about || [], wornAtDeath: death.worn || [], wornNow, night, ...(until !== null ? { [night ? 'minutesToDawn' : 'minutesToNight']: until } : {}), ...(run.stalled ? { walksThatGotNoNearer: run.stalled } : {}), ...(kept ? { inAChest: kept } : {}) } });
     if (decision.stale) return false;
-    if (decision.path.at(-1) === 'wait_for_day') { run.waitUntil = Date.now() + until * 60000; save(); return false; }
+    if (decision.path.at(-1) === 'wait_for_day') { run.waitUntil = Date.now() + toDawn * 60000; save(); return false; }
     run.choice = decision.path.at(-1); save();
     if (run.choice === 'leave_them') { run.status = 'left'; save(); return false; }
   }
