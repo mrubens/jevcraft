@@ -39,3 +39,21 @@ test('in the water with a place to go on toward, no Eye is asked for: the way go
   assert.ok(!error || !/dry stable footing/.test(error.message), error?.message);
   assert.equal(goal.strongholdSearch.throws, 2, 'no throw counted');
 });
+
+test('in the water with no Eye thrown yet, the shore is made for first: no throw is asked for afloat (note 1217)', async () => {
+  const items = [{ name: 'ender_eye', count: 16 }];
+  const bot = { registry, game: { dimension: 'overworld', difficulty: 'peaceful', gameMode: 'survival' }, health: 20, food: 20, oxygenLevel: 20, entities: {},
+    entity: { position: new Vec3(-231.5, 62, -1137.5), isInWater: true }, inventory: { items: () => items, slots: [] }, findBlocks: () => [],
+    blockAt: p => ({ name: p.y < 55 ? 'stone' : p.y < 63 ? 'water' : 'air', position: p, boundingBox: p.y < 55 ? 'block' : 'empty', skyLight: 15 }),
+    activateItem: () => assert.fail('no Eye thrown from the water'),
+    pathfinder: { movements: { scafoldingBlocks: [1], allow1by1towers: true, blocksCantBreak: new Set() }, getPathTo: () => ({ status: 'noPath', path: [] }), setGoal() {} } };
+  const goal = { kind: 'win', gameProgress: { milestones: {} } };
+  const shore = require('../src/shore'), reachShore = shore.reachShore;
+  let swam = 0;
+  shore.reachShore = async () => { swam++; return true; };
+  try { await findStronghold(bot, new Task('find'), goal, () => {}, { navigate: async () => {}, explore: async () => {}, surfaceStep: async () => {}, tunnel: async () => {}, acquireStep: async () => {} }, null); }
+  finally { shore.reachShore = reachShore; }
+  assert.equal(swam, 1);
+  assert.equal(goal.step.action, 'reach_shore');
+  assert.equal(goal.strongholdSearch.throws, 0);
+});

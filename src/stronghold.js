@@ -241,6 +241,18 @@ async function findStronghold(bot, task, goal, save, actions, client) {
   // 2026-10-04 (04:01 to 04:07Z), in the sea over its stronghold, ended
   // twenty-four passes "Need dry stable footing to observe an Eye of Ender".
   const afloat = throwAgain && !noSpare && !!target && !dryStanding(bot, bot.entity.position);
+  // In the water with no place to go on toward yet (the first Eye not
+  // thrown), the shore first (note 1217): an Eye is thrown standing, and
+  // asked for afloat it was an error at every pass. The rehearsal of
+  // 2026-10-04 (12:57 to 13:00Z), let down into open sea with sixteen Eyes,
+  // stayed where it fell, 'Need dry stable footing to observe an Eye of
+  // Ender'.
+  if (throwAgain && !noSpare && !target && !dryStanding(bot, bot.entity.position)) {
+    goal.step = { action: 'reach_shore', for: 'the first Eye of Ender, thrown standing' }; save();
+    const landed = await require('./shore').reachShore(bot, task, goal, save, { move: actions.navigate, client });
+    if (!landed && !dryStanding(bot, bot.entity.position)) throw blocked('No shore reached to throw the first Eye of Ender from');
+    return;
+  }
   if (throwAgain && !noSpare && !afloat) {
     // A throw is counted when an Eye has flown (note 1168): the rehearsal of
     // 2026-10-04 (04:01 to 04:07Z), in the sea over its stronghold with no
