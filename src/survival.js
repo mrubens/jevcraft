@@ -2714,6 +2714,55 @@ function biterAtPass(bot) {
   return threats(bot, 4).find(t => t.distance <= 3 && t.visible !== false && !shooter(t.entity) && t.entity.name !== 'creeper') || null;
 }
 
+// The run with no way planned: away from them by heading, at a sprint, the
+// ground a step ahead read each quarter second (firm underfoot within three
+// blocks down, no lava, nothing in the way but a block to jump). A turn to
+// either side is taken where straight on is not firm. The run from what
+// bites was the pathfinder's walk alone, and where its search found no path
+// the option was withdrawn for half a minute (note 1206): 25585 (2026-10-04
+// 09:44:00Z), bare on a mesa with four zombies walking in, took the run at
+// 0.47, 'noPath' a tenth of a second later, was left a fight with its fists
+// at none good 0.53 to 0.78, and was dead at 09:44:27; the same at 07:13:24
+// and 07:14:29. -> blocks run
+async function sprintByHeading(bot, task, mobs, want, ms = 6000) {
+  const start = bot.entity.position.clone(), until = Date.now() + ms;
+  const open = b => !!b && b.boundingBox === 'empty' && !/lava|fire|water/.test(b.name);
+  const solid = b => !!b && b.boundingBox === 'block' && !/magma|cactus/.test(b.name);
+  // -> 'walk' | 'jump' | null for the cell `n` blocks on along (dx, dz)
+  const ahead = (dx, dz, n) => {
+    const c = bot.entity.position.offset(dx * n, 0, dz * n).floored();
+    const at = (dy) => bot.blockAt(c.offset(0, dy, 0));
+    if (open(at(0)) && open(at(1))) {
+      for (let dy = -1; dy >= -3; dy--) { const f = at(dy); if (solid(f)) return 'walk'; if (!open(f)) return null; }
+      return null;
+    }
+    return solid(at(0)) && open(at(1)) && open(at(2)) ? 'jump' : null;
+  };
+  let markAt = start.clone(), markT = Date.now();
+  try {
+    while (Date.now() < until) {
+      task.check();
+      const here = bot.entity.position;
+      let ax = 0, az = 0;
+      for (const m of mobs) { if (!m?.position) continue; const d = Math.max(1, Math.hypot(here.x - m.position.x, here.z - m.position.z)); ax += (here.x - m.position.x) / (d * d); az += (here.z - m.position.z) / (d * d); }
+      const base = Math.atan2(az, ax);
+      let way = null;
+      for (const turn of [0, 45, -45, 90, -90]) {
+        const a = base + turn * Math.PI / 180, dx = Math.cos(a), dz = Math.sin(a);
+        const one = ahead(dx, dz, 1), two = ahead(dx, dz, 2);
+        if (one && two) { way = { dx, dz, jump: one === 'jump' }; break; }
+      }
+      if (!way) break;
+      await bot.lookAt(here.offset(way.dx * 4, 1.6, way.dz * 4), true);
+      // The keys are held by the motion helper (its own stops for a drop or a fire ahead stand).
+      await require('./motion').move(bot, task, { label: 'run by heading', keys: way.jump ? ['forward', 'sprint', 'jump'] : ['forward', 'sprint'], sneak: false, why: 'a run from mobs at a sprint', maxMs: 250 });
+      if (mobs.every(m => !m?.position || Math.hypot(bot.entity.position.x - m.position.x, bot.entity.position.z - m.position.z) >= want)) break;
+      if (Date.now() - markT > 1200) { if (bot.entity.position.distanceTo(markAt) < 1) break; markAt = bot.entity.position.clone(); markT = Date.now(); }
+    }
+  } finally { bot.clearControlStates?.(); }
+  return bot.entity.position.distanceTo(start);
+}
+
 // The shooters that walk up to the bot and round what it builds.
 const WALKING_SHOOTERS = /^(skeleton|stray|bogged|pillager)$/;
 
@@ -5075,7 +5124,7 @@ class Survival {
               try { await this.actions.navigate(bot, task, goalAway(), { timeoutMs: 9000, stallMs: 2500, sprint: true, onFoot: true }); }
               catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name) || bot.entity.position.distanceTo(from) >= 4) throw err; await this.actions.navigate(bot, task, goalAway(), { timeoutMs: 9000, stallMs: 2500, sprint: true }); }
             }
-            catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; if (bot.entity.position.distanceTo(from) < 4) { this.state.runFromFailed = { at: Date.now(), from: { x: from.x, y: from.y, z: from.z }, blocks: Math.round(bot.entity.position.distanceTo(from)), why: String(err.message || err).slice(0, 120) }; throw Object.assign(new Error(`the run from them came ${Math.round(bot.entity.position.distanceTo(from))} blocks: ${String(err.message || err).slice(0, 120)}`), { name: 'StanceFailed' }); } }
+            catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; if (bot.entity.position.distanceTo(from) < 4) await sprintByHeading(bot, task, biters.map(t => t.entity), RUN_FROM); if (bot.entity.position.distanceTo(from) < 4) { this.state.runFromFailed = { at: Date.now(), from: { x: from.x, y: from.y, z: from.z }, blocks: Math.round(bot.entity.position.distanceTo(from)), why: String(err.message || err).slice(0, 120) }; throw Object.assign(new Error(`the run from them came ${Math.round(bot.entity.position.distanceTo(from))} blocks: ${String(err.message || err).slice(0, 120)}`), { name: 'StanceFailed' }); } }
           } };
       }
       // From shooters that walk, with nothing that bites near: out of their
@@ -5104,7 +5153,7 @@ class Survival {
               try { await this.actions.navigate(bot, task, goalAway(), { timeoutMs: 9000, stallMs: 2500, sprint: true, onFoot: true }); }
               catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name) || bot.entity.position.distanceTo(from) >= 4) throw err; await this.actions.navigate(bot, task, goalAway(), { timeoutMs: 9000, stallMs: 2500, sprint: true }); }
             }
-            catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; if (bot.entity.position.distanceTo(from) < 4) { this.state.runFromFailed = { at: Date.now(), from: { x: from.x, y: from.y, z: from.z }, blocks: Math.round(bot.entity.position.distanceTo(from)), why: String(err.message || err).slice(0, 120) }; throw Object.assign(new Error(`the run from them came ${Math.round(bot.entity.position.distanceTo(from))} blocks: ${String(err.message || err).slice(0, 120)}`), { name: 'StanceFailed' }); } }
+            catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; if (bot.entity.position.distanceTo(from) < 4) await sprintByHeading(bot, task, walkers.map(t => t.entity), OUT); if (bot.entity.position.distanceTo(from) < 4) { this.state.runFromFailed = { at: Date.now(), from: { x: from.x, y: from.y, z: from.z }, blocks: Math.round(bot.entity.position.distanceTo(from)), why: String(err.message || err).slice(0, 120) }; throw Object.assign(new Error(`the run from them came ${Math.round(bot.entity.position.distanceTo(from))} blocks: ${String(err.message || err).slice(0, 120)}`), { name: 'StanceFailed' }); } }
           } };
       }
     }
@@ -12104,4 +12153,4 @@ function claim(bot, goal = {}, survival = null) {
   return made;
 }
 
-module.exports = { nightEnds, sealThreatNear, scoutBudget, SCOUT_MS, SCOUT_FAR_MS, mealSays, nightMinePickSays, bedSafetyAt, healWaitSays, WAITS_IN, wearGoldOf, piglinGoldClause, blowsLead, pastFollowOf, sealedWaitSaysFor: (bot, opts) => sealedWaitSays(bot, opts), lavaExitCost, nookSaysFor: (bot, nook, opts) => nookSays(bot, nook, opts), nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, chaseCost, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };
+module.exports = { sprintByHeading, nightEnds, sealThreatNear, scoutBudget, SCOUT_MS, SCOUT_FAR_MS, mealSays, nightMinePickSays, bedSafetyAt, healWaitSays, WAITS_IN, wearGoldOf, piglinGoldClause, blowsLead, pastFollowOf, sealedWaitSaysFor: (bot, opts) => sealedWaitSays(bot, opts), lavaExitCost, nookSaysFor: (bot, nook, opts) => nookSays(bot, nook, opts), nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, chaseCost, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };
