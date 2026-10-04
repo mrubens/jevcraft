@@ -88,6 +88,11 @@ function corpseRun(bot, goal, now = Date.now()) {
     const old = goal.corpseRun;
     if (old && ['open', 'left', 'unreachable'].includes(old.status) && !old.loadedAt && Object.keys(old.items || {}).length && !goal.corpseRunsEarlier.some(r => r.deathAt === old.deathAt)) goal.corpseRunsEarlier = [...goal.corpseRunsEarlier, old].slice(-3);
     goal.corpseRunFor = death.at;
+    // A trip chosen for the death before is not this death's (note 1255):
+    // 25592 (2026-10-04 18:56:39Z), killed bare on a trip chosen at 18:36Z,
+    // was through its portal again 44 seconds after it came back to life,
+    // nothing asked, with no armour, sword or food, and a hoglin killed it.
+    if (goal.errand?.for === KIT_ERRAND) delete goal.errand;
     // What was worn drops with the rest (recovery.js records it apart from
     // the pockets): mid-242-aa's iron helmet and chestplate were never on
     // its list (note 559).
@@ -100,6 +105,8 @@ function corpseRun(bot, goal, now = Date.now()) {
       status: where === 'end' ? 'void' : death.lava ? 'burned' : Object.keys(items).length ? 'open' : 'nothing',
       respawn: dim(bot.game?.dimension) === where ? { ...bot.entity.position } : null };
   }
+  // Nor does the trip outlast its run: closed, the errand is done with.
+  if (goal.errand?.for === KIT_ERRAND && goal.corpseRun && goal.corpseRun.status !== 'open') delete goal.errand;
   let run = goal.corpseRun;
   const settle = r => {
     if (r.status === 'unreachable' && !r.loadedAt) { r.status = 'open'; delete r.choice; r.stalled = r.stalled || { walks: r.stuck || 3 }; r.stuck = 0; }

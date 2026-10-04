@@ -452,3 +452,14 @@ test('a trip for the kit come to nothing, the bot in the Nether in next to no ar
   assert.equal(g2.errand, undefined);
   assert.equal(tripCameToNothing({ ...bot, game: { dimension: 'overworld' } }, {}, { dimension: 'overworld' }, () => {}), false);
 });
+
+test('a new death ends the trip chosen for the death before: it is asked of afresh (note 1255)', () => {
+  const { bot, goal } = world({ dimension: 'overworld', deathDimension: 'the_nether' });
+  goal.errand = { dimension: 'nether', items: [], for: require('../src/corpse-run').KIT_ERRAND, at: Date.now() };
+  goal.corpseRunFor = '2026-10-04T18:25:31.000Z';
+  goal.corpseRun = { deathAt: '2026-10-04T18:25:31.000Z', status: 'gone', dimension: 'nether', items: {}, trip: { pick: 'go_now', at: 1 } };
+  goal.corpseRunsEarlier = [];
+  corpseRun(bot, goal);
+  assert.equal(goal.errand, undefined);
+  assert.equal(goal.corpseRun.trip, undefined, 'the new run has no answer yet');
+});
