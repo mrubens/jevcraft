@@ -8384,8 +8384,16 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   // for food" within twenty seconds, and its crossing offered a spare
   // shield, wood and a spare kit but not the food (note 1143).
   const turnedBackLately = !!goal.foodTurnBack && Date.now() - goal.foodTurnBack.at < 30 * 60000;
+  const goingWithoutStands = (g, at) => { const r = require('./progress').attemptsFor(g).of('rung', at).nether_food; return !!r && require('./game-progress').GOING_WITHOUT.test(r.why || ''); };
   const empty = left.filter(i => /^(food|blocks)$/.test(i.key) && ((i.carried === 0 && (seen[i.key] || 0) > 0) || (i.key === 'food' && i.carried < NETHER_FLOOR && stallRest(goal, 'nether_food', now))
-    || (i.key === 'food' && i.carried === 0 && turnedBackLately)));
+    || (i.key === 'food' && i.carried === 0 && turnedBackLately)
+    // With no food at all, the food is offered unless Jev's own going
+    // without stands (note 1224): a bot back from a death has none and had
+    // none when the crossing last looked, and nothing brought the food back. From 06:00 to 14:40Z on 2026-10-04, cross_now
+    // was answered 78 times with 0 of 80 food points carried and the food
+    // was on offer at none of them; 25590 (13:46 to 14:40Z) was an hour in
+    // the Nether at 5 health with nothing to eat, eight pearls in its chests.
+    || (i.key === 'food' && i.carried === 0 && !goingWithoutStands(goal, now))));
   goal.kitSeen = Object.fromEntries(items.map(i => [i.key, i.carried]));
   // The pieces the Nether's record speaks to (note 791): a spare shield,
   // armour, a stack of one ghast-proof kind, each priced from the pockets
