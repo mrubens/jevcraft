@@ -294,7 +294,12 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
   // chests, the most pearls of any trial, was ended as stranded and its
   // world replaced.
   const strandedSays = !stranded ? [] : keeps ? [`held ${stranded.says.replace(/^stranded: /, '').split(';')[0]}: played on with what is kept in its chests`] : [stranded.says];
-  const reasons = [...deathSays, ...loops.map(l => `loop: ${l}`), ...strandedSays,
+  // A loop does not end a trial that keeps rods or pearls, as a death does
+  // not (note 1202): it is said, and played on. mid-242-jg-fortress-11-r1
+  // (25590, 2026-10-04 09:29 to 09:46Z), eight ender pearls and a rod in its
+  // chests, was ended sixteen minutes after it was taken up again as 'loop:
+  // flipping smelt <-> detour'.
+  const reasons = [...deathSays, ...loops.map(l => keeps ? `held through a loop (${l}) with ${keptSays}: played on` : `loop: ${l}`), ...strandedSays,
     ...(timedOut ? MILESTONES.filter(k => !(k in at)).map(k => `missing ${said}: ${k}`) : []),
     ...(all ? [] : cutReasons(trial.world, Math.round(playedMs / 60000), Object.fromEntries(Object.entries(at).map(([k, t]) => [k, Math.round(playedBy(t) / 60000)])), { casting: castingLately(a.frames, to) }))];
   return { world: trial.world, source: trial.source, ...(trial.arm ? { arm: trial.arm } : {}), from: new Date(from).toISOString(), minutes: Math.round((to - from) / 60000),
