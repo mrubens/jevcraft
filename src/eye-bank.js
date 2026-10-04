@@ -32,38 +32,53 @@ function offer(bot, goal) {
 
 // Asked once for each count of eyes carried, and again after ten minutes.
 // -> 'kept' | 'carry' | null (not asked)
-async function eyesNow(bot, task, goal, save, actions, client, { errand = 'the errand' } = {}) {
+async function eyesNow(bot, task, goal, save, actions, client, { errand = 'the errand', keepBack = 0, search = false } = {}) {
   if (!client) return null;
   const o = offer(bot, goal);
-  if (!o) return null;
+  if (!o || o.eyes <= keepBack) return null;
   const asked = goal.eyesNow, now = Date.now();
   if (asked && asked.count === o.eyes && now - asked.at < ASK_AGAIN_MS) return null;
   goal.eyesNow = { count: o.eyes, at: now }; save?.();
-  const n = `${o.eyes} eye${o.eyes === 1 ? '' : 's'} of ender`;
+  const put = o.eyes - keepBack;
+  const n = keepBack ? `${put} of the ${o.eyes} eyes of ender` : `${o.eyes} eye${o.eyes === 1 ? '' : 's'} of ender`;
+  const all = `${o.eyes} eye${o.eyes === 1 ? '' : 's'} of ender`;
   const ring = goal.endPortal?.center ? Math.round(Math.hypot(bot.entity.position.x - goal.endPortal.center.x, bot.entity.position.z - goal.endPortal.center.z)) : null;
   const place = o.existing ? `the bot's chest at ${at(o.existing.position)}, ${o.steps} blocks off` : `a chest put down here at ${at(P(o.site.cell))}${rs().countOf(bot, 'chest') ? '' : ', made first from the wood carried'}`;
   const acts = { ...actions, place: actions?.place || require('./work').place, acquireStep: actions?.acquireStep || require('./work').acquireStep, navigate: actions?.navigate || require('./skills').navigate };
   const tree = {
-    keep_here: { description: `Put the ${n} in ${place}, then go on ${errand} with nothing of the goal's in the pack. A death on the way drops everything carried and leaves the chest as it is; the eyes are counted as held, and taken out again when going to the End is chosen${ring !== null ? ` (the portal's ring is ${ring} blocks from here)` : ''}. ${LOST}` },
-    carry_on: { description: `Go on ${errand} with the ${n} in the pack. A death drops them where it happens, and they last five minutes once the bot is near again. ${LOST} Asked again in ten minutes, or when the count carried changes.` },
+    keep_here: { description: search
+      ? `Put ${n} in ${place}, and go ${errand} with ${keepBack} in the pack: the search throws only the Eyes above the portal's twelve, one at a time, and picks each up again four times in five. A death on the way drops what is carried and leaves the chest as it is; the twelve are counted as held. Once the portal is found the bot comes back here for them and walks to it again: a stronghold is some 1300 to 2800 blocks from the world's middle. ${LOST}`
+      : `Put the ${n} in ${place}, then go on ${errand} with nothing of the goal's in the pack. A death on the way drops everything carried and leaves the chest as it is; the eyes are counted as held, and taken out again when going to the End is chosen${ring !== null ? ` (the portal's ring is ${ring} blocks from here)` : ''}. ${LOST}` },
+    carry_on: { description: `Go on ${errand} with the ${all} in the pack.${search ? ' Found, the portal is filled with no walk back.' : ''} A death drops them where it happens, and they last five minutes once the bot is near again. ${LOST} Asked again in ten minutes, or when the count carried changes.` },
   };
   let decision;
   try { decision = await decide('eyes_now', { client, bot, task, goal, save, tree, state: { eyesOfEnderCarried: o.eyes, errand, health: bot.health, food: bot.food, ...(ring !== null ? { blocksToThePortalRing: ring } : {}), riskNow: require('./risk').riskNow(bot) } }); }
   catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[eyes_now] not asked: ${String(err.message || err).slice(0, 300)}`); return null; }
   if (decision.stale) return null;
   if (decision.path?.at(-1) !== 'keep_here') return 'carry';
-  const stored = await rs().stashRods(bot, task, goal, save, acts, o, { step: 'bank_eyes', rest: ['eye_bank', 'here'],
-    chat: (list, where) => `Put ${list} in a chest at ${where}. They stay there until I go to the End.` });
+  const stored = await rs().stashRods(bot, task, goal, save, acts, o, { step: 'bank_eyes', rest: ['eye_bank', 'here'], ...(keepBack ? { keepBack: { ender_eye: keepBack } } : {}),
+    chat: (list, where) => search ? `Put ${list} in a chest at ${where}. I'll come back for them when the portal is found.` : `Put ${list} in a chest at ${where}. They stay there until I go to the End.` });
   if (!stored) return 'carry';
-  goal.eyeBank = { at: Date.now(), chestAt: o.existing ? o.existing.position : P(o.site.cell) }; save?.();
+  goal.eyeBank = { at: Date.now(), chestAt: o.existing ? o.existing.position : P(o.site.cell), ...(search ? { forSearch: true } : {}) }; save?.();
   return 'kept';
 }
 
 // The take-out waits while an errand for the End's kit is in hand: it is for
 // the errand that they were put away.
-function held(goal) {
-  const pick = goal?.endKit?.choice?.pick;
-  return !!(goal?.eyeBank && pick && pick !== 'enter_now');
+// Put away for the stronghold's search, they stay until the portal is found
+// (the spare lost, the ladder makes another, or the walk goes on to where
+// the bearings meet with none thrown).
+function held(goal, bot = null) {
+  if (!goal?.eyeBank) return false;
+  if (goal.eyeBank.forSearch && !goal.gameProgress?.milestones?.stronghold_located) return true;
+  const pick = goal.endKit?.choice?.pick;
+  return !!(pick && pick !== 'enter_now');
 }
 
-module.exports = { eyesNow, offer, held, LOST };
+// The eyes in the bot's Overworld chests, once it has put some away.
+function banked(goal) {
+  if (!goal?.eyeBank) return 0;
+  return (rs().stashes(goal) || []).filter(c => c.dimension === 'overworld').reduce((n, c) => n + (c.contents?.ender_eye || 0), 0);
+}
+
+module.exports = { eyesNow, offer, held, banked, LOST };

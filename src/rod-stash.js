@@ -229,7 +229,7 @@ function carriedSays(offer) {
 // Put them in. -> true when stored.
 // `opts` (rod-bank.js, note 760): the step's name, the rest a failure takes
 // ([kind, key]) and the chat once stored.
-async function stashRods(bot, task, goal, save, actions, offer, { step = 'stash_rods', rest = ['rod_stash', 'here'], chat = null } = {}) {
+async function stashRods(bot, task, goal, save, actions, offer, { step = 'stash_rods', rest = ['rod_stash', 'here'], chat = null, keepBack = null } = {}) {
   const moves = offer.what;
   goal.step = { action: step, items: moves, at: offer.existing ? offer.existing.position : P(offer.site.cell) }; save?.();
   try {
@@ -254,8 +254,9 @@ async function stashRods(bot, task, goal, save, actions, offer, { step = 'stash_
     const stored = await withStash(bot, task, entry, save, async window => {
       const done = [];
       for (const name of KEPT) {
-        const n = countOf(bot, name);
-        if (!n) continue;
+        // What stays in the pack by the choice made (eye-bank.js: the search's spare Eye).
+        const n = countOf(bot, name) - (keepBack?.[name] || 0);
+        if (n <= 0) continue;
         task?.check?.();
         try { await window.deposit(bot.registry.itemsByName[name].id, null, n); done.push({ item: name, count: n }); } catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
       }
@@ -380,6 +381,24 @@ async function collect(bot, task, goal, save, actions = {}) {
   goal.step = { action: 'collect_rod_stash', at: P(cell), distance: stage.distance, items: { ...entry.contents } }; save?.();
   if (!entry.announced) { entry.announced = true; bot.chat?.(`Taking ${listed(entry.contents)} out of the chest at ${key}${entry.dimension === 'nether' ? ' before the portal' : ''}.`); }
   try {
+    // Far off in the Overworld (the eyes left behind for the stronghold's
+    // search, eye-bank.js, note 1197), the way back is walked a leg at a
+    // time over the ground, from the surface: a walk of a thousand blocks is
+    // not one the pathfinder plans, and three that failed wrote the chest off.
+    const flat = Math.hypot(cell.x - bot.entity.position.x, cell.z - bot.entity.position.z);
+    if (entry.dimension === 'overworld' && flat > 96 && actions.navigate) {
+      let depth = 0; try { depth = require('./levels').depthHere(bot) || 0; } catch (_) { depth = 0; }
+      goal.step = { action: 'collect_rod_stash', at: P(cell), distance: Math.round(flat), items: { ...entry.contents }, way: depth >= 3 && actions.surfaceStep ? 'up to the surface first' : 'a leg at a time' }; save?.();
+      if (depth >= 3 && actions.surfaceStep) { await actions.surfaceStep(bot, task, goal, save); return false; }
+      const legs = entry.legsFailed || 0, turn = [0, 50, -50, 90, -90][legs % 5] * Math.PI / 180;
+      const bearing = Math.atan2(cell.z - bot.entity.position.z, cell.x - bot.entity.position.x) + turn;
+      const from = bot.entity.position.clone();
+      try { await actions.navigate(bot, task, new goals.GoalNearXZ(Math.round(from.x + Math.cos(bearing) * 64), Math.round(from.z + Math.sin(bearing) * 64), 4), { timeoutMs: 120000, stallMs: 8000, sprint: true }); }
+      catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      const gained = flat - Math.hypot(cell.x - bot.entity.position.x, cell.z - bot.entity.position.z);
+      entry.legsFailed = gained >= 8 ? 0 : legs + 1; save?.();
+      return false;
+    }
     if (bot.entity.position.offset(0, 1.62, 0).distanceTo(cell.offset(0.5, 0.5, 0.5)) > REACH) {
       if (!actions.navigate) throw new Error('No way to walk to the chest');
       // Where the walk comes to nothing, a tunnel straight at the chest

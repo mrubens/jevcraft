@@ -52,3 +52,32 @@ test('put away, the eyes stay in the chest while the errand is in hand, are coun
   goal.endKit.choice = { pick: 'enter_now', at: Date.now() };
   assert.equal(rodBank.collectHere(bot, goal).action, 'collect_rod_stash');
 });
+
+test('for the stronghold\'s search the portal\'s twelve may go in a chest and the spare alone be carried: asked before the walk, counted through the search, held until the portal is found (note 1197)', async () => {
+  const { bot, goal, items } = world({ eyes: 13 });
+  delete goal.endKit; delete goal.gameProgress.milestones.stronghold_located; delete goal.endPortal;
+  goal.gameProgress.milestones.nether_entered = { at: 1 };
+  goal.strongholdSearch = { bearings: [], throws: 0, moves: 0, visited: {} };
+  const c = client('keep_here');
+  const stashRods = rodStash.stashRods;
+  let keptBack = null;
+  rodStash.stashRods = async (b, t, g, save, acts, offer, opts) => {
+    keptBack = opts.keepBack;
+    (g.rodStashes ||= []).push({ position: { x: 841, y: 64, z: 1340 }, dimension: 'overworld', contents: { ender_eye: 12 }, placedAt: new Date().toISOString() });
+    items.find(i => i.name === 'ender_eye').count = 1;
+    return true;
+  };
+  try {
+    assert.equal(await eyeBank.eyesNow(bot, new Task('t'), goal, () => {}, {}, c, { errand: 'on the search for the stronghold', keepBack: 1, search: true }), 'kept');
+  } finally { rodStash.stashRods = stashRods; }
+  assert.deepEqual(keptBack, { ender_eye: 1 });
+  assert.match(c.asked[0], /Put 12 of the 13 eyes of ender in a chest put down here at .* and go on the search for the stronghold with 1 in the pack: the search throws only the Eyes above the portal's twelve/);
+  assert.match(c.asked[0], /Go on on the search for the stronghold with the 13 eyes of ender in the pack\. Found, the portal is filled with no walk back\./);
+  assert.equal(eyeBank.banked(goal), 12);
+  assert.equal(eyeBank.held(goal, bot), true);
+  assert.equal(rodBank.collectHere(bot, goal), null, 'the twelve stay put through the search');
+  // The portal found: they come out.
+  goal.gameProgress.milestones.stronghold_located = { at: Date.now() };
+  assert.equal(eyeBank.held(goal, bot), false);
+  assert.equal(rodBank.collectHere(bot, goal).action, 'collect_rod_stash');
+});

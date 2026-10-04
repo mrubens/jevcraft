@@ -8149,7 +8149,7 @@ async function holdForRest(bot, task, goal, save, { client, survival, onStep = (
 
 // What the home base needs from the executor: travel, placing, digging,
 // the planner for anything craftable, and a search for sheep or cows.
-const homeActions = () => ({ acquireStep, navigate, place, dig, explore, tunnel: tunnelToward });
+const homeActions = () => ({ acquireStep, navigate, place, dig, explore, tunnel: tunnelToward, surfaceStep });
 
 // The kit for the crossing (crossing-kit.js): each item carried against
 // what the code would take and why, and crossing now or topping up a named

@@ -925,9 +925,10 @@ function nextGameStage(bot, goal, skip = new Set()) {
   // pending pickup gets a chance before deciding whether supplies are short.
   const portalNeed = m.stronghold_located && goal.endPortal?.neededEyes;
   // Eyes in the bot's Overworld chest are held (eye-bank.js, note 1193): the End's kit is seen to with them put away.
-  const eyesBanked = goal.eyeBank ? (require('./rod-stash').stashes(goal) || []).filter(c => c.dimension === 'overworld').reduce((n, c) => n + (c.contents?.ender_eye || 0), 0) : 0;
+  const eyesBanked = require('./eye-bank').banked(goal);
   if (where === 'overworld' && m.stronghold_located && (!Number.isInteger(portalNeed) || count(bot, 'ender_eye') + eyesBanked >= portalNeed)) return { phase: 'enter_end', action: 'enter_end' };
-  if (where === 'overworld' && !m.stronghold_located && goal.strongholdSearch && (count(bot, 'ender_eye') >= EYES_WANTED || goal.strongholdSearch.pendingPickup)) {
+  // The search goes with the spare in the pack and the twelve put away, where that was chosen (eye-bank.js, note 1197).
+  if (where === 'overworld' && !m.stronghold_located && goal.strongholdSearch && ((count(bot, 'ender_eye') + eyesBanked >= EYES_WANTED && count(bot, 'ender_eye') >= 1) || goal.strongholdSearch.pendingPickup)) {
     return { phase: 'find_stronghold', action: 'find_stronghold' };
   }
   // The one number of enough (eye-need.js): the twelve frames and the spare
@@ -936,7 +937,7 @@ function nextGameStage(bot, goal, skip = new Set()) {
   // eyes and eight rods, said nowhere (note 648). Execution always replans
   // from inventory, so loss, crafting batches and partial pickups do not
   // advance a fake counter.
-  const target = eyeTarget(goal), eyes = count(bot, 'ender_eye');
+  const target = eyeTarget(goal), eyes = count(bot, 'ender_eye') + eyesBanked;
   const rods = rodsFor(target - eyes, count(bot, 'blaze_powder'));
   // Eyes, rods, powder and pearls in the stash chest are the chest's first:
   // the run set off for the fortress with six blaze rods left at home.
@@ -1039,7 +1040,7 @@ function nextGameStage(bot, goal, skip = new Set()) {
   // (the user, 2026-09-23). The patrol hunts one in view and otherwise
   // goes on an expedition or explores new ground (work.js pearl_patrol).
   if (count(bot, 'ender_pearl') < target - eyes) return { phase: 'obtain_ender_pearls', action: 'pearl_patrol', item: 'ender_pearl', count: target - eyes };
-  if (eyes < target) return { phase: 'craft_eyes', action: 'acquire', item: 'ender_eye', count: target };
+  if (eyes < target) return { phase: 'craft_eyes', action: 'acquire', item: 'ender_eye', count: target - eyesBanked };
   if (!m.stronghold_located) return { phase: 'find_stronghold', action: 'find_stronghold' };
   return { phase: 'enter_end', action: 'enter_end' };
 }

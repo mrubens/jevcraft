@@ -174,6 +174,11 @@ async function findStronghold(bot, task, goal, save, actions, client) {
   task.check(); checkAir(bot); checkThreats(bot);
   if (String(bot.game.dimension).replace(/^minecraft:/, '') !== 'overworld') throw blocked('Stronghold search requires the Overworld');
   const search = goal.strongholdSearch ||= { bearings: [], throws: 0, moves: 0, visited: {} };
+  // The Eyes carried, asked of before the walk (eye-bank.js, note 1197): the portal's twelve into a chest here, the spare thrown.
+  if (countOf(bot, 'ender_eye') > 12) {
+    try { if (await require('./eye-bank').eyesNow(bot, task, goal, save, actions, client || task.opportunityClient, { errand: 'on the search for the stronghold', keepBack: countOf(bot, 'ender_eye') - 12, search: true }) === 'kept') return; }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[eyes_now] ${String(err.message || err).slice(0, 200)}`); }
+  }
   const near = search.estimate && horizontal(bot.entity.position, search.estimate) < 96;
   const portal = observedPortal(bot, { maxDistance: near ? 160 : 96 });
   if (portal) {
@@ -220,7 +225,8 @@ async function findStronghold(bot, task, goal, save, actions, client) {
   // (mid-242-sc-fortress-10-r2, 2026-10-04 01:16 to 01:21Z) went back for a
   // pearl twice in five minutes. Without a place the bearings meet at, the
   // spare is still what the search needs.
-  const noSpare = countOf(bot, 'ender_eye') <= 12;
+  // The twelve put away in the bot's chest for the search are the portal's all the same (eye-bank.js, note 1197).
+  const noSpare = countOf(bot, 'ender_eye') + require('./eye-bank').banked(goal) <= 12 || countOf(bot, 'ender_eye') < 1;
   if (throwAgain && noSpare) {
     if (!estimate) throw blocked('Stronghold search needs another spare Eye of Ender; preserving twelve for the portal');
     if (toEstimate < 12) {

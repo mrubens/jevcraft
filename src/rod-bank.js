@@ -367,7 +367,7 @@ async function bank(bot, task, goal, save, actions = {}) {
 function collectHere(bot, goal) {
   if (where(bot) !== 'overworld' || !banks(goal).length) return null;
   // Eyes put away for an errand before the End stay put while the errand is in hand (eye-bank.js, note 1193).
-  if (require('./eye-bank').held(goal)) return null;
+  if (require('./eye-bank').held(goal, bot)) return null;
   const inBank = { blaze_rod: 0, blaze_powder: 0, ender_eye: 0 };
   for (const s of banks(goal)) for (const k of Object.keys(inBank)) inBank[k] += s.contents?.[k] || 0;
   const en = require('./eye-need');
