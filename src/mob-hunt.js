@@ -711,12 +711,47 @@ function noWayFromHere(state, bot, target) {
   return d(n.at, target.position) <= NO_WAY_MOVED && d(n.from, bot.entity.position) <= NO_WAY_MOVED;
 }
 
+// The pearls carried, asked on their own (pearls_now, note 1142): into a
+// chest here now, or on with them in the pack. keep_pearls was one answer of
+// the hunt's question beside the next enderman, and was taken at 0.18 where
+// leaving them was at 0.58 (25591, 2026-10-03 23:37:59Z); over 2026-10-03
+// sixteen deaths with pearls in the pack lost 47 of about 99 picked up in
+// the Nether (rod-stash.js PEARLS_LOST). Asked once for each count of pearls
+// carried, and again after ten minutes, where a chest can go down or one of
+// the bot's is in reach. -> 'kept' | 'carry' | null (not asked)
+const PEARLS_NOW_MS = 10 * 60000;
+async function pearlsNow(bot, task, goal, save, actions, client) {
+  const state = goal?.mobHunt;
+  if (!state || state.item !== 'ender_pearl' || goal.kind !== 'win' || dimension(bot) !== 'nether') return null;
+  const n = countOf(bot, 'ender_pearl');
+  if (!n) return null;
+  const asked = goal.pearlsNow;
+  if (asked && asked.count === n && Date.now() - asked.at < PEARLS_NOW_MS) return null;
+  const stash = require('./rod-stash');
+  let keep = null; try { keep = stash.keepOption(bot, task, goal, save, actions, { thenSays: 'Then the hunt goes on with nothing in the pack to lose.' }); } catch (_) { keep = null; }
+  if (!keep) return null;
+  goal.pearlsNow = { count: n, at: Date.now() }; save();
+  const left = huntLeft(bot, goal), pearls = `${n} ender pearl${n === 1 ? '' : 's'}`;
+  const tree = {
+    keep_here: { description: keep.description, run: keep.run },
+    carry_on: { description: `Hunt on with the ${pearls} in the pack: nothing is put down, and every pearl carried is lost with a death here (the bot comes back to life in the Overworld, far from them).${stash.pearlsLostSays()} ${left} still needed. Asked again when another pearl is carried, or in ten minutes.`, run: async () => {} },
+  };
+  let decision;
+  try { decision = await decide('pearls_now', { client, bot, task, goal, save, tree, state: { pearlsCarried: n, pearlsStillNeeded: left, health: bot.health, food: bot.food, riskNow: require('./risk').riskNow(bot) } }); }
+  catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[pearls_now] not asked: ${String(err.message || err).slice(0, 300)}`); return null; }
+  if (decision.stale) return null;
+  if (decision.path?.at(-1) !== 'keep_here') return 'carry';
+  return await tree.keep_here.run() === false ? 'carry' : 'kept';
+}
+
 async function huntObserved(bot, task, goal, save, actions, client) {
   const state = goal.mobHunt;
   if (!state) return false;
   if (countOf(bot, state.item) >= huntTarget(bot, goal)) { delete goal.mobHunt; save(); return false; }
   // Not while the rods are being banked (rod-bank.js, note 760).
   if (dimension(bot) === 'nether' && require('./rod-bank').pending(goal)) return false;
+  // The pearls carried, on their own, before the next enderman (note 1142).
+  if (state.item === 'ender_pearl' && await pearlsNow(bot, task, goal, save, actions, client) === 'kept') return true;
   const handler = handlers[state.entity] || {};
   stakeHunt(bot, goal);
   if (!canBegin(bot, handler)) return false;
@@ -4930,4 +4965,4 @@ function claim(bot, goal = {}) {
     ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}), ...(cage ? { cage: true } : {}) } };
 }
 
-module.exports = { huntLeft, roomForDrop, rodBlazesSays, goldForPiglins, openWallOption, keepClaim, noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };
+module.exports = { huntLeft, pearlsNow, roomForDrop, rodBlazesSays, goldForPiglins, openWallOption, keepClaim, noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };

@@ -8,7 +8,7 @@ One rule holds for every question about playing the game (`src/decisions/unchang
 
 Three more rules from note 749 (`src/decisions/loops.js`, `src/decisions/keys.js`, `src/intention.js`). A key names its thing: every dynamic option says what its key names (`names`: by name, by where it is, by entity id), never its place in the list, so what came of an option is said on the same thing at the next asking. A question asked round and round goes up: its askings each within a minute of the one before are its spell, said from the third (`spellSoFar`: how many, what was answered, how far the bot walked and how far it is from where they began, whether anything new is carried, how often none of the options was good); when none good was Jev's likeliest at three of its last five askings, or six askings over ninety seconds or more have left the bot within 48 blocks of where they began with nothing new carried, the answers it gave rest from there and the question above is asked with that said (not the stance, the body's way, the shield or the routing, which are said only). And a trip holds: an answer to a question about the plan whose option walks to a target, or whose catalogue entry says where it goes (`trip`), is the intention until it arrives, is done, fails, the dimension changes, health falls a blow's worth, a walk brings nothing for three minutes or ten minutes pass; its own question asked again offers only it. A rung set aside holds the same way (`src/decisions/asides.js`): an option that would take it back (`takeBack` on its node) is not offered for five minutes unless the bot is 16 blocks from where it was set aside, carries a new kind of thing or its health band changes (`asideHolds`). An answer thrown away as stale that keeps on with what is under way is kept, and from the second stale answer in a row within 30 seconds a question is watched a second first and not sent while its facts are still changing.
 
-102 questions: 52 decision trees and 50 batched questions.
+103 questions: 53 decision trees and 50 batched questions.
 
 ## Batches
 
@@ -780,6 +780,22 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `keep_here` | root | put the rods in a chest here and hunt on with nothing to lose, the walk out made once with them all | a chest can go down here out of the shooters' lines, made from what is carried or one carried or known within reach (src/rod-stash.js keepOption, note 931); said with the health and whether it comes back |
 | `own_chest` (trip: the chest) | root | walk to the bot's own chest farther off and put the rods carried in with what it holds | no chest can go down here (keep_here not offered) and a chest the bot left rods in stands in this dimension within 96 blocks and nearer than the portal; said with the walk, what the chest holds and the portal's distance (src/rod-bank.js askBank, note 1021) |
 | `stay_for_more` | root | stay and hunt on with the rods in the pack | always here; said with what a death takes and the record of lives that carried as many |
+
+### `pearls_now`
+
+**Ender pearls are carried in the Nether and more are needed: keep them in a chest here now, or hunt on with them in the pack?**
+
+- When: The ladder's enderman hunt in the Nether (before hunt_target), a pearl or more carried, and a chest that can go down here or one of the bot's in reach; asked once for each count of pearls carried and again after ten minutes.
+- Decision tree, choice; stakes medium; ledger kind `strategy`
+- Bar: none
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
+- Options built in: src/mob-hunt.js (pearlsNow), src/rod-stash.js (keepOption, pearlsLostSays)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `keep_here` | root | put the pearls in a chest here and hunt on with nothing to lose | always here (the question is asked only where a chest can go down or one is in reach); said with the chest, the seconds, what a death does to pearls carried and the record of pearls lost at deaths |
+| `carry_on` | root | hunt on with the pearls in the pack | always here; said with what a death takes, the record of pearls lost at deaths and the pearls still needed |
 
 ## work
 

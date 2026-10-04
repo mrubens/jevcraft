@@ -209,11 +209,18 @@ function offerSays(offer, { riskInState = false } = {}) {
   const secs = offer.lull ? require('./spawner-clock').jobSays(offer.lull, offer.seconds) : ` About ${offer.seconds} second${offer.seconds === 1 ? '' : 's'}.`;
   return `Keep the ${what} safe from a death first: ${where}, then asked again with the ways here still open.${secs}${fire}${offer.making ? makingSays(offer.making) : ''} A chest keeps them (no mob opens one), counted as held, taken out before the portal.${riskInState ? '' : ` ${carriedSays(offer)}`}`;
 }
+// What carrying pearls came to in the record (note 1141): the flight
+// records of 2026-10-03, 08:00 to 24:00Z, fourteen trials, each fall of the
+// pearls in the pack to none with the pack emptied (a death): 16 deaths
+// lost 47 pearls, 1 to 6 at a time, of about 99 picked up in the Nether
+// in those hours; the most kept in any trial's chests was 8.
+const PEARLS_LOST = { day: '2026-10-03', deaths: 16, pearls: 47, most: 6, gained: 99 };
+const pearlsLostSays = () => ` In the record (${PEARLS_LOST.day}, fourteen trials), ${PEARLS_LOST.deaths} deaths with pearls in the pack lost ${PEARLS_LOST.pearls} of them, 1 to ${PEARLS_LOST.most} at a time, of about ${PEARLS_LOST.gained} picked up in the Nether.`;
 // The rods carried and what a death does to them, with the records' row.
 function carriedSays(offer) {
   if (!offer.rods) {
     const pearls = (offer.what || []).filter(w => /ender_(pearl|eye)/.test(w.item)).reduce((n, w) => n + w.count, 0);
-    return `${plural(pearls, 'ender pearl')} carried and no rod. A death drops them where the bot falls (lava burns them; on the ground they vanish five minutes after) and the bot comes back to life in the Overworld, far from them.`;
+    return `${plural(pearls, 'ender pearl')} carried and no rod. A death drops them where the bot falls (lava burns them; on the ground they vanish five minutes after) and the bot comes back to life in the Overworld, far from them.${pearlsLostSays()}`;
   }
   const of = offer.wanted ? `, ${offer.rods} of the ${offer.wanted} the goal wants` : '';
   return `${plural(offer.rods, 'blaze rod')} carried${of}. A death drops them where the bot falls (lava burns them; on the ground they vanish five minutes after) and the bot comes back to life in the Overworld, far from them. ${heldSays(offer.rods)}`;
@@ -417,4 +424,4 @@ async function collect(bot, task, goal, save, actions = {}) {
   }
 }
 
-module.exports = { keepOption, nearStash, stashes, withContents, listed, dimOf, countOf, KEPT, HELD, ROD_MIN, stashed, stashSays, heldSays, carriedSays, chestCell, chestMaking, stashOffer, offerSays, stashRods, collectStage, collect, withStash, rodsEquivalent };
+module.exports = { PEARLS_LOST, pearlsLostSays, keepOption, nearStash, stashes, withContents, listed, dimOf, countOf, KEPT, HELD, ROD_MIN, stashed, stashSays, heldSays, carriedSays, chestCell, chestMaking, stashOffer, offerSays, stashRods, collectStage, collect, withStash, rodsEquivalent };

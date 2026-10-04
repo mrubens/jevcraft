@@ -509,6 +509,19 @@ define({
   instructions: workInstructions('The bot carries blaze rods at a fortress and needs more. A death drops every rod carried; a chest past the portal keeps them. Choose whether to take them out now or stay. Each option says its record.'),
 });
 
+// The pearls carried in the Nether: into a chest here, or on with them (note 1142).
+define({
+  id: 'pearls_now', area: 'strategy', parent: 'rung_progress', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'Ender pearls are carried in the Nether and more are needed: keep them in a chest here now, or hunt on with them in the pack?',
+  trigger: 'The ladder\'s enderman hunt in the Nether (before hunt_target), a pearl or more carried, and a chest that can go down here or one of the bot\'s in reach; asked once for each count of pearls carried and again after ten minutes.',
+  source: 'src/mob-hunt.js (pearlsNow), src/rod-stash.js (keepOption, pearlsLostSays)',
+  options: [
+    { key: 'keep_here', label: 'put the pearls in a chest here and hunt on with nothing to lose', when: 'always here (the question is asked only where a chest can go down or one is in reach); said with the chest, the seconds, what a death does to pearls carried and the record of pearls lost at deaths', level: 'root' },
+    { key: 'carry_on', label: 'hunt on with the pearls in the pack', when: 'always here; said with what a death takes, the record of pearls lost at deaths and the pearls still needed', level: 'root' },
+  ],
+  instructions: workInstructions('The bot carries ender pearls in the Nether and needs more. A death drops every pearl carried; a chest keeps them. Choose whether to put them in a chest now or hunt on. Each option says its record.'),
+});
+
 // Upkeep between steps: a spare pickaxe, a wood reserve, a block reserve.
 define({
   id: 'upkeep', area: 'resources', parent: null, kind: 'upkeep', primitive: 'choice', stakes: 'low', tree: true,
