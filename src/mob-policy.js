@@ -128,7 +128,13 @@ async function wearBestArmour(bot) {
     if (!best || (worn && tier(worn.name, slot) >= tier(best.name, slot))) continue;
     try { await bot.equip(best, slot); changed++; } catch (_) { /* worn at the next step */ }
   }
-  const shield = bot.inventory.items().find(i => i.name === 'shield' && durable(bot.registry, i));
+  // The shield with the most uses left, whatever is left of it (note
+  // 1259): a tenth of its uses kept back is a pickaxe's rule, and a shield
+  // in the pack blocks nothing. 25584 (2026-10-04 20:50 to 21:54Z), its
+  // shield at 20 uses of 336, fought its blaze spawner an hour with it in
+  // its pack and 'no shield carried' on every option.
+  const usesLeft = i => (bot.registry.itemsByName[i.name]?.maxDurability || 0) - (i.durabilityUsed || 0);
+  const shield = bot.inventory.items().filter(i => i.name === 'shield' && usesLeft(i) >= 1).sort((x, y) => usesLeft(y) - usesLeft(x))[0];
   if (shield && !bot.inventory.slots?.[armorSlots['off-hand']]) { try { await bot.equip(shield, 'off-hand'); changed++; } catch (_) { /* next step */ } }
   return changed;
 }

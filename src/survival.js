@@ -5698,6 +5698,15 @@ class Survival {
       const sr = require('./skeleton-record'), carried = bot.inventory.items().some(i => i.name === 'shield') || bot.inventory.slots?.[45]?.name === 'shield';
       for (const k of ['retreat', 'take_cover', 'out_of_sight']) if (options[k] && typeof options[k].description === 'string') options[k].description += sr.says(k, carried);
     }
+    // The blazes behind the wall are in the fight the moment it is opened
+    // or stepped past (note 1260): 25584 (2026-10-04 21:53:55Z), in a pit
+    // under its cage room with five blazes 2.8 to 3.4 blocks off out of
+    // sight, read the fight as 'about 5 seconds and 5.5 damage' for the
+    // one it saw, took it, and was dead to all five in 28 seconds.
+    {
+      const hidden = danger.filter(t => t.entity?.name === 'blaze' && !t.visible && t.distance <= 6);
+      if (hidden.length >= 2) for (const k of ['fight', 'fight_from_footing', 'charge_nearest', 'close_in']) if (options[k] && typeof options[k].description === 'string') options[k].description += ` ${hidden.length} blazes stand within ${Math.ceil(Math.max(...hidden.map(t => t.distance)))} blocks out of sight, rock between: they are not in this figure, and each sees the bot within a second of a wall opened or a step past it, a volley of three fireballs each, about ${Math.round(hidden.length * 5)} health in their first volleys where no shield takes them.`;
+    }
     // The pillar at a drop that kills with a hoglin about (note 1078): its
     // toss reaches a player two up, and a block from the edge the one blow
     // is the fall. The pillar said "about 2.8 damage ... none of them reaches

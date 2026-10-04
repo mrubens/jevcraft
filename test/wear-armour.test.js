@@ -27,3 +27,17 @@ test('a better piece worn stays on; in the Nether the golden boots go on the fee
   await wearBestArmour(nether.bot);
   assert.equal(nether.slots[8].name, 'golden_boots');
 });
+
+test('a shield with twenty uses left goes on the arm when the arm is empty; of two, the one with more left (note 1259)', async () => {
+  const { bot, slots } = kit('the_nether', []);
+  const max = bot.registry.itemsByName.shield.maxDurability;
+  const worn = { name: 'shield', count: 1, durabilityUsed: max - 20 }, fresher = { name: 'shield', count: 1, durabilityUsed: max - 200 };
+  let items = [worn];
+  bot.inventory.items = () => items;
+  bot.equip = async (item, slot) => { slots[45] = item; items = items.filter(i => i !== item); };
+  assert.equal(await wearBestArmour(bot), 1);
+  assert.equal(slots[45], worn);
+  delete slots[45]; items = [worn, fresher];
+  await wearBestArmour(bot);
+  assert.equal(slots[45], fresher);
+});
