@@ -524,6 +524,33 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
           state.opened = (state.opened || 0) + 1; progress = true; save();
         } };
     }
+    // No walk off the footing and the void beside it (the entry platform,
+    // where it stands apart from the island): a span of the blocks carried
+    // toward the island is offered, laid crouched a stretch at a time
+    // (bridging.js, note 1154). The rehearsal of 2026-10-04 (01:48:20 to
+    // 01:49:18Z), its platform 29 blocks from the island, had "observe" and
+    // a shot at the dragon as its ways, every route "noPath", and stood
+    // there until the dragon's wing threw it off into the void.
+    if (!Object.keys(tree).some(k => k.startsWith('move_')) && !box && !inWater()) {
+      const { deepBeside } = require('./end-safety');
+      const bridging = require('./bridging');
+      const here = bot.entity.position, near = [[0, 0], [2, 0], [-2, 0], [0, 2], [0, -2]].some(([dx, dz]) => deepBeside(bot, here.offset(dx, 0, dz)));
+      const blocks = (() => { try { return bot.inventory.items().filter(i => ['cobblestone', 'cobbled_deepslate', 'stone', 'dirt', 'netherrack', 'andesite', 'diorite', 'granite', 'blackstone', 'basalt'].includes(i.name)).reduce((n, i) => n + i.count, 0); } catch (_) { return 0; } })();
+      const centre = state.arenaCenter ? vector(state.arenaCenter) : new Vec3(0, here.y, 0);
+      const stone = bot.findBlocks({ matching: bot.registry.blocksByName.end_stone.id, maxDistance: 64, count: 64 }).map(p => ({ p, d: Math.hypot(p.x + .5 - here.x, p.z + .5 - here.z) })).sort((a, b) => a.d - b.d)[0];
+      // Apart from the island: none of its ground within three blocks.
+      if (near && blocks >= 4 && bot.entity.onGround !== false && (!stone || stone.d > 3)) {
+        const to = stone ? stone.p : centre, STRETCH = 12;
+        tree.bridge_to_island = { description: { action: `Lay a span of the blocks carried toward the island, one wide and laid crouched (a crouched player does not walk off an edge), up to ${STRETCH} blocks at a time: no walk leads off this footing, the void is beside it, and the dragon's wing throws a player from where it stands`,
+          blocksCarried: blocks, islandGroundBlocksOff: stone ? Math.round(stone.d) : null, health: bot.health, dragonBlocksOff: dragon ? Math.round(dragon.position.distanceTo(here)) : null },
+          run: async () => {
+            const from = here.clone();
+            goal.step = { action: 'end_bridge', toward: { x: to.x, y: Math.floor(here.y), z: to.z }, blocks }; save();
+            const placed = await bridging.bridgeTo(bot, task, new Vec3(to.x, Math.floor(here.y), to.z), { maxBlocks: STRETCH, maxSteps: STRETCH });
+            state.bridged = (state.bridged || 0) + placed; if (placed > 0 || bot.entity.position.distanceTo(from) >= 2) progress = true; save();
+          } };
+      }
+    }
     // A pause can reveal a vulnerable phase, but it must not indefinitely
     // displace executable actions. Renew that allowance only after actual
     // movement, damage, crystal destruction or observed health recovery.
