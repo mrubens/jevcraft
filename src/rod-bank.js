@@ -378,6 +378,14 @@ function collectHere(bot, goal) {
   // rods taken out with pearls still to hunt are rods in the pack again.
   let pearlsLeft = 0; try { pearlsLeft = en.need(bot, goal).pearlsLeft; } catch (_) { pearlsLeft = 0; }
   if (pearlsLeft > 0) return null;
+  // Nor while the pearls that make up the count lie in the Nether's chests
+  // (note 1262): the count takes every chest, and the bank on this side was
+  // emptied for a trip back into the Nether for the rest. 25593 (2026-10-04
+  // 23:03:42Z), five rods and five pearls in its chest by the portal and six
+  // pearls in a chest in the Nether, took the five and five out, went
+  // through, and carried them about the Nether.
+  const pearlsHere = rs().countOf(bot, 'ender_pearl') + banks(goal).reduce((n, c) => n + (c.contents?.ender_pearl || 0), 0);
+  if (pearlsHere < en.eyeTarget(goal) - eyes) return null;
   return rs().collectStage(bot, goal);
 }
 
