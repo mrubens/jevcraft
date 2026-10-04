@@ -29,3 +29,15 @@ test('in the Nether with eyes of ender in the pack, the step is out with them (n
   assert.equal(stage.action, 'return_overworld', JSON.stringify(stage));
   assert.equal(stage.phase, 'eyes_out');
 });
+
+test('twelve eyes in the chest on the Overworld side and one pearl wanted: the Nether side reads the pearl wanted too, not every one had (note 1265)', () => {
+  const goal = () => ({ version: 1, kind: 'win', request: 'beat the game', gameProgress: { milestones: { nether_entered: { at: 1 }, eyes_obtained: { at: 2 } } }, strongholdSearch: { bearings: [{}] },
+    eyeBank: { at: Date.now(), chestAt: { x: -33, y: 94, z: 135 }, forNether: true },
+    rodStashes: [{ position: { x: -33, y: 94, z: 135 }, dimension: 'overworld', contents: { ender_eye: 12 } }] });
+  const over = nextGameStage(world([['blaze_powder', 1]]), goal());
+  assert.equal(over.action, 'enter_nether'); assert.equal(over.item, 'ender_pearl');
+  const bot = world([['blaze_powder', 1]]); bot.game.dimension = 'the_nether';
+  const there = nextGameStage(bot, goal());
+  assert.notEqual(there.action, 'home_with_rods', JSON.stringify(there));
+  assert.equal(there.phase, 'obtain_ender_pearls', JSON.stringify(there));
+});

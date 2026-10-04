@@ -975,7 +975,14 @@ function nextGameStage(bot, goal, skip = new Set()) {
   // 704): the hunt counts it, and it is taken out before the portal walk.
   // Elsewhere the rods carried are what the eyes are made of.
   const kept = where === 'nether' ? require('./rod-stash').stashed(goal) : null;
-  const keptRods = kept ? rodsFor(target - eyes - kept.ender_eye, count(bot, 'blaze_powder') + kept.blaze_powder) : rods;
+  // The eyes in the bot's Overworld chest are in `eyes` already (eyesBanked):
+  // not taken off a second time as the chest's (note 1265). 25593
+  // (2026-10-04 23:27 to 23:32Z), twelve eyes put in its chest and one pearl
+  // wanted, read the pearl short on the Overworld side and every one had on
+  // the Nether side (thirteen less twelve less twelve), and went through
+  // its portal and straight back three times.
+  const keptEyes = Math.max(0, (kept?.ender_eye || 0) - eyesBanked);
+  const keptRods = kept ? rodsFor(target - eyes - keptEyes, count(bot, 'blaze_powder') + kept.blaze_powder) : rods;
   // In the Overworld with pearls still wanted, the rods in the bot's chests
   // on either side are held as they are in the Nether (note 1056): counted
   // by what is carried alone, a bot with every rod banked was short of
@@ -989,7 +996,7 @@ function nextGameStage(bot, goal, skip = new Set()) {
   const rodsShort = keptAll && pearlsWanting
     ? count(bot, 'blaze_rod') + (keptAll.blaze_rod || 0) < rodsFor(target - eyes - (keptAll.ender_eye || 0), count(bot, 'blaze_powder') + (keptAll.blaze_powder || 0))
     : count(bot, 'blaze_rod') + (kept?.blaze_rod || 0) < keptRods;
-  const pearlsHereShort = count(bot, 'ender_pearl') + (kept?.ender_pearl || 0) < target - eyes - (kept?.ender_eye || 0);
+  const pearlsHereShort = count(bot, 'ender_pearl') + (kept?.ender_pearl || 0) < target - eyes - keptEyes;
   const collect = where === 'nether' && kept?.chests.length ? require('./rod-stash').collectStage(bot, goal) : null;
   // The pearls from the Overworld's endermen, Jev's route while the rods
   // wait (pearl-routes.js): back through the portal, and there the pearls
