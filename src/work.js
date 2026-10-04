@@ -5380,7 +5380,18 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
     }
     // Against the tunnel by hand, said with both paces (note 941).
     const handMin = Math.round(Math.hypot(target.x - here.x, target.z - here.z) * TUNNEL_SECONDS.hand / 60), pickMin = Math.max(1, Math.round(Math.hypot(target.x - here.x, target.z - here.z) * TUNNEL_SECONDS.pickaxe / 60));
-    tree.pickaxe_first = { description: `Get ${pickaxeWanted.item.replaceAll('_', ' ')} first for the way to the portal, from wood not carried, then the way on: the gathering goes where the wood is, not toward the portal. ${wood} With it the tunnel home is about ${pickMin} minute${pickMin === 1 ? '' : 's'} for the ${Math.round(Math.hypot(target.x - here.x, target.z - here.z))} blocks across, against about ${handMin} by hand (the live tunnels' paces).` };
+    tree.pickaxe_first = { description: `Get ${pickaxeWanted.item.replaceAll('_', ' ')} first for the way to the portal, from wood not carried, then the way on: the gathering goes where the wood is, not toward the portal. ${wood} With it the tunnel home is about ${pickMin} minute${pickMin === 1 ? '' : 's'} for the ${Math.round(Math.hypot(target.x - here.x, target.z - here.z))} blocks across, against about ${handMin} by hand (the live tunnels' paces).${(() => {
+      // What choosing it has come to from here (note 1258): 25590 (2026-10-04
+      // 20:20 to 21:02Z), thirteen pearls banked, 3 health and nothing to eat,
+      // ten blocks across from its portal and thirteen over it, took it over
+      // the three minutes' tunnel by hand time after time and was forty
+      // minutes on 'no route'.
+      const tries = (goal.portalPickaxeTried || []).filter(t => now - t < 30 * 60000);
+      const tried = tries.length ? ` Chosen ${tries.length === 1 ? 'once' : `${tries.length} times`} in the last ${Math.max(1, Math.round((now - tries[0]) / 60000))} minutes, and no pickaxe has come of it.` : '';
+      const foods = bot.registry?.foodsByName || {}, fed = (bot.inventory?.items?.() || []).some(i => foods[i.name]);
+      const hurt = (bot.health ?? 20) < 20 && (bot.food ?? 20) < 18 && !fed ? ` Health ${Math.round(bot.health)} does not come back meanwhile: hunger ${bot.food}, nothing carried to eat, and the food is past the portal.` : '';
+      return tried + hurt;
+    })()}` };
   }
   // With blaze rods carried (note 762): back the way it came in, where a way
   // is kept from near here. Every other way is fresh ground, said with what
@@ -5479,7 +5490,7 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
     return true;
   }
   if (pick === 'pickaxe_first') {
-    goal.portalPickaxeChosen = { at: now }; save();
+    goal.portalPickaxeChosen = { at: now }; goal.portalPickaxeTried = [...(goal.portalPickaxeTried || []).filter(t => now - t < 30 * 60000), now].slice(-12); save();
     await pickaxeForStair(bot, task, goal, save, target, `portal_${where}`, pickaxeWanted.item);
     return true;
   }

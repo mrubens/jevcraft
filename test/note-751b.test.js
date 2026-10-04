@@ -57,6 +57,18 @@ test('the way back with no pickaxe asks toward the portal beside the wood: dig_a
   assert.match(o.pickaxe_first, /^Get stone pickaxe first for the way to the portal, from wood not carried, then the way on: the gathering goes where the wood is, not toward the portal\..* With it the tunnel home is about \d+ minutes? for the \d+ blocks across, against about \d+ by hand/);
 });
 
+test('pickaxe first on the way to the portal says what choosing it has come to and what the wait costs a hurt, hungry bot (note 1258)', async () => {
+  const { portalWay } = require('../src/work');
+  const bot = groundBot(fixture, { at: new Vec3(-161.5, 66, -112.5), dimension: 'the_nether', health: 3, food: 13, items: [] });
+  bot.findBlocks = () => [];
+  const task = new Task('back'), asked = [];
+  task.opportunityClient = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: 'around_left', confidence: 0.9 } } }; } };
+  bot.pathfinder = { ...(bot.pathfinder || {}), goto: async () => { throw new Error('No path to the goal!'); }, setGoal: () => {} };
+  const goal = { survival: {}, portalPickaxeTried: [Date.now() - 12 * 60000, Date.now() - 6 * 60000, Date.now() - 60000] };
+  await portalWay(bot, task, goal, () => {}, { x: -140, y: 66, z: -113 }, 'nether', { walk: 'the walk there failed (no route)', pickaxeWanted: { item: 'stone_pickaxe', gather: true } }).catch(() => {});
+  assert.match(asked[0].pickaxe_first, /Chosen 3 times in the last 12 minutes, and no pickaxe has come of it\. Health 3 does not come back meanwhile: hunger 13, nothing carried to eat, and the food is past the portal\.$/);
+});
+
 test('portal_way asked on the trip home carries the trip on: its ways toward the portal are offered, not all withheld (25584\'s return_for_wood)', async () => {
   const { EventEmitter } = require('node:events');
   const registry = require('minecraft-data')('26.1');
