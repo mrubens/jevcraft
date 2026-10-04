@@ -155,7 +155,13 @@ function bankOnArrival(bot, goal, dim, now = Date.now()) {
   // (the store's own failure) stands.
   const aside = attemptsFor(goal).of('rung', now).bank_rods;
   if (aside && aside.at < here.at) attemptsFor(goal).clear('rung', 'bank_rods');
-  if (!(rods >= 1) || isSetAside(goal, 'rod_bank', 'arrival', now) || isSetAside(goal, 'rung', 'bank_rods', now)) return false;
+  // Pearls come out too (note 1196): with no rod in the pack the arrival
+  // banked nothing. 25595 (2026-10-04 08:44 to 08:50Z) took its five pearls
+  // out of its Nether chest for the portal, came out with them and no rod,
+  // its seven rods in the chest beside the portal, and went exploring the
+  // Overworld for endermen with the five in its pack.
+  const pearls = rs().countOf(bot, 'ender_pearl');
+  if (!(rods >= 1 || pearls >= 1) || isSetAside(goal, 'rod_bank', 'arrival', now) || isSetAside(goal, 'rung', 'bank_rods', now)) return false;
   let n = null; try { n = require('./eye-need').need(bot, goal); } catch (_) { n = null; }
   // Every rod had and pearls still wanted (note 1050): banked on coming out
   // all the same, the pearls hunted with none in the pack, and taken out
@@ -163,9 +169,9 @@ function bankOnArrival(bot, goal, dim, now = Date.now()) {
   // out when the Nether's pearls rest, and they stayed in the pack through
   // the Overworld's hunt and the next crossing.
   if (!n || (!n.rodsLeft && !(n.pearlsLeft > 0))) return false;
-  goal.rodBank = { at: now, rods, from: P(bot.entity.position), chest: chestThere(bot, goal).how, onArrival: true };
+  goal.rodBank = { at: now, rods, ...(pearls ? { pearls } : {}), from: P(bot.entity.position), chest: chestThere(bot, goal).how, onArrival: true };
   setAside(goal, 'rod_bank', 'arrival', 'banked on coming out with rods', 30 * 60000);
-  bot.chat?.(`Out with ${plural(rods, 'blaze rod')}: into a chest here first, ${n.rodsLeft ? `${n.rodsLeft} more to get` : `${plural(n.pearlsLeft, 'pearl')} still to get`}.`);
+  bot.chat?.(`Out with ${[rods >= 1 ? plural(rods, 'blaze rod') : null, pearls ? plural(pearls, 'ender pearl') : null].filter(Boolean).join(' and ')}: into a chest here first, ${n.rodsLeft ? `${n.rodsLeft} more to get` : `${plural(n.pearlsLeft, 'pearl')} still to get`}.`);
   return true;
 }
 
@@ -293,7 +299,7 @@ async function askBank(bot, task, goal, save, actions, client, { now = Date.now(
 function bankStage(bot, goal, dim, now = Date.now()) {
   const b = pending(goal);
   if (!b) return null;
-  if (!carriedKept(bot).some(k => k.item === 'blaze_rod' || k.item === 'blaze_powder' || k.item === 'ender_eye')) { end(goal, 'no rods or eyes carried now (a death, or used)'); return null; }
+  if (!carriedKept(bot).some(k => k.item === 'blaze_rod' || k.item === 'blaze_powder' || k.item === 'ender_eye' || (b.pearls && k.item === 'ender_pearl'))) { end(goal, 'no rods or eyes carried now (a death, or used)'); return null; }
   // Set aside in the Nether (a step on the way met something else's
   // failure, note 885): the walk waits the set-aside out and goes on; on the
   // Overworld side it is the store's own failure, and the bank ends.

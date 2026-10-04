@@ -347,3 +347,18 @@ test('out of the Nether with every rod had and pearls still wanted, the bank beg
   const g2 = huntGoal(); g2.gameProgress.here = { dimension: 'overworld', at: Date.now() - 20000 };
   assert.equal(rb.bankOnArrival(done, g2, 'overworld'), false, 'with the pearls had too they are what the eyes are made of');
 });
+
+test('out of the Nether with pearls and no rod, more still wanted: the pearls are banked on arrival too (note 1196)', () => {
+  const gp = require('../src/game-progress');
+  const bot = frameBot({ inventory: { ...BARE, blaze_rod: 0, blaze_powder: 0, ender_pearl: 5 }, dimension: 'overworld' });
+  const said = []; bot.chat = m => said.push(m);
+  const goal = huntGoal(); goal.gameProgress.here = { dimension: 'overworld', at: Date.now() - 20000 };
+  assert.equal(rb.bankOnArrival(bot, goal, 'overworld'), true);
+  assert.equal(goal.rodBank.pearls, 5);
+  assert.match(said[0], /^Out with 5 ender pearls: into a chest here first, /);
+  assert.equal(gp.nextGameStage(bot, goal).phase, 'bank_rods', 'the bank is not ended for having no rod');
+  // Nothing of the kind carried: nothing begun.
+  const bare = frameBot({ inventory: { ...BARE, blaze_rod: 0, blaze_powder: 0, ender_pearl: 0 }, dimension: 'overworld' });
+  const g2 = huntGoal(); g2.gameProgress.here = { dimension: 'overworld', at: Date.now() - 20000 };
+  assert.equal(rb.bankOnArrival(bare, g2, 'overworld'), false);
+});
