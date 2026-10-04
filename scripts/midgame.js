@@ -184,7 +184,16 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
   // home, was then read as keeping one, given six hours, and ended at once
   // as "missing after 6 hours" eleven hours in, the rods in its pack.
   if (!holds && !endHours) {
-    const lastInv = [...a.frames].reverse().find(f => f.snapshot?.inventory && typeof f.snapshot.inventory === 'object');
+    // Carried now, not at the window's end (note 1164): past its hours the
+    // window stops where the shorter limit put it, and the pack read there
+    // was the pack of hours ago. mid-242-pc-fortress-10 (25591, 2026-10-04
+    // 02:33:12 to 02:34:37Z), nine hours in with nine rods and seven pearls
+    // in its chest past the portal, took them out with four pearls carried,
+    // nine rods and eleven pearls in its pack, and was ended a minute later
+    // as "missing after 6 hours": the chest was empty, and the pack was
+    // read as it had been at its sixth hour.
+    const latest = to < now ? (read(now) || a) : a;
+    const lastInv = [...latest.frames].reverse().find(f => f.snapshot?.inventory && typeof f.snapshot.inventory === 'object');
     const carried = lastInv ? counts(lastInv.snapshot.inventory) : { rods: 0, pearls: 0 };
     const held = { rods: (kept?.rods || 0) + carried.rods, pearls: (kept?.pearls || 0) + carried.pearls };
     if (limitFor(held) > limit) return verdict(trial, { now, dir, identity, kept, holds: held });

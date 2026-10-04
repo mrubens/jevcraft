@@ -48,3 +48,19 @@ test('with nothing in the chests or the pack and the rods never had, the death e
     assert.ok(v.reasons.some(r => /^1 death\(s\)/.test(r)));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('past its six hours with the rods and pearls taken out of the chest into the pack now, the trial has the hours of what it holds now (note 1164)', () => {
+  const { verdict } = require('../scripts/midgame');
+  const identity = '127_0_0_1-25994-Jev';
+  // Nine hours of play with nothing in the pack (the rods in a chest), then the chest emptied into the pack.
+  const t0 = Date.parse('2026-10-03T17:21:20Z'), frames = [];
+  const snap = (inventory, dimension = 'overworld') => ({ position: { x: 0, y: 64, z: 0 }, dimension, health: 20, inventory, step: { action: 'mine' } });
+  for (let m = 0; m < 552; m += 2) frames.push({ t: t0 + m * 60000, kind: 'observation', snapshot: snap({ cobblestone: 40, ender_pearl: m > 500 ? 4 : 0 }, m < 30 ? 'the_nether' : 'overworld') });
+  frames.push({ t: t0 + 552 * 60000, kind: 'observation', snapshot: snap({ blaze_rod: 9, ender_pearl: 11 }) });
+  const dir = flightDir(frames, identity);
+  try {
+    const v = verdict({ world: 'mid-242-zz-fortress-10', startedAt: new Date(t0).toISOString() }, { now: t0 + 553 * 60000, dir, identity, kept: { rods: 0, pearls: 2 } });
+    assert.equal(v.done, false, JSON.stringify(v.reasons));
+    assert.ok(!v.reasons.some(r => /missing after/.test(r)), JSON.stringify(v.reasons));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
