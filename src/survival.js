@@ -3420,7 +3420,7 @@ class Survival {
         await bot.lookAt(e.position.offset(0, 1.5, 0), true);
         if (canStrike(bot, e)) {
           bot.clearControlStates?.(); lowerShield(bot);
-          if (bot.entities[e.id] === e) { bot.attack(e); acted = true; }
+          if (bot.entities[e.id] === e && await require('./combat').unswept(bot, e)) { bot.attack(e); acted = true; }
           if (shielded) raiseShield(bot);
           await sleep(650); lowerShield(bot);
           continue;
@@ -8293,7 +8293,8 @@ class Survival {
             lowerShield(bot);
             if (weapon && bot.heldItem?.name !== weapon.name) await bot.equip(weapon, 'hand');
             await bot.lookAt?.(e.position.offset(0, (e.height || bodyHeight(e.name)) * 0.8, 0), true);
-            bot.attack(e); swings++;
+            if (await require('./combat').unswept(bot, e)) bot.attack(e);
+            swings++;
             bot._defenseAttackAt = bot._threatResponseAt = Date.now();
             bot._struck = { id: e.id, at: bot._defenseAttackAt };
           }

@@ -183,6 +183,20 @@ function bystanders(bot, target) {
   return Object.values(bot.entities || {}).filter(e => (BYSTANDERS.has(e.name) || require('./protected-animals').isProtected(e)) && e !== target && e.isValid !== false && e.position &&
     target.position && e.position.distanceTo(target.position) <= 2.5 && !provoked(bot, e));
 }
+// The same for a swing made outside strike(): true when the swing sweeps
+// nothing calm (none near, or a tool that does not sweep now in hand), false
+// when it is to be held. 25592 (2026-10-04 15:31:36Z), five pearls just put
+// in a chest, swung a diamond sword from its slot and its pocket with
+// zombified piglins walking through the warped forest, and three of them
+// took it from 18 to none in three seconds (note 1232). `but`: kinds the
+// swing may sweep (the slot's own endermen).
+async function unswept(bot, target, { but = [] } = {}) {
+  if (!/_sword$/.test(bot.heldItem?.name || '')) return true;
+  if (!bystanders(bot, target).some(e => !but.includes(e.name))) return true;
+  const tool = bot.inventory.items().find(i => /_axe$/.test(i.name)) || bot.inventory.items().find(i => /_pickaxe$/.test(i.name));
+  if (!tool) return false;
+  await bot.equip(tool, 'hand'); return true;
+}
 async function strike(bot, task, target) {
   const near = bystanders(bot, target);
   if (near.length && /_sword$/.test(bot.heldItem?.name || '')) {
@@ -266,7 +280,7 @@ async function defendNearby(bot, task, goal, save) {
   await bot.lookAt(target.position.offset(0, (target.height || 1.8) / 2, 0), true);
   task.check(); checkAir(bot);
   if (bot.entities[target.id] !== target || target.isValid === false || strikeTarget(bot)?.entity !== target) return false;
-  const swing = span ? (bot.attack(target), 'on_span') : await strike(bot, task, target); bot._defenseAttackAt = bot._threatResponseAt = Date.now();
+  const swing = span ? (await unswept(bot, target) ? (bot.attack(target), 'on_span') : 'held') : await strike(bot, task, target); bot._defenseAttackAt = bot._threatResponseAt = Date.now();
   bot._struck = { id: target.id, at: bot._defenseAttackAt };
   // The shield comes up for the cooldown between swings: a wither skeleton
   // took twenty health in six seconds of unguarded swordplay. Not against
@@ -278,4 +292,4 @@ async function defendNearby(bot, task, goal, save) {
   save(); return true;
 }
 
-module.exports = { critReady, strike, bystanders, defenseWeapon, canStrike, strikeTarget, defendNearby, SHOOTERS, shooter, bowReady, aim, shotTargets, shoot, raiseShield, lowerShield, SHIELD_BLOCKS_AFTER_MS };
+module.exports = { critReady, strike, unswept, bystanders, defenseWeapon, canStrike, strikeTarget, defendNearby, SHOOTERS, shooter, bowReady, aim, shotTargets, shoot, raiseShield, lowerShield, SHIELD_BLOCKS_AFTER_MS };

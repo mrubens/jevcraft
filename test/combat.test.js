@@ -258,3 +258,22 @@ test('a mob on the solid block over the bot\'s head is not in reach; a step up o
   const up = bot(c => c.y <= 9 || (c.x === 1 && c.z === 0 && c.y === 10), new Vec3(1.5, 11, 0.5));
   assert.equal(canStrike(up.bot, up.zombie), true, 'a step up');
 });
+
+test('a swing made outside strike() is held or made unswept beside a calm zombified piglin; the slot may sweep its own endermen (note 1232)', async () => {
+  const { unswept } = require('../src/combat');
+  const { Vec3 } = require('vec3');
+  const registry = require('minecraft-data')('26.1');
+  const sword = { name: 'diamond_sword', count: 1 }, axe = { name: 'stone_axe', count: 1 };
+  const items = [sword];
+  const bot = { registry, entity: { position: new Vec3(0.5, 10, 0.5) }, entities: {}, heldItem: sword, inventory: { items: () => items }, equip: async item => { bot.heldItem = item; } };
+  const enderman = { id: 1, name: 'enderman', position: new Vec3(2, 10, 0.5), isValid: true, metadata: {} };
+  bot.entities[1] = enderman;
+  bot.entities[2] = { id: 2, name: 'enderman', position: new Vec3(3, 10, 0.5), isValid: true, metadata: {} };
+  assert.equal(await unswept(bot, enderman, { but: ['enderman'] }), true, 'another enderman beside it is the slot\'s own');
+  assert.equal(bot.heldItem, sword);
+  bot.entities[3] = { id: 3, name: 'zombified_piglin', position: new Vec3(2.5, 10, 1.5), isValid: true, metadata: {} };
+  assert.equal(await unswept(bot, enderman, { but: ['enderman'] }), false, 'no tool but the sword: held');
+  items.push(axe);
+  assert.equal(await unswept(bot, enderman, { but: ['enderman'] }), true);
+  assert.equal(bot.heldItem, axe, 'the axe does not sweep');
+});

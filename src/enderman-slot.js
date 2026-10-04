@@ -323,7 +323,7 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
       if (d <= REACH + 0.3) {
         // At the mouth: struck at the body, the swing at its pace.
         turnedAt = Date.now();
-        if (Date.now() - lastSwing >= SWING_MS) { await bot.lookAt(e.position.offset(0, 1.0, 0), true); bot.attack(e); lastSwing = Date.now(); }
+        if (Date.now() - lastSwing >= SWING_MS) { await bot.lookAt(e.position.offset(0, 1.0, 0), true); if (await require('./combat').unswept(bot, e, { but: ['enderman'] })) bot.attack(e); lastSwing = Date.now(); }
       } else if (angry(e)) {
         // Turned: waited for at the back, the eyes on the mouth's floor
         // (one looked at stands where it is); one that does not come in
@@ -438,7 +438,7 @@ async function stand(bot, task, site, { navigate, names = ['wither_skeleton'], s
       quietSince = null;
       const eye = bot.entity.position.offset(0, 1.62, 0);
       const d = Math.hypot(e.position.x - eye.x, e.position.z - eye.z, Math.max(e.position.y - eye.y, 0, eye.y - (e.position.y + (TALL[e.name] || 2))));
-      if (d <= REACH + 0.3 && Date.now() - lastSwing >= SWING_MS) { await bot.lookAt(e.position.offset(0, 1.0, 0), true); bot.attack(e); lastSwing = Date.now(); }
+      if (d <= REACH + 0.3 && Date.now() - lastSwing >= SWING_MS) { await bot.lookAt(e.position.offset(0, 1.0, 0), true); if (await require('./combat').unswept(bot, e, { but: ['enderman'] })) bot.attack(e); lastSwing = Date.now(); }
       else await bot.lookAt(site.mouth.offset(0.5, 1.2, 0.5), true);
       await sleep(80);
     }
