@@ -77,7 +77,9 @@ async function serverCount(test, what) {
 const countInEnd = type => serverCount(`in minecraft:the_end if entity @e[type=minecraft:${type}]`, type);
 const dragonKilled = async () => await serverCount(`if entity @a[name=${username},advancements={minecraft:end/kill_dragon=true}]`, 'the dragon') > 0;
 
-const KIT = [['ender_eye', 20], ['diamond_pickaxe', 1], ['diamond_sword', 1], ['bow', 1], ['arrow', 64], ['cooked_beef', 64], ['water_bucket', 1],
+// ENDGAME_ARROWS: the arrows carried into the dragon's fight in all (192 unless set): a trial's bot has few.
+const ARROWS = process.env.ENDGAME_ARROWS != null ? Math.max(0, Number(process.env.ENDGAME_ARROWS)) : 192;
+const KIT = [['ender_eye', 20], ['diamond_pickaxe', 1], ['diamond_sword', 1], ['bow', 1], ...(ARROWS ? [['arrow', Math.min(64, ARROWS)]] : []), ['cooked_beef', 64], ['water_bucket', 1],
   ['cobblestone', 64], ['cobblestone', 64], ['torch', 32], ['water_bucket', 1], ['white_bed', 1], ['oak_log', 16]];
 const ARMOUR = { 'armor.head': 'iron_helmet', 'armor.chest': 'iron_chestplate', 'armor.legs': 'iron_leggings', 'armor.feet': 'iron_boots', 'weapon.offhand': 'shield' };
 async function kit(extra = []) {
@@ -206,6 +208,11 @@ const DRILLS = {
     // Straight onto the spawn platform, where the portal lands a player:
     // the fight is what is rehearsed here. ENDGAME_VIA_PORTAL=1 walks in.
     if (!/end$/.test(dimension()) && process.env.ENDGAME_VIA_PORTAL !== '1') {
+      // The platform as a portal's arrival makes it each time (five square of obsidian, three of air over it), and no breath left on it from a run before: a tp alone lands on whatever is there.
+      await command('execute in minecraft:the_end run forceload add 100 0');
+      await command('execute in minecraft:the_end run fill 98 48 -2 102 48 2 minecraft:obsidian');
+      await command('execute in minecraft:the_end run fill 98 49 -2 102 51 2 minecraft:air');
+      await command('execute in minecraft:the_end run kill @e[type=minecraft:area_effect_cloud]');
       await command(`execute in minecraft:the_end run tp ${username} 100.5 49 0.5`);
       await sleep(4000); await bot.waitForChunksToLoad();
     }
@@ -215,7 +222,7 @@ const DRILLS = {
       if (!entered.pass) return { drill: 'dragon', pass: false, skipped: 'could not enter the End' };
     }
     // ENDGAME_BEDS=4 carries beds for the perched head (bed-bomb.js).
-    await kit([['arrow', 64], ['arrow', 64], ...(process.env.ENDGAME_BEDS ? [['white_bed', Number(process.env.ENDGAME_BEDS)]] : [])]);
+    await kit([...[ARROWS - 64, ARROWS - 128].filter(n => n > 0).map(n => ['arrow', Math.min(64, n)]), ...(process.env.ENDGAME_BEDS ? [['white_bed', Number(process.env.ENDGAME_BEDS)]] : [])]);
     const goal = { kind: 'win', request: 'endgame rehearsal', gameProgress: { version: 1, milestones: { nether_entered: { at: 1 }, end_entered: { at: Date.now() } } } };
     const handlers = gameHandlers(bot, client);
     // Truth from the server, asked every twenty seconds.
