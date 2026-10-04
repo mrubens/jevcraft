@@ -378,6 +378,7 @@ test('a death in the Nether, back to life in the Overworld: straight back for th
   assert.match(asked[0], /The bot was slain by Zombified Piglin there; when it died, a zombified piglin 1 blocks off was about/);
   assert.match(asked[0], /no sword or axe and no armour/);
   assert.match(asked[0], /a median 37/);
+  assert.match(asked[0], /No food is carried, and none was in the pack that dropped: in the Nether health comes back only at hunger eighteen or more/);
   assert.deepEqual({ dimension: goal.errand.dimension, items: goal.errand.items, for: goal.errand.for }, { dimension: 'nether', items: [], for: 'the kit dropped at the death there' });
   assert.equal(goal.corpseRun.choice, 'go_back', 'not asked again on the far side');
   assert.match(said.at(-1), /^Straight back through the portal for what I dropped/);
