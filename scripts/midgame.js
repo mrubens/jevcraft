@@ -254,10 +254,25 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
   // mid-242-sc-fortress-9 (25590, 2026-10-03 08:21 to 08:52Z) got ten blaze
   // rods in thirty minutes, the most of any trial, put five in a chest by
   // its fortress, and was ended at its first death with them still there.
-  const keeps = kept && (kept.rods >= 1 || kept.pearls >= 1);
+  // Kept is in its chests or in its pack (note 1149), and a trial that has
+  // had the rods and the pearls both plays on to the End whatever its pack
+  // holds then (the eyes go into the portal's frames). mid-242-sc-fortress-
+  // 10-r1 (25594, 2026-10-04 01:07:45 to 01:08:16Z) took its five rods and
+  // two pearls out of the chest past its portal, seven rods and thirteen
+  // pearls in hand, the first trial with both; made fourteen blaze powder,
+  // chose the stronghold, and was ended there as "1 death(s)": with the
+  // chests empty its death of 22:39Z was no longer one with rods kept.
+  const lastPack = [...a.frames].reverse().find(f => f.snapshot?.inventory && typeof f.snapshot.inventory === 'object');
+  const packed = lastPack ? counts(lastPack.snapshot.inventory) : { rods: 0, pearls: 0 };
+  const hadBoth = 'blaze_rods' in at && 'ender_pearls' in at;
+  const inChests = kept && (kept.rods >= 1 || kept.pearls >= 1);
+  const keeps = inChests || packed.rods >= 1 || packed.pearls >= 1 || hadBoth;
+  const keptSays = inChests ? `${[kept.rods >= 1 ? `${kept.rods} blaze rod${kept.rods === 1 ? '' : 's'}` : null, kept.pearls >= 1 ? `${kept.pearls} ender pearl${kept.pearls === 1 ? '' : 's'}` : null].filter(Boolean).join(' and ')} kept in its chests`
+    : packed.rods >= 1 || packed.pearls >= 1 ? `${[packed.rods >= 1 ? `${packed.rods} blaze rod${packed.rods === 1 ? '' : 's'}` : null, packed.pearls >= 1 ? `${packed.pearls} ender pearl${packed.pearls === 1 ? '' : 's'}` : null].filter(Boolean).join(' and ')} in its pack (rods, powder, pearls and eyes counted)`
+      : 'the rods and the pearls both had in this trial';
   const downSays = deaths.some(t => within(spells, t, SLACK)) ? `, ${deaths.filter(t => within(spells, t, SLACK)).length} while Jev was down` : '';
   const deathSays = !deaths.length ? [] : keeps
-    ? [`died ${deaths.length} time${deaths.length === 1 ? '' : 's'}${downSays} with ${[kept.rods >= 1 ? `${kept.rods} blaze rod${kept.rods === 1 ? '' : 's'}` : null, kept.pearls >= 1 ? `${kept.pearls} ender pearl${kept.pearls === 1 ? '' : 's'}` : null].filter(Boolean).join(' and ')} kept in its chests: played on`]
+    ? [`died ${deaths.length} time${deaths.length === 1 ? '' : 's'}${downSays} with ${keptSays}: played on`]
     : [`${deaths.length} death(s)${downSays}`];
   // Nor does half an hour in one place end it while rods or pearls are kept
   // (note 1126): said as held, and played on, as a death is. 25594
