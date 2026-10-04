@@ -8350,7 +8350,16 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   // Jev's own go_without, which holds until the food is gone (note 767c).
   const stallRest = (g, phase, at) => { const r = require('./progress').attemptsFor(g).of('rung', at)[phase]; return !!r && !require('./game-progress').GOING_WITHOUT.test(r.why || ''); };
   const NETHER_FLOOR = require('./food-reserve').FLOOR.nether;
-  const empty = left.filter(i => /^(food|blocks)$/.test(i.key) && ((i.carried === 0 && (seen[i.key] || 0) > 0) || (i.key === 'food' && i.carried < NETHER_FLOOR && stallRest(goal, 'nether_food', now))));
+  // And with no food at all where the last crossing turned back for it:
+  // going without was chosen, the crossing made, and the far side's first
+  // question sent the bot back for the food. 25591
+  // (2026-10-04 00:04 to 00:09Z), no food carried at hunger 14 to 13,
+  // crossed four times in five minutes, each "Going back through the portal
+  // for food" within twenty seconds, and its crossing offered a spare
+  // shield, wood and a spare kit but not the food (note 1143).
+  const turnedBackLately = !!goal.foodTurnBack && Date.now() - goal.foodTurnBack.at < 30 * 60000;
+  const empty = left.filter(i => /^(food|blocks)$/.test(i.key) && ((i.carried === 0 && (seen[i.key] || 0) > 0) || (i.key === 'food' && i.carried < NETHER_FLOOR && stallRest(goal, 'nether_food', now))
+    || (i.key === 'food' && i.carried === 0 && turnedBackLately)));
   goal.kitSeen = Object.fromEntries(items.map(i => [i.key, i.carried]));
   // The pieces the Nether's record speaks to (note 791): a spare shield,
   // armour, a stack of one ghast-proof kind, each priced from the pockets
