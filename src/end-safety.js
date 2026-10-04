@@ -47,6 +47,28 @@ function checkEndEmergency(bot) {
   if (reason) throw Object.assign(new Error(reason), { name: 'EndEmergency' });
 }
 
+// A deadly fall beside a cell (note 1153): one of the eight columns round it
+// with no block for DEEP blocks under its level, the void or a fall nothing
+// breaks. A run that ends on such a cell overshoots it: the rehearsal of
+// 2026-10-04 (01:38:42 to 01:38:52Z), on the entry platform five blocks
+// square and nine from the island, dodged the dragon's fireball at a sprint
+// to the platform's corner cell, went over its edge at (102.6, 47, -2.9)
+// and "fell out of the world", 36 seconds into the fight.
+const DEEP = 24, ROUND = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+function deepBeside(bot, p) {
+  const fx = Math.floor(p.x), fy = Math.floor(p.y), fz = Math.floor(p.z);
+  for (const [dx, dz] of ROUND) {
+    let floor = false, loaded = true;
+    for (let y = fy; y >= fy - DEEP; y--) {
+      const b = bot.blockAt(new Vec3(fx + dx, y, fz + dz));
+      if (!b) { loaded = false; break; }
+      if (b.boundingBox === 'block') { floor = true; break; }
+    }
+    if (loaded && !floor) return true;
+  }
+  return false;
+}
+
 // A short level corridor is checked across the player's footprint. Running
 // sideways can evade a charge; jumping blindly near an island edge cannot.
 function dodgeRoutes(bot, dragon, allowed = () => true) {
@@ -67,6 +89,8 @@ function dodgeRoutes(bot, dragon, allowed = () => true) {
       }))) break;
       distance = d;
     }
+    // Ending at a deadly edge, the run stops a block and a half short of it.
+    if (distance >= 2 && deepBeside(bot, start.plus(direction.scaled(distance)))) distance -= 1.5;
     if (distance >= 2) routes.push({ direction, distance, destination: start.plus(direction.scaled(distance)) });
   }
   return routes;
@@ -87,7 +111,7 @@ function straightAway(bot, start, bearing, allowed = () => true) {
       const x = Math.floor(start.x + dx * d), z = Math.floor(start.z + dz * d);
       // The floor under this cell: one up, level, or down to two.
       const floor = [y, y - 1, y - 2, y - 3].find(fy => solid(x, fy, z) && !solid(x, fy + 1, z) && !solid(x, fy + 2, z));
-      if (floor === undefined || !allowed(new Vec3(x + .5, floor + 1, z + .5))) ok = false; else y = floor + 1;
+      if (floor === undefined || !allowed(new Vec3(x + .5, floor + 1, z + .5)) || deepBeside(bot, new Vec3(x + .5, floor + 1, z + .5))) ok = false; else y = floor + 1;
     }
     if (ok) return new Vec3(start.x + dx * RUN_BLOCKS, y, start.z + dz * RUN_BLOCKS);
   }
@@ -106,7 +130,7 @@ async function evadeOverTerrain(bot, task, goal, save, dragon, { allowed = () =>
     const direction = new Vec3(Math.cos(bearing + angle), 0, Math.sin(bearing + angle));
     for (const distance of [4, 6]) for (const dy of [0, -1, 1, -2, 2]) {
       const p = start.plus(direction.scaled(distance)).floored().offset(.5, dy, .5);
-      if (allowed(p) && dryStanding(bot, p)) { candidates.push(p); break; }
+      if (allowed(p) && dryStanding(bot, p) && !deepBeside(bot, p)) { candidates.push(p); break; }
     }
   }
   const movement = bot.pathfinder.movements;
@@ -124,6 +148,8 @@ async function evadeOverTerrain(bot, task, goal, save, dragon, { allowed = () =>
       if (bot.entity.onGround === false || bot.entity.position.distanceTo(start) > .75) return false;
       if (route.status !== 'success' || route.path.some(n => n.toBreak?.length || n.toPlace?.length ||
         !allowed(new Vec3(n.x + .5, n.y, n.z + .5)))) continue;
+      // Along a deadly edge it walks, not runs.
+      movement.allowSprinting = !route.path.some(n => deepBeside(bot, new Vec3(n.x + .5, n.y, n.z + .5)));
       goal.step = { action: 'evade_dragon_over_terrain', from: { ...start }, destination: { ...p } }; save();
       try {
         await walk(bot, task, destination, { timeoutMs: 3000, stallMs: 1000, stopWhen: () => fallDanger(bot) });
@@ -213,4 +239,4 @@ async function evadeDragon(bot, task, goal, save, { allowed, timeoutMs = 1600 } 
     return true;
   } finally { bot.clearControlStates(); }
 }
-module.exports = { straightAway, cloudRadius, hazardDistance, breathThreat, dragonThreat, endEmergency, checkEndEmergency, dodgeRoutes, evadeOverTerrain, evadeDragon };
+module.exports = { deepBeside, straightAway, cloudRadius, hazardDistance, breathThreat, dragonThreat, endEmergency, checkEndEmergency, dodgeRoutes, evadeOverTerrain, evadeDragon };
