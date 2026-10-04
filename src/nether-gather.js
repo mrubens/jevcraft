@@ -93,9 +93,20 @@ function gathers(bot, resource) {
   try { return resourceNames(bot, resource).length > 0; } catch (_) { return false; }
 }
 
+// Rock to build with is not taken from over a drop (note 1223): a block of
+// it with nothing solid under it is a span or a ledge, the bot's own among
+// them, and dug it is the way back gone. 25590 (mid-242-jg-fortress-11-r3,
+// 2026-10-04 13:51 to 14:40Z), out of blocks at the end of its own span of
+// netherrack over a lava sea, was offered the span's cells as 'what is
+// needed', dug three out of it behind itself, and paced the forty blocks
+// left at 5 health for fifty minutes.
+const ROCK = new Set(['netherrack', 'blackstone', 'basalt', 'nether_bricks', 'soul_soil', 'soul_sand', 'cobblestone']);
+const overDrop = (bot, p) => { const under = bot.blockAt(p.offset(0, -1, 0)); return !!under && under.boundingBox !== 'block'; };
 const find = (bot, names, reach, count) => {
   const ids = names.map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined);
-  return ids.length ? bot.findBlocks({ matching: ids, maxDistance: reach, count }) || [] : [];
+  if (!ids.length) return [];
+  if (!names.some(n => ROCK.has(n))) return bot.findBlocks({ matching: ids, maxDistance: reach, count }) || [];
+  return (bot.findBlocks({ matching: ids, maxDistance: reach, count: count * 4 }) || []).filter(p => !overDrop(bot, p)).slice(0, count);
 };
 
 // Where what is looked for is known: in view within 128 blocks, and
@@ -109,7 +120,8 @@ function knownPlaces(bot, goal, names) {
   const nameAt = p => bot.blockAt(p)?.name || memory[`${dim}:${p.x},${p.y},${p.z}`]?.name;
   let remembered = [];
   try { remembered = require('./resource-observation').knownResourceLocations(bot, goal, names); } catch (_) { remembered = []; }
-  const all = [...new Map([...find(bot, names, SEE, 512), ...remembered].map(p => [`${p}`, p])).values()]
+  const rock = names.some(n => ROCK.has(n));
+  const all = [...new Map([...find(bot, names, SEE, 512), ...remembered.filter(p => !rock || !overDrop(bot, p))].map(p => [`${p}`, p])).values()]
     .filter(p => names.includes(nameAt(p)) && !isSetAside(goal, 'reach', p))
     .sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
   const places = [];
@@ -722,4 +734,4 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
   return true;
 }
 
-module.exports = { failedLatelySays, climbTo, withoutOption, noteEnd, sameEnd, END_REST_MS, netherGather, reachSays, crossSays, gathers, resourceNames, knownPlaces, wayTo, woodInReach, isWood, STEM, PLACE_APART, WAY_REST_MS };
+module.exports = { find, failedLatelySays, climbTo, withoutOption, noteEnd, sameEnd, END_REST_MS, netherGather, reachSays, crossSays, gathers, resourceNames, knownPlaces, wayTo, woodInReach, isWood, STEM, PLACE_APART, WAY_REST_MS };
