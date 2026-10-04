@@ -23,6 +23,27 @@ const dim = name => String(name || 'overworld').replace(/^minecraft:/, '').repla
 // Three dimensions: a death in a mine under the bed is not beside the bed.
 const flat = (a, b) => Math.hypot(a.x - b.x, (a.y ?? b.y) - (b.y ?? a.y), a.z - b.z);
 
+// What making the dropped things again takes, said beside leaving them:
+// 25594 (2026-10-04 06:17Z), asked to go 853 blocks back for twelve eyes of
+// ender, a diamond sword and its iron armor against 'what was dropped is
+// made again, or found, later', left them at 0.56 to 0.42. The eyes were
+// ninety hours of the run.
+const TOLD = 2;
+function madeAgain(items = {}) {
+  const out = [];
+  const n = name => items[name] || 0;
+  const eyes = n('ender_eye'), pearls = n('ender_pearl') + eyes, rods = n('blaze_rod') + Math.ceil((eyes + n('blaze_powder')) / 2);
+  if (pearls) out.push(`${pearls} ender pearl${pearls > 1 ? 's' : ''} from endermen or piglin barter`);
+  if (rods) out.push(`${rods} blaze rod${rods > 1 ? 's' : ''} from a fortress's blazes`);
+  const iron = n('iron_helmet') * 5 + n('iron_chestplate') * 8 + n('iron_leggings') * 7 + n('iron_boots') * 4 + n('iron_sword') * 2 + n('iron_pickaxe') * 3 + n('shield') + n('bucket') * 3 + n('water_bucket') * 3 + n('iron_ingot') + n('raw_iron');
+  if (iron) out.push(`${iron} iron mined and smelted`);
+  const diamonds = Object.entries(items).reduce((sum, [name, c]) => sum + c * ({ diamond: 1, diamond_sword: 2, diamond_pickaxe: 3, diamond_axe: 3, diamond_helmet: 5, diamond_chestplate: 8, diamond_leggings: 7, diamond_boots: 4 }[name] || 0), 0);
+  if (diamonds) out.push(`${diamonds} diamond${diamonds > 1 ? 's' : ''} found`);
+  if (n('bow')) out.push('a bow made of three strings or taken from a skeleton');
+  if (n('arrow')) out.push(`${n('arrow')} arrows from skeletons`);
+  return out.join(', ');
+}
+
 function worth(items = {}) {
   const out = {};
   for (const [name, count] of Object.entries(items)) if (count > 0 && WORTH.test(name) && !CHEAP.test(name)) out[name] = count;
@@ -55,6 +76,9 @@ function corpseRun(bot, goal, now = Date.now()) {
   // (so not aged a second), is Jev's to close: asked again, told of the
   // walks that failed (note 1179).
   if (run.status === 'unreachable' && !run.loadedAt) { run.status = 'open'; delete run.choice; run.stalled = run.stalled || { walks: run.stuck || 3 }; run.stuck = 0; }
+  // Left on a question that did not say what making them again takes
+  // (note 1180), the drops never come near: asked once more, told.
+  if (run.status === 'left' && !run.loadedAt && run.told !== TOLD) { run.status = 'open'; delete run.choice; }
   if (run.status !== 'open') return null;
   if (now - Date.parse(run.deathAt) > KEEP_MS) { run.status = 'stale'; return null; }
   if (dim(bot.game?.dimension) !== run.dimension) return null;
@@ -102,9 +126,11 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     let kept = ''; try { kept = require('./rod-stash').stashSays(goal); } catch (_) { kept = ''; }
     const keptSays = kept ? ` Not dropped: ${kept}, kept there and counted as held.` : '';
     const stalled = run.stalled ? ` ${run.stalled.walks} walks toward them${run.stalled.at ? ` from about (${run.stalled.at.x}, ${run.stalled.at.z})` : ''} got no nearer${run.stalled.error ? ` (the last: ${run.stalled.error})` : ''}; the next goes round by another side, a leg at a time.` : '';
+    const again = madeAgain(run.items), minutes = Math.max(1, Math.round(far / 4.3 / 60));
+    run.told = TOLD;
     const tree = {
-      go_back: { description: `Go back for ${listed(run.items)}: ${far} blocks off${Math.abs(spot.y - bot.entity.position.y) > 4 ? `, at y ${Math.round(spot.y)}` : ''}. ${left === null ? 'They last until the bot comes within 128 blocks, then five minutes.' : `About ${left} seconds before they vanish.`} When the bot died there, ${about ? `about it were ${about}` : 'nothing hostile was in view'}; it wore ${death.worn?.length ? death.worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} then and wears ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} now. It is ${night ? 'night' : 'day'}.${stalled}` },
-      leave_them: { description: `Leave them and go on with what is carried: ${listed(worth(Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])))) || 'nothing worth listing'}. What was dropped is made again, or found, later.${keptSays}` },
+      go_back: { description: `Go back for ${listed(run.items)}: ${far} blocks off${far >= 100 ? `, about ${minutes} minute${minutes > 1 ? 's' : ''}' walk` : ''}${Math.abs(spot.y - bot.entity.position.y) > 4 ? `, at y ${Math.round(spot.y)}` : ''}. ${left === null ? 'They last until the bot comes within 128 blocks, then five minutes.' : `About ${left} seconds before they vanish.`} When the bot died there, ${about ? `about it were ${about}` : 'nothing hostile was in view'}; it wore ${death.worn?.length ? death.worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} then and wears ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} now. It is ${night ? 'night' : 'day'}.${stalled}` },
+      leave_them: { description: `Leave them and go on with what is carried: ${listed(worth(Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])))) || 'nothing worth listing'}. What was dropped is made again, or found, later${again ? `: ${again}` : ''}.${keptSays}` },
     };
     const decision = await require('./decisions').decide('corpse_run', { client, bot, task, goal, save, tree,
       state: { distance: far, secondsLeft: left, aboutAtDeath: death.about || [], wornAtDeath: death.worn || [], wornNow, night, ...(run.stalled ? { walksThatGotNoNearer: run.stalled } : {}), ...(kept ? { inAChest: kept } : {}) } });
@@ -168,4 +194,4 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
   return true;
 }
 
-module.exports = { corpseRun, corpseRunStep, worth };
+module.exports = { corpseRun, corpseRunStep, worth, madeAgain };

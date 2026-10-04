@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Vec3 } = require('vec3');
 const { Task } = require('../src/skills');
-const { corpseRun, corpseRunStep, worth } = require('../src/corpse-run');
+const { corpseRun, corpseRunStep, worth, madeAgain } = require('../src/corpse-run');
 
 // Died 400 blocks from the bed with the iron kit, a sword, rods and junk.
 function world({ deathAgoMs = 60000, dimension = 'overworld', deathDimension = 'overworld', at = new Vec3(0, 64, 0), status = 'finished' } = {}) {
@@ -152,4 +152,23 @@ test('what was worn at the death is gone back for with the rest, and unarmored i
   assert.match(asked.go_back, /^Go back for iron sword, iron helmet, iron chestplate, shield: 10 blocks off\. About \d+ seconds before they vanish\./);
   assert.match(asked.go_back, /it wore iron helmet, iron chestplate, shield then and wears no armour now/);
   assert.equal(walks.length, 1, 'gone back for, as Jev chose');
+});
+
+test('leaving the things says what making them again takes; a run left without that said, its drops never come near, is asked once more (note 1180)', async () => {
+  assert.equal(madeAgain({ ender_eye: 12, diamond_sword: 1, iron_helmet: 1, iron_chestplate: 1, iron_leggings: 1, iron_boots: 1, iron_pickaxe: 1, raw_iron: 13, bow: 1, arrow: 51 }),
+    '12 ender pearls from endermen or piglin barter, 6 blaze rods from a fortress\'s blazes, 40 iron mined and smelted, 2 diamonds found, a bow made of three strings or taken from a skeleton, 51 arrows from skeletons');
+  const { bot, goal } = world();
+  const asked = [];
+  const client = { systemOne: async ({ questions }) => { asked.push(JSON.stringify(Object.values(questions)[0])); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'leave_them', confidence: 0.9 }])) }; } };
+  const task = Object.assign(new Task('run'), { opportunityClient: client });
+  corpseRun(bot, goal);
+  Object.assign(goal.corpseRun, { status: 'left', choice: 'leave_them' });
+  assert.equal(await corpseRunStep(bot, task, goal, () => {}, { move: async () => {}, collect: async () => false }), false);
+  assert.equal(asked.length, 1);
+  assert.match(asked[0], /400 blocks off, about 2 minutes' walk/);
+  assert.match(asked[0], /made again, or found, later: 8 blaze rods from a fortress's blazes, 8 iron mined and smelted, 2 diamonds found\./);
+  assert.equal(goal.corpseRun.status, 'left');
+  // Told, and left again: that stands.
+  assert.equal(await corpseRunStep(bot, task, goal, () => {}, { move: async () => {}, collect: async () => false }), false);
+  assert.equal(asked.length, 1);
 });
