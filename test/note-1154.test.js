@@ -20,7 +20,7 @@ function platform() {
   return { bot, goal: { kind: 'win', request: 'Jev beat Minecraft', gameProgress: { milestones: {} } }, task: new Task('End') };
 }
 
-test('on the entry platform apart from the island, with no walk off it, a span toward the island is offered and laid a stretch at a time (note 1154)', async () => {
+test('on the entry platform apart from the island, with no walk off it, a span toward the island is laid a stretch at a time before anything is chosen (notes 1154, 1160)', async () => {
   const { bot, goal, task } = platform();
   const dragon = { id: 20, name: 'ender_dragon', position: new Vec3(10, 90, .5), yaw: 0, metadata: {}, isValid: true, width: 2, height: 2 };
   dragon.metadata[registry.entitiesByName.ender_dragon.metadataKeys.indexOf('phase')] = 0;
@@ -32,10 +32,8 @@ test('on the entry platform apart from the island, with no walk off it, a span t
     const client = { systemOne: async ({ questions }) => { said = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'bridge_to_island' } } }; } };
     await fightEndStep(bot, task, goal, () => {}, { navigate: async () => {}, dig: async () => {} }, client);
   } finally { bridging.bridgeTo = bridgeTo; }
-  assert.ok(said.bridge_to_island, Object.keys(said || {}).join(','));
-  assert.match(said.bridge_to_island.action, /Lay a span of the blocks carried toward the island, one wide and laid crouched.*no walk leads off this footing, the void is beside it, and the dragon's wing throws a player/);
-  assert.equal(said.bridge_to_island.blocksCarried, 128);
-  assert.equal(said.bridge_to_island.islandGroundBlocksOff, 30);
+  // Not asked (note 1160): off the island with the void beside it and no walk off, the span is the body's safety.
+  assert.equal(said, null);
   assert.deepEqual([call.target.x, call.target.y, call.target.z, call.opts.maxBlocks], [70, 49, 0, 12]);
   assert.equal(goal.step.action, 'end_bridge');
   assert.equal(goal.endCombat.bridged, 12);

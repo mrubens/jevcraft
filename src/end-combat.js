@@ -628,6 +628,30 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
           } };
       }
     }
+    // Off the island with the void beside it (the entry platform apart from
+    // it, or the span laid from it: the floor not the island's own stone)
+    // and no walk off: onto the island before anything else, by the drop to
+    // its ground under the edge where there is one, else by the span. This
+    // is the body's safety, not a choice (note 1160): the dragon's wing
+    // throws whatever stands there, and under it is the void. The
+    // rehearsals of 2026-10-04 (01:49Z, 02:54Z) chose a crystal's shot and a
+    // look from the platform and from the end of their own span, the
+    // island's ground six blocks under it, and were thrown off: "fell out
+    // of the world", twice.
+    {
+      const { deepBeside } = require('./end-safety');
+      const here = bot.entity.position, floorName = bot.blockAt(here.floored().offset(0, -1, 0))?.name;
+      const offIsland = !!floorName && !['end_stone', 'bedrock', 'air'].includes(floorName) && !box && !inWater() && bot.entity.onGround !== false &&
+        [[0, 0], [2, 0], [-2, 0], [0, 2], [0, -2]].some(([dx, dz]) => deepBeside(bot, here.offset(dx, 0, dz)));
+      if (offIsland) {
+        // A walk off it, where the shots on offer left the routes unlooked for.
+        const walkOff = Object.keys(tree).some(k => k.startsWith('move_')) || (await arenaRoutes(bot, task, goal, policy, focus)).length > 0;
+        if (!walkOff) {
+          if (await leaveHighGround(bot, task, goal, save, state)) { progress = true; return; }
+          if (tree.bridge_to_island) { await tree.bridge_to_island.run(); return; }
+        }
+      }
+    }
     // A pause can reveal a vulnerable phase, but it must not indefinitely
     // displace executable actions. Renew that allowance only after actual
     // movement, damage, crystal destruction or observed health recovery.
