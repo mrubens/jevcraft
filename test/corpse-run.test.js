@@ -351,3 +351,13 @@ test('the walk back under way is said for a question asked in the middle of it: 
   goal.corpseRun.status = 'done';
   assert.equal(underWay(bot, goal), null);
 });
+
+test('things lying under the ground: the way down is in the minutes, and the place is said to be one the hour does not reach (note 1220)', async () => {
+  const { bot, goal } = world({ at: new Vec3(260, 70, 0) });
+  goal.survival.deaths[0].position = { x: 400, y: -23, z: 0 };
+  let text = '';
+  const client = { systemOne: async ({ questions }) => { text = JSON.stringify(Object.values(questions)[0]); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'leave_them', confidence: 0.9 }])) }; } };
+  await corpseRunStep(bot, Object.assign(new Task('run'), { opportunityClient: client }), goal, () => {}, { move: async () => {}, collect: async () => false });
+  assert.match(text, /about [3-9] minutes' walk and climb, at y -23/);
+  assert.match(text, /The place is under the ground \(y -23, 93 blocks down from here\): the hour does not reach it, and what was about it at the death does not burn at dawn; the bot goes there with no sword or axe and no armour\./);
+});

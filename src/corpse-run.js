@@ -198,10 +198,25 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
       const ms = Object.entries(by).filter(([k]) => /^(obtain_blaze_rods|obtain_ender_pearls|craft_eyes)\b/.test(k)).reduce((n, [, v]) => n + v, 0);
       if (ms >= 60000) took = ` On this run's clock the rods and pearls for its eyes were ${Math.round(ms / 60000)} minutes of play.`;
     }
-    const again = madeAgain({ ...run.items, ...(eyes ? { ender_eye: eyes } : {}) }), minutes = Math.max(1, Math.round(far / 4.3 / 60));
+    const again = madeAgain({ ...run.items, ...(eyes ? { ender_eye: eyes } : {}) }), flatWalk = Math.hypot(spot.x - bot.entity.position.x, spot.z - bot.entity.position.z);
+    // The way down or up is walked too, at the bot's own measured pace by
+    // the block (levels.js), and a place under the ground is said to be one
+    // (note 1220): the hour does not reach it, and what was about it then
+    // does not burn at dawn. 25594 (2026-10-04 12:01:58Z), bare, was told
+    // '147 blocks off, about 1 minute's walk, at y -23 ... It is day' of
+    // its things in a cave among a skeleton and two creepers, went at 0.81,
+    // was three and a half minutes getting down, and was shot dead by the
+    // pile in twenty-three seconds.
+    let rec = null; try { rec = require('./levels').LEVEL_RECORD; } catch (_) { rec = null; }
+    const dy = spot.y - bot.entity.position.y;
+    const climbSeconds = Math.abs(dy) > 4 && rec ? Math.abs(dy) * (dy < 0 ? rec.downSecondsABlock : rec.upSecondsABlock) : 0;
+    const minutes = Math.max(1, Math.round((flatWalk / 4.3 + climbSeconds) / 60));
+    const under = /overworld/.test(run.dimension) && spot.y < 50;
+    const carriesWeapon = (bot.inventory?.items?.() || []).filter(i => /_(sword|axe)$/.test(i.name)).map(i => i.name.replaceAll('_', ' '))[0] || null;
+    const underSays = under ? ` The place is under the ground (y ${Math.round(spot.y)}, ${Math.round(Math.abs(dy))} blocks ${dy < 0 ? 'down' : 'up'} from here): the hour does not reach it, and what was about it at the death does not burn at dawn; the bot goes there with ${carriesWeapon ? `a ${carriesWeapon}` : 'no sword or axe'} and ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'}.` : '';
     run.told = TOLD;
     const tree = {
-      go_back: { description: `Go back for ${listed(run.items)}: ${far} blocks off${far >= 100 ? `, about ${minutes} minute${minutes > 1 ? 's' : ''}' walk` : ''}${Math.abs(spot.y - bot.entity.position.y) > 4 ? `, at y ${Math.round(spot.y)}` : ''}. ${left === null ? 'They last until the bot comes within 128 blocks, then five minutes.' : `About ${left} seconds before they vanish.`} ${death.cause ? `The bot ${death.cause} there; when it died, ` : 'When the bot died there, '}${about ? `about it were ${about}` : 'nothing hostile was in view'}; it wore ${death.worn?.length ? death.worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} then and wears ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} now. ${hour}${stalled}${earlier}${eyesSay}${alsoLying}` },
+      go_back: { description: `Go back for ${listed(run.items)}: ${far} blocks off${far >= 100 ? `, about ${minutes} minute${minutes > 1 ? 's' : ''}' ${climbSeconds ? 'walk and climb' : 'walk'}` : ''}${Math.abs(spot.y - bot.entity.position.y) > 4 ? `, at y ${Math.round(spot.y)}` : ''}. ${left === null ? 'They last until the bot comes within 128 blocks, then five minutes.' : `About ${left} seconds before they vanish.`} ${death.cause ? `The bot ${death.cause} there; when it died, ` : 'When the bot died there, '}${about ? `about it were ${about}` : 'nothing hostile was in view'}; it wore ${death.worn?.length ? death.worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} then and wears ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} now. ${hour}${underSays}${stalled}${earlier}${eyesSay}${alsoLying}` },
       leave_them: { description: `Leave them and go on with what is carried: ${listed(worth(Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])))) || 'nothing worth listing'}. What was dropped is made again, or found, later${again ? `: ${again}` : ''}.${took}${keptSays}` },
     };
     // By night, and the drops not ageing (the bot not within 128 blocks of
