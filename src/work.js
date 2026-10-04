@@ -8912,7 +8912,7 @@ function gameHandlers(bot, decisionClient) {
         // Wolves sit before a crossing and stand again after (wolves.js).
         wolves: (bot, task, goal, save, sit) => require('./wolves').commandWolves(bot, task, goal, save, sit),
         // Back for a death's drops (corpse-run.js).
-        corpse_run: (bot, task, goal, save) => require('./corpse-run').corpseRunStep(bot, task, goal, save, { move: navigate }),
+        corpse_run: (bot, task, goal, save) => require('./corpse-run').corpseRunStep(bot, task, goal, save, { move: navigate, surface: surfaceStep }),
         take_cache: async (bot, task, goal, save) => {
           const { nearCache, emptyCache } = require('./field-cache');
           const near = nearCache(bot, goal);

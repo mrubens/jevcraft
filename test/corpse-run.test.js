@@ -66,23 +66,23 @@ test('the survival layer picks up close drops first', () => {
   assert.equal(goal.corpseRun, undefined);
 });
 
-test('three walks that get no nearer: whether the things are given up is asked, told of the walks; the code does not close the run (note 1179)', async () => {
+test('a walk each way that gets no nearer: whether the things are given up is asked, told of the walks; the code does not close the run (note 1179)', async () => {
   const { bot, goal } = world();
   const asked = [], legs = [];
   let answer = 'go_back';
   const client = { systemOne: async ({ questions }) => { asked.push(JSON.stringify(Object.values(questions)[0])); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: answer, confidence: 0.9 }])) }; } };
   const task = Object.assign(new Task('run'), { opportunityClient: client });
   const move = async (b, t, g) => { legs.push(g); throw new Error('No route (noPath)'); };
-  for (let i = 0; i < 3; i++) assert.equal(await corpseRunStep(bot, task, goal, () => {}, { move, collect: async () => false }), true);
+  for (let i = 0; i < 5; i++) assert.equal(await corpseRunStep(bot, task, goal, () => {}, { move, collect: async () => false }), true);
   assert.equal(goal.corpseRun.status, 'open');
   assert.equal(asked.length, 1);
-  assert.deepEqual(goal.corpseRun.stalled, { walks: 3, at: { x: 0, z: 0 }, error: 'No route (noPath)' });
+  assert.deepEqual(goal.corpseRun.stalled, { walks: 5, at: { x: 0, z: 0 }, error: 'No route (noPath)' });
   // Far off it goes a leg at a time, and after a leg that failed, to one side of the line.
-  assert.deepEqual(legs.map(g => [g.x, g.z]), [[64, 0], [41, 49], [41, -49]]);
+  assert.deepEqual(legs.map(g => [g.x, g.z]), [[64, 0], [41, 49], [41, -49], [0, 64], [0, -64]]);
   answer = 'leave_them';
   assert.equal(await corpseRunStep(bot, task, goal, () => {}, { move, collect: async () => false }), false);
   assert.equal(asked.length, 2);
-  assert.match(asked[1], /3 walks toward them from about \(0, 0\) got no nearer \(the last: No route \(noPath\)\)/);
+  assert.match(asked[1], /5 walks toward them from about \(0, 0\) got no nearer, straight and to each side \(the last: No route \(noPath\)\)/);
   assert.equal(goal.corpseRun.status, 'left');
 });
 
@@ -171,4 +171,21 @@ test('leaving the things says what making them again takes; a run left without t
   // Told, and left again: that stands.
   assert.equal(await corpseRunStep(bot, task, goal, () => {}, { move: async () => {}, collect: async () => false }), false);
   assert.equal(asked.length, 1);
+});
+
+test('far off and under the rock, the way back goes up to the surface first, and that is not a walk that failed (note 1182)', async () => {
+  const { bot, goal } = world({ at: new Vec3(0, 41, 0) });
+  bot.blockAt = p => ({ name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p });
+  const levels = require('../src/levels'), depthHere = levels.depthHere;
+  levels.depthHere = () => 23;
+  const calls = [];
+  try {
+    const surface = async () => { calls.push('surface'); bot.entity.position = new Vec3(0, 64, 0); levels.depthHere = () => 0; };
+    const move = async (b, t, g) => { calls.push('walk'); bot.entity.position = new Vec3(g.x, 64, g.z); };
+    assert.equal(await corpseRunStep(bot, new Task('win'), goal, () => {}, { move, surface, collect: async () => false }), true);
+    assert.equal(goal.step.way, 'up to the surface first');
+    assert.equal(await corpseRunStep(bot, new Task('win'), goal, () => {}, { move, surface, collect: async () => false }), true);
+    assert.deepEqual(calls, ['surface', 'walk']);
+    assert.equal(goal.corpseRun.stuck, 0);
+  } finally { levels.depthHere = depthHere; }
 });

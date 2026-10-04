@@ -17,7 +17,7 @@ const { collectNearbyDrops } = require('./drop-collection');
 
 const WORTH = /^(diamond|emerald|iron_ingot|gold_ingot|raw_iron|raw_gold|blaze_rod|blaze_powder|ender_pearl|ender_eye|obsidian|shield|bow|crossbow|arrow|bucket|water_bucket|lava_bucket|flint_and_steel|golden_apple|enchanted_golden_apple|trial_key|ominous_trial_key|ancient_debris|netherite_ingot|netherite_scrap|diamond_block|iron_block|gold_block|golden_carrot|cooked_beef|cooked_porkchop|cooked_mutton|bread)$|_(helmet|chestplate|leggings|boots|sword|pickaxe|axe)$/;
 const CHEAP = /^(wooden|stone)_(sword|pickaxe|axe)$/;
-const TICKING = 128, DESPAWN_MS = 5 * 60000, MARGIN_MS = 20000, KEEP_MS = 3 * 3600000, LEG_MS = 120000, ARRIVE = 6, FAR = 96, LEG = 64;
+const TICKING = 128, DESPAWN_MS = 5 * 60000, MARGIN_MS = 20000, KEEP_MS = 3 * 3600000, LEG_MS = 120000, ARRIVE = 6, FAR = 96, LEG = 64, TURNS = [0, 50, -50, 90, -90];
 const ARMOUR = { helmet: 'head', chestplate: 'torso', leggings: 'legs', boots: 'feet' };
 const dim = name => String(name || 'overworld').replace(/^minecraft:/, '').replace(/^the_/, '');
 // Three dimensions: a death in a mine under the bed is not beside the bed.
@@ -28,7 +28,7 @@ const flat = (a, b) => Math.hypot(a.x - b.x, (a.y ?? b.y) - (b.y ?? a.y), a.z - 
 // ender, a diamond sword and its iron armor against 'what was dropped is
 // made again, or found, later', left them at 0.56 to 0.42. The eyes were
 // ninety hours of the run.
-const TOLD = 2;
+const TOLD = 3;
 function madeAgain(items = {}) {
   const out = [];
   const n = name => items[name] || 0;
@@ -78,7 +78,7 @@ function corpseRun(bot, goal, now = Date.now()) {
   if (run.status === 'unreachable' && !run.loadedAt) { run.status = 'open'; delete run.choice; run.stalled = run.stalled || { walks: run.stuck || 3 }; run.stuck = 0; }
   // Left on a question that did not say what making them again takes
   // (note 1180), the drops never come near: asked once more, told.
-  if (run.status === 'left' && !run.loadedAt && run.told !== TOLD) { run.status = 'open'; delete run.choice; }
+  if (run.status === 'left' && !run.loadedAt && run.told !== TOLD) { run.status = 'open'; delete run.choice; delete run.stalled; run.stuck = 0; }
   if (run.status !== 'open') return null;
   if (now - Date.parse(run.deathAt) > KEEP_MS) { run.status = 'stale'; return null; }
   if (dim(bot.game?.dimension) !== run.dimension) return null;
@@ -108,7 +108,7 @@ async function wearRecovered(bot) {
   }
 }
 
-async function corpseRunStep(bot, task, goal, save, { move = navigate, collect = collectNearbyDrops } = {}) {
+async function corpseRunStep(bot, task, goal, save, { move = navigate, collect = collectNearbyDrops, surface = null } = {}) {
   const run = corpseRun(bot, goal);
   if (!run) { save(); return false; }
   const spot = new Vec3(run.position.x, run.position.y, run.position.z);
@@ -125,7 +125,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     // What a chest in the Nether keeps did not drop (rod-stash.js, note 704).
     let kept = ''; try { kept = require('./rod-stash').stashSays(goal); } catch (_) { kept = ''; }
     const keptSays = kept ? ` Not dropped: ${kept}, kept there and counted as held.` : '';
-    const stalled = run.stalled ? ` ${run.stalled.walks} walks toward them${run.stalled.at ? ` from about (${run.stalled.at.x}, ${run.stalled.at.z})` : ''} got no nearer${run.stalled.error ? ` (the last: ${run.stalled.error})` : ''}; the next goes round by another side, a leg at a time.` : '';
+    const stalled = run.stalled ? ` ${run.stalled.walks} walks toward them${run.stalled.at ? ` from about (${run.stalled.at.x}, ${run.stalled.at.z})` : ''} got no nearer, straight and to each side${run.stalled.error ? ` (the last: ${run.stalled.error})` : ''}.` : '';
     const again = madeAgain(run.items), minutes = Math.max(1, Math.round(far / 4.3 / 60));
     run.told = TOLD;
     const tree = {
@@ -148,7 +148,21 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     // Far off, a leg at a time over the ground (a walk of a thousand blocks
     // is not one the pathfinder plans); after a leg that got no nearer, the
     // next is turned to one side of the straight line and then the other.
-    const here = bot.entity.position, turn = [0, 50, -50, 90, -90][(run.stuck || 0) % 5] * Math.PI / 180;
+    // Far off and under the rock, up to the surface first: the legs are
+    // walked over the ground. 25594 (2026-10-04 06:38Z) walked a leg into a
+    // cave at y 41, 540 blocks from its things, and three legs from there
+    // had no path within the second; asked on 'six walks got no nearer', Jev
+    // left twelve eyes of ender (note 1182).
+    let depth = 0; try { depth = require('./levels').depthHere(bot) || 0; } catch (_) { depth = 0; }
+    if (before > FAR && depth >= 3 && surface && !(run.climbFailed >= 2)) {
+      const y = bot.entity.position.y;
+      goal.step = { action: 'corpse_run', to: { ...run.position }, items: { ...run.items }, way: 'up to the surface first' }; save();
+      try { await surface(bot, task, goal, save); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      run.climbFailed = bot.entity.position.y - y >= 2 ? 0 : (run.climbFailed || 0) + 1;
+      save(); return true;
+    }
+    const here = bot.entity.position, turn = TURNS[(run.stuck || 0) % TURNS.length] * Math.PI / 180;
     const bearing = Math.atan2(spot.z - here.z, spot.x - here.x) + turn;
     const leg = before > FAR ? new goals.GoalNearXZ(Math.round(here.x + Math.cos(bearing) * LEG), Math.round(here.z + Math.sin(bearing) * LEG), 4) : new goals.GoalNear(spot.x, spot.y, spot.z, 3);
     let failed = null;
@@ -159,11 +173,12 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
       // Whether the things are given up is Jev's (it closed here on a count
       // of three: 25594, 2026-10-04 06:11Z, 800 blocks from twelve eyes of
       // ender, a diamond sword, a bow, 51 arrows and its iron armor, never
-      // within sight of them). Every third walk that gets no nearer, the
-      // question is asked again with what failed.
-      if (before - after >= 8) run.stuck = 0;
-      else if (++run.stuck % 3 === 0) {
-        run.stalled = { walks: (run.stalled?.walks || 0) + 3, at: { x: Math.round(bot.entity.position.x), z: Math.round(bot.entity.position.z) }, ...(failed ? { error: failed } : {}) };
+      // within sight of them). When a walk each way (straight, and to
+      // each side by two angles) has got no nearer, the question is asked
+      // again with what failed.
+      if (before - after >= 8) { run.stuck = 0; delete run.climbFailed; }
+      else if (++run.stuck % TURNS.length === 0) {
+        run.stalled = { walks: (run.stalled?.walks || 0) + TURNS.length, at: { x: Math.round(bot.entity.position.x), z: Math.round(bot.entity.position.z) }, ...(failed ? { error: failed } : {}) };
         delete run.choice; delete run.announced;
       }
       save(); return true;
