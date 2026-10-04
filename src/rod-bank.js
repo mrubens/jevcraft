@@ -293,7 +293,7 @@ async function askBank(bot, task, goal, save, actions, client, { now = Date.now(
 function bankStage(bot, goal, dim, now = Date.now()) {
   const b = pending(goal);
   if (!b) return null;
-  if (!carriedKept(bot).some(k => k.item === 'blaze_rod' || k.item === 'blaze_powder')) { end(goal, 'no rods carried now (a death, or used)'); return null; }
+  if (!carriedKept(bot).some(k => k.item === 'blaze_rod' || k.item === 'blaze_powder' || k.item === 'ender_eye')) { end(goal, 'no rods or eyes carried now (a death, or used)'); return null; }
   // Set aside in the Nether (a step on the way met something else's
   // failure, note 885): the walk waits the set-aside out and goes on; on the
   // Overworld side it is the store's own failure, and the bank ends.

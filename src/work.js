@@ -8398,9 +8398,16 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   try {
     const rb = require('./rod-bank'), rsx = require('./rod-stash');
     const rods = rsx.rodsEquivalent(bot);
-    if (rods >= 1 && !rb.pending(goal) && !isSetAside(goal, 'rod_bank', 'store')) {
+    // The eyes of ender made, and pearls carried, as the rods are (note
+    // 1150): 25594 (2026-10-04 01:16:13 to 01:17:12Z), thirteen eyes made
+    // and one thrown and left, crossed for one more pearl with the other
+    // twelve in its pack, offered no chest for them on this side (half a
+    // rod's worth of powder carried is no rod).
+    const eyes = countOf(bot, 'ender_eye'), pearlsC = countOf(bot, 'ender_pearl');
+    const carriedSays = [rods >= 1 ? `${rods} blaze rod${rods === 1 ? '' : 's'}` : null, eyes ? `${eyes} eye${eyes === 1 ? '' : 's'} of ender` : null, pearlsC ? `${pearlsC} ender pearl${pearlsC === 1 ? '' : 's'}` : null].filter(Boolean).join(', ');
+    if ((rods >= 1 || eyes >= 1) && !rb.pending(goal) && !isSetAside(goal, 'rod_bank', 'store')) {
       const there = rb.chestThere(bot, goal), n = require('./eye-need').need(bot, goal);
-      rodsToBank = { rods, how: there.how, says: `Put the ${rods} blaze rod${rods === 1 ? '' : 's'} carried in ${there.says} before crossing, a few seconds: ${n.rodsLeft ? `${n.rodsLeft} more ${n.rodsLeft === 1 ? 'is' : 'are'} wanted` : `every rod wanted is had, and the Nether is entered for ${n.pearlsLeft} pearl${n.pearlsLeft === 1 ? '' : 's'}`}. A death in the Nether drops what is carried, often into lava; rods in the chest are counted as held through any death and taken out when the pearls are had too.` };
+      rodsToBank = { rods, how: there.how, says: `Put the ${carriedSays} carried in ${there.says} before crossing, a few seconds: ${n.rodsLeft ? `${n.rodsLeft} more ${n.rodsLeft === 1 ? 'is' : 'are'} wanted` : `every rod wanted is had, and the Nether is entered for ${n.pearlsLeft} pearl${n.pearlsLeft === 1 ? '' : 's'}`}. A death in the Nether drops what is carried, often into lava; ${eyes ? 'the eyes of ender are every rod and pearl got so far, made up; they and the rods' : 'rods'} in the chest are counted as held through any death and taken out when the pearls are had too.` };
     }
   } catch (_) { rodsToBank = null; }
   // Asked for these too, with nothing short (notes 1045, 1048).

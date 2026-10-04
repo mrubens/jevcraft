@@ -737,7 +737,9 @@ const PEARLS_NOW_MS = 10 * 60000;
 async function pearlsNow(bot, task, goal, save, actions, client) {
   const state = goal?.mobHunt;
   if (!state || state.item !== 'ender_pearl' || goal.kind !== 'win' || dimension(bot) !== 'nether') return null;
-  const n = countOf(bot, 'ender_pearl');
+  // Eyes of ender carried are asked of with the pearls (note 1150): the
+  // chest keeps both (rod-stash.js KEPT).
+  const eyes = countOf(bot, 'ender_eye'), n = countOf(bot, 'ender_pearl') + eyes;
   if (!n) return null;
   const asked = goal.pearlsNow;
   if (asked && asked.count === n && Date.now() - asked.at < PEARLS_NOW_MS) return null;
@@ -745,13 +747,13 @@ async function pearlsNow(bot, task, goal, save, actions, client) {
   let keep = null; try { keep = stash.keepOption(bot, task, goal, save, actions, { thenSays: 'Then the hunt goes on with nothing in the pack to lose.' }); } catch (_) { keep = null; }
   if (!keep) return null;
   goal.pearlsNow = { count: n, at: Date.now() }; save();
-  const left = huntLeft(bot, goal), pearls = `${n} ender pearl${n === 1 ? '' : 's'}`;
+  const left = huntLeft(bot, goal), np = n - eyes, pearls = [np ? `${np} ender pearl${np === 1 ? '' : 's'}` : null, eyes ? `${eyes} eye${eyes === 1 ? '' : 's'} of ender` : null].filter(Boolean).join(' and ');
   const tree = {
     keep_here: { description: keep.description, run: keep.run },
-    carry_on: { description: `Hunt on with the ${pearls} in the pack: nothing is put down, and every pearl carried is lost with a death here (the bot comes back to life in the Overworld, far from them).${stash.pearlsLostSays()} ${left} still needed. Asked again when another pearl is carried, or in ten minutes.`, run: async () => {} },
+    carry_on: { description: `Hunt on with the ${pearls} in the pack: nothing is put down, and every ${eyes ? 'pearl and eye' : 'pearl'} carried is lost with a death here (the bot comes back to life in the Overworld, far from them).${stash.pearlsLostSays()} ${left} still needed. Asked again when another pearl is carried, or in ten minutes.`, run: async () => {} },
   };
   let decision;
-  try { decision = await decide('pearls_now', { client, bot, task, goal, save, tree, state: { pearlsCarried: n, pearlsStillNeeded: left, health: bot.health, food: bot.food, riskNow: require('./risk').riskNow(bot) } }); }
+  try { decision = await decide('pearls_now', { client, bot, task, goal, save, tree, state: { pearlsCarried: np, ...(eyes ? { eyesOfEnderCarried: eyes } : {}), pearlsStillNeeded: left, health: bot.health, food: bot.food, riskNow: require('./risk').riskNow(bot) } }); }
   catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[pearls_now] not asked: ${String(err.message || err).slice(0, 300)}`); return null; }
   if (decision.stale) return null;
   if (decision.path?.at(-1) !== 'keep_here') return 'carry';

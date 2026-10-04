@@ -185,6 +185,21 @@ test('crossing_kit offers to put the rods carried in a chest before crossing, an
   assert.equal(goal.rodBank?.rods, 7);
 });
 
+// Note 1150: eyes of ender carried, with no rod, are offered the chest on this side too.
+test('crossing_kit offers to put the eyes of ender carried in a chest before crossing for one more pearl (note 1150)', async () => {
+  const { crossingKitReady } = require('../src/work');
+  const b = bot({ items: [['stick', 4], ['cobblestone', 128], ['stone_pickaxe'], ['stone_pickaxe'], ['golden_boots'], ['oak_log', 8], ['crafting_table'], ['chest'], ['ender_eye', 12], ['blaze_powder', 1]], dimension: 'overworld' });
+  b.game.difficulty = 'peaceful'; b.game.gameMode = 'survival'; b.chat = () => {};
+  let asked = null;
+  const client = { systemOne: async ({ questions }) => { asked = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'bank_rods_first', confidence: 0.8 } } }; } };
+  const goal = { kind: 'win' };
+  const ready = await crossingKitReady(b, { check() {}, opportunityClient: client }, goal, () => {}, client);
+  assert.ok(asked?.bank_rods_first, Object.keys(asked || {}).join(','));
+  assert.match(asked.bank_rods_first, /^Put the 12 eyes of ender carried in .* before crossing, a few seconds: every rod wanted is had, and the Nether is entered for 1 pearl\. A death in the Nether drops what is carried, often into lava; the eyes of ender are every rod and pearl got so far, made up; they and the rods in the chest are counted as held through any death/);
+  assert.notEqual(ready, true, 'not crossed yet: the chest first');
+  assert.ok(goal.rodBank, 'the bank begun');
+});
+
 // Note 1052: the chest for the valuables says what the iron carried is worth after a death.
 test('crossing_kit: the cache of valuables says what the iron left in it saves after a death (note 1052)', async () => {
   const { crossingKitReady } = require('../src/work');

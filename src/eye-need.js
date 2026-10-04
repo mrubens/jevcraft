@@ -40,7 +40,15 @@ const rodsFor = (eyes, powder = 0) => Math.ceil(Math.max(0, eyes - powder) / 2);
 function need(bot, goal) {
   let s = null; try { s = require('./rod-stash').stashed(goal); } catch (_) { s = null; }
   const st = { rods: s?.blaze_rod || 0, powder: s?.blaze_powder || 0, pearls: s?.ender_pearl || 0, eyes: s?.ender_eye || 0 };
-  const target = eyeTarget(goal), eyes = countOf(bot, 'ender_eye'), powder = countOf(bot, 'blaze_powder');
+  // The eye the search has just thrown and not yet picked up again is held
+  // (stronghold.js pendingPickup, note 1150): it comes down a few blocks on
+  // and is fetched on the search's next pass. 25594 (mid-242-sc-fortress-
+  // 10-r2, 2026-10-04 01:16:10 to 01:17:12Z), thirteen eyes made, threw its
+  // first; three seconds later, twelve in the pack, the ladder read one
+  // pearl short, win_strategy took the pearls at 0.88, and the bot went back
+  // into the Nether with the thrown eye left where it fell.
+  const inFlight = goal?.strongholdSearch?.pendingPickup ? 1 : 0;
+  const target = eyeTarget(goal), eyes = countOf(bot, 'ender_eye') + inFlight, powder = countOf(bot, 'blaze_powder');
   const rods = countOf(bot, 'blaze_rod'), pearls = countOf(bot, 'ender_pearl');
   const rodsWanted = rodsFor(target - eyes - st.eyes, powder + st.powder), pearlsWanted = Math.max(0, target - eyes - st.eyes);
   return { target, eyes, powder, rods, pearls, rodsWanted, rodsLeft: Math.max(0, rodsWanted - rods - st.rods), pearlsWanted, pearlsLeft: Math.max(0, pearlsWanted - pearls - st.pearls), located: portalFrames(goal) !== null,
