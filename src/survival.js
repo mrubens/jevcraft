@@ -484,7 +484,13 @@ const CREEPER_WALKS = 0.75;
 const CREEPER_BLAST_REACH = 6;
 // A run: about five and a half blocks a second sprinting. The route searches
 // made before the stance is asked, at most (scoutRetreat).
-const SPRINT = 5.6, SCOUT_MS = 300, RUN_FROM = 16;
+// The run from what bites ends 24 blocks from every one of them, not 16
+// from the nearest (note 1194): 25585 (2026-10-04 07:13:53 to 07:14:29Z),
+// back to life bare-handed with three zombies at its spawn, chose the run
+// seven times running; each ended sixteen from one zombie and nearer
+// another, sixty blocks in thirty-five seconds (1.7 a second, a zombie's
+// walk is 2.3), and it was cornered at the water and dead at 07:14:48.
+const SPRINT = 5.6, SCOUT_MS = 300, RUN_FROM = 24;
 // A creeper this near ends the shield guard faced elsewhere (note 813).
 const GUARD_CREEPER_REACH = 5;
 // The retreat's scout with nothing close (no biter within 4, no creeper
@@ -5047,7 +5053,7 @@ class Survival {
         const secs = Math.round(RUN_FROM / (SPRINT - speed) * 10) / 10;
         const others = danger.filter(t => shooter(t.entity) && t.visible).length;
         options.run_from = { expects: { damage: Math.round(runShotCost(secs) * 10) / 10, seconds: Math.max(1, secs), oneHit },
-          description: `Run from ${biters.length === 1 ? `the ${lead.entity.name.replaceAll('_', ' ')}` : `the ${biters.length} that bite`} at a sprint, to the first cell the walk reaches ${RUN_FROM} blocks or more from ${biters.length === 1 ? 'it' : 'the nearest of them'}: no footing is picked beforehand and nothing is searched while standing. The ${lead.entity.name.replaceAll('_', ' ')} walks about ${speed} blocks a second and the bot sprints about ${SPRINT}: the gap opens about ${Math.round((SPRINT - speed) * 10) / 10} a second, ${RUN_FROM} blocks in about ${secs} seconds, the back to ${biters.length === 1 ? 'it' : 'them'} and the shield down while it runs${others ? `; ${others} that shoot keep shooting` : ''}.${noWayOut || ' Where it ends is open ground, and what follows is asked of there.'}`,
+          description: `Run from ${biters.length === 1 ? `the ${lead.entity.name.replaceAll('_', ' ')}` : `the ${biters.length} that bite`} at a sprint, to the first cell the walk reaches ${RUN_FROM} blocks or more from ${biters.length === 1 ? 'it' : 'every one of them'}: no footing is picked beforehand and nothing is searched while standing. The ${lead.entity.name.replaceAll('_', ' ')} walks about ${speed} blocks a second and the bot sprints about ${SPRINT}: the gap opens about ${Math.round((SPRINT - speed) * 10) / 10} a second, ${RUN_FROM} blocks in about ${secs} seconds, the back to ${biters.length === 1 ? 'it' : 'them'} and the shield down while it runs${others ? `; ${others} that shoot keep shooting` : ''}.${noWayOut || ' Where it ends is open ground, and what follows is asked of there.'}`,
           run: async () => {
             this.report(goal, save, { action: 'run_from', threats: biters.map(t => t.entity.name).slice(0, 4), health: bot.health, stance: true });
             lowerShield(bot);
@@ -5056,7 +5062,8 @@ class Survival {
             // 2026-10-03 12:53:37Z, four zombies come down into its shaft, "the run
             // from them came 1 blocks: No route"), the same run with a block dug or
             // laid where the way wants one (note 1054).
-            const goalAway = () => new goals.GoalInvert(new goals.GoalNear(at.x, at.y, at.z, RUN_FROM));
+            const away = e => new goals.GoalInvert(new goals.GoalNear(e.position.x, e.position.y, e.position.z, RUN_FROM));
+            const goalAway = () => biters.length > 1 && typeof goals.GoalCompositeAll === 'function' ? new goals.GoalCompositeAll(biters.slice(0, 4).map(t => away(t.entity))) : away(lead.entity);
             try {
               try { await this.actions.navigate(bot, task, goalAway(), { timeoutMs: 9000, stallMs: 2500, sprint: true, onFoot: true }); }
               catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name) || bot.entity.position.distanceTo(from) >= 4) throw err; await this.actions.navigate(bot, task, goalAway(), { timeoutMs: 9000, stallMs: 2500, sprint: true }); }
