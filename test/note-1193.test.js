@@ -81,3 +81,26 @@ test('for the stronghold\'s search the portal\'s twelve may go in a chest and th
   assert.equal(eyeBank.held(goal, bot), false);
   assert.equal(rodBank.collectHere(bot, goal).action, 'collect_rod_stash');
 });
+
+test('a chest far off in the Overworld is walked back to a leg at a time, from the surface first, and a leg that fails turns the next to a side (note 1197)', async () => {
+  const { bot, goal } = world({ eyes: 1 });
+  goal.gameProgress.milestones.stronghold_located = { at: Date.now() };
+  goal.eyeBank = { at: Date.now(), chestAt: { x: 0, y: 64, z: 1340 }, forSearch: true };
+  goal.rodStashes = [{ position: { x: 0, y: 64, z: 1340 }, dimension: 'overworld', contents: { ender_eye: 12 }, placedAt: new Date().toISOString() }];
+  const levels = require('../src/levels'), depthHere = levels.depthHere;
+  const calls = [];
+  try {
+    levels.depthHere = () => 30;
+    await rodStash.collect(bot, new Task('t'), goal, () => {}, { navigate: async () => calls.push('walk'), surfaceStep: async () => calls.push('surface') });
+    assert.deepEqual(calls, ['surface']);
+    assert.equal(goal.step.way, 'up to the surface first');
+    levels.depthHere = () => 0;
+    const legs = [];
+    await rodStash.collect(bot, new Task('t'), goal, () => {}, { navigate: async (b, t, g) => { legs.push([g.x, g.z]); throw new Error('No route (noPath)'); }, surfaceStep: async () => calls.push('surface') });
+    await rodStash.collect(bot, new Task('t'), goal, () => {}, { navigate: async (b, t, g) => { legs.push([g.x, g.z]); bot.entity.position = new Vec3(g.x + .5, 64, g.z + .5); }, surfaceStep: async () => {} });
+    assert.ok(Math.abs(legs[0][0] - 776.5) <= 1 && Math.abs(legs[0][1] - 1340.5) <= 1, `sixty-four blocks straight at it: ${legs[0]}`);
+    assert.ok(Math.abs(legs[1][0] - 799.4) <= 1 && Math.abs(legs[1][1] - 1291.5) <= 1, `the leg after one that failed, turned fifty degrees: ${legs[1]}`);
+    assert.equal(goal.rodStashes[0].legsFailed, 0);
+    assert.equal(goal.rodStashes[0].contents.ender_eye, 12, 'nothing is written off for a leg that failed');
+  } finally { levels.depthHere = depthHere; }
+});

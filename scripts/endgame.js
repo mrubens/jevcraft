@@ -195,8 +195,9 @@ const DRILLS = {
     const truth = await locateStronghold();
     const start = { x: truth.x + 280, z: truth.z + 110 };
     await kit();
-    await commands(['time set 1000', `execute in minecraft:overworld run spreadplayers ${start.x} ${start.z} 0 8 false ${username}`]);
-    await sleep(4000); await bot.waitForChunksToLoad();
+    // Let down from the air over the start (a spread there can find no ground, and failed without a word on 2026-10-04: the run began at the world's spawn, 1,600 blocks off).
+    await commands(['time set 1000', `effect give ${username} minecraft:slow_falling 90 0 true`, `effect give ${username} minecraft:water_breathing 600 0 true`, `execute in minecraft:overworld run tp ${username} ${start.x} 200 ${start.z}`]);
+    await sleep(25000); await bot.waitForChunksToLoad();
     const from = where();
     const goal = { kind: 'win', request: 'beat the game', gameProgress: { version: 1, milestones: { nether_entered: { at: 1 }, eyes_obtained: { at: 1 } } }, strongholdSearch: { bearings: [], throws: 0, moves: 0, visited: {} } };
     const handlers = gameHandlers(bot, client);
