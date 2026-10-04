@@ -39,11 +39,15 @@ while :; do
     # The hour's cuts are the verdict's own reasons ("cut: no Nether in 60
     # minutes played", "cut: no fortress in 60 minutes after the Nether",
     # midgame.js cutReasons, note 763): the trial record says why it ended.
+    # A reason the verdict says is played on ("died ...", "held ...") is not
+    # attention (note 1209): "held through a loop ...: played on" has the
+    # word loop in it, and mid-242-jg-fortress-11-r2 (25590, 2026-10-04
+    # 11:47Z), eight ender pearls in its chests, was ended on it.
     # Jev down (note 781): never attention. No decision can be made, so a
     # restart only stands again (53 worlds restarted on 402s from 04:57Z on
     # 2026-10-01); the verdict keeps the spell off its clock and its loops,
     # and the trial is looked at again once Jev answers.
-    if echo "$V" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const v=JSON.parse(s);process.exit(!v.jevDownNow&&(v.done||(v.reasons||[]).some(r=>/death|loop|stranded|^cut: /.test(r)))?0:1)}catch{process.exit(1)}})"; then
+    if echo "$V" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const v=JSON.parse(s);process.exit(!v.jevDownNow&&(v.done||(v.reasons||[]).some(r=>!/^(died|held) /.test(r)&&/death|loop|stranded|^cut: /.test(r)))?0:1)}catch{process.exit(1)}})"; then
       echo "attention on $p"; echo "$V" | head -30; exit 0
     fi
   done
