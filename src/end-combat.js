@@ -317,7 +317,20 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     // planning. They still retain cancellation and the caller's guard.
     task.interruptCheck = oldInterrupt;
     if (fallDanger(bot)) await recoverFall(bot, task, goal, save);
-    else await evadeDragon(bot, task, goal, save, { allowed: p => policy.allowedPoint(p) && safeFromHostiles(bot, p) });
+    else {
+      // Out of the dragon's way by ground no mob stands near, and where
+      // there is none, by any ground (note 1174): an enderman's blow is
+      // seven, the dragon's head ten and again each second it is stood in.
+      // The rehearsal of 2026-10-04 (04:44 to 04:48Z), turned endermen
+      // seven to twenty blocks off, found "no surveyed walking escape"
+      // twenty-six times and stood by the fountain as the dragon came down
+      // on it, 20 health to none in four touches.
+      try { await evadeDragon(bot, task, goal, save, { allowed: p => policy.allowedPoint(p) && safeFromHostiles(bot, p, endMobs(bot)) }); }
+      catch (err) {
+        if (err.name !== 'NoEscape') throw err;
+        await evadeDragon(bot, task, goal, save, { allowed: p => policy.allowedPoint(p) });
+      }
+    }
   };
   // Standing in the water poured at its feet, a turned enderman is no
   // reason to hold: water hurts one and it teleports off rather than cross
