@@ -28,7 +28,7 @@ const flat = (a, b) => Math.hypot(a.x - b.x, (a.y ?? b.y) - (b.y ?? a.y), a.z - 
 // ender, a diamond sword and its iron armor against 'what was dropped is
 // made again, or found, later', left them at 0.56 to 0.42. The eyes were
 // ninety hours of the run.
-const TOLD = 3;
+const TOLD = 4;
 function madeAgain(items = {}) {
   const out = [];
   const n = name => items[name] || 0;
@@ -116,6 +116,7 @@ function corpseRun(bot, goal, now = Date.now()) {
     settle(run);
   }
   if (!run) return null;
+  if (run.waitUntil > now) return null;
   // A run the code once closed as out of reach, its drops never come near
   // (so not aged a second), is Jev's to close: asked again, told of the
   // walks that failed (note 1179).
@@ -165,7 +166,14 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     const wornNow = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
     const far = Math.round(flat(bot.entity.position, spot));
     const left = run.loadedAt ? Math.max(0, Math.round((DESPAWN_MS - (Date.now() - Date.parse(run.loadedAt))) / 1000)) : null;
-    const t = bot.time?.timeOfDay ?? 0, night = t >= 12500 && t < 23500;
+    // The hour by the one clock (day.js), and how long it lasts: 25594
+    // (2026-10-04 07:29:11Z) was told 'it is night' at dawn, tick 23000 and
+    // some, nine minutes of day ahead and the walk four, and left twelve
+    // eyes of ender at 0.55 to 0.41 (note 1188).
+    const { DAY } = require('./day');
+    const t = bot.time?.timeOfDay, night = require('./day').night(bot);
+    const until = Number.isFinite(t) ? Math.max(1, Math.round((((night ? DAY.DAWN : DAY.NIGHT) - t + 24000) % 24000) / 1200)) : null;
+    const hour = /overworld/.test(dim(bot.game?.dimension)) && until !== null ? (night ? `It is night: dawn in about ${until} real minute${until === 1 ? '' : 's'}.` : `It is day: night in about ${until} real minute${until === 1 ? '' : 's'}.`) : '';
     // What a chest in the Nether keeps did not drop (rod-stash.js, note 704).
     let kept = ''; try { kept = require('./rod-stash').stashSays(goal); } catch (_) { kept = ''; }
     const keptSays = kept ? ` Not dropped: ${kept}, kept there and counted as held.` : '';
@@ -179,12 +187,16 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     const again = madeAgain({ ...run.items, ...(eyes ? { ender_eye: eyes } : {}) }), minutes = Math.max(1, Math.round(far / 4.3 / 60));
     run.told = TOLD;
     const tree = {
-      go_back: { description: `Go back for ${listed(run.items)}: ${far} blocks off${far >= 100 ? `, about ${minutes} minute${minutes > 1 ? 's' : ''}' walk` : ''}${Math.abs(spot.y - bot.entity.position.y) > 4 ? `, at y ${Math.round(spot.y)}` : ''}. ${left === null ? 'They last until the bot comes within 128 blocks, then five minutes.' : `About ${left} seconds before they vanish.`} ${death.cause ? `The bot ${death.cause} there; when it died, ` : 'When the bot died there, '}${about ? `about it were ${about}` : 'nothing hostile was in view'}; it wore ${death.worn?.length ? death.worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} then and wears ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} now. It is ${night ? 'night' : 'day'}.${stalled}${earlier}${eyesSay}${alsoLying}` },
+      go_back: { description: `Go back for ${listed(run.items)}: ${far} blocks off${far >= 100 ? `, about ${minutes} minute${minutes > 1 ? 's' : ''}' walk` : ''}${Math.abs(spot.y - bot.entity.position.y) > 4 ? `, at y ${Math.round(spot.y)}` : ''}. ${left === null ? 'They last until the bot comes within 128 blocks, then five minutes.' : `About ${left} seconds before they vanish.`} ${death.cause ? `The bot ${death.cause} there; when it died, ` : 'When the bot died there, '}${about ? `about it were ${about}` : 'nothing hostile was in view'}; it wore ${death.worn?.length ? death.worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} then and wears ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} now. ${hour}${stalled}${earlier}${eyesSay}${alsoLying}` },
       leave_them: { description: `Leave them and go on with what is carried: ${listed(worth(Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])))) || 'nothing worth listing'}. What was dropped is made again, or found, later${again ? `: ${again}` : ''}.${keptSays}` },
     };
+    // By night, and the drops not ageing (the bot not within 128 blocks of
+    // them): going when it is day is a choice of its own, not leaving them.
+    if (night && until !== null && !run.loadedAt && /overworld/.test(run.dimension)) tree.wait_for_day = { description: `Go back for them when it is day, about ${until} real minute${until === 1 ? '' : 's'} off, and go on with the night as it is until then: the drops do not age while the bot is not within 128 blocks of them. Asked again at dawn.` };
     const decision = await require('./decisions').decide('corpse_run', { client, bot, task, goal, save, tree,
-      state: { distance: far, secondsLeft: left, aboutAtDeath: death.about || [], wornAtDeath: death.worn || [], wornNow, night, ...(run.stalled ? { walksThatGotNoNearer: run.stalled } : {}), ...(kept ? { inAChest: kept } : {}) } });
+      state: { distance: far, secondsLeft: left, aboutAtDeath: death.about || [], wornAtDeath: death.worn || [], wornNow, night, ...(until !== null ? { [night ? 'minutesToDawn' : 'minutesToNight']: until } : {}), ...(run.stalled ? { walksThatGotNoNearer: run.stalled } : {}), ...(kept ? { inAChest: kept } : {}) } });
     if (decision.stale) return false;
+    if (decision.path.at(-1) === 'wait_for_day') { run.waitUntil = Date.now() + until * 60000; save(); return false; }
     run.choice = decision.path.at(-1); save();
     if (run.choice === 'leave_them') { run.status = 'left'; save(); return false; }
   }

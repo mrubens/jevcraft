@@ -238,6 +238,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `go_back` (trip: the drops) | root | go back for the drops | always |
 | `leave_them` | root | leave them and go on | always |
+| `wait_for_day` | root | go back for them when it is day | by night in the Overworld, the drops not ageing (the bot not within 128 blocks of them since) |
 
 ### `body_way`
 

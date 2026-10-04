@@ -253,7 +253,7 @@ test('a death before the last, its list not kept: the eyes the run had made befo
   goal.endPortal = { neededEyes: 12 };
   corpseRun(bot, goal).status = 'done';
   const earlier = corpseRun(bot, goal);
-  Object.assign(earlier, { status: 'left', choice: 'leave_them', told: 3 });
+  Object.assign(earlier, { status: 'left', choice: 'leave_them', told: 4 });
   const asked = [];
   const client = { systemOne: async ({ questions }) => { asked.push(JSON.stringify(Object.values(questions)[0])); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'leave_them', confidence: 0.9 }])) }; } };
   const task = Object.assign(new Task('run'), { opportunityClient: client });
@@ -268,6 +268,38 @@ test('a death before the last, its list not kept: the eyes the run had made befo
   has.goal.survival.deaths.unshift({ at: before, position: { x: 900, y: 69, z: 700 }, dimension: 'overworld', worn: ['iron_helmet'] });
   has.goal.gameProgress = goal.gameProgress; has.give('ender_eye', 12);
   corpseRun(has.bot, has.goal).status = 'done';
-  Object.assign(corpseRun(has.bot, has.goal), { status: 'left', told: 3 });
+  Object.assign(corpseRun(has.bot, has.goal), { status: 'left', told: 4 });
   assert.equal(corpseRun(has.bot, has.goal), null);
+});
+
+test('the hour is said by the one clock and with how long it lasts: dawn is day (note 1188)', async () => {
+  const ask = async timeOfDay => {
+    const { bot, goal } = world();
+    bot.time = { timeOfDay };
+    let text = '';
+    const client = { systemOne: async ({ questions }) => { text = JSON.stringify(Object.values(questions)[0]); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'leave_them', confidence: 0.9 }])) }; } };
+    await corpseRunStep(bot, Object.assign(new Task('run'), { opportunityClient: client }), goal, () => {}, { move: async () => {}, collect: async () => false });
+    return text;
+  };
+  assert.match(await ask(23100), /It is day: night in about 10 real minutes\./);
+  assert.match(await ask(14000), /It is night: dawn in about 8 real minutes\./);
+});
+
+test('by night, with drops that do not age, going back when it is day is a choice of its own: nothing is closed, and it is asked again at dawn (note 1188)', async () => {
+  const { bot, goal } = world();
+  bot.time = { timeOfDay: 14000 };
+  const asked = [];
+  const client = { systemOne: async ({ questions }) => { asked.push(JSON.stringify(Object.values(questions)[0])); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'wait_for_day', confidence: 0.9 }])) }; } };
+  const task = Object.assign(new Task('run'), { opportunityClient: client });
+  assert.equal(await corpseRunStep(bot, task, goal, () => {}, { move: async () => {}, collect: async () => false }), false);
+  assert.match(asked[0], /wait_for_day/);
+  assert.equal(goal.corpseRun.status, 'open');
+  assert.equal(goal.corpseRun.choice, undefined);
+  assert.equal(await corpseRunStep(bot, task, goal, () => {}, { move: async () => {}, collect: async () => false }), false);
+  assert.equal(asked.length, 1, 'not asked again before dawn');
+  assert.ok(corpseRun(bot, goal, Date.now() + 9 * 60000), 'open again at dawn');
+  // By day the choice is not there.
+  const day = world(); let text = '';
+  await corpseRunStep(day.bot, Object.assign(new Task('run'), { opportunityClient: { systemOne: async ({ questions }) => { text = JSON.stringify(Object.values(questions)[0]); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'leave_them', confidence: 0.9 }])) }; } } }), day.goal, () => {}, { move: async () => {}, collect: async () => false });
+  assert.doesNotMatch(text, /wait_for_day/);
 });
