@@ -49,8 +49,10 @@ const FENCE = /_fence$/;
 function bridgeStock(view) {
   const carried = view.carried || {}, count = names => names.reduce((n, k) => n + (carried[k] || 0), 0);
   const full = PLACEABLE.filter(n => !falls(n) && carried[n] > 0);
-  if (full.length) return { name: full[0], count: count(full), kind: 'block' };
   const fences = Object.keys(carried).filter(n => FENCE.test(n) && carried[n] > 0);
+  // The fences and the table behind the blocks: what floors a gap once the
+  // blocks are down (note 1230).
+  if (full.length) return { name: full[0], count: count(full), kind: 'block', after: count(fences) + (carried.crafting_table > 0 ? 1 : 0) };
   if (fences.length) return { name: fences[0], count: count(fences.filter(n => n === fences[0])), kind: 'fence' };
   if (carried.crafting_table > 0) return { name: 'crafting_table', count: carried.crafting_table, kind: 'table' };
   return null;
@@ -89,12 +91,20 @@ function islandOf(view, floor, { limit = 150 } = {}) {
 // `island`, has room to stand and is itself joined to more than a hundred and
 // fifty cells of floor (islandOf gives up past its limit: a span laid back to
 // the shore is ground at its far end). -> { cells, to, from } or null.
-function groundSearch(view, starts, island, { reach = 24, nodes = 8000 } = {}) {
+function groundSearch(view, starts, island, opts = {}) {
   if (!island) return null;
+  return groundSearchFor(view, starts, island, { ...opts, floors: false }) || groundSearchFor(view, starts, island, { ...opts, floors: true });
+}
+function groundSearchFor(view, starts, island, { reach = 24, nodes = 8000, floors = false } = {}) {
   const empty = c => { const n = view.name(c); return n != null && open(n) && !isLava(n) && !isWater(n); };
   const clear = c => [1, 2, 3].every(dy => empty(new Vec3(c.x, c.y + dy, c.z)));
   const big = new Map();
-  const isBig = c => { const k = `${c}`; if (!big.has(k)) big.set(k, islandOf(view, c) === null); return big.get(k); };
+  // Ground, or with none in reach a floor larger than the one stood on (note 1230): 25590
+  // (2026-10-04 14:50 to 15:30Z) stood on five cells of its span, cut from
+  // the forty behind by a ghast's shot, a cell of gap away, and was told "no
+  // ground within 24 cells" at every move for forty minutes.
+  const sizeOf = c => { const k = `${c}`; if (!big.has(k)) { const f = islandOf(view, c); big.set(k, f === null ? Infinity : f.size); } return big.get(k); };
+  const isBig = c => floors ? sizeOf(c) > island.size : sizeOf(c) === Infinity;
   const groundAt = (x, y, z) => [0, 1, -1].map(dy => new Vec3(x, y + dy, z)).find(c => solid(view.name(c)) && !island.has(`${c}`) && empty(c.plus(UP)) && empty(c.offset(0, 2, 0)) && isBig(c));
   const seen = new Set(starts.map(s => `${s.c}`)), queue = starts.map(s => ({ ...s }));
   for (let i = 0; i < queue.length && i < nodes; i++) {
@@ -102,7 +112,7 @@ function groundSearch(view, starts, island, { reach = 24, nodes = 8000 } = {}) {
     if (!empty(c) || !clear(c)) continue;
     for (const d of Object.values(DIRS)) {
       const q = c.plus(d), found = groundAt(q.x, c.y, q.z);
-      if (found) return { cells: n, to: found, from };
+      if (found) return { cells: n, to: found, from, floor: Number.isFinite(sizeOf(found)) ? sizeOf(found) : null };
     }
     if (n >= reach) continue;
     for (const d of Object.values(DIRS)) {
@@ -127,7 +137,7 @@ function floorFacts(view, feet, island) {
   const along = found && found.from ? island.dist.get(`${found.from}`) : null;
   const size = island.size;
   return `a floor of ${size} cell${size === 1 ? '' : 's'}, joined to no ground (a span or an island)${found
-    ? `; the nearest ground that is not part of it is ${found.cells} cell${found.cells === 1 ? '' : 's'} of gap from the floor cell at (${found.from.x}, ${found.from.y}, ${found.from.z})${along ? `, ${along} step${along === 1 ? '' : 's'} along it from here` : ', the cell stood on'}, at (${found.to.x}, ${found.to.y}, ${found.to.z})`
+    ? `; the nearest ${found.floor ? `larger floor (${found.floor} cells, itself joined to no ground)` : 'ground that is not part of it'} is ${found.cells} cell${found.cells === 1 ? '' : 's'} of gap from the floor cell at (${found.from.x}, ${found.from.y}, ${found.from.z})${along ? `, ${along} step${along === 1 ? '' : 's'} along it from here` : ', the cell stood on'}, at (${found.to.x}, ${found.to.y}, ${found.to.z})`
     : '; no ground that is not part of it within 24 cells of open air of any of its cells'}`;
 }
 // Stone and ore take a pickaxe for the drop; by hand they break at the
@@ -655,7 +665,7 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
       // from rock it could have crossed to with the fifteen fences it carried.
       const run = groundRun(view, gap, ownIsland());
       const ground = !ownIsland() ? '' : run
-        ? `By way of this cell the nearest ground that is not part of what the bot stands on is ${run.cells} cell${run.cells === 1 ? '' : 's'} of gap away, at (${run.to.x}, ${run.to.y}, ${run.to.z}): ${stock.count >= run.cells ? `${run.cells} of the ${pieces(stock.count, stock.kind)} carried would reach it` : `${pieces(stock.count, stock.kind)} carried, ${run.cells - stock.count} short of it`}. `
+        ? `By way of this cell the nearest ${run.floor ? `floor larger than the one stood on (${run.floor} cells, itself joined to no ground: a longer piece of span)` : 'ground that is not part of what the bot stands on'} is ${run.cells} cell${run.cells === 1 ? '' : 's'} of gap away, at (${run.to.x}, ${run.to.y}, ${run.to.z}): ${stock.count >= run.cells ? `${run.cells} of the ${pieces(stock.count, stock.kind)} carried would reach it` : `${pieces(stock.count, stock.kind)} carried, ${run.cells - stock.count} short of it${stock.after ? `; the ${stock.after} fence${stock.after === 1 ? '' : 's'} or table carried besides floor a gap too, offered once the blocks are laid${stock.count + stock.after >= run.cells ? ', and with them it is reached' : ''}` : ''}`}. `
         : `By way of this cell no ground that is not part of what the bot stands on lies within 24 cells of open air (${pieces(stock.count, stock.kind)} carried). `;
       const what = stock.kind === 'fence'
         ? `Put ${/^[aeiou]/.test(stock.name) ? 'an' : 'a'} ${stock.name.replaceAll('_', ' ')} into the gap in the floor ${dir}, against the floor stood on: a floor cell to walk onto, not a whole block: a bar a quarter of a block wide and a block and a half tall, its top half a block over the floor beside it, so it is walked crouched (a step up of half a block, no jump; a crouched body is held at the edge of the bar and does not walk off it), one bar wide, and a fence cannot be pillared on`
