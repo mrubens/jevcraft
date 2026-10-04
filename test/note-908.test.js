@@ -43,3 +43,14 @@ test('a making that fails rests ten minutes and is not tried at every stage', as
   assert.equal(await goldForPiglins(b, task, goal, () => {}, { acquireStep }), false);
   assert.equal(calls, 1);
 });
+
+test('raw gold with a furnace and fuel carried: the ingots are smelted and the boots made without asking (note 1247)', async () => {
+  const b = bot({ raw_gold: 5, furnace: 1, coal: 6, crafting_table: 1 });
+  const goal = {}, asked = [];
+  const give = (name, n) => { const it = b._list.find(i => i.name === name); if (it) it.count += n; else b._list.push({ name, count: n, type: registry.itemsByName[name].id }); };
+  const acquireStep = async (bt, t, item, count) => { asked.push([item, count]); if (item === 'gold_ingot') give('gold_ingot', 2); else give('golden_boots', 1); };
+  assert.equal(await goldForPiglins(b, task, goal, () => {}, { acquireStep }), true);
+  assert.deepEqual(asked, [['gold_ingot', 4], ['gold_ingot', 4], ['golden_boots', 1]]);
+  assert.deepEqual(goal.step, { action: 'gold_for_piglins', item: 'golden_boots', smelts: true });
+  assert.deepEqual(b._worn.at(-1), ['golden_boots', 'feet']);
+});
