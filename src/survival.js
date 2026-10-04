@@ -11734,6 +11734,11 @@ class Survival {
           o.description += ` ${other.choice.replaceAll('_', ' ')} was answered here ${Math.max(1, Math.round((Date.now() - other.at) / 1000))} seconds ago; this answer goes the other way from it.`;
       }
     }
+    // Next to no armour on at night in the Overworld: each answer says what it came to in the record (night-record.js, note 1228).
+    if (night(bot) && /overworld/.test(String(bot.game?.dimension || 'overworld'))) {
+      const nr = require('./night-record');
+      for (const k of Object.keys(nr.BARE_NIGHT.by)) if (tree[k] && typeof tree[k].description === 'string') tree[k].description += nr.bareNightSays(bot, k);
+    }
     const decision = await this.decide(task, goal, save, { id: 'survival_priority', state, tree, interrupt: () => checkThreats(bot),
       isFresh: () => bot.health === state.health && bot.food === state.food && !immediateThreat(bot) });
     onStep(goal);

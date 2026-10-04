@@ -86,6 +86,27 @@ function bareSays(bot) {
   if (!bareOf(bot)) return '';
   return ` With empty hands and nothing worn the record is another: on ${BARE.day} (${BARE.from} to ${BARE.to}), of ${BARE.deaths} deaths ${BARE.again10} were followed by another of the same trial within ten minutes and ${BARE.again20} within twenty, the bot back bare, about 1 in ${Math.round(BARE.deaths / BARE.again10)} and 1 in ${Math.round(BARE.deaths / BARE.again20)}.`;
 }
+// What each of the night's choices came to with next to no armour on (three
+// armour points or fewer) in the Overworld, by the flight record (note 1228):
+// each choice counted once a five minutes' spell, a death within five and
+// within ten minutes of it. Of 28 Overworld deaths on record from that day,
+// 25 were in one piece of armour or none, the bot back from a death.
+const BARE_NIGHT = Object.freeze({ day: '2026-10-04', from: '06:00', to: '15:00Z', by: {
+  obtain_food: { n: 49, died5: 10, died10: 14, says: 'going out for food' },
+  secure_shelter: { n: 96, died5: 10, died10: 19, says: 'sealing in' },
+  continue_request: { n: 21, died5: 2, died10: 4, says: 'staying up at the work' },
+  sleep_in_nook: { n: 15, died5: 0, died10: 0, says: 'sleeping in a nook dug in the wall' },
+  sleep_in_bed: { n: 14, died5: 3, died10: 5, says: 'sleeping in a bed set down in the open' },
+} });
+const lightlyArmoured = bot => {
+  try { return require('./combat-estimate').armourOf([5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean)).points <= 3; } catch (_) { return false; }
+};
+function bareNightSays(bot, key) {
+  const r = BARE_NIGHT.by[key];
+  if (!r || !lightlyArmoured(bot)) return '';
+  const rest = Object.entries(BARE_NIGHT.by).filter(([k]) => k !== key).map(([, o]) => `${o.says} ${o.died5} of ${o.n}`).join(', ');
+  return ` With next to no armour on at night in the Overworld, the record (${BARE_NIGHT.day}, ${BARE_NIGHT.from} to ${BARE_NIGHT.to}): ${r.says} was followed by a death within five minutes ${r.died5} times in ${r.n}, within ten ${r.died10}; beside it, ${rest}.`;
+}
 function keepOnSays(place, { minutesToDawn = null } = {}) {
   const r = RECORD[place];
   if (!r) return '';
@@ -188,4 +209,4 @@ function bedSafety(monsters = []) {
     facts: { monstersWithin8OfBed: within8.length, monstersWithin16OfBed: within8.length + within16.length, ...(creeper ? { creeperWithin16OfBed: round(creeper.distance) } : {}), sleepRecord: { band, ...b } } };
 }
 
-module.exports = { BARE, bareOf, bareSays, SURFACE_Y, DEEP_Y, CLEAR_MS, CLEAR_WITHIN, RECORD, BEDS, SINCE, bandOf, placeOf, keepOnSays, sealedSays, nightMineSays, facts, holdEnds, holdSays, holdOf, holdNow, bedSafety };
+module.exports = { BARE_NIGHT, bareNightSays, BARE, bareOf, bareSays, SURFACE_Y, DEEP_Y, CLEAR_MS, CLEAR_WITHIN, RECORD, BEDS, SINCE, bandOf, placeOf, keepOnSays, sealedSays, nightMineSays, facts, holdEnds, holdSays, holdOf, holdNow, bedSafety };
