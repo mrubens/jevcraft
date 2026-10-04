@@ -184,3 +184,23 @@ test('away from any spawner, set_aside_rung is offered as usual (the live-spawne
     assert.ok(asked[0].options.set_aside_rung, 'offered away from a live spawner');
   } finally { cageHold.cageFight = realFight; }
 });
+
+test('in a rung\'s first minute, brought to its question by a question below with nothing on the rung come to nothing, setting it aside is not offered; past the minute it is (note 1144)', async t => {
+  // 25594 (2026-10-03 23:33:00 to 23:33:01Z): the bucket chosen at win_strategy, while_cooking's held answer escalated a second later, the bucket set aside thirty minutes at 0.44.
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  const cageHold = require('../src/cage-hold');
+  const realFight = cageHold.cageFight;
+  cageHold.cageFight = () => null;
+  try {
+    for (const [ago, offered] of [[1000, false], [120000, true]]) {
+      const { bot, goal } = spawnerRecorded();
+      const rung = goal.rungTime?.phase || goal.gameProgress?.phase;
+      goal.tried = { ...(goal.tried || {}), entries: goal.tried?.entries || [], rung: { ...(goal.tried?.rung || {}), rung, since: Date.now() - ago, lastAt: Date.now(), bestAt: Date.now() - ago, idleMs: 0, asked: 0, best: { items: 0, milestones: 0, far: 0, target: {} } } };
+      const stall = { key: 'step:rung:obtain_blaze_rods', work: 'step:rung:obtain_blaze_rods', layer: 'work', strikes: 1, escalated: { from: 'while_cooking', to: 'rung_progress', says: 'while cooking: the same answer held' } };
+      const asked = await askStall(bot, goal, stall);
+      assert.equal(asked.length, 1);
+      assert.equal(!!asked[0].options.set_aside_rung, offered, `${ago} ms on the rung`);
+      if (!offered) assert.match(asked[0].state.stalled.setAsideNotOffered || '', /is not offered: it was brought here by the while cooking, and nothing tried on the rung itself has come to nothing yet \(1 seconds on it\)$/);
+    }
+  } finally { cageHold.cageFight = realFight; }
+});

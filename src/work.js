@@ -510,12 +510,23 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // rod and no pearl, "getting nowhere", and was never offered the pearls set
   // aside for the fortress: a nether_gather or hunt_target way below was
   // always untried from wherever it stood.
-  const longOnRung = Number.isFinite(worked?.ms) && worked.ms >= LONG_ON_RUNG_MS;
+  const longOnRung = Number.isFinite(worked?.ms) && worked.ms >= LONG_ON_RUNG_MS, FRESH_RUNG_MS = 60000;
   const untriedBelow = byEscalation && worked?.openBelow?.length && !longOnRung ? worked.openBelow : null;
   const untriedAfterLong = byEscalation && worked?.openBelow?.length && longOnRung
     ? ` Ways below it not yet tried from here: ${worked.openBelow.map(o => `${o.q.replaceAll('_', ' ')} (${o.keys.map(k => k.replaceAll('_', ' ')).join(', ')})`).join('; ')}; ${Math.round(worked.ms / 60000)} minutes have gone on it.` : '';
   const untriedSays = untriedBelow ? untriedBelow.map(o => `${o.q.replaceAll('_', ' ')} (${o.keys.map(k => k.replaceAll('_', ' ')).join(', ')})`).join('; ') : '';
-  const setAsideNotOffered = untriedBelow ? `setting the ${rung.replaceAll('_', ' ')} aside is not offered: it was brought here by a failure below, and ways below it have not been tried from here: ${untriedSays}`
+  // Nor in a rung's first minute before anything on it has come to nothing
+  // (note 1144): brought
+  // here by a question below (a hold on its answers) with no answer of the
+  // rung's failed and no step of it blocked, there is nothing of the rung to
+  // judge yet. 25594 (2026-10-03 23:33:00 to 23:33:01Z) chose the bucket at
+  // win_strategy, the furnace's while_cooking escalated its held answer one
+  // second later, and the bucket was set aside thirty minutes at 0.44,
+  // "1 answer given ... 0 coming to nothing ... 1 still under way", as the
+  // iron pickaxe had been 25 seconds before.
+  const nothingFailedYet = byEscalation && worked && Number.isFinite(worked.ms) && worked.ms < FRESH_RUNG_MS && worked.cameToNothing === 0 && worked.steps === 0;
+  const setAsideNotOffered = nothingFailedYet ? `setting the ${rung.replaceAll('_', ' ')} aside is not offered: it was brought here by the ${String(stall.escalated?.from || 'question below').replaceAll('_', ' ')}, and nothing tried on the rung itself has come to nothing yet${Number.isFinite(worked.ms) ? ` (${Math.max(1, Math.round(worked.ms / 1000))} seconds on it)` : ''}`
+    : untriedBelow ? `setting the ${rung.replaceAll('_', ' ')} aside is not offered: it was brought here by a failure below, and ways below it have not been tried from here: ${untriedSays}`
     : nothingElseToRunWith ? `setting the ${rung.replaceAll('_', ' ')} aside is not offered: every other rung is already resting, so there is nothing else for the ladder to go on with; it would come straight back` : null;
   // Not offered for the rods while the bot is at a live spawner that still
   // owes them (cage-hold.js cageFight): the game is handing them over right
