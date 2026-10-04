@@ -38,7 +38,7 @@ function activePortal(bot, center) {
 }
 
 // The way to the ring: over the ground while it is more than this far off and the bot at this height or over, a leg of this many blocks at a time.
-const SURFACE_FIRST = 48, SURFACE_Y = 50, LEG = 48;
+const SURFACE_FIRST = 48, SURFACE_Y = 50, LEG = 48, UNDER_FAR = 96;
 async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000, entryMs = 12000 } = {}) {
   const check = () => {
     task.check(); checkAir(bot); checkThreats(bot);
@@ -71,7 +71,17 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
     // (2026-10-04 03:58 to 04:07Z), 620 blocks from its ring, went down to
     // y -36 in seven minutes and on toward it through deepslate at fourteen
     // blocks a minute, its pickaxe wearing out on the way.
-    if (flat > SURFACE_FIRST && here.y >= SURFACE_Y) {
+    // Far off and under the ground, up to the surface first (note 1170):
+    // the level way through the rock crosses the caves of the deep, their
+    // mobs and their lava, at a pickaxe's pace. 25594 (2026-10-04 04:07 to
+    // 04:13Z), 460 blocks from its ring at y -36, its iron pickaxe worn out
+    // and a stone one in hand, broke into a cave of skeletons and made six
+    // blocks in three minutes.
+    if (flat > UNDER_FAR && here.y < SURFACE_Y && actions.surfaceStep) {
+      let up = false; try { up = require('./surface').surfaceReturnComplete(bot, goal); } catch (_) { up = false; }
+      if (!up) { goal.step = { ...goal.step, way: 'up to the surface first' }; save(); await actions.surfaceStep(bot, task, goal, save); return; }
+    }
+    if (flat > SURFACE_FIRST && (here.y >= SURFACE_Y || (flat > UNDER_FAR && actions.surfaceStep))) {
       const d = Math.min(LEG, flat - 8), k = d / flat;
       const leg = new goals.GoalNearXZ(Math.round(here.x + (center.x + .5 - here.x) * k), Math.round(here.z + (center.z + .5 - here.z) * k), 4);
       goal.step = { ...goal.step, way: 'surface', leg: { x: leg.x, z: leg.z } }; save();

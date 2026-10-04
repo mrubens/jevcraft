@@ -52,3 +52,17 @@ test('far off across the ground, the leg walked over the surface is the step, an
   await enterEnd(under.bot, new Task('enter'), under.goal, () => {}, { navigate: async () => dug.push('walk'), tunnel: async () => dug.push('tunnel') });
   assert.deepEqual(dug, ['tunnel']);
 });
+
+test('far off and under the ground, the step goes up to the surface first; near under it, the stair goes on (note 1170)', async () => {
+  const deep = far(); deep.bot.entity.position = new Vec3(1069.5, -36, 1326.5);
+  deep.bot.blockAt = p => Math.hypot(p.x - 1069, p.z - 1326) > 64 ? null : { name: p.y < 70 ? 'deepslate' : 'air', position: p.floored(), boundingBox: p.y < 70 ? 'block' : 'empty', skyLight: 0 };
+  const calls = [];
+  await enterEnd(deep.bot, new Task('enter'), deep.goal, () => {}, { navigate: async () => calls.push('walk'), tunnel: async () => calls.push('tunnel'), surfaceStep: async () => calls.push('surface') });
+  assert.deepEqual(calls, ['surface']);
+  assert.equal(deep.goal.step.way, 'up to the surface first');
+  const close = far(); close.bot.entity.position = new Vec3(650.5, -30, 1560.5);
+  close.bot.blockAt = p => Math.hypot(p.x - 650, p.z - 1560) > 20 ? null : { name: p.y < 70 ? 'deepslate' : 'air', position: p.floored(), boundingBox: p.y < 70 ? 'block' : 'empty' };
+  const dug = [];
+  await enterEnd(close.bot, new Task('enter'), close.goal, () => {}, { navigate: async () => dug.push('walk'), tunnel: async () => dug.push('tunnel'), surfaceStep: async () => dug.push('surface') });
+  assert.deepEqual(dug, ['tunnel'], 'fifty blocks off: the stair, not the climb');
+});
