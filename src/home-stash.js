@@ -48,6 +48,19 @@ const bestFirst = bot => (a, b) => toolTier(b.name) - toolTier(a.name) || durabi
 // rules below: the best tool of each kind is kept and the next best is the
 // spare; food is measured in points against the expedition reserve; a water
 // bucket is only ever a spare, never gathered for the chest.
+// Spare armour for the chest (note 1254): a piece carried in the pack with
+// its place worn already is left there, and taken out by a bot back with
+// that place bare. Of the Overworld deaths of 2026-10-04 (10:00 to 16:30Z)
+// to skeletons, creepers and zombies, 13 of 17 were in no armour at all,
+// bots back from a death; 25584 (15:48Z) had two iron helmets in its pack.
+const SPARE_ARMOUR = /^(iron|diamond)_(helmet|chestplate|leggings|boots)$/, ARMOUR_AT = [[5, 'helmet'], [6, 'chestplate'], [7, 'leggings'], [8, 'boots']];
+function spareArmour(bot, home) {
+  const held = contentsOf(home);
+  return (bot.inventory?.items?.() || []).filter(i => SPARE_ARMOUR.test(i.name)).filter(i => {
+    const piece = i.name.split('_').pop(), at = ARMOUR_AT.find(([, p]) => p === piece)[0];
+    return !!bot.inventory.slots?.[at] && !Object.keys(held).some(n => SPARE_ARMOUR.test(n) && n.endsWith(`_${piece}`) && held[n] > 0);
+  }).map(i => i.name).filter((n, i, all) => all.findIndex(m => m.split('_').pop() === n.split('_').pop()) === i);
+}
 const SPARE_KIT = Object.freeze([
   { slot: 'pickaxe', count: 1, tool: 'pickaxe', label: 'a pickaxe' },
   { slot: 'sword', count: 1, tool: 'sword', label: 'a sword' },
@@ -269,6 +282,12 @@ function stashWithdrawals(bot, home, wants = [], { items = bot.inventory.items()
       if (!items.some(i => isBucket(i.name))) take('water_bucket', 1, { slot: slot.slot });
       // The spare shield, with none worn or carried (note 1225).
       if (!items.some(i => i.name === 'shield') && bot.inventory.slots?.[45]?.name !== 'shield') take('shield', 1, { slot: 'shield' });
+      // The spare armour, a piece for each place with none worn or carried (note 1254).
+      for (const [at, piece] of ARMOUR_AT) {
+        if (bot.inventory.slots?.[at] || items.some(i => i.name.endsWith(`_${piece}`))) continue;
+        const name = Object.keys(stored).filter(n => SPARE_ARMOUR.test(n) && n.endsWith(`_${piece}`)).sort((a, b) => (/^diamond/.test(b) ? 1 : 0) - (/^diamond/.test(a) ? 1 : 0))[0];
+        if (name) take(name, 1, { slot: 'armour' });
+      }
     } else if (totalOf(items, slot.matches) <= slot.low) {
       let need = slot.count - totalOf(items, slot.matches);
       for (const name of Object.keys(stored).filter(slot.matches)) { if (need <= 0) break; need -= take(name, need, { slot: slot.slot }); }
@@ -656,11 +675,13 @@ function spareKitOffer(bot, goal, { now = Date.now() } = {}) {
     if (n('shield') >= 1) { lacks.push('shield'); spare.push('shield'); }
     else if (ingots >= 1 && planks >= 6) { lacks.push('shield'); makes.push({ item: 'shield', from: '1 iron ingot and 6 planks of the wood carried' }); ingots -= 1; }
   }
+  const armour = spareArmour(bot, home);
+  for (const name of armour) { lacks.push(name); spare.push(words(name)); }
   if (!makes.length && !spare.length) return null;
   const far = Math.round(homeDistance(bot, home)), holds = describeContents(contentsOf(home));
   const made = makes.length ? `make ${makes.map(m => `a spare ${words(m.item)} (${m.from})`).join(' and ')}, a few seconds at a crafting table, and ` : '';
   const carried = spare.length ? `${makes.length ? 'with ' : ''}the spare ${spare.join(' and ')} carried` : '';
-  return { home, far, lacks, makes, holds,
+  return { home, far, lacks, makes, holds, armour,
     says: `Leave a spare kit in the stash chest at home first, ${far} blocks off, about ${Math.max(5, Math.round(far / 4.3))} seconds each way: ${made}leave ${makes.length ? `${makes.length === 1 ? 'it' : 'them'}${carried ? ` ${carried}` : ''}` : carried} there (the chest holds ${holds || 'nothing yet'}). A death in the Nether comes back to life at the bed with empty hands, and what is in the chest is taken up from there: on ${REGEAR.day} the ${REGEAR.deaths} deaths in the Nether with the chest empty were back in the Nether ${REGEAR.min} to ${REGEAR.max} minutes later, a median ${REGEAR.median}, the kit mined and smelted again.${bareAgainSays()}` };
 }
 // The spare kit, asked on its own at home (spare_kit_now, note 1222): leave
@@ -701,6 +722,7 @@ async function leaveSpareKit(bot, task, goal, save, actions, offer) {
   }
   let stored = [];
   const extra = offer.lacks.includes('shield') && countOf(bot, 'shield') >= 1 && bot.inventory.slots?.[45]?.name === 'shield' ? [{ item: 'shield', count: 1, slot: 'shield' }] : [];
+  for (const name of offer.armour || []) if (countOf(bot, name) >= 1) extra.push({ item: name, count: 1, slot: 'armour' });
   try { stored = await stockStash(bot, task, goal, save, offer.home, actions, { only: m => m.slot === 'pickaxe' || m.slot === 'sword', extra }); }
   catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[spare kit] not put in the chest: ${String(err.message || err).slice(0, 160)}`); }
   if (!stored.length) { setAside(goal, 'stash', 'spare_kit', 'nothing went into the chest', RETRY_MS); save(); }

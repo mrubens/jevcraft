@@ -76,3 +76,21 @@ test('a spare shield goes with the kit where one is worn: the one in the pack, o
   const held = stash.spareKitOffer(worn({ iron_pickaxe: 2, iron_sword: 2, shield: 1 }), goalWith({ shield: 1 }));
   assert.ok(!held?.lacks.includes('shield'));
 });
+
+test('a spare iron helmet in the pack with one worn is left in the chest, and comes out for a bot back with its head bare (note 1254)', () => {
+  const b = bot({ iron_pickaxe: 1, iron_sword: 1, iron_helmet: 1 });
+  b.inventory.slots[5] = { name: 'iron_helmet' };
+  const o = stash.spareKitOffer(b, goalWith({ iron_pickaxe: 1, stone_sword: 1 }));
+  assert.ok(o, 'offered for the helmet alone');
+  assert.deepEqual(o.armour, ['iron_helmet']);
+  assert.match(o.says, /iron helmet/);
+  // With a helmet in the chest already, or none worn (the one carried is the bot's own), nothing.
+  assert.equal(stash.spareKitOffer(b, goalWith({ iron_pickaxe: 1, stone_sword: 1, iron_helmet: 1 })), null);
+  const bare = bot({ iron_pickaxe: 1, iron_sword: 1, iron_helmet: 1 });
+  assert.equal(stash.spareKitOffer(bare, goalWith({ iron_pickaxe: 1, stone_sword: 1 })), null);
+  // Back from a death: the pieces for the bare places come out, not the place worn.
+  const back = bot({});
+  back.inventory.slots[6] = { name: 'iron_chestplate' };
+  const out = stash.stashWithdrawals(back, { stash: { position: { x: 2, y: 64, z: 0 }, contents: { iron_helmet: 1, iron_chestplate: 1, iron_boots: 1 } } }).filter(m => m.slot === 'armour').map(m => m.item).sort();
+  assert.deepEqual(out, ['iron_boots', 'iron_helmet']);
+});
