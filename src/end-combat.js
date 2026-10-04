@@ -179,6 +179,8 @@ function enclosed(bot) {
 // three; a water bucket carried breaks it, fall-recovery.js). Walked off
 // upright, the landing waited for. -> true when the bot came down.
 const DROP_MOST = 14, DROP_KEEPS = 8;
+// Few arrows: a stack or less. By the fountain: this far from its middle, clear of the landing and in a few steps of the head.
+const FEW_ARROWS = 64, PERCH_RANGE = 8;
 function dropOffs(bot, center = null) {
   const here = bot.entity.position, feet = here.floored();
   const solid = c => bot.blockAt(c)?.boundingBox === 'block';
@@ -224,7 +226,7 @@ async function leaveHighGround(bot, task, goal, save, state) {
 async function arenaRoutes(bot, task, goal, policy, focus) {
   const current = bot.entity.position, visits = goal.endCombat.visits ||= {}, buckets = new Map();
   const target = focus?.position || focus;
-  const desiredRange = focus?.name === 'end_crystal' ? Math.max(24, Math.min(56, (target.y - current.y) * 1.1)) : 0;
+  const desiredRange = focus?.name === 'end_crystal' ? Math.max(24, Math.min(56, (target.y - current.y) * 1.1)) : focus?.range || 0;
   const floors = bot.findBlocks({ matching: ['end_stone', 'obsidian', 'bedrock'].map(n => bot.registry.blocksByName[n].id),
     maxDistance: 64, count: 256, useExtraInfo: block => {
       const p = block.position.offset(.5, 1, .5);
@@ -237,7 +239,8 @@ async function arenaRoutes(bot, task, goal, policy, focus) {
     // A high caged crystal needs a shallow approach angle. Walking directly
     // underneath it makes the obsidian column obscure more of its hitbox.
     const distance = target && Math.hypot(point.x - target.x, point.z - target.z);
-    const score = (visits[key] || 0) * 30 + (target ? Math.abs(distance - desiredRange) : -point.distanceTo(current)) + Math.abs(point.y - current.y);
+    // The wait by the fountain is at its ring, however often it was stood on: the visits count against a cell only where new ground is what is wanted.
+    const score = (focus?.name === 'fountain' ? 0 : (visits[key] || 0) * 30) + (target ? Math.abs(distance - desiredRange) : -point.distanceTo(current)) + Math.abs(point.y - current.y);
     if (!buckets.has(key) || score < buckets.get(key).score) buckets.set(key, { p, key, score });
   }
   const routes = [], look = goal.endCombat.routeLook = { floors: floors.length, allowed: buckets.size, tried: 0, failed: {} };
@@ -421,6 +424,25 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     };
     const wetSays = () => { const turned = hostileEntities(bot, 64).filter(e => live(bot, e) && e.name === 'enderman' && e.position.distanceTo(bot.entity.position) < 20).sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position));
       return `The bot stands in the water it poured at its feet, ${turned.length} turned enderm${turned.length === 1 ? 'an' : 'en'} within twenty blocks, the nearest ${Math.round(turned[0]?.position.distanceTo(bot.entity.position) ?? 0)} off: water hurts an enderman and it teleports off rather than cross it, and the shot is drawn standing in it.`; };
+    // The sword at the perched head, swing after swing at its pace, while
+    // the dragon sits, the head is in reach and the place is safe.
+    const strikeWhilePerched = async ms => {
+      const sword = bot.inventory.items().find(i => /_sword$/.test(i.name) && durable(bot.registry, i));
+      if (!sword) throw new Error('No sword carried for the perched head');
+      await bot.equip(sword, 'hand'); check();
+      const until = Date.now() + ms; let swings = 0;
+      try {
+        while (Date.now() < until) {
+          check(); checkEndEmergency(bot);
+          const fresh = live(bot, dragon) && perchedHead(bot, dragon);
+          if (!fresh || !safeHere() || !canStrike(bot, fresh)) break;
+          if (typeof bot.lookAt === 'function') await bot.lookAt(fresh.position.offset(0, .5, 0), true);
+          bot.attack(fresh); swings++;
+          for (let n = 0; n < 7; n++) { check(); await sleep(100); }
+        }
+      } finally { state.headSwings = (state.headSwings || 0) + swings; save(); }
+      if (!swings) throw new Error('Perched dragon head moved out of reach');
+    };
     const bow = bot.inventory.items().some(i => i.name === 'bow' && durable(bot.registry, i));
     let noShot = !safe ? `not safe here (${unsafeBecause(bot, bot.entity.position).slice(0, 3).join(', ')})` : bot.health < 12 ? 'health under twelve' : !bow || !countOf(bot, 'arrow') ? 'no bow or arrows' : !dragon ? 'no dragon in view' : perched(bot, dragon) ? 'perched' : null;
     if (safe && bot.health >= 12 && bow && countOf(bot, 'arrow') > 0) {
@@ -441,13 +463,34 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     const head = dragon && perchedHead(bot, dragon);
     if (safe && head && canStrike(bot, head) && bot.inventory.items().some(i => /_sword$/.test(i.name) && durable(bot.registry, i))) {
       const edge = voidEdge(bot, bot.entity.position);
-      tree.strike_head = { description: `Strike the reachable head of the perched dragon with the carried sword${edge ? `: the void is ${edge} block${edge === 1 ? '' : 's'} from where the bot stands, and the dragon's wing throws a player` : ''}`, run: async () => {
-        const sword = bot.inventory.items().find(i => /_sword$/.test(i.name) && durable(bot.registry, i));
-        await bot.equip(sword, 'hand'); check();
-        const fresh = perchedHead(bot, dragon);
-        if (!fresh || !live(bot, dragon) || !safeEndPoint(bot, bot.entity.position) || !canStrike(bot, fresh)) throw new Error('Perched dragon head moved out of reach');
-        bot.attack(fresh); for (let n = 0; n < 8; n++) { check(); await sleep(100); }
-      } };
+      tree.strike_head = { description: `Strike the reachable head of the perched dragon with the carried sword, and keep striking for as long as it sits and the place stays safe, up to ten seconds${edge ? `: the void is ${edge} block${edge === 1 ? '' : 's'} from where the bot stands, and the dragon's wing throws a player` : ''}`, run: () => strikeWhilePerched(10000) };
+    }
+    // The perched head out of reach: straight to the ground under it and the
+    // sword there for as long as it sits (note 1155). Three routes surveyed
+    // a second each and one swing a question were the perch gone: the
+    // rehearsal of 2026-10-04 (02:12 to 02:15Z), waiting by the fountain,
+    // was 8 to 20 blocks from the head at each of six perches and never
+    // under it.
+    const swordCarried = bot.inventory.items().some(i => /_sword$/.test(i.name) && durable(bot.registry, i));
+    if (safe && head && !canStrike(bot, head) && swordCarried && head.position.distanceTo(bot.entity.position) <= 40) {
+      let ground = null;
+      for (let y = Math.floor(head.position.y); y >= Math.floor(head.position.y) - 8 && !ground; y--) {
+        const p = new Vec3(Math.floor(head.position.x) + .5, y, Math.floor(head.position.z) + .5);
+        if (dryStanding(bot, p)) ground = p;
+      }
+      if (ground && head.position.y - ground.y <= 4.5) tree.under_head = {
+        description: { action: 'Run to the ground under the perched dragon\'s head and strike it with the sword for as long as it sits: the sword reaches the dragon only here, its breath pools on the ground before its head, and it takes off within seconds',
+          headBlocksOff: Math.round(head.position.distanceTo(bot.entity.position)), headBlocksOverItsGround: Math.round((head.position.y - ground.y) * 10) / 10, dragonHealth: beforeDragon, health: bot.health,
+          voidEdgeBlocks: voidEdge(bot, ground), endermenNearRoute: endermenNearRoute(bot, bot.entity.position, ground) },
+        run: async () => {
+          const reached = () => { const h = live(bot, dragon) && perchedHead(bot, dragon); return !h || canStrike(bot, h); };
+          try { await actions.navigate(bot, task, new goals.GoalNear(Math.floor(ground.x), ground.y, Math.floor(ground.z), 1), { timeoutMs: 9000, stallMs: 2500, sprint: true, stopWhen: () => reached() || hostileEntities(bot, 4).some(e => live(bot, e)) }); }
+          catch (err) { if (['Cancelled', 'Blocked', 'EndEmergency'].includes(err.name)) throw err; }
+          const h = live(bot, dragon) && perchedHead(bot, dragon);
+          if (!h) throw new Error('The dragon took off before the bot was under its head');
+          if (!canStrike(bot, h)) throw new Error('Under the perched head, and it is out of the sword\'s reach');
+          await strikeWhilePerched(10000);
+        } };
     }
     // A bed beside the perched head (bed-bomb.js): the heaviest blow, from a
     // trench that keeps the blast off the bot.
@@ -475,15 +518,29 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     }
     const unresolved = Object.values(state.knownCrystals).filter(e => e.status === 'unresolved');
     const remembered = unresolved.sort((a, b) => vector(a.position).distanceTo(bot.entity.position) - vector(b.position).distanceTo(bot.entity.position))[0];
+    // With every crystal down and few arrows left, the place to be while the
+    // dragon flies is by the fountain it perches on: the sword reaches its
+    // head only there, and at its perch arrows do nothing (note 1155). The
+    // rehearsal of 2026-10-04 (02:00 to 02:09Z, 48 arrows) stood 34 to 46
+    // blocks from the head at four of its five perches, at the bow's range
+    // from the dragon in flight, and the strike was never in reach.
+    const centre = state.arenaCenter ? vector(state.arenaCenter) : new Vec3(0, bot.entity.position.y, 0);
+    const arrowsLeft = countOf(bot, 'arrow');
+    const byFountain = Math.hypot(bot.entity.position.x - centre.x, bot.entity.position.z - centre.z);
+    const fountain = !crystals.length && !remembered && dragon && !head && arrowsLeft <= FEW_ARROWS
+      ? { name: 'fountain', position: new Vec3(centre.x, bot.entity.position.y, centre.z), range: PERCH_RANGE, arrows: arrowsLeft } : null;
     const focus = crystals[0] || (remembered && { name: 'unresolved_crystal_location', position: vector(remembered.position) }) ||
-      head || dragon || (state.arenaCenter && vector(state.arenaCenter)) || (state.lastDragon && vector(state.lastDragon.position));
+      head || fountain || dragon || (state.arenaCenter && vector(state.arenaCenter)) || (state.lastDragon && vector(state.lastDragon.position));
     // Reposition when arcs are blocked or the dragon is perched, and always
     // expose escape positions when healing or avoiding a breath cloud.
-    if (!Object.keys(tree).some(key => key.startsWith('crystal_')) || bot.health < 16) for (const route of await arenaRoutes(bot, task, goal, policy, focus)) {
+    // By the fountain already, the wait is there: no walk to another cell of its ring.
+    const waitingThere = focus === fountain && fountain && Math.abs(byFountain - PERCH_RANGE) <= 4 && safe;
+    if ((!Object.keys(tree).some(key => key.startsWith('crystal_')) || bot.health < 16) && !waitingThere && !(tree.under_head || tree.strike_head)) for (const route of await arenaRoutes(bot, task, goal, policy, focus)) {
       tree[`move_${route.key}`] = { description: { action: focus?.name === 'unresolved_crystal_location'
         ? 'Approach a previously observed crystal location to check whether the crystal remains. Loss of entity tracking did not establish destruction.'
         : !safe ? 'Escape the unsafe current position along this surveyed route'
         : focus?.name === 'ender_dragon_head' ? 'Approach the perched head to get within sword reach'
+        : focus?.name === 'fountain' ? `Go to stand about ${PERCH_RANGE} blocks from the fountain the dragon perches on, and wait there for the sword at its head when it lands: ${focus.arrows} arrow${focus.arrows === 1 ? ' is' : 's are'} left, the sword reaches the dragon only at its perch, and at its perch arrows do nothing to it`
         : focus?.name === 'end_crystal' ? 'Change firing position for an observed healing crystal'
         : 'Reposition along this surveyed route to gain a future attack opportunity',
         position: { ...route.p }, visits: state.visits[route.key] || 0, target: focus?.name,
@@ -513,7 +570,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     // blocks off with no mob near, 187 arrows carried (note 1136).
     const box = actions.dig && enclosed(bot);
     if (box && !tree.shoot_dragon && !Object.keys(tree).some(k => /^(crystal_|move_|strike_head|bed_bomb)/.test(k))) {
-      const toward = focus?.position || focus || (state.arenaCenter && vector(state.arenaCenter)) || bot.entity.position.offset(1, 0, 0);
+      const toward = (focus === fountain ? dragon : focus)?.position || focus || (state.arenaCenter && vector(state.arenaCenter)) || bot.entity.position.offset(1, 0, 0);
       const feet = bot.entity.position.floored(), dx = toward.x - (feet.x + .5), dz = toward.z - (feet.z + .5);
       const side = Math.abs(dx) >= Math.abs(dz) ? new Vec3(Math.sign(dx) || 1, 0, 0) : new Vec3(0, 0, Math.sign(dz) || 1);
       const cells = [feet.offset(0, 2, 0), feet.plus(side).offset(0, 1, 0), feet.plus(side)].filter(c => bot.blockAt(c)?.boundingBox === 'block');
