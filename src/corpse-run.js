@@ -153,7 +153,13 @@ async function wearRecovered(bot) {
   }
 }
 
-async function corpseRunStep(bot, task, goal, save, { move = navigate, collect = collectNearbyDrops, surface = null } = {}) {
+// What is taken up first at the spot: what the goal is made of, then the
+// kit, then the rest.
+const FIRST = [/^ender_eye$/, /^(ender_pearl|blaze_rod|blaze_powder)$/, /^diamond/, /^(netherite|iron)_(helmet|chestplate|leggings|boots)$/, /^(bow|shield|arrow|iron_sword|iron_pickaxe|water_bucket|bucket)$/];
+const rank = name => { const i = FIRST.findIndex(r => r.test(name)); return i < 0 ? FIRST.length : i; };
+const lying = (bot, spot, name = null) => Object.values(bot.entities || {}).filter(e => { const it = e?.position && e.isValid !== false ? e.getDroppedItem?.() : null; return it && (!name || it.name === name) && e.position.distanceTo(spot) <= 12; });
+
+async function corpseRunStep(bot, task, goal, save, { move = navigate, collect = collectNearbyDrops, surface = null, room = null } = {}) {
   const run = corpseRun(bot, goal);
   if (!run) { save(); return false; }
   const spot = new Vec3(run.position.x, run.position.y, run.position.z);
@@ -264,10 +270,23 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     if (!it || e.position.distanceTo(spot) > 12 || run.items[it.name] || !Object.keys(worth({ [it.name]: it.count || 1 })).length) continue;
     run.items[it.name] = it.count || 1;
   }
-  let got = 0;
-  for (const name of Object.keys(run.items)) {
+  // The eyes and the kit before the rest, and room made for each: walking
+  // in takes up whatever lies nearest, and with the pockets full nothing
+  // more is taken. 25594 (2026-10-04 08:05 to 08:07Z) came to its things
+  // with five minutes on them, its pockets filled on the way in with the
+  // leather, bone and wool of that death; twelve eyes of ender, a diamond
+  // sword and its iron armor lay there, no stack of them went in, the pass
+  // said 'nothing left where I died', and they were gone at 08:07:52
+  // (note 1192).
+  const makeRoom = room || (async name => require('./inventory-tidy').makeRoom(bot, task, name, { keep: new Set(Object.keys(run.items)), purpose: 'the things dropped at the death, lying here', goal }));
+  let got = 0, full = false;
+  for (const name of Object.keys(run.items).sort((a, b) => rank(a) - rank(b))) {
     for (let tries = 0; tries < 4 && run.items[name] > 0; tries++) {
       task.check();
+      if (lying(bot, spot, name).length) {
+        try { if (!await makeRoom(name)) full = true; }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      }
       const had = countOf(bot, name);
       try { await collect(bot, task, name, { origin: spot, radius: 12, timeoutMs: 12000, allowExcavation: true }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
@@ -280,6 +299,11 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
   run.passes++;
   if (got) await wearRecovered(bot);
   if (!Object.keys(run.items).length) { run.status = 'done'; bot.chat?.('Got my things back.'); }
+  // Not closed while something on the list is still seen lying there and
+  // the game's five minutes are not out: the next pass is for it.
+  else if (Object.keys(run.items).some(name => lying(bot, spot, name).length) && run.passes < 8) {
+    if (full) bot.chat?.('My pockets are full and my things are still lying here. Making room.');
+  }
   else if (!got || run.passes >= 2) {
     run.status = got ? 'partial' : 'gone';
     bot.chat?.(got ? `Got some of it back. The rest is gone: ${listed(run.items)}.` : `Nothing left where I died. Lava or time took it.`);

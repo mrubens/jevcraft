@@ -318,3 +318,22 @@ test('by day with less day left than the walk, setting out at the next dawn is o
   assert.match(text, /On this run's clock the rods and pearls for its eyes were 144 minutes of play\./);
   assert.ok(goal.corpseRun.waitUntil > Date.now() + 12 * 60000);
 });
+
+test('at the spot the eyes and the kit are taken before the rest, room is made for each, and the run is not closed while they are seen lying there (note 1192)', async () => {
+  const { bot, goal, give } = world({ at: new Vec3(398, 64, 1) });
+  goal.survival.recovery.inventoryBeforeDeath = { emerald: 1, ender_eye: 12, diamond_sword: 1, iron_chestplate: 1, arrow: 51 };
+  const drop = (id, name, count) => ({ id, position: new Vec3(400, 64, 0), getDroppedItem: () => ({ name, count }) });
+  bot.entities = { 1: drop(1, 'emerald', 1), 2: drop(2, 'ender_eye', 12), 3: drop(3, 'diamond_sword', 1), 4: drop(4, 'iron_chestplate', 1), 5: drop(5, 'arrow', 51) };
+  let free = 0;
+  const order = [], roomed = [];
+  const client = { systemOne: async ({ questions }) => ({ answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'go_back', confidence: 0.9 }])) }) };
+  const task = Object.assign(new Task('run'), { opportunityClient: client });
+  // Pockets full: nothing goes in until room is made, and room is made for two stacks only.
+  const room = async name => { roomed.push(name); if (roomed.length <= 2) { free++; return true; } return false; };
+  const collect = async (b, t, name) => { order.push(name); if (!free) return false; free--; const e = Object.values(bot.entities).find(x => x.getDroppedItem().name === name); give(name, e.getDroppedItem().count); delete bot.entities[e.id]; return true; };
+  assert.equal(await corpseRunStep(bot, task, goal, () => {}, { move: async () => {}, collect, room }), true);
+  assert.deepEqual(order.slice(0, 3), ['ender_eye', 'diamond_sword', 'iron_chestplate']);
+  assert.deepEqual(roomed.slice(0, 2), ['ender_eye', 'diamond_sword']);
+  assert.equal(goal.corpseRun.status, 'open', 'the chestplate, the arrows and the emerald still lie there');
+  assert.deepEqual(Object.keys(goal.corpseRun.items).sort(), ['arrow', 'emerald', 'iron_chestplate']);
+});
