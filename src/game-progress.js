@@ -923,10 +923,20 @@ function nextGameStage(bot, goal, skip = new Set()) {
   // Survey throws deliberately spend eyes. Do not send Jev back to the Nether
   // after each throw while it still has a spare and twelve portal eyes. A
   // pending pickup gets a chance before deciding whether supplies are short.
-  const portalNeed = m.stronghold_located && goal.endPortal?.neededEyes;
+  // The frames still empty: the number saved with the portal, else read off
+  // the frames the milestone holds; with neither, the ring is gone to and
+  // its frames counted there, while an eye is held to put in one (note
+  // 1210). With no number saved the way to the End was open at any count of
+  // eyes, none too: 25594
+  // (2026-10-04 08:20 to 11:53Z), its twelve eyes lost at a death and its
+  // portal's twelve frames empty, was three and a half hours on the End's
+  // kit, stalking skeletons for arrows, with no eye and no pearl.
+  const framesOf = m.stronghold_located?.frames;
+  const portalNeed = m.stronghold_located && (Number.isInteger(goal.endPortal?.neededEyes) ? goal.endPortal.neededEyes
+    : Array.isArray(framesOf) && framesOf.length ? framesOf.filter(f => !f.eye).length : null);
   // Eyes in the bot's Overworld chest are held (eye-bank.js, note 1193): the End's kit is seen to with them put away.
   const eyesBanked = require('./eye-bank').banked(goal);
-  if (where === 'overworld' && m.stronghold_located && (!Number.isInteger(portalNeed) || count(bot, 'ender_eye') + eyesBanked >= portalNeed)) return { phase: 'enter_end', action: 'enter_end' };
+  if (where === 'overworld' && m.stronghold_located && (Number.isInteger(portalNeed) ? count(bot, 'ender_eye') + eyesBanked >= portalNeed : count(bot, 'ender_eye') + eyesBanked >= 1)) return { phase: 'enter_end', action: 'enter_end' };
   // The search goes with the spare in the pack and the twelve put away, where that was chosen (eye-bank.js, note 1197).
   if (where === 'overworld' && !m.stronghold_located && goal.strongholdSearch && ((count(bot, 'ender_eye') + eyesBanked >= EYES_WANTED && count(bot, 'ender_eye') >= 1) || goal.strongholdSearch.pendingPickup)) {
     return { phase: 'find_stronghold', action: 'find_stronghold' };

@@ -88,7 +88,8 @@ test('missing later actions report a concrete saved blocker; cancellation and Cr
 });
 
 test('End entry waits for combat supplies instead of spending Eyes before preparation', async () => {
-  const { bot, goal, task } = fixture(); observeProgress(bot, goal);
+  const { bot, goal, task, give } = fixture(); observeProgress(bot, goal);
+  give({ ender_eye: 12 });
   goal.gameProgress.milestones.stronghold_located = { source: 'observed_end_portal_frame_ring' };
   let entered = 0, ready = false;
   const actions = { prepare_end: async () => ready, enter_end: async () => entered++ };
