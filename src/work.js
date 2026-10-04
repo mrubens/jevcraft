@@ -8726,14 +8726,17 @@ async function kitFoodStep(bot, task, goal, save, stage = {}, client = task.oppo
 // One that could not be got to is kept as the survival layer keeps it
 // (failedPrey), so the next pass takes another or goes on.
 async function huntInView(bot, task, goal, save, kinds = null) {
-  const foraging = require('./foraging'), { preyFailed } = require('./healing');
+  const foraging = require('./foraging'), fishing = require('./fishing'), { preyFailed } = require('./healing');
   const here = bot.entity.position;
+  // A cod or a salmon in open water is one too, killed by its own handler
+  // (fishing.js spear, note 1203), where its kind is the one asked for.
+  const fish = fishing.fishInView(bot, goal.survival);
   const target = Object.values(bot.entities || {}).filter(e => e?.position && e.isValid !== false && (!kinds || kinds.includes(e.name)) &&
-    e.position.distanceTo(here) <= 32 && !preyFailed(goal, e) && foraging.preyFood(bot, e))
+    e.position.distanceTo(here) <= 32 && !preyFailed(goal, e) && (foraging.preyFood(bot, e) || (kinds && fish.includes(e))))
     .sort((a, b) => a.position.distanceTo(here) - b.position.distanceTo(here))[0];
   if (!target) return false;
   goal.step = { ...goal.step, hunting: target.name, huntingAt: { x: Math.floor(target.position.x), y: Math.floor(target.position.y), z: Math.floor(target.position.z) } }; save();
-  try { await foraging.hunt(bot, task, target, { navigate }, goal, save); }
+  try { await (fish.includes(target) ? fishing.spear : foraging.hunt)(bot, task, target, { navigate }, goal, save); }
   catch (err) {
     task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err;
     const state = goal.survival ||= {};

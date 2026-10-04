@@ -86,6 +86,7 @@ const SURVIVAL = {
   recover_items: ["I'm going back for the stuff I dropped.", 'My things are still over there. Going to get them.'],
   gather_food: [(goal, action) => `I'm getting hungry. ${action.item ? `Some ${name(action.item)} would do.` : 'Time to find some food.'}`,
     (goal, action) => `My stomach's rumbling. ${action.item ? `Going for some ${name(action.item)}.` : 'Food first.'}`],
+  fishing: ["I'll see what the water has. Fishing.", 'Out with the rod. Fish for supper.'],
   search_food: ["I'm hungry. Looking around for something to eat.", 'Anything to eat around here?', "I'd better find some food."],
   return_for_food: "I've got nothing to eat here. Back through the portal for food.",
   cook_food: ["I'll cook this food first.", 'Cooking up something to eat.', 'Dinner time. Into the furnace it goes.'],

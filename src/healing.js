@@ -41,13 +41,14 @@ function foodCarried(bot) {
 // A grown animal's meat, cooked: a cow or pig one to three (about two) at
 // eight each, a sheep one or two mutton at six, a chicken one at six, a
 // rabbit one at five.
-const MEAT_POINTS = { cow: 16, mooshroom: 16, pig: 16, sheep: 9, chicken: 6, rabbit: 5, hoglin: 24 };
+// A cod or a salmon is one fish, five and six cooked (fishing.js, note 1203).
+const MEAT_POINTS = { cow: 16, mooshroom: 16, pig: 16, sheep: 9, chicken: 6, rabbit: 5, hoglin: 24, cod: 5, salmon: 6 };
 // The same meat raw, as a kill leaves it and as it is counted until cooked:
 // beef and porkchop three a piece, mutton two, rabbit three (half the
 // rabbits drop one), a hoglin two to four porkchops. mid-244-ah (note 594)
 // was told a cow in view would bring 32 of the 40 points it was short; the
 // nine beef its hunts brought counted 27.
-const RAW_MEAT_POINTS = { cow: 6, mooshroom: 6, pig: 6, sheep: 3, chicken: 0, rabbit: 1.5, hoglin: 9 };
+const RAW_MEAT_POINTS = { cow: 6, mooshroom: 6, pig: 6, sheep: 3, chicken: 0, rabbit: 1.5, hoglin: 9, cod: 2, salmon: 2 };
 // A kill the bot tried for in the last two minutes and could not make
 // (behind cover, no way to it), as the survival layer keeps it
 // (foraging.js failedPrey), is not food in view.
@@ -69,6 +70,17 @@ function foodSources(bot, goal) {
       found.push({ kind: 'in_view', animal: kind, count, points: count * (MEAT_POINTS[kind] || 6), distance: d, at: { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z) },
         says: `a ${words(kind)} in view, ${d} blocks off` });
     }
+  });
+  // Cod and salmon in view in open water no deeper than the dive (fishing.js,
+  // note 1203): 25588 (2026-10-04 07:29 to 08:27Z) starved on a map of
+  // ocean and shore whose food list had only the land's animals. Not one
+  // under ice or a roof, nor one the bot could not get to lately.
+  if (overworld) guard(() => {
+    const fish = require('./fishing').fishInView(bot, goal?.survival);
+    if (!fish[0]) return;
+    const d = Math.round(fish[0].position.distanceTo(here)), kind = fish[0].name, count = fish.filter(e => e.name === kind).length, p = fish[0].position;
+    found.push({ kind: 'in_view', animal: kind, count, points: count * MEAT_POINTS[kind], distance: d, at: { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z) },
+      says: `${count === 1 ? `a ${words(kind)}` : `${count} ${words(kind)}`} in open water in view, ${d} blocks off` });
   });
   guard(() => {
     const sightings = require('./sightings');

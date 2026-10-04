@@ -102,7 +102,7 @@ function sourceKind(key) {
   if (/^(restock_food|get_food_here|raid_bastion|mushroom_stew)$/.test(k)) return 'restock';
   return null;
 }
-const FOOD_WAY = /^(obtain_food|go_for_food|eat_carried|restock_food|return_for_food|hoglin_\w+|cook_\w+|seen_food_\d+|search_food|go_home_for_food|village_food|get_food_here|raid_bastion|mushroom_stew|hunt_\d+)$/;
+const FOOD_WAY = /^(obtain_food|go_for_food|eat_carried|restock_food|return_for_food|hoglin_\w+|cook_\w+|seen_food_\d+|search_food|go_home_for_food|village_food|get_food_here|raid_bastion|mushroom_stew|fish_with_rod|hunt_\d+)$/;
 
 // What such ways came to in the record, where the bot is (else all).
 function recordSays(kind, place) {
@@ -123,6 +123,8 @@ function minutesOf(key, node, place) {
     const m = climb.match(/(\d+(?:\.\d+)?) (real )?minutes?/), s = climb.match(/(\d+) seconds/);
     if (m) { ms += Number(m[1]) * 60000; said = true; } else if (s) { ms += Number(s[1]) * 1000; said = true; }
     if (Number.isFinite(d.cookSeconds)) { ms += d.cookSeconds * 1000; said = true; }
+    // The rod's wait for its fish (fishing.js, note 1203).
+    if (Number.isFinite(d.catchSeconds)) { ms += d.catchSeconds * 1000; said = true; }
   }
   if (said) return ms;
   const r = SOURCE_RECORD[sourceKind(key)];

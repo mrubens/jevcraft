@@ -14,8 +14,9 @@ const vanilla = require('../data/vanilla-26.1.json');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // Raw chicken is an ingredient, never edible reserve. Its cooking dependency
 // comes from the same server recipe catalog used for requested items.
-// These land animals share the surface chase handler. Other food-bearing mobs
-// (fish, hostile mobs) need their own mechanics before becoming candidates.
+// These land animals share the surface chase handler. Fish have their own
+// (fishing.js, note 1203: the swim over one and the rod from the bank);
+// hostile mobs need their own mechanics before becoming candidates.
 // No chickens and no pigs: never hurt (protected-animals.js).
 const landPrey = new Set(['cow', 'mooshroom', 'sheep', 'rabbit']);
 function preyFood(bot, entity) {
@@ -158,7 +159,15 @@ async function forageChoices(bot, task, goal, save, actions, state, { target = 1
       finally { task.interruptCheck = outerCheck; }
     } };
   }
-  const prey = await candidates(bot, task, state);
+  const landPreyInView = await candidates(bot, task, state);
+  // Cod and salmon in open water beside them (fishing.js, note 1203): on
+  // 25588's map of ocean and shore (2026-10-04 07:29 to 08:27Z) no land
+  // animal was found in an hour and the bot starved to 0.36 health.
+  const fishing = require('./fishing');
+  let fishPrey = [];
+  try { fishPrey = /overworld/.test(String(bot.game?.dimension || 'overworld')) ? await fishing.fishCandidates(bot, task, state) : []; }
+  catch (err) { if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  const prey = [...landPreyInView, ...fishPrey];
   const weapon = bot.inventory.items().find(i => /_(sword|axe)$/.test(i.name));
   const logs = bot.registry.blocksArray.filter(b => /_log$|^(crimson|warped)_stem$/.test(b.name)).map(b => b.id);
   if (prey.length && !weapon && actions.acquireStep && bot.findBlocks?.({ matching: logs, maxDistance: 32, count: 1 }).length) {
@@ -175,17 +184,18 @@ async function forageChoices(bot, task, goal, save, actions, state, { target = 1
   }
   for (const target of prey) {
     const observed = target.position.clone();
-    const item = preyFood(bot, target), raw = item.replaceAll('_', ' ');
+    const fish = fishing.fishFood(bot, target), spearFacts = fish ? fishing.spearFacts(bot, target) : null;
+    const item = fish || preyFood(bot, target), raw = item.replaceAll('_', ' ');
     // Said of this animal's own food. Every hunt used to say "chicken must be
     // cooked before eating", and a rabbit came with needsCooking false.
     const needsCooking = !safeFood(bot, { name: item });
-    choices[`hunt_${target.id}`] = { description: { action: `Hunt this ${target.name.replaceAll('_', ' ')} and pick up its ${raw}. ${needsCooking
+    choices[`hunt_${target.id}`] = { description: { action: fish ? spearFacts.action : `Hunt this ${target.name.replaceAll('_', ' ')} and pick up its ${raw}. ${needsCooking
       ? `Raw ${raw} can poison; it must be cooked before eating.` : `Raw ${raw} is safe to eat, and worth much more cooked.`}`,
-      animal: target.name, position: { ...target.position.floored() }, distance: Math.round(target.position.distanceTo(bot.entity.position)),
+      animal: target.name, ...(fish ? { inWater: true, blocksUnderTheWatersTop: spearFacts.depth, blows: spearFacts.blows, pointsRaw: bot.registry.foodsByName[item].foodPoints, pointsCooked: bot.registry.foodsByName[`cooked_${item}`]?.foodPoints } : {}), position: { ...target.position.floored() }, distance: Math.round(target.position.distanceTo(bot.entity.position)),
       availableWeapon: bot.inventory.items().find(i => /_(sword|axe)$/.test(i.name))?.name || 'bare hands', food: item, needsCooking,
       // How many of this kind are known about: in view, and remembered out of
       // view within 128 (sightings.js). Two cows are a pen's breeding pair.
-      sameKindKnown: (() => { const k = require('./sightings').known(bot, goal, target.name); return { ...k, note: k.total <= 2 ? `killing it leaves ${k.total - 1} ${target.name.replaceAll('_', ' ')} known nearby; a pen needs two to breed` : undefined }; })(),
+      sameKindKnown: fish ? { inView: fishing.fishInView(bot, state).filter(e => e.name === target.name).length } : (() => { const k = require('./sightings').known(bot, goal, target.name); return { ...k, note: k.total <= 2 ? `killing it leaves ${k.total - 1} ${target.name.replaceAll('_', ' ')} known nearby; a pen needs two to breed` : undefined }; })(),
       // Said, not filtered: an animal near a hostile was dropped from the list.
       // Every hostile near the animal, not only near the bot (the decision
       // audit, 2026-09-25): threats(bot) looked twenty-four blocks from the
@@ -197,7 +207,8 @@ async function forageChoices(bot, task, goal, save, actions, state, { target = 1
           hostilesWithin32OfIt: { count: near.length, kinds: [...new Set(near.map(h => h.t.entity.name))], creepers: near.filter(h => h.t.entity.name === 'creeper').length,
             shooters: near.filter(h => shooter(h.t.entity)).length, outOfSight: near.filter(h => !h.t.visible).length } };
       })() },
-    valid: () => bot.entities[target.id] === target && target.isValid !== false && preyFood(bot, target) === item && target.position.distanceTo(observed) < 2,
+    // A fish does not stand: it is the one offered while it is in the same water.
+    valid: () => bot.entities[target.id] === target && target.isValid !== false && (fish ? fishing.fishFood(bot, target) === item && target.position.distanceTo(observed) < 8 : preyFood(bot, target) === item && target.position.distanceTo(observed) < 2),
     run: async () => {
       goal.survivalAction = { action: 'gather_food', animal: target.name, position: { ...target.position }, at: new Date().toISOString() }; save();
       // A new animal chased this errand, said in its yield (note 719: 25588
@@ -212,7 +223,7 @@ async function forageChoices(bot, task, goal, save, actions, state, { target = 1
         state.foodErrand.lastTargetId = id;
       }
       const outerCheck = task.interruptCheck; task.interruptCheck = () => checkThreats(bot);
-      try { await hunt(bot, task, target, actions, goal, save); }
+      try { await (fish ? fishing.spear : hunt)(bot, task, target, actions, goal, save); }
       catch (err) {
         if (!['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) {
           state.failedPrey ||= {}; state.failedPrey[target.uuid || target.id] = Date.now(); save();
@@ -249,6 +260,9 @@ async function forageChoices(bot, task, goal, save, actions, state, { target = 1
     return { walkSeconds: seconds, ...(leg.seconds ? { climbFirst: `about ${leg.depth} blocks up to the surface first, ${leg.says.replace(/^the climb to open sky first, \d+ blocks up, /, '')}` } : {}), ...passes(to), ...(dark ? { dark: 'night: mobs spawn along the way' } : tod + seconds * 20 >= DAY.DARK && tod < DAY.DARK ? { dark: 'arrives after dark' } : {}),
       healthNow: Math.round(bot.health ?? 20), ...((bot.food ?? 20) < 18 && (bot.health ?? 20) < 20 ? { healing: `none meanwhile: hunger ${bot.food}, below eighteen` } : {}), ...(poisonedNow(bot) ? { poisoned: poisonedNow(bot) } : {}) };
   };
+  // The rod from the bank (fishing.js, note 1203), where a rod or the string
+  // for one is carried and open water with a bank is within 32 blocks.
+  try { const rod = fishing.rodChoice(bot, task, goal, save, actions, { target, supply: foodSupply(bot), walkFacts }); if (rod) choices.fish_with_rod = rod; } catch (_) { /* no water read */ }
   const home = homeFood(bot, goal);
   if (home) choices.go_home_for_food = {
     description: { action: 'Walk back to the home base and eat from its stores: harvest the ripe wheat and bake bread, or take a steak from the cow pen (the breeding pair is kept).',
