@@ -59,3 +59,20 @@ test('the spare kit is asked on its own by the chest: left when chosen, asked on
   assert.equal(await stash.askSpareKit(b, new Task('t'), full, () => {}, actions, client), false);
   assert.equal(asked.length, 2);
 });
+
+test('a spare shield goes with the kit where one is worn: the one in the pack, or made of an ingot and six planks; and it is taken out again with none worn (note 1225)', () => {
+  const worn = carried => { const b = bot(carried); b.inventory.slots[45] = { name: 'shield' }; return b; };
+  // Worn and a second in the pack: left as it is.
+  const a = stash.spareKitOffer(worn({ iron_pickaxe: 2, iron_sword: 2, shield: 1 }), goalWith({}));
+  assert.ok(a.lacks.includes('shield'));
+  assert.match(a.says, /spare pickaxe and sword and shield carried|shield/);
+  // Worn, none spare, an ingot and two logs: made.
+  const m = stash.spareKitOffer(worn({ iron_pickaxe: 2, iron_sword: 2, iron_ingot: 1, oak_log: 2 }), goalWith({ }));
+  assert.deepEqual(m.makes.map(x => x.item), ['shield']);
+  // None worn: the shield made is for the arm, not the chest.
+  const none = stash.spareKitOffer(bot({ iron_pickaxe: 2, iron_sword: 2, iron_ingot: 1, oak_log: 2 }), goalWith({}));
+  assert.ok(!none?.lacks.includes('shield'));
+  // The chest holding one: nothing more of it.
+  const held = stash.spareKitOffer(worn({ iron_pickaxe: 2, iron_sword: 2, shield: 1 }), goalWith({ shield: 1 }));
+  assert.ok(!held?.lacks.includes('shield'));
+});

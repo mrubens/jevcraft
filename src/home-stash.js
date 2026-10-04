@@ -267,6 +267,8 @@ function stashWithdrawals(bot, home, wants = [], { items = bot.inventory.items()
       }
     } else if (slot.bucket) {
       if (!items.some(i => isBucket(i.name))) take('water_bucket', 1, { slot: slot.slot });
+      // The spare shield, with none worn or carried (note 1225).
+      if (!items.some(i => i.name === 'shield') && bot.inventory.slots?.[45]?.name !== 'shield') take('shield', 1, { slot: 'shield' });
     } else if (totalOf(items, slot.matches) <= slot.low) {
       let need = slot.count - totalOf(items, slot.matches);
       for (const name of Object.keys(stored).filter(slot.matches)) { if (need <= 0) break; need -= take(name, need, { slot: slot.slot }); }
@@ -475,8 +477,8 @@ async function moveOut(bot, window, move) {
 
 // Put spares (and, before the Nether, valuables) in the chest. The moves
 // are worked out again against the real contents once the lid is open.
-async function stockStash(bot, task, goal, save, home, actions, { valuables = false, only = null } = {}) {
-  const planned = stashDeposits(bot, home, { valuables, goal }).filter(m => !only || only(m));
+async function stockStash(bot, task, goal, save, home, actions, { valuables = false, only = null, extra = [] } = {}) {
+  const planned = [...stashDeposits(bot, home, { valuables, goal }).filter(m => !only || only(m)), ...extra];
   if (!planned.length) return [];
   const step = () => { goal.step = { action: valuables ? 'stash_valuables' : 'stock_stash', items: planned }; save(); };
   step();
@@ -484,7 +486,7 @@ async function stockStash(bot, task, goal, save, home, actions, { valuables = fa
     // The walk home has its own step; back at the chest, this is the step again.
     step();
     const stored = [];
-    for (const move of stashDeposits(bot, home, { valuables, items: window.items(), goal }).filter(m => !only || only(m))) {
+    for (const move of [...stashDeposits(bot, home, { valuables, items: window.items(), goal }).filter(m => !only || only(m)), ...extra]) {
       task.check();
       // Only what fits: a free slot, or room in a stack of the same item.
       if (!chestRoomFor(bot, window, move.item)) continue;
@@ -644,6 +646,16 @@ function spareKitOffer(bot, goal, { now = Date.now() } = {}) {
     if (ingots >= head) { makes.push({ item: `iron_${slot.tool}`, from: `${head} of the ${n('iron_ingot')} iron ingots carried` }); ingots -= head; sticksLeft -= handle; }
     else if (stone >= head) { makes.push({ item: `stone_${slot.tool}`, from: `${head} of the stone carried` }); stone -= head; sticksLeft -= handle; }
   }
+  // A spare shield beside them (note 1225), where one is worn already: the
+  // one carried in the pack, or made of an iron ingot and six planks. Back
+  // from a death the bot's first hour is under skeletons with none: of
+  // nineteen deaths on 2026-10-04 (08:00 to 10:15Z) six were a bot's
+  // second, bare, and from 13:31 to 14:13Z five of nine were to skeletons.
+  if ((contentsOf(home).shield || 0) < 1 && bot.inventory.slots?.[45]?.name === 'shield') {
+    const planks = items.filter(i => /_planks$/.test(i.name)).reduce((c, i) => c + i.count, 0) + 4 * items.filter(i => /_(log|stem)$/.test(i.name)).reduce((c, i) => c + i.count, 0);
+    if (n('shield') >= 1) { lacks.push('shield'); spare.push('shield'); }
+    else if (ingots >= 1 && planks >= 6) { lacks.push('shield'); makes.push({ item: 'shield', from: '1 iron ingot and 6 planks of the wood carried' }); ingots -= 1; }
+  }
   if (!makes.length && !spare.length) return null;
   const far = Math.round(homeDistance(bot, home)), holds = describeContents(contentsOf(home));
   const made = makes.length ? `make ${makes.map(m => `a spare ${words(m.item)} (${m.from})`).join(' and ')}, a few seconds at a crafting table, and ` : '';
@@ -688,7 +700,8 @@ async function leaveSpareKit(bot, task, goal, save, actions, offer) {
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[spare kit] the ${words(m.item)} was not made: ${String(err.message || err).slice(0, 160)}`); }
   }
   let stored = [];
-  try { stored = await stockStash(bot, task, goal, save, offer.home, actions, { only: m => m.slot === 'pickaxe' || m.slot === 'sword' }); }
+  const extra = offer.lacks.includes('shield') && countOf(bot, 'shield') >= 1 && bot.inventory.slots?.[45]?.name === 'shield' ? [{ item: 'shield', count: 1, slot: 'shield' }] : [];
+  try { stored = await stockStash(bot, task, goal, save, offer.home, actions, { only: m => m.slot === 'pickaxe' || m.slot === 'sword', extra }); }
   catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[spare kit] not put in the chest: ${String(err.message || err).slice(0, 160)}`); }
   if (!stored.length) { setAside(goal, 'stash', 'spare_kit', 'nothing went into the chest', RETRY_MS); save(); }
   else bot.chat?.(`Left ${describeMoves(stored)} in the chest at home: a kit to come back to.`);
