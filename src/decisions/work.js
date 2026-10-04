@@ -534,6 +534,18 @@ define({
   instructions: workInstructions('The bot carries eyes of ender, what the End portal is opened with, and is about to go on an errand for its kit. A death drops everything carried; a chest keeps what is in it. Choose whether the eyes go in a chest first. Each option says its record.'),
 });
 
+define({
+  id: 'spare_kit_now', area: 'resources', parent: null, kind: 'upkeep', primitive: 'choice', stakes: 'low', tree: true,
+  question: 'The bot is by its home chest, and the chest lacks a spare pickaxe or sword the bot carries or can make now: leave a spare kit there, or go on?',
+  trigger: 'The ladder\'s step in the Overworld within reach of the home\'s stash chest, a spare of what the chest lacks carried or its makings in the pockets; asked once for what the chest lacks and again after half an hour.',
+  source: 'src/home-stash.js (askSpareKit, spareKitOffer, leaveSpareKit), src/game-progress.js (gameStep)',
+  options: [
+    { key: 'leave_spare_kit', label: 'make what is wanted and leave the spare kit in the chest', when: 'always here; said with the walk, what is made, what the chest holds and the record of deaths that followed a death', level: 'root' },
+    { key: 'go_on', label: 'go on without leaving one', when: 'always here; said with what the chest holds and the same record', level: 'root' },
+  ],
+  instructions: workInstructions('The bot is beside the chest by its bed. A death brings it back to life there with empty hands; what is in the chest is taken up from there. Choose whether to leave a spare pickaxe and sword in it now. Each option says its record.'),
+});
+
 // Upkeep between steps: a spare pickaxe, a wood reserve, a block reserve.
 define({
   id: 'upkeep', area: 'resources', parent: null, kind: 'upkeep', primitive: 'choice', stakes: 'low', tree: true,

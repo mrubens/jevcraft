@@ -651,6 +651,35 @@ function spareKitOffer(bot, goal, { now = Date.now() } = {}) {
   return { home, far, lacks, makes, holds,
     says: `Leave a spare kit in the stash chest at home first, ${far} blocks off, about ${Math.max(5, Math.round(far / 4.3))} seconds each way: ${made}leave ${makes.length ? `${makes.length === 1 ? 'it' : 'them'}${carried ? ` ${carried}` : ''}` : carried} there (the chest holds ${holds || 'nothing yet'}). A death in the Nether comes back to life at the bed with empty hands, and what is in the chest is taken up from there: on ${REGEAR.day} the ${REGEAR.deaths} deaths in the Nether with the chest empty were back in the Nether ${REGEAR.min} to ${REGEAR.max} minutes later, a median ${REGEAR.median}, the kit mined and smelted again.${bareAgainSays()}` };
 }
+// The spare kit, asked on its own at home (spare_kit_now, note 1222): leave
+// it now, or go on. It was one answer of the crossing's question beside
+// crossing now and each top-up: from 06:00 to 14:10Z on 2026-10-04 it was
+// offered there 109 times and taken once (0.05 on the mean), where Jev takes
+// a spare pickaxe at upkeep most times it is offered; of nineteen deaths
+// from 08:00 to 10:15Z, six were a bot's second, back bare among the mobs
+// by its bed, and gear rungs were a fifth to a quarter of the long trials'
+// played minutes. Asked once for what the chest lacks, and again after half
+// an hour. -> true when a step was used on it
+const SPARE_ASK_MS = 30 * 60000;
+const TODAY = 'On 2026-10-04 (08:00 to 10:15Z) six of nineteen deaths were a bot\'s second, back with empty hands among the mobs by its bed, and making the kit again was a fifth to a quarter of the long trials\' played minutes.';
+async function askSpareKit(bot, task, goal, save, actions, client, { now = Date.now() } = {}) {
+  if (!client || goal?.kind !== 'win') return false;
+  const offer = spareKitOffer(bot, goal, { now });
+  if (!offer) return false;
+  const sig = offer.lacks.join(','), a = goal.spareKitAsked;
+  if (a && a.sig === sig && now - a.at < SPARE_ASK_MS) return false;
+  goal.spareKitAsked = { sig, at: now }; save?.();
+  const tree = {
+    leave_spare_kit: { description: `${offer.says} ${TODAY}` },
+    go_on: { description: `Go on without leaving one: the chest at home holds ${offer.holds || 'nothing yet'}, and a death comes back to life at the bed with empty hands. ${TODAY} Asked again in half an hour, or when what the chest lacks changes.` },
+  };
+  let decision;
+  try { decision = await require('./decisions').decide('spare_kit_now', { client, bot, task, goal, save, tree, state: { blocksToHome: offer.far, chestLacks: offer.lacks, chestHolds: offer.holds || 'nothing', health: bot.health, food: bot.food } }); }
+  catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[spare_kit_now] not asked: ${String(err.message || err).slice(0, 200)}`); return false; }
+  if (decision.stale || decision.path?.at(-1) !== 'leave_spare_kit') return false;
+  await leaveSpareKit(bot, task, goal, save, actions, offer);
+  return true;
+}
 // Made, carried home and put in. -> the moves stored
 async function leaveSpareKit(bot, task, goal, save, actions, offer) {
   for (const m of offer.makes) {
@@ -683,5 +712,5 @@ function stashChores(bot, goal) {
 }
 
 module.exports = { withChest, moveIn, chestRoomFor, CHEST_MAX, expandStash, SPARE_KIT, VALUABLES, KEEPSAKES, KIT_FOOD_POINTS, NETHER_FOOD_POINTS, slotFits, keepsakeOf, isKeepsake, isKitMaterial, stashDeposits, stashWithdrawals, rungWants, planIngredients, stashStatus, forgetChest, rememberContents,
-  spareKitOffer, leaveSpareKit, REGEAR,
+  spareKitOffer, leaveSpareKit, askSpareKit, REGEAR,
   restockStage, placeStashChest, stockStash, restockFromStash, stashValuables, stashChores, describeContents };

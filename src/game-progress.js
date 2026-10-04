@@ -1138,6 +1138,14 @@ async function gameStep(bot, task, goal, save, actions) {
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
     if (banked === 'banked') return false;
   }
+  // The spare kit by the bed, asked on its own where it can be left (home-
+  // stash.js askSpareKit, note 1222).
+  if (dimension(bot) === 'overworld' && actions?.spare_kit) {
+    let left = false;
+    try { left = await actions.spare_kit(bot, task, goal, save); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
+    if (left) return false;
+  }
   // Out of the Nether on a food trip (note 763): kept until the food rung
   // is met or set aside by choice, or thirty minutes pass.
   // The trip back for food chosen in the Nether is kept to arrival

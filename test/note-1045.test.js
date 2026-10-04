@@ -33,3 +33,29 @@ test('stone where no iron is spare; nothing where the chest holds both, the pock
   assert.ok(twoPicks && twoPicks.makes.length === 0, 'a spare carried is left as it is');
   assert.match(twoPicks.says, /leave the spare pickaxe carried there/);
 });
+
+test('the spare kit is asked on its own by the chest: left when chosen, asked once for what the chest lacks, not asked with nothing to leave (note 1222)', async () => {
+  const { Task } = require('../src/skills');
+  const b = bot({ iron_pickaxe: 1, iron_sword: 1, iron_ingot: 9, stick: 6, cooked_beef: 8 });
+  const goal = goalWith({});
+  const asked = [];
+  let answer = 'go_on';
+  const client = { systemOne: async ({ questions }) => { asked.push(JSON.stringify(Object.values(questions)[0])); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: answer, confidence: 0.9 }])) }; } };
+  const made = [];
+  const actions = { acquireStep: async (bb, t, item) => { made.push(item); }, navigate: async () => {} };
+  assert.equal(await stash.askSpareKit(b, new Task('t'), goal, () => {}, actions, client), false);
+  assert.equal(asked.length, 1);
+  assert.match(asked[0], /leave_spare_kit/);
+  assert.match(asked[0], /Leave a spare kit in the stash chest at home first, \d+ blocks off/);
+  assert.match(asked[0], /six of nineteen deaths were a bot's second/);
+  assert.equal(await stash.askSpareKit(b, new Task('t'), goal, () => {}, actions, client), false);
+  assert.equal(asked.length, 1, 'not asked again within half an hour for the same lack');
+  // Half an hour on, and chosen: the kit is made (the storing is the chest's own code).
+  answer = 'leave_spare_kit';
+  assert.equal(await stash.askSpareKit(b, new Task('t'), goal, () => {}, actions, client, { now: Date.now() + 31 * 60000 }), true);
+  assert.deepEqual(made, ['iron_pickaxe', 'iron_sword']);
+  // The chest holding both: no question.
+  const full = goalWith({ iron_pickaxe: 1, stone_sword: 1 });
+  assert.equal(await stash.askSpareKit(b, new Task('t'), full, () => {}, actions, client), false);
+  assert.equal(asked.length, 2);
+});
