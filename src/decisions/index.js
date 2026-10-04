@@ -384,9 +384,9 @@ function noneGood(id, decision, listed, { bot, goal, state, last = null }) {
   const calmAlways = CALM_WHEN_NONE_GOOD.has(id) && ng > 0 && ng >= bestW;
   if (!why && !SAY_ONLY.has(id) && (ng >= 2 * bestW || calmAlways) && ng > 0) {
     const KEEP = require('../intention').KEEP;
-    const calm = keys.find(k => k !== NONE_GOOD_KEY && (listed[k]?.ladderNext || KEEP.test(k)));
+    const calm = keys.find(k => k !== NONE_GOOD_KEY && (listed[k]?.ladderNext || KEEP.test(k) || CALM_KEY[id] === k));
     const r = n => Math.round(n * 100) / 100;
-    if (calm && calm !== path[0]) { passedOver = `none good at ${r(ng)} was ${ng >= 2 * bestW ? 'twice the best listed or more' : 'over the best listed, and at upkeep that is carrying on'} (${bestKey.replaceAll('_', ' ')} ${r(bestW)}): ${calm.replaceAll('_', ' ')}, which changes nothing, was taken rather than a guess`; path = down(calm).path; }
+    if (calm && calm !== path[0]) { passedOver = `none good at ${r(ng)} was ${ng >= 2 * bestW ? 'twice the best listed or more' : (id === 'upkeep' ? 'over the best listed, and at upkeep that is carrying on' : 'over the best listed, and here that is what changes nothing')} (${bestKey.replaceAll('_', ' ')} ${r(bestW)}): ${calm.replaceAll('_', ' ')}, which changes nothing, was taken rather than a guess`; path = down(calm).path; }
     else if (!calm) weak = { key: path[0], p: r(weights[path[0]] || 0), noneGood: r(ng) };
   }
   let node = { children: listed };
@@ -528,7 +528,13 @@ const UNLEDGERED = new Set(['turn_priority', 'shot_answer']);
 // body's way out of the lava or the fire, the shield (note 521: a failed
 // stance stays on offer with its failure said; Jev weighs it).
 const SAY_ONLY = new Set(['encounter_stance', 'body_way', 'shot_answer', 'ranged_response']);
-const CALM_WHEN_NONE_GOOD = new Set(['upkeep']);
+// In a sealed pocket too (note 1205), where staying is what changes
+// nothing: 25591 (2026-10-04 10:11:11Z), bare, at 11 health in the shaft
+// pocket it had sealed sixteen seconds before, answered none good at 0.29
+// with leave at 0.26 and stay at 0.21; leave was taken, two pockets begun
+// outside came to nothing, and a zombie had it at 10:12:24.
+const CALM_WHEN_NONE_GOOD = new Set(['upkeep', 'pocket_next']);
+const CALM_KEY = Object.freeze({ pocket_next: 'stay' });
 // The questions about the plan, which wait while a fight is on (danger.js
 // fightOn, note 696): the legs, the fortress's questions, the detours, the
 // upkeep and the stage. Survival's turn comes first; asked at the end of the
