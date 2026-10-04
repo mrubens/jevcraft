@@ -74,8 +74,15 @@ const headsKept = bot => /nether/.test(String(bot?.game?.dimension || '')) ? Mat
 const material = bot => {
   const items = bot.inventory.items(), heads = items.filter(i => HEAD_KINDS.includes(i.name)).reduce((n, i) => n + i.count, 0);
   const spare = /nether/.test(String(bot?.game?.dimension || '')) ? heads > HEAD_KEEP : true;
-  return laidOrder(bot).filter(n => spare || !HEAD_KINDS.includes(n)).map(n => items.find(i => i.name === n)).find(Boolean);
+  return laidOrder(bot).filter(n => spare || !HEAD_KINDS.includes(n)).map(n => items.find(i => i.name === n)).find(Boolean)
+    // With no rock at all, the wool in the pockets (note 1229; not the
+    // planks, which are the next pickaxe's). It burns beside lava and holds
+    // against no blast, so it is laid only when nothing else is carried. 25590 (2026-10-04 13:51 to 15:11Z) stood eighty
+    // minutes at 1 health on its own span over a lava sea, three blocks
+    // gone from it behind and no rock in reach, with five wool in its pack.
+    || items.find(i => LAST_RESORT.test(i.name));
 };
+const LAST_RESORT = /_wool$/;
 // A biter or a hopper that can push the bot off the span within its charge
 // (narrow-footing.js, note 769): the span is walled on both sides as it is
 // laid while one is about. Shooters stop the span outright (underFire).

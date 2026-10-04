@@ -264,7 +264,13 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
       // ended at its first pearl and the next was asked for from outside
       // the slot; in the arena, six about, it kills five or six in a minute
       // from the end with no health lost, and their pearls lay to the end.
-      if (dead > collected && fell && Date.now() - fellAt > 1200 && !all.some(x => angry(x) || x.position.distanceTo(bot.entity.position) <= 10)) {
+      // A calm one near is no reason to leave the pearl (note 1229): it
+      // strikes only once looked at or hit, and the walk for the drop looks
+      // at the ground. With one within ten blocks the drops were never gone
+      // out for, and in a warped forest one always is: 25595 (2026-10-04
+      // 02:47 to 05:25Z) killed four from its slots with 8 to 17 about and
+      // picked up no pearl.
+      if (dead > collected && fell && Date.now() - fellAt > 1200 && !all.some(x => angry(x) || x.position.distanceTo(bot.entity.position) <= 3)) {
         collected = dead;
         await collect();
         try { await navigate(bot, task, new goals.GoalBlock(site.mouth.x, site.mouth.y, site.mouth.z), { timeoutMs: 3000, stallMs: 1200 }); }
@@ -380,7 +386,7 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
     // seen within six blocks walked to (note 996: in the arena's first 26
     // kills 7 pearls were carried, where about half drop one; the walk had
     // come and gone before the pearl lay there).
-    if (fell && !endermen(bot, 8).length) await collect();
+    if (fell && !endermen(bot, 8).some(x => angry(x) || x.position.distanceTo(bot.entity.position) <= 3)) await collect();
   } finally { bot.removeListener('entityDead', onDead); bot.removeListener('health', onHealth); delete bot._stareMeant; }
   out.kills = dead; out.pearls = count() - had; out.hurt = Math.max(0, hp0 - (bot.health ?? hp0));
   console.log(`[slot] ${out.kills} endermen killed from the slot, ${out.pearls} pearls, ${Math.round(out.hurt * 10) / 10} health lost: ${out.ended}`);
