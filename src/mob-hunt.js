@@ -1389,7 +1389,13 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   // 14:11Z), hunting endermen at 19 health with nothing to eat, was cut on
   // "No measurable progress on recover_before_combat", four times (note 893).
   const wentOn = dimension(bot) !== 'overworld' && isSetAside(goal, 'nether_return', 'food');
-  const foodOnly = !!f0 && !f0.fit && (dimension(bot) === 'overworld' || wentOn) && f0.health >= HUNT_FLOOR && f0.food >= HUNT_FLOOR && !f0.foodCarried && !(f0.burning && f0.health < 10);
+  // With nothing carried to eat the hunger has no floor here (note 1204):
+  // it does not come back by waiting at any level, and the fight's question
+  // says it. 25595 (2026-10-04 09:49 to 10:03Z), in the warped forest at 20
+  // health with nothing to eat, keep_on chosen, stood at hunger 13 and then
+  // 12, one under the fourteen asked, until the forest's quarter hour ran
+  // out; 43 of its 319 minutes on the pearls were this wait.
+  const foodOnly = !!f0 && !f0.fit && (dimension(bot) === 'overworld' || wentOn) && f0.health >= HUNT_FLOOR && !f0.foodCarried && !(f0.burning && f0.health < 10);
   if (foodOnly && dimension(bot) === 'overworld' && !goal.stockFood) { goal.stockFood = true; save(); }
   if (!handler.passive && !f0.fit && !foodOnly) {
     // Nothing to eat and hunger under eighteen means no regeneration: the
