@@ -93,6 +93,7 @@ const OLD_ORDER = {
   corpse_run: () => 'go_back',
   crossing_kit: (children, path, context = {}) => children[context.oldOrder] ? context.oldOrder : 'cross_now',
   dragon_fight: (children, path, context = {}) => endFallback(context.safe)(children),
+  end_kit: (children, path, context = {}) => children[context.oldOrder] ? context.oldOrder : 'enter_now',
   dug_into_liquid: () => 'plug',
   empty_spawner: children => {
       if (children.stash_rods) return 'stash_rods';

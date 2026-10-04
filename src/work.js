@@ -8863,7 +8863,7 @@ function gameHandlers(bot, decisionClient) {
           if (!made) { setAside(goal, 'rung', 'trade_pearls', 'no trade made', 1800000); save(); }
           return made;
         },
-        prepare_end: (bot, task, goal, save) => prepareEndSupplies(bot, task, goal, save, { acquireStep, enchant: (b, t, g, sv) => enchantStep(b, t, g, sv, { workstation }) }),
+        prepare_end: (bot, task, goal, save) => prepareEndSupplies(bot, task, goal, save, { acquireStep, navigate, enchant: (b, t, g, sv) => enchantStep(b, t, g, sv, { workstation }) }, decisionClient),
         home: (bot, task, goal, save, stage) => homeStep(bot, task, goal, save, stage, homeActions()),
         // A bed from a remembered village: dug up, it drops itself.
         village_bed: (bot, task, goal, save, stage) => takeVillageBed(bot, task, goal, save, stage.village, homeActions()),

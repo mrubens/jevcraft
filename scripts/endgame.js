@@ -24,7 +24,8 @@ const { createSurvival, gameHandlers } = require('../src/work');
 
 const port = Number(process.env.MC_PORT || 25578);
 if (!Number.isInteger(port) || [25565, 25570, 25574, 25577, 25579].includes(port)) throw new Error('The endgame rehearsal needs its own server (default 25578); 25565, 25570, 25574, 25577 and 25579 are in use elsewhere');
-const serverDir = path.join(__dirname, '..', '.test-endgame');
+// ENDGAME_DIR: a second rehearsal server's directory (its own port in MC_PORT), so two drills can run at once.
+const serverDir = process.env.ENDGAME_DIR ? path.resolve(process.env.ENDGAME_DIR) : path.join(__dirname, '..', '.test-endgame');
 const consolePath = path.join(serverDir, 'console.in');
 const serverLog = path.join(serverDir, 'logs', 'latest.log');
 const username = process.env.ENDGAME_USER || 'EndgameJev';
