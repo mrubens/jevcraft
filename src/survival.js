@@ -5341,7 +5341,11 @@ class Survival {
         // 12:05:39 to 12:05:42Z), bare, took cover at 0.68 and 0.67 from a
         // skeleton 7 and then 2 blocks off, priced as kept off, and was shot
         // from 12 health to 5 in nine seconds behind it.
-        || (WALKING_SHOOTERS.test(m.name) && m.distance <= 8), shield: shielded });
+        // Within sixteen, the range it sets on a player from, not eight (note
+        // 1215): 25594 (2026-10-04 12:42:17 to 12:42:44Z), bare, took cover
+        // three times from skeletons 9.5 to 15.6 blocks off, priced as kept
+        // off; they walked up to 3.4 and shot it from 15 health to 3.
+        || (WALKING_SHOOTERS.test(m.name) && m.distance <= 16), shield: shielded });
       const says = [
         ...cut.map(p => `${p.plan.cells.length === 1 ? 'a block' : `${p.plan.cells.length} blocks, two high,`} in the line from the eyes of ${named(p.t)} to the bot's, ${whereSays(bot, p.plan.cuts)}`),
         ...behind.map(p => `nothing for ${named(p.t)}: the ${p.plan.stoppedBy.name.replaceAll('_', ' ')} at ${p.plan.stoppedBy.cell} is in its line already`)];
@@ -5349,8 +5353,9 @@ class Survival {
       // cover is put from one that holds (ghast.js, note 551).
       const ghastCovered = cut.some(p => p.t.entity.name === 'ghast');
       const witchSays = witchCut ? ' A witch\'s potion is thrown, not shot: it bursts on the cover and its splash reaches about four blocks round, the bot behind the block too; the cover does not keep the witch off, and it is counted here as landing. A shut pocket stops it, and a witch dead throws nothing.' : '';
-      const walker = [...cut, ...behind].map(p => p.t).filter(t => WALKING_SHOOTERS.test(t.entity.name) && t.distance <= 8).sort((a, b) => a.distance - b.distance)[0];
-      const walkerSays = walker ? ` The ${walker.entity.name.replaceAll('_', ' ')} ${Math.round(walker.distance * 10) / 10} blocks off walks: from there it is round a block in its line in a second or two and shooting again, as often as the block is put.` : '';
+      const walker = [...cut, ...behind].map(p => p.t).filter(t => WALKING_SHOOTERS.test(t.entity.name) && t.distance <= 16).sort((a, b) => a.distance - b.distance)[0];
+      const walkerSecs = walker ? Math.max(1, Math.round(walker.distance / 2.5)) : 0;
+      const walkerSays = walker ? ` The ${walker.entity.name.replaceAll('_', ' ')} ${Math.round(walker.distance * 10) / 10} blocks off walks: from there it is round a block in its line in ${walkerSecs <= 2 ? 'a second or two' : `about ${walkerSecs} seconds`} and shooting again, as often as the block is put.` : '';
       const openSays = (walker ? walkerSays : '') + (open.length ? ` No cover can go in the line of ${open.map(p => `${named(p.t)} (${p.plan.why})`).join(', ')}: it still has the bot in its fire.` : '');
       options.take_cover = { expects: { damage: coverCost.damage, seconds: coverCost.seconds, oneHit }, quick: { seconds: Math.round((coverBlocks * BLOCK_SECONDS + madeSetup) * 10) / 10, says: coverBlocks ? `cover of ${plural(coverBlocks, 'block')}, about ${Math.round((coverBlocks * BLOCK_SECONDS + madeSetup) * 10) / 10} seconds` : 'cover already standing' }, description: `${coverBlocks ? `Put ${says.join('; and ')}, and stay behind it: ${coverBlocks} block${coverBlocks === 1 ? '' : 's'}, about ${Math.round(coverBlocks * BLOCK_SECONDS * 10) / 10} seconds${madeSetup ? `, the ${coverMade.item.replaceAll('_', ' ')} for it made first from the logs carried (${coverMade.available}), about a second more` : ''}` : `Stay here behind what stands in the line already: ${says.join('; ')}`}; a shooter fires only with a line to the bot, a shot does not come through a block, and a shooter that moves round finds the bot open again.${witchSays}${openSays}` + (ghastCovered ? require('./ghast').coverSays(bot, shelter.buildingMaterials) : '') + costSays(coverCost, bot.health, mobs, { doing: 'placing it', done: 'Behind it' }) + edge,
         run: async () => {
