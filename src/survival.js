@@ -5078,6 +5078,35 @@ class Survival {
             catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; if (bot.entity.position.distanceTo(from) < 4) { this.state.runFromFailed = { at: Date.now(), from: { x: from.x, y: from.y, z: from.z }, blocks: Math.round(bot.entity.position.distanceTo(from)), why: String(err.message || err).slice(0, 120) }; throw Object.assign(new Error(`the run from them came ${Math.round(bot.entity.position.distanceTo(from))} blocks: ${String(err.message || err).slice(0, 120)}`), { name: 'StanceFailed' }); } }
           } };
       }
+      // From shooters that walk, with nothing that bites near: out of their
+      // range at a sprint (note 1201). A skeleton sets on a player within
+      // sixteen blocks and aims to about fifteen; the retreat is to one footing
+      // out of sight found beforehand, and where none is found it is a run
+      // back along the bot's own trail under their fire. 25585 (2026-10-04
+      // 09:26:32 to 09:28:00Z), back to life bare-handed at night with three
+      // skeletons and a drowned about, was offered the retreat, the fight and
+      // its work, answered none good at 0.72 to 0.77, and was shot from 20
+      // health to none in seventeen seconds.
+      const walkers = biters.length ? [] : danger.filter(t => WALKING_SHOOTERS.test(t.entity.name) && t.visible !== false && t.distance <= 16).sort((a, b) => a.distance - b.distance);
+      if (walkers.length && !options.run_from && !onPillar && !ranHere && !options.come_down && (bot.food ?? 20) > 6 && !inWater(bot) && typeof goals.GoalInvert === 'function') {
+        const OUT = 28, lead = walkers[0];
+        const secs = Math.max(1, Math.round((OUT - lead.distance) / SPRINT * 10) / 10);
+        const named = walkers.length === 1 ? `the ${lead.entity.name.replaceAll('_', ' ')}` : `the ${walkers.length} that shoot`;
+        options.run_from = { expects: { damage: Math.round(runShotCost(secs) * 10) / 10, seconds: secs, oneHit },
+          description: `Run from ${named} at a sprint, out of ${walkers.length === 1 ? 'its' : 'their'} range: to the first cell the walk reaches ${OUT} blocks or more from ${walkers.length === 1 ? 'it' : 'every one of them'}, no footing picked beforehand and nothing searched while standing. A skeleton sets on a player within 16 blocks and aims to about 15: past that it has no shot, and one that has lost the bot does not come after it. About ${secs} seconds at the bot's ${SPRINT} blocks a second, the back to ${walkers.length === 1 ? 'it' : 'them'} and the shield down while it runs; ${walkers.length === 1 ? 'it shoots' : 'they shoot'} until the bot is out of range.${noWayOut || ' Where it ends is open ground, and what follows is asked of there.'}`,
+          run: async () => {
+            this.report(goal, save, { action: 'run_from', threats: walkers.map(t => t.entity.name).slice(0, 4), health: bot.health, stance: true });
+            lowerShield(bot);
+            const from = bot.entity.position.clone();
+            const away = e => new goals.GoalInvert(new goals.GoalNear(e.position.x, e.position.y, e.position.z, OUT));
+            const goalAway = () => walkers.length > 1 && typeof goals.GoalCompositeAll === 'function' ? new goals.GoalCompositeAll(walkers.slice(0, 4).map(t => away(t.entity))) : away(lead.entity);
+            try {
+              try { await this.actions.navigate(bot, task, goalAway(), { timeoutMs: 9000, stallMs: 2500, sprint: true, onFoot: true }); }
+              catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name) || bot.entity.position.distanceTo(from) >= 4) throw err; await this.actions.navigate(bot, task, goalAway(), { timeoutMs: 9000, stallMs: 2500, sprint: true }); }
+            }
+            catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; if (bot.entity.position.distanceTo(from) < 4) { this.state.runFromFailed = { at: Date.now(), from: { x: from.x, y: from.y, z: from.z }, blocks: Math.round(bot.entity.position.distanceTo(from)), why: String(err.message || err).slice(0, 120) }; throw Object.assign(new Error(`the run from them came ${Math.round(bot.entity.position.distanceTo(from))} blocks: ${String(err.message || err).slice(0, 120)}`), { name: 'StanceFailed' }); } }
+          } };
+      }
     }
     // With no way passing every mob, the way past the reach of what bites,
     // found before the question (scoutRetreat, reachFootings): the

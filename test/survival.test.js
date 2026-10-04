@@ -861,7 +861,7 @@ test('Jev picks the stance once and it holds; unsure, its pick still stands', as
   assert.equal(goal.decisions.at(-1).id, 'encounter_stance');
   // A blaze among them and twenty blocks carried: the box and the corner
   // too (note 606), and the close-in with no shield (note 614).
-  assert.deepEqual(Object.keys(calls[0].questions.branch_0.criteria).sort(), ['box_here', 'charge_shooter', 'close_in', 'corner_ambush', 'fight', 'keep_working', 'pillar', 'retreat', 'seal', 'shoot_17', 'shoot_7']);
+  assert.deepEqual(Object.keys(calls[0].questions.branch_0.criteria).sort(), ['box_here', 'charge_shooter', 'close_in', 'corner_ambush', 'fight', 'keep_working', 'pillar', 'retreat', 'run_from', 'seal', 'shoot_17', 'shoot_7']);
   assert.deepEqual(calls[0].state.threats, [{ name: 'skeleton', distance: 10, shoots: true, visible: true }, { name: 'blaze', distance: 11.7, shoots: true, visible: true }]);
   assert.deepEqual(events, ['navigate'], 'the retreat ran');
   bot.entity.position = new Vec3(.5, 64, .5);
@@ -6165,6 +6165,24 @@ test('a zombie at arm\'s length with bare hands: run_from is offered, priced by 
   const hungry = creeperBot({ wall: false, creeper: null, weapon: 'dirt', health: 20 }); hungry.food = 5; hungry.entities = { 7: zombie };
   const none = new Survival(hungry, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } }).stanceOptions(new Task('x'), {}, () => {}, [{ entity: zombie, distance: 1.4, visible: true }], false);
   assert.equal(none.run_from, undefined);
+});
+
+test('skeletons about and nothing that bites near, bare-handed: the run out of their range is offered, 28 blocks from every one (note 1201)', async () => {
+  const bot = creeperBot({ wall: false, creeper: null, weapon: 'dirt', health: 20 });
+  const s1 = { id: 7, name: 'skeleton', type: 'hostile', position: new Vec3(9.5, 64, 0.5), height: 1.99, width: 0.6, isValid: true };
+  const s2 = { id: 8, name: 'skeleton', type: 'hostile', position: new Vec3(0.5, 64, 12.5), height: 1.99, width: 0.6, isValid: true };
+  bot.entities = { 7: s1, 8: s2 };
+  const ran = [];
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async (_b, _t, goal, opts) => { ran.push({ goal, opts }); bot.entity.position = new Vec3(-25.5, 64, -20.5); } }, { state: { shelters: [] } });
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, [{ entity: s1, distance: 9, visible: true }, { entity: s2, distance: 12, visible: true }], false);
+  assert.match(options.run_from.description, /Run from the 2 that shoot at a sprint, out of their range: to the first cell the walk reaches 28 blocks or more from every one of them.*A skeleton sets on a player within 16 blocks and aims to about 15/);
+  await options.run_from.run();
+  assert.equal(ran[0].opts.sprint, true);
+  assert.equal(ran[0].goal.isEnd({ x: -19, y: 64, z: 0 }), false, 'twenty-eight from the first, under it from the second');
+  assert.equal(ran[0].goal.isEnd({ x: -25, y: 64, z: -20 }), true);
+  // Past sixteen blocks they have not set on the bot: no run is offered for them.
+  const far = survival.stanceOptions(new Task('x'), {}, () => {}, [{ entity: s1, distance: 20, visible: true }], false);
+  assert.equal(far.run_from, undefined);
 });
 
 test('a run that came to nothing from here is not offered again here for half a minute, and is again from elsewhere (note 1067)', async () => {
