@@ -244,6 +244,17 @@ function says(bot, goal, { supply, desired, hungry, errand = null, now = Date.no
     const stays = goal?.preparingNether ? require('./kit-record').staysSays('nether_food') : '';
     priced = `${where ? ` ${where}` : ''} ${reserveRecordSays({ underground, night })}${stays ? ` The Nether's ${stays}.` : ''}`;
   }
+  // For the hunger, where the search is and what goes with it (note 1181):
+  // the hour and the mobs it is made among, the health that does not come
+  // back on the way, and that hunger above nothing does no harm by itself.
+  // 25594 (2026-10-04 06:02:01Z), at health 5.3 and hunger 13 an hour into
+  // the night with a creeper and two skeletons about, was told only 'this is
+  // for the hunger', chose the search at 0.83 over sealing in, and was shot
+  // dead forty-three seconds on with twelve eyes of ender in its pack.
+  if (!reserveOnly) {
+    const where = whereSays(bot), hp = Number(bot?.health);
+    priced = `${where ? ` ${where}` : ''} Hunger ${hunger} does no harm by itself: it harms only at 0 and stops a sprint at 6.${Number.isFinite(hp) && hp < 20 ? ` Health ${Math.round(hp * 10) / 10} of 20 goes on the search as it is and does not come back until the food is found and eaten.` : ''}`;
+  }
   // The reserve's record for what is carried (note 796).
   const fr = require('./food-reserve');
   const record = fr.keeps(bot, goal) ? ` ${fr.sayHere(bot, supply)}` : '';
