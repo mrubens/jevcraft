@@ -196,7 +196,8 @@ const DRILLS = {
     if (!portal) return { drill: 'descend', pass: false, skipped: 'no portal found yet: run the stronghold drill first' };
     await kit([['ender_eye', 0]]);
     const c = portal.center || portal;
-    await commands(['time set 1000', `effect give ${username} minecraft:slow_falling 90 0 true`, `effect give ${username} minecraft:water_breathing 600 0 true`, `execute in minecraft:overworld run tp ${username} ${c.x + 120} 200 ${c.z + 90}`]);
+    // ENDGAME_STAY=1 goes on from where the bot stands (a run before left it by the ring).
+    if (!process.env.ENDGAME_STAY) await commands(['time set 1000', `effect give ${username} minecraft:slow_falling 90 0 true`, `effect give ${username} minecraft:water_breathing 600 0 true`, `execute in minecraft:overworld run tp ${username} ${c.x + 120} 200 ${c.z + 90}`]);
     await sleep(4000); await bot.waitForChunksToLoad();
     const from = where();
     const goal = { kind: 'win', request: 'endgame rehearsal', endPortal: portal, gameProgress: { version: 1, milestones: { nether_entered: { at: 1 }, stronghold_located: { at: 1, ...portal } } } };

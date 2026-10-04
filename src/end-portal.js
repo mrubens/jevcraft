@@ -39,6 +39,8 @@ function activePortal(bot, center) {
 
 // The way to the ring: over the ground while it is more than this far off and the bot at this height or over, a leg of this many blocks at a time.
 const SURFACE_FIRST = 48, SURFACE_Y = 50, LEG = 48, UNDER_FAR = 96;
+// Beside the ring: within this of its middle across the ground, and this of its level.
+const NEAR_FLAT = 5, NEAR_DOWN = 2;
 async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000, entryMs = 12000 } = {}) {
   const check = () => {
     task.check(); checkAir(bot); checkThreats(bot);
@@ -58,12 +60,24 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
   // ring at (604, -37, 1540) from (778, 85, 1660), 210 blocks off and 122
   // under it.
   const here = bot.entity.position, flat = Math.hypot(here.x - (center.x + .5), here.z - (center.z + .5)), down = here.y - center.y;
-  if ((flat > 8 || Math.abs(down) > 6 || !portal) && (flat > 4 || Math.abs(down) > 4) && actions.tunnel) {
+  // Until the bot is beside the ring and near its level (note 1178): six
+  // blocks over it in the rock is not there. The rehearsal of 2026-10-04
+  // (05:15 to 05:20Z) dug from the surface to (-1147, -11, -1020), four
+  // blocks from its ring's middle and six over it, took up the frames from
+  // there, and ended "No observed dry route to the outside of the End
+  // portal".
+  if ((flat > NEAR_FLAT || Math.abs(down) > NEAR_DOWN || !portal) && actions.tunnel) {
     const beside = center.offset(3, 1, 0);
     goal.step = { action: 'go_to_end_portal', target: { x: center.x, y: center.y, z: center.z }, blocksOff: Math.round(flat), blocksUnder: Math.round(down) }; save();
     const near = new goals.GoalNear(beside.x, beside.y, beside.z, 2);
     const route = await surveyRoute(bot, task, bot.pathfinder.movements, near, 600);
-    if (route.status === 'success') { await actions.navigate(bot, task, near, { timeoutMs: 60000, stallMs: 8000 }); return; }
+    if (route.status === 'success') {
+      // A walk found and made is the step; one that goes nowhere gives way to the stair below.
+      const was = bot.entity.position.clone();
+      try { await actions.navigate(bot, task, near, { timeoutMs: 30000, stallMs: 6000 }); }
+      catch (err) { task.check(); if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
+      if (bot.entity.position.distanceTo(was) >= 2) return;
+    }
     // Far off across the ground and still up on it, the walk over the
     // surface comes first, a leg at a time toward the place over the ring,
     // and the stair is dug from there (note 1168): a stair dug from where
@@ -95,7 +109,26 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
       // the rung's own question.
       if (flat > UNDER_FAR) return;
     }
+    const stood = bot.entity.position.clone();
     await actions.tunnel(bot, task, goal, save, beside, 'end_portal');
+    // The stair stopped at the room's own wall (its bricks and iron bars are
+    // no stair's rock): within a dozen blocks of the ring and near its
+    // level, the two cells toward it are dug and stepped through (note
+    // 1178). The rehearsal of 2026-10-04 (05:33 to 05:39Z) paced the outside
+    // of its portal room's wall, seven blocks from the ring, for six minutes.
+    if (bot.entity.position.distanceTo(stood) < 1 && flat <= 12 && Math.abs(down) <= 3 && actions.dig) {
+      const feet = bot.entity.position.floored(), dx = beside.x - feet.x, dz = beside.z - feet.z;
+      const step = Math.abs(dx) >= Math.abs(dz) ? new Vec3(Math.sign(dx) || 1, 0, 0) : new Vec3(0, 0, Math.sign(dz) || 1);
+      const next = feet.plus(step);
+      goal.step = { action: 'go_to_end_portal', target: { x: center.x, y: center.y, z: center.z }, way: 'through the wall of its room', cell: { x: next.x, y: next.y, z: next.z } }; save();
+      for (const c of [next.offset(0, 1, 0), next]) {
+        const b = bot.blockAt(c);
+        // Not an infested block (it lets a silverfish out) while another way stands; the frame and the spawner never.
+        if (b && b.boundingBox === 'block' && !/end_portal_frame|bedrock|spawner|^infested_/.test(b.name)) await actions.dig(bot, task, c, { requireDrops: false });
+      }
+      try { await actions.navigate(bot, task, new goals.GoalNear(next.x, next.y, next.z, 0), { timeoutMs: 4000, stallMs: 2000 }); }
+      catch (err) { task.check(); if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
+    }
     return;
   }
   if (!portal) throw blocked('The saved End portal ring is not fully visible or has changed');
@@ -132,6 +165,38 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
     }
     throw blocked('No observed dry route to the outside of the End portal');
   };
+  // No walk to the ring's side from where the bot stands in the rock: the stair goes on to a cell beside it (note 1178).
+  // Toward the side of the ring the frame wanted stands on: a cell one out
+  // from it and one up, not always the east side. The rehearsal of
+  // 2026-10-04 (05:51 to 05:54Z), one frame left on the ring's west side,
+  // dug toward the east side eighty-four passes running.
+  const digBeside = async (frame = null) => {
+    const out = frame ? new Vec3(Math.sign(frame.x - center.x), 0, Math.sign(frame.z - center.z)) : new Vec3(1, 0, 0);
+    const cell = frame ? frame.plus(out).offset(0, 1, 0) : center.offset(3, 1, 0);
+    goal.step = { action: 'go_to_end_portal', target: { x: center.x, y: center.y, z: center.z }, way: 'the stair to the ring\'s side', cell: { x: cell.x, y: cell.y, z: cell.z } }; save();
+    await actions.tunnel(bot, task, goal, save, cell, 'end_portal');
+  };
+  // The room's silverfish spawner, broken before the frames are filled
+  // (note 1178): it stands on the stair by the ring and makes them for as
+  // long as a player is near. The same rehearsal fought 118 passes of them
+  // while it filled eleven frames, and ended at 2.6 health.
+  if (actions.dig && !(goal.endPortal.spawnerTriedAt > Date.now() - 120000)) {
+    const id = bot.registry?.blocksByName?.spawner?.id;
+    const at = id !== undefined && typeof bot.findBlocks === 'function' ? bot.findBlocks({ matching: id, maxDistance: 12, count: 1 })[0] : null;
+    if (at) {
+      goal.endPortal.spawnerTriedAt = Date.now();
+      goal.step = { action: 'break_portal_room_spawner', position: { x: at.x, y: at.y, z: at.z } }; save();
+      const spots = dryMiningPositions(bot, at, 12).filter(outside);
+      for (const p of spots.slice(0, 6)) {
+        check();
+        const destination = new goals.GoalBlock(p.x, p.y, p.z);
+        const route = await surveyRoute(bot, task, movement, destination, 400);
+        if (route.status !== 'success') continue;
+        try { await actions.navigate(bot, task, destination, { timeoutMs: 10000, stallMs: 3000 }); } catch (err) { task.check(); if (['Cancelled', 'NeedsAir', 'NeedsSafety', 'Blocked'].includes(err.name)) throw err; continue; }
+        if (miningReach(bot, bot.entity.position, at)) { await actions.dig(bot, task, at, { requireDrops: false }); delete goal.endPortal.spawnerTriedAt; save(); return; }
+      }
+    }
+  }
   try {
     const missing = portal.frames.filter(f => !f.eye).sort((a, b) => vector(a.position).distanceTo(bot.entity.position) - vector(b.position).distanceTo(bot.entity.position));
     if (missing.length) {
@@ -140,7 +205,11 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
         // Standing room that is there first; footing laid when none of it
         // can be walked to.
         try { await approach(dryMiningPositions(bot, position, 24), { reach: position }); }
-        catch (err) { if (!/No observed dry route/.test(err.message)) throw err; await approach(bridgeFootings(bot, position, outside), { scaffold: true, reach: position }); }
+        catch (err) {
+          if (!/No observed dry route/.test(err.message)) throw err;
+          try { await approach(bridgeFootings(bot, position, outside), { scaffold: true, reach: position }); }
+          catch (again) { if (!/No observed dry route/.test(again.message) || !actions.tunnel) throw again; await digBeside(position); return; }
+        }
       }
       check();
       const fresh = portalAt(bot, center), frame = bot.blockAt(position);
@@ -179,7 +248,11 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
     // the far side by the stairs' silverfish, the rehearsal bot had no way
     // back to the only walkable edge but a bridge.
     try { await approach(edges); }
-    catch (err) { if (!/No observed dry route/.test(err.message)) throw err; await approach(edges, { scaffold: true }); }
+    catch (err) {
+      if (!/No observed dry route/.test(err.message)) throw err;
+      try { await approach(edges, { scaffold: true }); }
+      catch (again) { if (!/No observed dry route/.test(again.message) || !actions.tunnel) throw again; await digBeside(); return; }
+    }
     bot.pathfinder.setGoal(null); bot.clearControlStates();
     goal.endPortal.activeVerifiedAt = Date.now(); goal.step = { action: 'enter_end_portal', center: { ...center } }; save();
     const deadline = Date.now() + entryMs;

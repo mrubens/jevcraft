@@ -38,7 +38,7 @@ test('far from the End portal\'s ring and it out of view, the step goes to it: o
 test('where a walk to it is found, it is walked; with no way to dig, the step says the ring is out of view as before', async () => {
   const walked = far({ route: 'success' });
   const calls = [];
-  await enterEnd(walked.bot, new Task('enter'), walked.goal, () => {}, { navigate: async () => calls.push('walk'), tunnel: async () => calls.push('tunnel') });
+  await enterEnd(walked.bot, new Task('enter'), walked.goal, () => {}, { navigate: async (b2, t2, g) => { calls.push('walk'); walked.bot.entity.position = new Vec3(g.x + .5, g.y, g.z + .5); }, tunnel: async () => calls.push('tunnel') });
   assert.deepEqual(calls, ['walk']);
   const none = far();
   await assert.rejects(enterEnd(none.bot, new Task('enter'), none.goal, () => {}, { navigate: async () => {} }), /not fully visible/);
@@ -70,4 +70,37 @@ test('far off and under the ground, the step goes up to the surface first; near 
   const dug = [];
   await enterEnd(close.bot, new Task('enter'), close.goal, () => {}, { navigate: async () => dug.push('walk'), tunnel: async () => dug.push('tunnel'), surfaceStep: async () => dug.push('surface') });
   assert.deepEqual(dug, ['tunnel'], 'fifty blocks off: the stair, not the climb');
+});
+
+test('four blocks from the ring\'s middle and six over it in the rock, the stair goes on: that is not beside it (note 1178)', async () => {
+  const { bot, goal } = far();
+  bot.entity.position = new Vec3(608.5, -31, 1540.5);
+  bot.blockAt = p => ({ name: 'deepslate', position: p.floored(), boundingBox: 'block' });
+  const calls = [];
+  await enterEnd(bot, new Task('enter'), goal, () => {}, { navigate: async () => calls.push('walk'), tunnel: async (b, t2, g, s, target) => calls.push([target.x, target.y, target.z]) });
+  assert.deepEqual(calls, [[607, -36, 1540]]);
+  assert.equal(goal.step.action, 'go_to_end_portal');
+});
+
+test('the stair stopped at the portal room\'s wall, seven blocks from the ring: the two cells toward it are dug and stepped through (note 1178)', async () => {
+  const { bot, goal } = far();
+  bot.entity.position = new Vec3(606.5, -36, 1547.5);
+  bot.blockAt = p => ({ name: p.floored().z === 1546 ? 'iron_bars' : 'air', position: p.floored(), boundingBox: p.floored().z === 1546 ? 'block' : 'empty' });
+  bot.pathfinder.getPathTo = () => ({ status: 'noPath', path: [] });
+  const dug = [], walked = [];
+  // The ring is not in view from outside its wall.
+  await enterEnd(bot, new Task('enter'), goal, () => {}, { navigate: async (b, t2, g) => walked.push([g.x, g.y, g.z]), tunnel: async () => {}, dig: async (b, t2, c) => dug.push([c.x, c.y, c.z]) });
+  assert.deepEqual(dug, [[606, -35, 1546], [606, -36, 1546]]);
+  assert.deepEqual(walked, [[606, -36, 1546]]);
+  assert.equal(goal.step.way, 'through the wall of its room');
+});
+
+test('an infested block in the room\'s wall is not the one dug through: it lets a silverfish out (note 1178)', async () => {
+  const { bot, goal } = far();
+  bot.entity.position = new Vec3(606.5, -36, 1547.5);
+  bot.blockAt = p => ({ name: p.floored().z === 1546 ? (p.floored().y === -35 ? 'infested_stone_bricks' : 'stone_bricks') : 'air', position: p.floored(), boundingBox: p.floored().z === 1546 ? 'block' : 'empty' });
+  bot.pathfinder.getPathTo = () => ({ status: 'noPath', path: [] });
+  const dug = [];
+  await enterEnd(bot, new Task('enter'), goal, () => {}, { navigate: async () => {}, tunnel: async () => {}, dig: async (b, t2, c) => dug.push([c.x, c.y, c.z]) }).catch(() => {});
+  assert.deepEqual(dug, [[606, -36, 1546]]);
 });

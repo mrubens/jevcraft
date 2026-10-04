@@ -8853,7 +8853,7 @@ function gameHandlers(bot, decisionClient) {
         rest_work: async (b, t, g, sv, { until }) => { const work = await restWork(b, t, g, sv, {}); return { idle: !work.length, says: restWorkSays(b, work, { until }) }; },
         planFor: (b, item, count, g) => catalogPlan(b, item, count, planningInventory(b), g),
         enter_nether: (bot, task, goal, save) => netherStep(bot, task, goal, save, decisionClient || task.opportunityClient),
-        enter_end: (bot, task, goal, save) => enterEnd(bot, task, goal, save, { navigate, surfaceStep,
+        enter_end: (bot, task, goal, save) => enterEnd(bot, task, goal, save, { navigate, surfaceStep, dig,
           tunnel: async (bot, task, goal, save, target, resource) => {
             if (pickaxeTier(bot) < 1) { await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); return; }
             await resourceTunnelStep(bot, task, goal, save, target, resource, { dig, navigate });
