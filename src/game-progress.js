@@ -1134,6 +1134,8 @@ async function gameStep(bot, task, goal, save, actions) {
   await require('./mob-policy').wearBestArmour(bot);
   // Gold for the piglins before the stage in hand, where the pack makes it (mob-hunt.js goldForPiglins, note 908).
   if (await require('./mob-hunt').goldForPiglins(bot, task, goal, save, actions)) return false;
+  // And a sword, where none is carried and the pack makes one (note 1256).
+  if (await require('./mob-hunt').swordFromPack(bot, task, goal, save, actions)) return false;
   // The rods carried are asked about at the ladder's own step in the Nether,
   // whatever the rung in hand (rod-bank.js askBank, note 929), by the
   // question's own pacing (once for each count of rods, again after ten

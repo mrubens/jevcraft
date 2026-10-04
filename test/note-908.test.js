@@ -78,3 +78,17 @@ test('at the crossing in the Overworld the boots the pack makes by crafts are ma
   assert.equal(await goldForPiglins(b, task, {}, () => {}, { acquireStep }, { crossing: true }), true);
   assert.deepEqual(asked, [['golden_boots', 1]]);
 });
+
+test('in the Nether with no sword and the makings of one in the pack, it is made before the stage in hand; armed, or without the makings, nothing (note 1256)', async () => {
+  const { swordFromPack } = require('../src/mob-hunt');
+  const b = bot({ iron_ingot: 6, stick: 1, crafting_table: 1, oak_log: 9, shield: 1 });
+  const goal = {}, asked = [];
+  const acquireStep = async (bt, t, item, count) => { asked.push([item, count]); b._list.push({ name: item, count: 1, type: registry.itemsByName[item].id }); };
+  assert.equal(await swordFromPack(b, task, goal, () => {}, { acquireStep }), true);
+  assert.deepEqual(asked, [['iron_sword', 1]]);
+  assert.equal(goal.step.action, 'sword_from_pack');
+  const none = async () => assert.fail('nothing is made');
+  assert.equal(await swordFromPack(b, task, {}, () => {}, { acquireStep: none }), false, 'armed now');
+  assert.equal(await swordFromPack(bot({ netherrack: 85, shield: 1 }), task, {}, () => {}, { acquireStep: none }), false, 'no makings');
+  assert.equal(await swordFromPack(bot({ iron_ingot: 6, stick: 1, crafting_table: 1 }, { dimension: 'overworld' }), task, {}, () => {}, { acquireStep: none }), false, 'the ladder\'s in the Overworld');
+});

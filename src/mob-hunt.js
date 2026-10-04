@@ -179,6 +179,38 @@ async function goldForPiglins(bot, task, goal, save, actions = {}, { crossing = 
   try { await require('./mob-policy').wearBestArmour(bot); } catch (err) { task?.check?.(); }
   return true;
 }
+// A sword before the stage in hand, in the Nether, where none is carried
+// and the pack makes one by crafts alone (note 1256): the ladder that makes
+// one runs only in the Overworld. 25584 (2026-10-04 19:55 to 20:33Z),
+// thirteen pearls and five rods banked and two rods wanted, stood 38
+// minutes at its blaze spawner with no sword or axe ('Fight here with bare
+// hands'), six iron ingots, a stick, logs and a crafting table in its pack,
+// 'watching blazes and getting nowhere' four times.
+async function swordFromPack(bot, task, goal, save, actions = {}) {
+  if (dimension(bot) !== 'nether' || bot.game?.gameMode !== 'survival' || typeof actions.acquireStep !== 'function') return false;
+  const max = name => bot.registry?.itemsByName?.[name]?.maxDurability;
+  const armed = bot.inventory.items().some(i => /_(sword|axe)$/.test(i.name) && (!max(i.name) || max(i.name) - (i.durabilityUsed || 0) >= 10));
+  if (armed || isSetAside(goal, 'sword_from_pack', 'nether')) return false;
+  const inventory = {};
+  for (const i of bot.inventory.items()) inventory[i.name] = (inventory[i.name] || 0) + i.count;
+  for (const item of ['iron_sword', 'stone_sword']) {
+    let steps = null;
+    try { steps = require('./knowledge').planOutputs(bot.registry, [{ item, count: 1 }], inventory, { dimension: bot.game?.dimension, equipment: carriedEquipment(bot).map(i => i.name), reserveOutputs: false }).steps; }
+    catch (_) { steps = null; }
+    if (!steps?.length || steps.some(st => st.action !== 'craft')) continue;
+    goal.step = { action: 'sword_from_pack', item, crafts: steps.length }; save?.();
+    bot.chat?.(`No sword on me and the makings of one in my pack: ${words(item)} first.`);
+    try { for (let n = 0; n < steps.length + 1 && !countOf(bot, item); n++) { task?.check?.(); await actions.acquireStep(bot, task, item, 1, goal, save); } }
+    catch (err) {
+      task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+      setAside(goal, 'sword_from_pack', 'nether', String(err.message || err).slice(0, 160), 10 * 60000); save?.();
+      return false;
+    }
+    if (!countOf(bot, item)) { setAside(goal, 'sword_from_pack', 'nether', 'the sword was not made', 10 * 60000); save?.(); return false; }
+    return true;
+  }
+  return false;
+}
 const words = s => String(s || '').replaceAll('_', ' ');
 const Dimension = d => d ? `${d[0].toUpperCase()}${d.slice(1)}` : d;
 const listed = items => items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : items[0] || '';
@@ -5056,4 +5088,4 @@ function claim(bot, goal = {}) {
     ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}), ...(cage ? { cage: true } : {}) } };
 }
 
-module.exports = { huntLeft, slotMissSays, pearlsNow, roomForDrop, rodBlazesSays, goldForPiglins, openWallOption, keepClaim, noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };
+module.exports = { swordFromPack, huntLeft, slotMissSays, pearlsNow, roomForDrop, rodBlazesSays, goldForPiglins, openWallOption, keepClaim, noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };
