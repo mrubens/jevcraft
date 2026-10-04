@@ -23,6 +23,19 @@ const routeHot = (bot, path) => (path || []).some(q => targetHot(bot, q, { path:
 
 // Shelter construction needs dry ground before it can choose a local site.
 // A failed crossing may leave that ground farther away than the shelter scan.
+// Where the swim for shore stood half a minute and more in one place, kept
+// through a death (note 1244): the banks within eight blocks of it are
+// passed over for half an hour, and the next nearest landing is swum for.
+// 25595 (2026-10-04 16:19 to 16:56Z) swam three times to the same niche
+// under an overhanging bank at (70, 62, 464), stalled there on the dig to
+// shore a minute and more each time, and was killed there by drowned at
+// 16:33Z in its iron and at 16:56Z without, its things 455 blocks from its bed.
+const BAD_SHORE_MS = 30 * 60000, BAD_SHORE_REACH = 8;
+function noteBadShore(goal, at, now = Date.now()) {
+  const list = (goal.shoreBad || []).filter(b => now - b.at < BAD_SHORE_MS && Math.hypot(b.x - at.x, b.z - at.z) > 2);
+  goal.shoreBad = [...list, { x: at.x, z: at.z, at: now }].slice(-8);
+}
+const badShore = (goal, p, now = Date.now()) => (goal?.shoreBad || []).some(b => now - b.at < BAD_SHORE_MS && Math.hypot(b.x - p.x, b.z - p.z) <= BAD_SHORE_REACH);
 async function reachShore(bot, task, goal, save, { move = navigate, surface = floatAfterBoat, client = null, dig = null, fight = null } = {}) {
   task.check();
   // In a fight (the survival stance get_out_of_water, with the mobs it was
@@ -44,6 +57,7 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
   // for the stall rule to call on anything else.
   const wet = goal.shoreRecovery ||= { failures: {} }, here = bot.entity.position.floored();
   if (!wet.inWaterSince || !wet.wetArea || Math.hypot(here.x - wet.wetArea.x, here.z - wet.wetArea.z) > 12) { wet.inWaterSince = Date.now(); wet.wetArea = { x: here.x, z: here.z }; }
+  if (Date.now() - wet.inWaterSince > 30000) noteBadShore(goal, here);
   if (client && dig && Date.now() - wet.inWaterSince > 30000) {
     wet.inWaterSince = Date.now();
     if (await require('./unstuck').workFree(bot, task, goal, save, { client, dig, aim: { goal: 'dry', aim: 'out of the water onto dry ground' } })) return true;
@@ -89,7 +103,7 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
     for (const p of land) {
       guard();
       const area = `${Math.floor(p.x / 4)},${p.y},${Math.floor(p.z / 4)}`;
-      if (checked.has(area) || state.failures[`${p}`] > Date.now() - 60000) continue;
+      if (checked.has(area) || state.failures[`${p}`] > Date.now() - 60000 || badShore(goal, p)) continue;
       checked.add(area); if (checked.size > 24) break;
       const destination = new goals.GoalBlock(p.x, p.y, p.z);
       const route = await surveyRoute(bot, task, movement, destination, 300);
@@ -419,7 +433,7 @@ async function digToShore(bot, task, goal, save, movement, move, failed = {}) {
   const cells = bot.findBlocks({ matching: ids, maxDistance: 10, count: 128, openAbove: 2, useExtraInfo: block => dry(block.position.offset(0, 1, 0)) })
     .map(p => p.offset(0, 1, 0))
     // A landing the swim just failed to reach is not tried again by digging.
-    .filter(p => !(failed[`${p}`] > Date.now() - 60000))
+    .filter(p => !(failed[`${p}`] > Date.now() - 60000) && !badShore(goal, p))
     .sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
   // Without the shore search's surface-only rule too: under a roof nothing
   // is surface, and every dig route came back "noPath" with dry cells a
@@ -619,4 +633,4 @@ async function crossSea(bot, task, goal, save, { segmentMs = SEGMENT_MS, swimMs 
   return before - flat() >= 4 || !!goal.step.landInView;
 }
 
-module.exports = { hiddenFrom, landingsAbout, shoreLand, shoreLandYielding, clearHeadroom, reachShore, digToShore, notchOut, stepOut, crossSea, atSea, knownLand, landInView, ownGround };
+module.exports = { noteBadShore, badShore, hiddenFrom, landingsAbout, shoreLand, shoreLandYielding, clearHeadroom, reachShore, digToShore, notchOut, stepOut, crossSea, atSea, knownLand, landInView, ownGround };
