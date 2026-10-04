@@ -172,10 +172,11 @@ function slotSite(bot, { reach = 6, toward = null } = {}) {
   // to 20 endermen about, four kills in the other three.
   const others = endermen(bot, 60);
   let best = null;
-  for (const s of out.slice(0, 24)) {
-    const lines = others.filter(e => level(s, e) && lineFrom(bot, s.mouth, e)).length + (!others.includes(toward) && level(s, toward) && lineFrom(bot, s.mouth, toward) ? 1 : 0);
-    if (lines > (best?.lines || 0)) best = { s, lines };
-  }
+  const linesTo = s => others.filter(e => level(s, e) && lineFrom(bot, s.mouth, e)).length + (!others.includes(toward) && level(s, toward) && lineFrom(bot, s.mouth, toward) ? 1 : 0);
+  for (const s of out.slice(0, 24)) { const lines = linesTo(s); if (lines > (best?.lines || 0)) best = { s, lines }; }
+  // None of the nearest two dozen seen by any: the rest in reach are looked
+  // through before a blind slot is settled for (note 1230).
+  if (!best) for (const s of out.slice(24, 120)) { const lines = linesTo(s); if (lines > 0) { best = { s, lines }; break; } }
   if (best) return { ...best.s, line: true, lines: best.lines };
   // No mouth with a line: a slot from whose mouth a few cells' walk finds
   // one in sight (outSpot, notes 1031 and 1035), marked `out`. The slot was
