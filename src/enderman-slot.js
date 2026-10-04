@@ -164,7 +164,19 @@ function slotSite(bot, { reach = 6, toward = null } = {}) {
   // the N about has a line to the mouth (all more than 4 blocks over or
   // under it)", the slot offered on a line to one of those.
   const level = (s, e) => Math.abs(e.position.y - s.mouth.y) <= LEVEL;
-  for (const s of out.slice(0, 24)) if (level(s, toward) && lineFrom(bot, s.mouth, toward)) return { ...s, line: true };
+  // The mouth the most of those about have a line to, the one hunted among
+  // them or not (note 1227): a slot is twelve seconds' digging, an enderman
+  // wanders, and the mouth dug on a line to one was a mouth with none by
+  // the time the bot stood in it. 25595 (2026-10-04 02:47 to 09:27Z): twelve
+  // slots, nine ended 'none of the N about has a line to the mouth' with 8
+  // to 20 endermen about, four kills in the other three.
+  const others = endermen(bot, 60);
+  let best = null;
+  for (const s of out.slice(0, 24)) {
+    const lines = others.filter(e => level(s, e) && lineFrom(bot, s.mouth, e)).length + (!others.includes(toward) && level(s, toward) && lineFrom(bot, s.mouth, toward) ? 1 : 0);
+    if (lines > (best?.lines || 0)) best = { s, lines };
+  }
+  if (best) return { ...best.s, line: true, lines: best.lines };
   // No mouth with a line: a slot from whose mouth a few cells' walk finds
   // one in sight (outSpot, notes 1031 and 1035), marked `out`. The slot was
   // offered only with a line from the mouth, and on 2026-10-03 (00:00 to
