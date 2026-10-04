@@ -437,6 +437,28 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
       options[`take_up_${rung.phase}`] = { description: `Take up the ${label(rung.phase)} now after all, before the Nether: it was set aside to go without it, and would come back on its own in ${minutes} minute${minutes === 1 ? '' : 's'}.${RUNG_WHY[p] ? ` It is for this: ${RUNG_WHY[p]}.` : ''}${rungTakes(bot, goal, rung, planFor)}`,
         says: `I'll make the ${label(rung.phase)} first after all`, rung, takeUp: true };
     }
+    // No food at all on the way into the Nether, at a hunger health does
+    // not come back at (note 1165): the food's own step is a way here, set
+    // aside or not, said with the crossing that turned back for it. 25591
+    // (mid-242-pc-fortress-10-r1, 2026-10-04 03:41 to 03:46Z), nine rods and
+    // eleven pearls in its pack, no food and hunger 14 to 13, was offered
+    // the pearls and five side trips, answered none good at 0.32 to 0.52,
+    // and crossed three times in five minutes, each turned back for food.
+    if (stage.action === 'enter_nether' && dimension(bot) === 'overworld' && !options.take_up_nether_food && (bot.food ?? 20) < 18) {
+      // The rung made here: the crossing's kit is counted only while rods
+      // are still wanted (crossing-kit.js kitCounted), and this crossing is
+      // for the pearls.
+      let foodRung = null;
+      try {
+        const carried = require('./foraging').foodSupply(bot), wants = require('./food-reserve').crossingWant(bot, goal);
+        if (bot.game?.difficulty !== 'peaceful' && carried < wants) foodRung = { phase: 'nether_food', action: 'nether_food', kit: 'food', carried, wants };
+      } catch (_) { foodRung = null; }
+      if (foodRung && foodRung.carried === 0) {
+        const back = goal.foodTurnBack && Date.now() - goal.foodTurnBack.at < 30 * 60000 ? Math.max(1, Math.round((Date.now() - goal.foodTurnBack.at) / 60000)) : null;
+        options.take_up_nether_food = { description: `Get food first, before the Nether: nothing to eat is carried and hunger is ${bot.food} of 20, where health does not come back under eighteen.${back ? ` The last crossing turned back through the portal for food ${back} minute${back === 1 ? '' : 's'} ago, the first thing asked on the far side: crossed so again, it is asked there again.` : ''} The food's own question follows, with the ways to it from here (what is known near, the home chest, a hunt) and each one's trip.`,
+          says: 'I\'ll get food first', rung: foodRung, takeUp: true };
+      }
+    }
   }
   else return null;
   // The Overworld's endermen, the pearls' route Jev chose (pearl-routes.js),
