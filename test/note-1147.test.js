@@ -64,3 +64,19 @@ test('food chosen for the End is gathered by the step itself, not left to the su
   assert.equal(goal.step.action, 'prepare_end_supplies');
   assert.equal(goal.step.item, 'food');
 });
+
+test('going now holds until an item of the kit is lower than when it was chosen, however long, and through an item gained (note 1171)', async () => {
+  const { bot, items, goal, task } = fixture({ arrow: 17, white_bed: 1 });
+  const asked = [];
+  const actions = { acquireStep: async () => assert.fail('nothing fetched') };
+  assert.equal(await prepareEndSupplies(bot, task, goal, () => {}, actions, jev(['enter_now'], asked)), true);
+  // Half an hour on, with three more arrows picked up: still going, not asked.
+  goal.endKit.choice.at -= 30 * 60000;
+  items.find(i => i.name === 'arrow').count = 20;
+  assert.equal(await prepareEndSupplies(bot, task, goal, () => {}, actions, jev([], asked)), true);
+  assert.equal(asked.length, 1);
+  // The bed lost: the kit is worse, and it is asked again.
+  items.find(i => i.name === 'white_bed').count = 0;
+  assert.equal(await prepareEndSupplies(bot, task, goal, () => {}, actions, jev(['enter_now'], asked)), true);
+  assert.equal(asked.length, 2);
+});

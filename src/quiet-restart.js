@@ -103,6 +103,11 @@ function watchRestartRequest(bot, file, { startedAt = Date.now(), every = 2000, 
       askedAt = now();
       return;
     }
+    // Not in the End (note 1171): the fight with the dragon is one stretch
+    // of an hour at the most, a bot logged out of it comes back to the
+    // dragon where it left it, and no moment there is quiet. The new build
+    // is taken when the bot is out of it, by the dragon's death or its own.
+    if (/end$/.test(String(bot.game?.dimension || ''))) { askedAt = now(); return; }
     const waited = now() - askedAt;
     const why = quiet(bot) ? 'quiet now' : waited > LAST_MS ? 'forty-five minutes waited' : waited > WAIT_MS && calm(bot) ? 'fifteen minutes waited and calm now'
       : spun(bot, now()) ? `its loop has spun for ${Math.round((bot._spin.last - bot._spin.since) / 1000)} seconds with nothing done, not hurt meanwhile` : null;

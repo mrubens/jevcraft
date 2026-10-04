@@ -89,6 +89,11 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
       try { await actions.navigate(bot, task, leg, { timeoutMs: 45000, stallMs: 8000 }); }
       catch (err) { task.check(); if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
       if (bot.entity.position.distanceTo(from) >= 8) return;
+      // A leg that gained nothing, this far off, is not the stair's turn:
+      // dug from here it runs level through the rock the whole way (note
+      // 1168). The next pass walks again, and a walk that goes nowhere is
+      // the rung's own question.
+      if (flat > UNDER_FAR) return;
     }
     await actions.tunnel(bot, task, goal, save, beside, 'end_portal');
     return;

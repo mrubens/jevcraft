@@ -14,3 +14,21 @@ test('a new build is not taken in the half minute after the bot answered a mob o
   assert.equal(quiet(bot({ _closingOn: { name: 'enderman', until: Date.now() + 4000 } })), false);
   assert.equal(quiet(bot({ _closingOn: { name: 'enderman', until: Date.now() - 1 } })), true);
 });
+
+test('no new build is taken while the bot is in the End, however long it was asked for (note 1171)', async () => {
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const { watchRestartRequest } = require('../src/quiet-restart');
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'jev-')), 'restart-requested');
+  const b = { ...bot(), game: { dimension: 'the_end' }, quit() { this.quitted = true; } };
+  let clock = Date.now();
+  const stop = watchRestartRequest(b, file, { startedAt: clock - 1000, every: 10, exit: () => {}, now: () => clock, port: 25594, watched: () => true, say: () => {} });
+  fs.writeFileSync(file, '');
+  await new Promise(r => setTimeout(r, 60));
+  clock += 50 * 60000;
+  await new Promise(r => setTimeout(r, 60));
+  assert.equal(b.quitted, undefined, 'fifty minutes asked, in the End: still up');
+  b.game.dimension = 'overworld';
+  await new Promise(r => setTimeout(r, 80));
+  assert.equal(b.quitted, true, 'out of the End and quiet: taken');
+  if (typeof stop === 'function') stop();
+});

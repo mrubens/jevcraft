@@ -18,14 +18,19 @@ function far({ route = 'noPath' } = {}) {
   return { bot, goal };
 }
 
-test('far from the End portal\'s ring and it out of view, the step goes to it: the stair dug toward a place beside it (note 1161)', async () => {
+test('far from the End portal\'s ring and it out of view, the step goes to it: over the ground, and the stair dug toward a place beside it from near (notes 1161, 1171)', async () => {
   const { bot, goal } = far();
   const calls = [];
   await enterEnd(bot, new Task('enter'), goal, () => {}, { navigate: async () => calls.push('walk'), tunnel: async (b, t, g, s, target, resource) => calls.push({ target: [target.x, target.y, target.z], resource }) });
-  // The walk over the ground first, a leg toward the place over the ring; it gained nothing here (the stub does not move), so the stair is dug.
-  assert.equal(calls[0], 'walk');
-  assert.deepEqual(calls[1], { target: [607, -36, 1540], resource: 'end_portal' });
+  // The walk over the ground first, a leg toward the place over the ring; it gained nothing here (the stub does not move), and this far off the stair is not dug from here (note 1171).
+  assert.deepEqual(calls, ['walk']);
   assert.equal(goal.step.way, 'surface');
+  // Seventy blocks off, a leg that gains nothing gives way to the stair.
+  const nearer = far(); nearer.bot.entity.position = new Vec3(654.5, 85, 1590.5);
+  nearer.bot.blockAt = p => Math.hypot(p.x - 654, p.z - 1590) > 40 ? null : { name: p.y < 85 ? 'stone' : 'air', position: p.floored(), boundingBox: p.y < 85 ? 'block' : 'empty' };
+  const dug = [];
+  await enterEnd(nearer.bot, new Task('enter'), nearer.goal, () => {}, { navigate: async () => dug.push('walk'), tunnel: async (b, t2, g, s, target, resource) => dug.push({ target: [target.x, target.y, target.z], resource }) });
+  assert.deepEqual(dug, ['walk', { target: [607, -36, 1540], resource: 'end_portal' }]);
   assert.equal(goal.step.action, 'go_to_end_portal');
   assert.deepEqual([goal.step.blocksOff, goal.step.blocksUnder], [211, 122]);
 });

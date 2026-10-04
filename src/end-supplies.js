@@ -131,17 +131,25 @@ async function prepareEndSupplies(bot, task, goal, save, actions, client = task.
   const now = Date.now(), items = kitItems(bot, goal, actions, now), short = items.filter(i => i.short);
   if (!short.length) { delete goal.preparingEnd; delete goal.endKit; save(); return true; }
   const kit = goal.endKit ||= {}, sig = short.map(i => `${i.key}:${i.carried}`).join(',');
-  const held = kit.choice && now - kit.choice.at < HOLD_MS ? kit.choice : null;
+  const held = kit.choice && (kit.choice.pick === 'enter_now' || now - kit.choice.at < HOLD_MS) ? kit.choice : null;
   let pick = null;
-  // Going now holds while the kit is as it was when chosen; a top-up holds
-  // while its item is short of what it was chosen to reach.
-  if (held?.pick === 'enter_now' && held.sig === sig) pick = 'enter_now';
+  // Going now holds until the kit is worse than when it was chosen, an item
+  // of it lower (note 1171): not for a quarter hour, and not until any
+  // count changes. 25594 (2026-10-04 03:58:49 to 04:13:57Z) chose to go at
+  // 0.40, went down for its ring, and at the quarter hour was asked again,
+  // chose the food at 0.37 over going at 0.30, and went looking for animals
+  // and wood with its twelve eyes in the pack. A top-up holds while its
+  // item is short of what it was chosen to reach.
+  const counts = Object.fromEntries(items.map(i => [i.key, i.carried]));
+  const worse = held?.pick === 'enter_now' && Object.entries(held.counts || {}).some(([k, n]) => (counts[k] ?? 0) < n);
+  if (held?.pick === 'enter_now' && held.counts && !worse) pick = 'enter_now';
   else if (held && held.pick !== 'enter_now') {
     const item = short.find(i => `top_up_${i.key}` === held.pick);
     if (item && !(held.target != null && item.carried >= held.target)) pick = held.pick;
   }
   if (!pick) {
-    const tree = { enter_now: { description: `Go to the End with what is carried now: ${kitSays(items)}; health ${Math.round((bot.health ?? 20) * 10) / 10}. Short of what the code would take: ${short.map(i => i.key).join(', ')}. ${rehearsedSays()} There is no way back out of the End but the dragon's death or the bot's own, and a death there leaves everything carried on its island.` } };
+    const ring = goal.endPortal?.center && bot.entity?.position ? ` The portal's ring is ${Math.round(Math.hypot(bot.entity.position.x - goal.endPortal.center.x, bot.entity.position.z - goal.endPortal.center.z))} blocks off and ${Math.round(bot.entity.position.y - goal.endPortal.center.y)} under where the bot stands.` : '';
+    const tree = { enter_now: { description: `Go to the End with what is carried now: ${kitSays(items)}; health ${Math.round((bot.health ?? 20) * 10) / 10}.${ring} Short of what the code would take: ${short.map(i => i.key).join(', ')}. ${rehearsedSays()} There is no way back out of the End but the dragon's death or the bot's own, and a death there leaves everything carried on its island.` } };
     for (const i of short) tree[`top_up_${i.key}`] = { description: i.says };
     // The old order, for the tests' stand-in only (note 707).
     const oldOrder = `top_up_${(short.find(i => !['food', 'health'].includes(i.key)) || short[0]).key}`;
@@ -150,7 +158,7 @@ async function prepareEndSupplies(bot, task, goal, save, actions, client = task.
     if (decision.stale) return false;
     pick = decision.path.at(-1);
     const item = short.find(i => `top_up_${i.key}` === pick);
-    kit.choice = { pick, at: now, sig, ...(item?.target != null ? { target: item.target } : {}) }; save();
+    kit.choice = { pick, at: now, sig, ...(pick === 'enter_now' ? { counts } : {}), ...(item?.target != null ? { target: item.target } : {}) }; save();
   }
   if (pick === 'enter_now') { delete goal.preparingEnd; save(); return true; }
   const item = short.find(i => `top_up_${i.key}` === pick);
