@@ -412,6 +412,20 @@ function encounter(bot, task, target, expiresAt) {
 }
 
 const SLOT_MISS_MS = 120000, SLOT_MISS_NEAR = 12;
+// The last wait at this slot that killed nothing, said on the slot offered
+// again here (note 1145): held at its back with one turned about, the slot
+// is the only one offered (note 1057) and its rest is not kept. 25594
+// (2026-10-04 00:46:45 to 00:49:49Z), eleven pearls held of thirteen, took
+// the slot four times running at 0.69 to 0.97, each "it turned and did not
+// come to the mouth in 45 seconds (4 blocks off, -3 up ...)", told nothing
+// of the wait before.
+function slotMissSays(bot, state, target, site, now = Date.now()) {
+  if (!slotMissedHere(bot, state, now)) return '';
+  const m = state.slotMiss, secs = Math.max(1, Math.round((now - m.at) / 1000));
+  const dy = target?.position && site?.mouth ? Math.round(target.position.y - site.mouth.y) : null;
+  const where = dy == null ? '' : ` This one is ${Math.round(target.position.distanceTo(bot.entity.position))} blocks off, ${dy === 0 ? 'level with the mouth' : `${Math.abs(dy)} ${dy < 0 ? 'under' : 'over'} the mouth`}.`;
+  return ` The last wait at this slot ended ${secs} second${secs === 1 ? '' : 's'} ago with nothing killed: ${m.why}${m.n > 1 ? `; ${m.n} such waits running here` : ''}. An enderman walks up one block at a step and does not climb: turned, one under the mouth with no walk up to it stands where it is.${where}`;
+}
 function slotMissedHere(bot, state, now = Date.now()) {
   const m = state?.slotMiss, p = bot?.entity?.position;
   return !!m && !!p && now - m.at < SLOT_MISS_MS && Math.hypot(m.x + 0.5 - p.x, m.y - p.y, m.z + 0.5 - p.z) <= SLOT_MISS_NEAR;
@@ -449,7 +463,7 @@ async function slotForDrop(bot, task, target, goal, save, actions, site) {
   // not offered again within twelve blocks of it for two minutes. 25598
   // (2026-10-03 06:50 to 06:54Z) took the slot at seven askings running,
   // one enderman after another, each "3 looks from the mouth did not turn it".
-  if (!r.kills && /did not turn it|did not come|has a line to the mouth/.test(String(r.ended))) { const p = bot.entity.position; state.slotMiss = { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z), at: Date.now(), why: String(r.ended).slice(0, 120) }; }
+  if (!r.kills && /did not turn it|did not come|has a line to the mouth/.test(String(r.ended))) { const p = bot.entity.position; state.slotMiss = { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z), at: Date.now(), why: String(r.ended).slice(0, 200), n: (slotMissedHere(bot, state) ? state.slotMiss.n || 1 : 0) + 1 }; }
   bot.emit('mob_hunt', result); save();
   return result;
 }
@@ -854,7 +868,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
       if (target.name === 'enderman' && typeof bot.dig === 'function' && !Object.keys(tree).some(k => k.startsWith('slot_'))) {
         let site = null; try { site = require('./enderman-slot').slotSite(bot, { toward: target }); } catch (_) { site = null; }
         if (site && !site.line && !site.out && !site.turned) slotNoLine = true;
-        if (site?.turned || ((site?.line || site?.out) && !slotMissedHere(bot, state))) tree[`slot_${target.id}`] = { description: require('./enderman-slot').says(site, candidates.filter(e => e.name === 'enderman').length) + ` The enderman is ${Math.round(target.position.distanceTo(bot.entity.position))} blocks off. ${require('./enderman-slot').recordSays()}`,
+        if (site?.turned || ((site?.line || site?.out) && !slotMissedHere(bot, state))) tree[`slot_${target.id}`] = { description: require('./enderman-slot').says(site, candidates.filter(e => e.name === 'enderman').length) + ` The enderman is ${Math.round(target.position.distanceTo(bot.entity.position))} blocks off.${slotMissSays(bot, state, target, site)} ${require('./enderman-slot').recordSays()}`,
           run: () => slotForDrop(bot, task, target, goal, save, actions, site) };
       }
       // A blaze no walk reaches is still a fight with a bow in range (note
@@ -4965,4 +4979,4 @@ function claim(bot, goal = {}) {
     ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}), ...(cage ? { cage: true } : {}) } };
 }
 
-module.exports = { huntLeft, pearlsNow, roomForDrop, rodBlazesSays, goldForPiglins, openWallOption, keepClaim, noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };
+module.exports = { huntLeft, slotMissSays, pearlsNow, roomForDrop, rodBlazesSays, goldForPiglins, openWallOption, keepClaim, noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };
