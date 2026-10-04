@@ -54,3 +54,18 @@ test('raw gold with a furnace and fuel carried: the ingots are smelted and the b
   assert.deepEqual(goal.step, { action: 'gold_for_piglins', item: 'golden_boots', smelts: true });
   assert.deepEqual(b._worn.at(-1), ['golden_boots', 'feet']);
 });
+
+test('no gold carried, a pickaxe, and nether gold ore in view: it is mined for the boots; with none in view nothing is begun (note 1249)', async () => {
+  const b = bot({ iron_pickaxe: 1, crafting_table: 1, iron_sword: 1 });
+  b.findBlocks = () => [new Vec3(3, 64, 0)];
+  const goal = {}, asked = [];
+  let calls = 0;
+  const acquireStep = async (bt, t, item, count) => { asked.push([item, count]); if (++calls >= 4) b._list.push({ name: 'golden_boots', count: 1, type: registry.itemsByName.golden_boots.id }); };
+  assert.equal(await goldForPiglins(b, task, goal, () => {}, { acquireStep }), true);
+  assert.equal(asked.length, 4);
+  assert.deepEqual(goal.step, { action: 'gold_for_piglins', item: 'golden_boots', mines: 'nether_gold_ore' });
+  assert.deepEqual(b._worn.at(-1), ['golden_boots', 'feet']);
+  const far = bot({ iron_pickaxe: 1, crafting_table: 1 });
+  far.findBlocks = () => [];
+  assert.equal(await goldForPiglins(far, task, {}, () => {}, { acquireStep: async () => assert.fail('nothing is made') }), false);
+});

@@ -126,6 +126,26 @@ async function goldForPiglins(bot, task, goal, save, actions = {}) {
     // to a piglin fourteen minutes on).
     const craftsOnly = !!steps?.length && steps.every(st => st.action === 'craft');
     const smelted = craftsOnly ? null : (() => { try { return require('./entry-kit').goldBoots(bot); } catch (_) { return null; } })();
+    // With no gold carried, the Nether's own gold ore where it is in view
+    // (note 1249): a few blocks of it are the thirty-six nuggets, with any
+    // pickaxe. 25597 (2026-10-04 18:43:38Z), in full iron with no gold in
+    // its pack, was killed by one piglin in its enderman slot, a pearl on it.
+    const oreNear = () => { try { const id = bot.registry.blocksByName.nether_gold_ore?.id; return id !== undefined && typeof bot.findBlocks === 'function' && bot.findBlocks({ matching: id, maxDistance: 24, count: 1 }).length > 0; } catch (_) { return false; } };
+    const mined = !craftsOnly && !smelted && !!steps?.length && steps.every(st => st.action === 'craft' || (st.action === 'mine' && st.block === 'nether_gold_ore')) && (bot.inventory.items().some(i => /_pickaxe$/.test(i.name))) && oreNear();
+    if (mined) {
+      goal.step = { action: 'gold_for_piglins', item: 'golden_boots', mines: 'nether_gold_ore' }; save?.();
+      bot.chat?.('No gold on me and gold ore in sight: golden boots first, so the piglins leave me be.');
+      const until = Date.now() + 120000;
+      try { for (let n = 0; n < 16 && Date.now() < until && !countOf(bot, 'golden_boots'); n++) { task?.check?.(); await actions.acquireStep(bot, task, 'golden_boots', 1, goal, save); } }
+      catch (err) {
+        task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+        setAside(goal, 'gold_for_piglins', 'nether', String(err.message || err).slice(0, 160), 10 * 60000); save?.();
+        return false;
+      }
+      if (!countOf(bot, 'golden_boots')) { setAside(goal, 'gold_for_piglins', 'nether', 'the boots were not made of the ore in two minutes', 10 * 60000); save?.(); return true; }
+      try { await require('./mob-policy').wearBestArmour(bot); } catch (err) { task?.check?.(); }
+      return true;
+    }
     if (!craftsOnly && !smelted) return false;
     if (!craftsOnly) {
       goal.step = { action: 'gold_for_piglins', item: 'golden_boots', smelts: true }; save?.();
