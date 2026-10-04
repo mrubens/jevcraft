@@ -70,7 +70,8 @@ define({
   options: [
     { pattern: 'crystal_\\d+', names: 'the crystal, by its entity id', label: 'shoot this healing crystal', when: 'in view with a solved arrow path and not missed repeatedly', level: 'root', dynamic: true },
     { key: 'shoot_dragon', label: 'shoot the flying dragon', when: 'a bow, arrows and a clear trajectory', level: 'root' },
-    { key: 'bed_bomb', label: 'blow a bed beside the perched dragon\'s head', when: 'the dragon perched, a bed carried, health fourteen or more, and a trench line within twelve blocks', level: 'root' },
+    { key: 'bed_bomb', label: 'blow a bed beside the perched dragon\'s head', when: 'the dragon perched, a bed carried, health fourteen or more, and a trench line within twelve blocks that a walk reaches', level: 'root' },
+    { key: 'open_walls', label: 'dig out of the blocks the bot is walled in by: the one over its head and the wall toward the arena', when: 'a block on every side of the body and over the head, and no shot, strike, bed or walk on offer', level: 'root' },
     { key: 'strike_head', label: 'strike the perched dragon\'s head', when: 'the head is within sword reach', level: 'root' },
     { pattern: 'move_[a-z0-9_,.:-]+', names: 'the route, by where it goes', label: 'move along this checked route', when: 'a safe surveyed route toward a crystal, the dragon or away from danger', level: 'root', dynamic: true },
     { key: 'observe', label: 'wait one second and watch', when: 'on a safe spot with the dragon in view, fewer than five idle watches in a row', level: 'root' },

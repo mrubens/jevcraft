@@ -664,6 +664,19 @@ function keepClaim(bot, task, name) {
   return () => { task.interruptCheck = previous; bot._closingOn = closing; };
 }
 const huntTarget = (bot, goal) => goal.mobHunt?.entity === 'blaze' ? require('./blaze-stand').rodsTarget(bot, goal) : goal.mobHunt?.targetCount;
+// What the hunt's item is still short by, as said: for the ladder's pearls
+// it is eye-need.js's number, the pearls and eyes kept in chests counted as
+// held (rod-stash.js), not the count the hunt began with less what is
+// carried. 25591 (2026-10-03 23:37:59Z), seven pearls in its chests and one
+// carried of the thirteen wanted, was told at each enderman that leaving it
+// "gains nothing toward the 12 ender pearls still needed", where five were
+// (note 1137).
+const huntLeft = (bot, goal) => {
+  const state = goal?.mobHunt;
+  if (!state) return 0;
+  if (state.item === 'ender_pearl' && goal.kind === 'win') { try { return require('./eye-need').need(bot, goal).pearlsLeft; } catch (_) { /* the hunt's own count */ } }
+  return Math.max(0, (huntTarget(bot, goal) || 0) - countOf(bot, state.item));
+};
 const ladderRods = goal => goal.kind === 'win' && goal.gameProgress?.phase === 'obtain_blaze_rods';
 // What the goal wants in rods against what is carried, one sentence, on the
 // fortress questions (eye-need.js): the search is for these and no more.
@@ -968,7 +981,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   const deferSays = state.entity === 'blaze' ? require('./blaze-stand').measuredSays('defer', bot).says.replace('this way', 'leaving them, the encounter answered as it came') : '';
   // What leaving them gains toward any other hunt's count, said as the
   // rods' is: the pearls still needed (note 790).
-  const itemLeft = Math.max(0, (huntTarget(bot, goal) || 0) - countOf(bot, state.item));
+  const itemLeft = huntLeft(bot, goal);
   const deferGain = rodsNeed ? `${towardRods(rodsNeed, 'none', { spawner: liveCage, of: rodsOf })} Left, these are not offered again for two minutes.${capNow ? ` ${capNow}` : ''}${deferStreakSays}`
     : itemLeft ? ` Leaving them gains nothing toward the ${itemLeft} ${state.item.replaceAll('_', ' ')}${itemLeft === 1 ? '' : 's'} still needed; left, these are not offered again for two minutes.` : '';
   // Where the work goes next: at a known spawner still owed rods, it stays
@@ -1015,7 +1028,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // nothing said of this cage's own 32 minutes of nothing).
   let cageSoFar = null;
   if (state.entity === 'blaze') { try { cageSoFar = require('./cage-yield').annotate(bot, goal, tree); } catch (_) { /* no cage */ } }
-  const snapshot = { request: goal.request, ...(cageSoFar?.holdsResting ? { holdsResting: cageSoFar.holdsResting } : {}), resource: state.item, need: huntTarget(bot, goal) - countOf(bot, state.item),
+  const snapshot = { request: goal.request, ...(cageSoFar?.holdsResting ? { holdsResting: cageSoFar.holdsResting } : {}), resource: state.item, need: state.entity === 'blaze' ? huntTarget(bot, goal) - countOf(bot, state.item) : huntLeft(bot, goal),
     ...(state.entity === 'blaze' && ladderRods(goal) ? { rodsTheGoalWants: require('./eye-need').says(bot, goal) } : {}),
     ...(state.entity === 'blaze' ? { blazes: blazesSays(bot, goal, state), playedRecord: require('./blaze-record').says(bot), playedAnswers: require('./blaze-record').answersSay(bot), blazeCounts: (() => { try { return require('./blaze-record').entryFacts(bot, { cage: require('./blaze-stand').spawnerAt(bot) }).says; } catch (_) { return undefined; } })() } : {}),
     // What followed the trials' rods (after-rod.js, note 659) is no longer
@@ -4910,4 +4923,4 @@ function claim(bot, goal = {}) {
     ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}), ...(cage ? { cage: true } : {}) } };
 }
 
-module.exports = { roomForDrop, rodBlazesSays, goldForPiglins, openWallOption, keepClaim, noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };
+module.exports = { huntLeft, roomForDrop, rodBlazesSays, goldForPiglins, openWallOption, keepClaim, noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };

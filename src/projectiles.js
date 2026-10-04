@@ -83,13 +83,13 @@ function aimAtEntity(bot, target, velocity = new Vec3(0, 0, 0), position = bot.e
 // The default threat rule stops a shot when any hostile is in view, which
 // suits the End; survival shooting at a skeleton passes its own rule, since
 // the skeleton is the point.
-async function shootBow(bot, task, target, { guard = () => {}, threatCheck = checkThreats, velocity = new Vec3(0, 0, 0), chargeMs = 1200, confirmationMs = 2000 } = {}) {
+async function shootBow(bot, task, target, { guard = () => {}, threatCheck = checkThreats, velocity = new Vec3(0, 0, 0), chargeMs = 1200, confirmationMs = 2000, standing = dryStanding, holdMs = 0 } = {}) {
   const dimension = bot.game.dimension, start = bot.entity.position.clone();
   const motion = () => typeof velocity === 'function' ? velocity() : velocity;
   const check = () => {
     task.check(); checkAir(bot); threatCheck(bot); guard();
     if (bot.game.gameMode !== 'survival' || bot.game.dimension !== dimension || bot.health <= 0 ||
-      bot.entities[target.id] !== target || target.isValid === false || bot.entity.position.distanceTo(start) > .3 || !dryStanding(bot, bot.entity.position)) {
+      bot.entities[target.id] !== target || target.isValid === false || bot.entity.position.distanceTo(start) > .3 || !standing(bot, bot.entity.position)) {
       throw new Error('Bow shot interrupted by a changed target, dimension or firing position');
     }
   };
@@ -119,12 +119,20 @@ async function shootBow(bot, task, target, { guard = () => {}, threatCheck = che
     // proves that the intended pitch was sent. Wait for the actual movement
     // packet to carry both angles, then solve again: the target can move
     // during the turn. All refinements share one bounded aiming deadline.
-    const aimDeadline = Date.now() + 2000;
+    // `holdMs`: the bow stays drawn that long for a line that has closed to
+    // open again (a flying target passing behind a pillar), where without
+    // it the draw is dropped at the first look with no line. The dragon
+    // rehearsal of 2026-10-04 (00:08 to 00:13Z) dropped ten of its
+    // seventeen draws so, "Arrow trajectory became obstructed before
+    // release", the dragon circling the pillars (note 1136).
+    const holdUntil = Date.now() + holdMs, aimDeadline = holdUntil + 2000;
     let solution, aimAdjustments = 0;
     while (Date.now() < aimDeadline) {
       check();
-      const fresh = aimAtEntity(bot, target, motion());
-      if (!fresh) throw new Error('Arrow trajectory became obstructed before release');
+      let fresh = null, motionError = null;
+      try { fresh = aimAtEntity(bot, target, motion()); } catch (err) { if (Date.now() >= holdUntil) throw err; motionError = err; }
+      if (!fresh && Date.now() < holdUntil) { await sleep(50); continue; }
+      if (!fresh) throw motionError || new Error('Arrow trajectory became obstructed before release');
       if (sentAimMatches(bot.lastSentRotation, fresh)) { solution = fresh; break; }
       let aimed = false, aimError;
       aimAdjustments++;

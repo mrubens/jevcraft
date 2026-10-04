@@ -38,7 +38,11 @@ const setHold = ms => { HOLD_MS.splice(0, HOLD_MS.length, ...ms); };
 // Said, never held: the body's physics (SAFETY_RULED), the stance and the
 // shield against mobs about (SAY_ONLY), the routing and the stall's own
 // question (NEVER_HELD), all in index.js.
-const NOT_HELD = new Set(['body_way', 'shot_answer', 'encounter_stance', 'ranged_response', 'turn_priority', 'stillness_detour']);
+// And the dragon fight: what its answers wait on is the dragon's flight,
+// which is no part of the bot's mark. The rehearsal of 2026-10-03 (23:31:35
+// to 23:32:05Z) stood thirty seconds held after a shot that did not loose,
+// the dragon circling in range (note 1136).
+const NOT_HELD = new Set(['body_way', 'shot_answer', 'encounter_stance', 'ranged_response', 'turn_priority', 'stillness_detour', 'dragon_fight']);
 const KEPT_MS = 10 * 60000;
 const LOOK_MS = 250;
 

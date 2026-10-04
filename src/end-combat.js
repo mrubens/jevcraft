@@ -163,6 +163,16 @@ function arenaMovement(bot, center) {
   return { allowed, allowedPoint, restore: () => Object.assign(movement, previous) };
 }
 
+// Walled in: a block on each side of the feet and of the head, and one
+// over the head. -> { of } (the wall's blocks, by name) or null.
+function enclosed(bot) {
+  const feet = bot.entity.position.floored(), solid = p => bot.blockAt(p)?.boundingBox === 'block';
+  const round = [[1, 0], [-1, 0], [0, 1], [0, -1]].flatMap(([dx, dz]) => [feet.offset(dx, 0, dz), feet.offset(dx, 1, dz)]);
+  if (!solid(feet.offset(0, 2, 0)) || !round.every(solid)) return null;
+  const names = [...new Set([feet.offset(0, 2, 0), ...round].map(p => bot.blockAt(p).name.replaceAll('_', ' ')))];
+  return { of: names.slice(0, 3).join(', ') };
+}
+
 // Off a height onto the island's ground beside it: the edge nearest the
 // arena's centre whose landing is solid, in view, at most DROP_MOST blocks
 // down and not past what the health carries (a fall takes its blocks less
@@ -230,7 +240,7 @@ async function arenaRoutes(bot, task, goal, policy, focus) {
     const score = (visits[key] || 0) * 30 + (target ? Math.abs(distance - desiredRange) : -point.distanceTo(current)) + Math.abs(point.y - current.y);
     if (!buckets.has(key) || score < buckets.get(key).score) buckets.set(key, { p, key, score });
   }
-  const routes = [];
+  const routes = [], look = goal.endCombat.routeLook = { floors: floors.length, allowed: buckets.size, tried: 0, failed: {} };
   for (const candidate of [...buckets.values()].sort((a, b) => a.score - b.score).slice(0, 10)) {
     task.check();
     const p = candidate.p, destination = new goals.GoalBlock(p.x, p.y, p.z);
@@ -238,6 +248,7 @@ async function arenaRoutes(bot, task, goal, policy, focus) {
     // pillars, and every quarter-second survey timed out, so the rehearsal
     // bot stood at the edge with nothing to choose.
     const route = await surveyRoute(bot, task, bot.pathfinder.movements, destination, 1000);
+    look.tried++; if (route.status !== 'success') look.failed[route.status] = (look.failed[route.status] || 0) + 1; else if (!route.path.every(policy.allowed)) look.failed.notAllowed = (look.failed.notAllowed || 0) + 1;
     if (route.status === 'success' && route.path.every(policy.allowed)) routes.push({ ...candidate, destination,
       clearCrystalShot: focus?.name === 'end_crystal' && !repeatedCrystalMiss(goal.endCombat, focus, p.offset(.5, 0, .5)) &&
         !!aimAtEntity(bot, focus, new Vec3(0, 0, 0), p.offset(.5, 0, .5)),
@@ -264,14 +275,17 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
   check();
   if (goal.gameProgress?.milestones.dragon_defeated) return;
   const state = goal.endCombat ||= { steps: 0, shots: [], destroyedCrystals: [], visits: {}, noProgress: 0 };
-  if (++state.steps > 1200 || state.noProgress >= 80) throw blocked('End combat exhausted its bounded action budget without verified damage, a crystal explosion or new ground');
+  // The budget is the bot's own choices that came to nothing, eighty in a
+  // row, and it is spent once: thrown, it starts over, since the fight is
+  // still there when the game comes back to it (note 1136).
+  if (++state.steps > 6000 || state.noProgress >= 80) { state.steps = 0; state.noProgress = 0; save(); throw blocked('End combat exhausted its bounded action budget without verified damage, a crystal explosion or new ground'); }
   observeArena(bot, state);
   const policy = arenaMovement(bot, state.arenaCenter), oldInterrupt = task.interruptCheck;
   const started = Date.now(), start = bot.entity.position.clone(), healthBefore = bot.health;
   const dragons = Object.values(bot.entities).filter(e => live(bot, e) && e.name === 'ender_dragon');
   if (dragons.length > 1) { policy.restore(); throw blocked('More than one observed dragon; target is ambiguous'); }
   const dragon = dragons[0], beforeDragon = dragon && metadata(bot, dragon, 'health');
-  let progress = false;
+  let progress = false, chose = false;
   const motion = new Map();
   const moved = entity => {
     if (entity !== dragon) return;
@@ -292,6 +306,23 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     if (fallDanger(bot)) await recoverFall(bot, task, goal, save);
     else await evadeDragon(bot, task, goal, save, { allowed: p => policy.allowedPoint(p) && safeFromHostiles(bot, p) });
   };
+  // Standing in the water poured at its feet, a turned enderman is no
+  // reason to hold: water hurts one and it teleports off rather than cross
+  // it, as a player stands in a bucket's water and shoots on. The place is
+  // then judged by everything else about (the dragon, its breath, a
+  // crystal, any other mob). The rehearsal of 2026-10-03 (23:48 to 23:51Z)
+  // stood in its water with three turned endermen seven to thirteen blocks
+  // off, "observe, the only way offered", the dragon circling at 166.5 of
+  // 200 and 187 arrows carried: no shot, no route and no strike while one
+  // of them stayed within twenty (note 1136).
+  const inWater = () => { const feet = bot.entity.position.floored(); return bot.blockAt(feet)?.name === 'water' && bot.blockAt(feet.offset(0, -1, 0))?.boundingBox === 'block' && bot.blockAt(feet.offset(0, 1, 0))?.name !== 'water'; };
+  const safeHere = () => {
+    const p = bot.entity.position;
+    if (safeEndPoint(bot, p)) return true;
+    if (!inWater()) return false;
+    const others = hostileEntities(bot, 64).filter(e => e.name !== 'enderman');
+    return safeFromHostiles(bot, p, others) && others.every(e => p.distanceTo(e.position) >= 20) && endHazards(bot).every(({ entity, radius }) => hazardDistance(p, entity) > radius);
+  };
   try {
     if (endEmergency(bot)) { await respond(); return; }
     task.interruptCheck = () => {
@@ -299,7 +330,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       if (dimension(bot) !== 'end' || bot.health <= 0) throw blocked('End combat interrupted by dimension change or death');
       checkEndEmergency(bot);
     };
-    if (safeEndPoint(bot, bot.entity.position)) {
+    if (safeHere()) {
       if (await maintainVitals(bot, task, action => { goal.survivalAction = { ...action, at: new Date().toISOString() }; save(); }, { client, goal, save })) return;
     }
     if (bot.food < 16 && !chooseFood(bot)) throw blocked('End combat has no carried food to restore hunger');
@@ -342,7 +373,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     // they cannot follow into (end-pocket.js), not the sword.
     const { endPocket, angryEndermen } = require('./end-pocket');
     const angry = angryEndermen(bot, 12, hostileEntities).filter(e => live(bot, e));
-    if (actions.dig && (angry.length >= 2 || (angry.length && bot.health < 10)) && !(state.pocketFailedAt > Date.now() - 20000)) {
+    if (actions.dig && !inWater() && (angry.length >= 2 || (angry.length && bot.health < 10)) && !(state.pocketFailedAt > Date.now() - 20000)) {
       try {
         if (await endPocket(bot, task, { dig: actions.dig, check, hostileEntities, report: a => { goal.step = a; save(); } })) { state.pockets = (state.pockets || 0) + 1; save(); return; }
       } catch (err) { if (['Cancelled', 'NeedsAir'].includes(err.name)) throw err; state.pocketFailedAt = Date.now(); save(); }
@@ -353,15 +384,15 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       if (at) { state.water = { at: { ...at }, poured: Date.now() }; state.pours = (state.pours || 0) + 1; goal.step = { action: 'end_water', against: 'enderman', at: { ...at } }; save(); }
     }
     const attacker = hostileEntities(bot, 6).find(e => live(bot, e));
-    if (attacker && sword) {
+    if (attacker && sword && !(inWater() && attacker.name === 'enderman' && !canStrike(bot, attacker))) {
       goal.step = { action: 'end_defend', target: attacker.name, distance: Math.round(attacker.position.distanceTo(bot.entity.position) * 10) / 10 }; save();
       await defendHere(2000); return;
     }
     const crystals = observeArena(bot, state);
     state.observedCrystals = crystals.map(e => ({ id: e.id, position: { ...e.position } }));
     state.dragon = dragon && { id: dragon.id, position: { ...dragon.position }, health: beforeDragon, phase: metadata(bot, dragon, 'phase') };
-    const tree = {}, safe = safeEndPoint(bot, bot.entity.position);
-    const guardShot = () => { check(); if (!safeEndPoint(bot, bot.entity.position) || bot.health < 12) throw new Error('End firing position became unsafe'); };
+    const tree = {}, safe = safeHere(), wet = safe && !safeEndPoint(bot, bot.entity.position);
+    const guardShot = () => { check(); if (!safeHere() || bot.health < 12) throw new Error('End firing position became unsafe'); };
     const shoot = async target => {
       guardShot();
       if (target === dragon && perched(bot, dragon)) throw new Error('The dragon perched before the shot');
@@ -372,11 +403,13 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       try {
         const result = await shot(bot, task, target, { guard: () => {
           guardShot(); if (target === dragon && perched(bot, dragon)) throw new Error('The dragon perched while drawing');
-        }, velocity: target === dragon ? velocity : new Vec3(0, 0, 0) });
+        }, velocity: target === dragon ? velocity : new Vec3(0, 0, 0), ...(target === dragon ? { holdMs: 4000 } : {}),
+          // From its water the endermen about are not what stops the shot; any other mob within six is.
+          ...(inWater() ? { standing: () => true, threatCheck: b => { const near = hostileEntities(b, 6).find(e => live(b, e) && e.name !== 'enderman'); if (near) throw new Error(`A ${near.name} came within six blocks`); } } : {}) });
         result.targetPosition = { ...targetPosition };
         state.shots.push(result); state.shots = state.shots.slice(-256); save();
         const until = Date.now() + Math.min(5000, Math.ceil(result.ticks * 50) + 500);
-        while (Date.now() < until) { check(); if (!safeEndPoint(bot, bot.entity.position)) break; await sleep(50); }
+        while (Date.now() < until) { check(); if (!safeHere()) break; await sleep(50); }
         if (target.name === 'end_crystal' && Date.now() >= until) result.outcome = live(bot, target) ? 'target_remains' : 'unconfirmed_target_lost';
         if (target.name === 'end_crystal' && explosion && !live(bot, target)) {
           result.outcome = 'confirmed_crystal_explosion';
@@ -386,18 +419,22 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
         }
       } finally { bot._client.removeListener('explosion', observeExplosion); }
     };
+    const wetSays = () => { const turned = hostileEntities(bot, 64).filter(e => live(bot, e) && e.name === 'enderman' && e.position.distanceTo(bot.entity.position) < 20).sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position));
+      return `The bot stands in the water it poured at its feet, ${turned.length} turned enderm${turned.length === 1 ? 'an' : 'en'} within twenty blocks, the nearest ${Math.round(turned[0]?.position.distanceTo(bot.entity.position) ?? 0)} off: water hurts an enderman and it teleports off rather than cross it, and the shot is drawn standing in it.`; };
     const bow = bot.inventory.items().some(i => i.name === 'bow' && durable(bot.registry, i));
+    let noShot = !safe ? `not safe here (${unsafeBecause(bot, bot.entity.position).slice(0, 3).join(', ')})` : bot.health < 12 ? 'health under twelve' : !bow || !countOf(bot, 'arrow') ? 'no bow or arrows' : !dragon ? 'no dragon in view' : perched(bot, dragon) ? 'perched' : null;
     if (safe && bot.health >= 12 && bow && countOf(bot, 'arrow') > 0) {
       for (const target of crystals) if (!repeatedCrystalMiss(state, target, bot.entity.position) && aimAtEntity(bot, target)) tree[`crystal_${target.id}`] = {
         description: { action: 'Destroy an observed healing crystal with a clear bow trajectory, removing a source of dragon health regeneration', position: { ...target.position } }, run: () => shoot(target),
       };
       if (dragon && !perched(bot, dragon)) {
         for (let n = 0; n < 6; n++) { check(); await sleep(50); }
-        let motionNow; try { motionNow = velocity(); } catch (_) { /* no feasible predicted shot */ }
+        let motionNow; try { motionNow = velocity(); } catch (err) { noShot = err.message; /* no feasible predicted shot */ }
         const trajectory = motionNow && aimAtEntity(bot, dragon, motionNow);
+        if (motionNow && !trajectory) noShot = `no clear arrow trajectory to it ${Math.round(dragon.position.distanceTo(bot.entity.position))} blocks off`;
         if (trajectory) tree.shoot_dragon = {
           description: { action: 'Shoot the currently arrow-vulnerable flying dragon along the checked clear trajectory',
-            safeFiringPosition: true, flightSeconds: trajectory.ticks / 20, dragonHealth: beforeDragon, observedHealingCrystals: crystals.length }, run: () => shoot(dragon),
+            safeFiringPosition: true, flightSeconds: trajectory.ticks / 20, dragonHealth: beforeDragon, observedHealingCrystals: crystals.length, ...(wet ? { fromItsWater: wetSays() } : {}) }, run: () => shoot(dragon),
         };
       }
     }
@@ -414,10 +451,22 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     }
     // A bed beside the perched head (bed-bomb.js): the heaviest blow, from a
     // trench that keeps the blast off the bot.
-    const { bedPlan, bedBomb, bedsCarried } = require('./bed-bomb');
+    const { bedPlans, bedBomb, bedsCarried } = require('./bed-bomb');
     if (safe && head && actions.dig && bedsCarried(bot) > 0 && bot.health >= 14) {
-      const plan = bedPlan(bot, head.position);
-      if (plan && plan.walk <= 12) tree.bed_bomb = {
+      // The line it can walk to, surveyed as a move is: the rehearsal of
+      // 2026-10-03 (23:54:40 to 23:55:24Z) chose the bed 55 times in 44
+      // seconds at a line with no route from where it stood ("No route from
+      // here", each within a second), the dragon perched the while, and
+      // spent the fight's budget on it (note 1136).
+      let plan = null;
+      for (const p of bedPlans(bot, head.position).filter(p => p.walk <= 12).slice(0, 4)) {
+        check();
+        const here = bot.entity.position.floored();
+        if (here.x === p.stand.x && here.y === p.stand.y && here.z === p.stand.z) { plan = p; break; }
+        const route = await surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalBlock(p.stand.x, p.stand.y, p.stand.z), 400);
+        if (route.status === 'success') { plan = p; break; }
+      }
+      if (plan) tree.bed_bomb = {
         description: { action: 'Lay a bed beside the perched dragon\'s head and blow it from a trench one block deep: the heaviest blow available, about five health to the bot', bedsCarried: bedsCarried(bot), walk: Number(plan.walk.toFixed(1)) },
         run: async () => {
           const exploded = await bedBomb(bot, task, plan, { navigate: actions.navigate, dig: actions.dig, stillPerched: () => live(bot, dragon) && perched(bot, dragon) });
@@ -454,6 +503,27 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
             (focus?.name === 'ender_dragon_head' && (() => { const h = live(bot, dragon) && perchedHead(bot, dragon); return !!h && canStrike(bot, h); })()) });
       } };
     }
+    // Walled in (blocks on every side of the body and over the head, a
+    // pocket or a seal of its own from before): no arrow leaves it and no
+    // walk, and the fight has only the wait. The way out is offered: the
+    // block over the head and the wall toward the arena dug. The rehearsals
+    // of 2026-10-03 (23:48Z to 00:10Z) stood in the three-by-three of
+    // cobblestone walled at 23:35Z, "observe, the only way offered", every
+    // route "noPath" and "no clear arrow trajectory" to a dragon 19 to 37
+    // blocks off with no mob near, 187 arrows carried (note 1136).
+    const box = actions.dig && enclosed(bot);
+    if (box && !tree.shoot_dragon && !Object.keys(tree).some(k => /^(crystal_|move_|strike_head|bed_bomb)/.test(k))) {
+      const toward = focus?.position || focus || (state.arenaCenter && vector(state.arenaCenter)) || bot.entity.position.offset(1, 0, 0);
+      const feet = bot.entity.position.floored(), dx = toward.x - (feet.x + .5), dz = toward.z - (feet.z + .5);
+      const side = Math.abs(dx) >= Math.abs(dz) ? new Vec3(Math.sign(dx) || 1, 0, 0) : new Vec3(0, 0, Math.sign(dz) || 1);
+      const cells = [feet.offset(0, 2, 0), feet.plus(side).offset(0, 1, 0), feet.plus(side)].filter(c => bot.blockAt(c)?.boundingBox === 'block');
+      tree.open_walls = { description: { action: `The bot stands walled in, blocks on every side of it and over its head (${box.of}): no arrow leaves it and no walk. Open it: dig the block over the head and the wall toward the arena, ${cells.length} block${cells.length === 1 ? '' : 's'}, and the fight goes on from the opening`,
+        health: bot.health, turnedEndermenWithinTwenty: hostileEntities(bot, 20).filter(e => live(bot, e) && e.name === 'enderman').length, dragonBlocksOff: dragon ? Math.round(dragon.position.distanceTo(bot.entity.position)) : null },
+        run: async () => {
+          for (const c of cells) { check(); await actions.dig(bot, task, c, { requireDrops: false }); }
+          state.opened = (state.opened || 0) + 1; progress = true; save();
+        } };
+    }
     // A pause can reveal a vulnerable phase, but it must not indefinitely
     // displace executable actions. Renew that allowance only after actual
     // movement, damage, crystal destruction or observed health recovery.
@@ -463,7 +533,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
         usefulAttackAvailableNow: !!tree.shoot_dragon || !!tree.strike_head || crystals.some(c => tree[`crystal_${c.id}`]),
         dragonPhase: metadata(bot, dragon, 'phase'), pausesWithoutProgress: state.idleObservations || 0 }, run: async () => {
       state.idleObservations = (state.idleObservations || 0) + 1;
-      bot.clearControlStates(); for (let n = 0; n < 10; n++) { check(); if (!safeEndPoint(bot, bot.entity.position)) break; await sleep(100); }
+      bot.clearControlStates(); for (let n = 0; n < 10; n++) { check(); if (!safeHere()) break; await sleep(100); }
     } };
     // Unsafe only because of mobs close by (endermen turned by a glance or a
     // crystal's blast): hold with the sword out for them to come, and the
@@ -510,6 +580,11 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
         head: head && { position: { ...head.position }, reachable: canStrike(bot, head) }, crystals: state.observedCrystals, combat: state }),
       isFresh: () => dimension(bot) === 'end' && bot.health >= healthBefore && bot.entity.position.distanceTo(start) < 1 });
     if (decision.stale) return;
+    chose = true;
+    if (Object.keys(tree).length === 1 && tree.observe && !(state.onlyObserveSaid > Date.now() - 10000)) {
+      state.onlyObserveSaid = Date.now();
+      console.log(`[end combat] only observe: wet ${wet}, dragon phase ${dragon ? metadata(bot, dragon, 'phase') : 'none'} ${dragon ? Math.round(dragon.position.distanceTo(bot.entity.position)) : '-'} off, head ${head ? `${Math.round(head.position.distanceTo(bot.entity.position))} off` : 'none'}, hostiles ${hostileEntities(bot, 64).map(e => `${e.name} ${Math.round(e.position.distanceTo(bot.entity.position))}`).join(', ') || 'none'}, routes ${JSON.stringify(state.routeLook || {})}, no shot: ${noShot}`);
+    }
     goal.step = { action: 'end_combat', selected: decision.path, dragonHealth: beforeDragon, observedCrystals: crystals.length }; save();
     try { await decision.action.run(); }
     catch (err) {
@@ -517,6 +592,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       // Moving targets, a newly visible cloud or an obstructed route require
       // a fresh bounded choice. They do not invalidate the retained goal.
       state.lastInterrupted = { at: Date.now(), action: decision.path, reason: err.message }; save();
+      console.log(`[end combat] ${[].concat(decision.path).join('/')} ended: ${String(err.message).slice(0, 160)}`);
     }
   } catch (err) {
     if (err.name !== 'EndEmergency') throw err;
@@ -529,11 +605,17 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     state.ground ||= {};
     if (start.distanceTo(bot.entity.position) >= 3 && !state.ground[cell]) { state.ground[cell] = true; progress = true; }
     if (progress || start.distanceTo(bot.entity.position) >= 3 || bot.health > healthBefore) state.idleObservations = 0;
-    state.noProgress = progress ? 0 : (state.noProgress || 0) + 1;
+    // A step that was the dragon's turn (an evasion, a hold for endermen, a
+    // meal) is no choice of the bot's that came to nothing: only a choice
+    // made counts against the budget. The rehearsal of 2026-10-03 (23:31 to
+    // 23:35Z) spent its eighty in 75 seconds after its last hit, most of
+    // them evasions and holds, the dragon at 166.5 of 200, every crystal
+    // down and 187 arrows carried (note 1136).
+    state.noProgress = progress ? 0 : (state.noProgress || 0) + (chose ? 1 : 0);
     state.lastActionAt = started; save();
     bot.removeListener('entityMoved', moved); task.interruptCheck = oldInterrupt;
     bot.pathfinder.setGoal(null); bot.clearControlStates(); policy.restore();
   }
 }
 
-module.exports = { dropOffs, leaveHighGround, voidEdge, endermenNearRoute, metadata, perched, perchedHead, repeatedCrystalMiss, observeArena, endHazards, safeEndPoint, arenaMovement, arenaRoutes, fightEndStep };
+module.exports = { enclosed, dropOffs, leaveHighGround, voidEdge, endermenNearRoute, metadata, perched, perchedHead, repeatedCrystalMiss, observeArena, endHazards, safeEndPoint, arenaMovement, arenaRoutes, fightEndStep };

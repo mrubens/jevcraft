@@ -76,7 +76,7 @@ function says(bot, { now = Date.now(), mobs = null, health = true } = {}) {
   let hitSays = '';
   try { hitSays = require('./hit-log').says(bot, mobs || require('./danger').threats(bot, 24), { now, ms: FALL_MS }); } catch (_) { hitSays = ''; }
   const heals = (bot.food ?? 0) >= 18;
-  const meal = mealOf(bot), gains = pocketGains(bot, now), pocket = gains.hits || gains.about ? pocketOf(bot) : null;
+  const meal = mealOf(bot), gains = pocketGains(bot, now), pocket = !/end$/.test(String(bot.game?.dimension || '')) && (gains.hits || gains.about) ? pocketOf(bot) : null;
   let hitLately = false;
   try { hitLately = require('./hit-log').recent(bot, { now, ms: 20000 }).length > 0; } catch (_) { hitLately = false; }
   const record = require('./low-health-record').says({ hit: hitLately });
@@ -100,7 +100,14 @@ function ways(bot, { task, goal, save = () => {}, now = Date.now() } = {}) {
       return r.eaten;
     } };
   const gains = pocketGains(bot, now);
-  const pocket = gains.hits || gains.about ? pocketOf(bot) : null, survival = bot._shotSurvival;
+  // Not in the End: whether to stay in a pocket or leave it is asked by the
+  // survival layer, which has no turn there (the fight owns the dimension),
+  // and the dragon's breath pools where the bot is walled. The rehearsal of
+  // 2026-10-03 (23:35Z) walled in at this offer beside the fountain and
+  // stood in the box through five rehearsals after, no shot and no walk
+  // out of it (note 1136).
+  const inEnd = /end$/.test(String(bot.game?.dimension || ''));
+  const pocket = !inEnd && (gains.hits || gains.about) ? pocketOf(bot) : null, survival = bot._shotSurvival;
   const keepsOff = gains.nearest ? `it keeps off the ${gains.nearest.entity.name.replaceAll('_', ' ')} ${Math.round(gains.nearest.distance)} blocks off${gains.about > 1 ? ` and ${gains.about - 1} more about` : ''}` : `it keeps off whatever landed the ${gains.hits} hit${gains.hits === 1 ? '' : 's'} in the last 30 seconds`;
   const heals = (bot.food ?? 0) >= 18 ? 'health comes back in it at this hunger' : `health does not come back in it at hunger ${bot.food}${mealOf(bot) ? ' until the bot eats' : ' with nothing carried to eat'}`;
   if (pocket && survival?.sealHere) tree.wall_in_first = { description: `Wall in where the bot stands first, ${pocket.blocks} block${pocket.blocks === 1 ? '' : 's'}, about ${pocket.seconds} seconds of building: ${keepsOff}; ${heals}; whether to stay, leave or go on is asked from the pocket.`,

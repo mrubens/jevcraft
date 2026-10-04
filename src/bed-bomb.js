@@ -27,7 +27,7 @@ const bedsCarried = bot => bot.inventory.items().filter(i => /_bed$/.test(i.name
 
 // Where to lay a bed so its head half is by the dragon's head, and where to
 // stand to blow it: null when the ground allows no such line.
-function bedPlan(bot, head) {
+function bedPlans(bot, head) {
   const h = new Vec3(Math.floor(head.x), Math.floor(head.y), Math.floor(head.z));
   const plans = [];
   for (let dy = -3; dy <= 1; dy++) for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) {
@@ -51,8 +51,9 @@ function bedPlan(bot, head) {
       plans.push({ stand, foot, top, dir: d, y, gap: top.offset(0.5, 0.3, 0.5).distanceTo(head), walk: stand.distanceTo(bot.entity.position) });
     }
   }
-  return plans.sort((a, b) => a.gap - b.gap || a.walk - b.walk)[0] || null;
+  return plans.sort((a, b) => a.gap - b.gap || a.walk - b.walk);
 }
+const bedPlan = (bot, head) => bedPlans(bot, head)[0] || null;
 
 // Walk, dig in, lay the bed, click it. `stillPerched()` is asked before
 // the bed goes down: a dragon that has taken off is not bombed.
@@ -83,4 +84,4 @@ async function bedBomb(bot, task, plan, { navigate, dig, stillPerched = () => tr
   return !/_bed$/.test(bot.blockAt(foot)?.name || '');
 }
 
-module.exports = { bedPlan, bedBomb, bedsCarried, HEAD_REACH };
+module.exports = { bedPlans, bedPlan, bedBomb, bedsCarried, HEAD_REACH };
