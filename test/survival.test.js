@@ -6328,3 +6328,17 @@ test('a pillar a block from a drop into lava with a zombie at hand leads with th
   }
   assert.doesNotMatch(back.pillar?.description || '', /the first blow or shot that lands is the fall/);
 });
+
+test('armour carried and not worn is put on at the survival step, once for each change of what is carried (note 1213)', async () => {
+  const bot = crowdBot();
+  const pack = [{ name: 'iron_helmet', count: 1 }, { name: 'iron_boots', count: 1 }, { name: 'dirt', count: 5 }];
+  const worn = [];
+  bot.inventory = { items: () => pack, slots: {} };
+  bot.equip = async (item, slot) => { worn.push([item.name, slot]); bot.inventory.slots[{ head: 5, torso: 6, legs: 7, feet: 8 }[slot]] = item; pack.splice(pack.indexOf(item), 1); };
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  survival.stepOnce = async () => false;
+  await survival.step(new Task('t'), {}, () => {});
+  assert.deepEqual(worn.sort(), [['iron_boots', 'feet'], ['iron_helmet', 'head']]);
+  await survival.step(new Task('t'), {}, () => {});
+  assert.equal(worn.length, 2, 'not tried again with nothing new carried');
+});

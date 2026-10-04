@@ -9787,6 +9787,17 @@ class Survival {
   async step(task, goal, save, onStep = () => {}) {
     try {
       delete this._creeperRefused;
+      // Armour carried and not worn goes on before anything else here, when
+      // what is carried of it has changed (note 1213): the ladder's step put
+      // it on, and through an encounter the ladder has no step. 25594
+      // (2026-10-04 12:05:36 to 12:05:59Z), on the walk back to its things,
+      // took up its iron helmet and boots and was shot dead by a skeleton
+      // twenty-three seconds on with both in its pack.
+      try {
+        const carried = (this.bot.inventory?.items?.() || []).filter(i => /_(helmet|chestplate|leggings|boots)$/.test(i.name)).map(i => i.name).sort().join(',');
+        if (carried && carried !== this._armourSeen) { this._armourSeen = carried; await require('./mob-policy').wearBestArmour(this.bot); }
+        else if (!carried) this._armourSeen = '';
+      } catch (err) { task.check(); }
       const acted = await this.stepOnce(task, goal, save, onStep);
       // A question of the step's turned back for a creeper is answered with
       // the creeper's own (note 1063): the question came back stale, the
