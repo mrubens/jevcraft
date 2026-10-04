@@ -155,9 +155,13 @@ async function runUntil(task, goal, save, handler, done, { minutes }) {
 const DRILLS = {
   async stronghold(task) {
     const truth = await locateStronghold();
-    const start = { x: truth.x + 280, z: truth.z + 110 };
+    // ENDGAME_NEAR=1 starts forty blocks off: the arrival (the eye that goes down, the search of the ground, the ring seen) is what is rehearsed.
+    const start = process.env.ENDGAME_NEAR ? { x: truth.x + 40, z: truth.z + 25 } : { x: truth.x + 280, z: truth.z + 110 };
     await kit();
-    await commands([`time set 1000`, `execute in minecraft:overworld run spreadplayers ${start.x} ${start.z} 0 8 false ${username}`]);
+    // Near, the bot is let down from the air over the place (a spread there can find no ground: it failed over the sea on 2026-10-04).
+    await commands(process.env.ENDGAME_NEAR ? ['time set 1000', `effect give ${username} minecraft:slow_falling 90 0 true`, `effect give ${username} minecraft:water_breathing 600 0 true`, `execute in minecraft:overworld run tp ${username} ${start.x} 200 ${start.z}`]
+      : [`time set 1000`, `execute in minecraft:overworld run spreadplayers ${start.x} ${start.z} 0 8 false ${username}`]);
+    // Let down over water it sinks while it waits (drowned 2026-10-04): breath for the fall, and no wait past the usual.
     await sleep(4000); await bot.waitForChunksToLoad();
     const goal = { kind: 'win', request: 'endgame rehearsal', gameProgress: { version: 1, milestones: { nether_entered: { at: 1 } } } };
     const handlers = gameHandlers(bot, client);
@@ -182,6 +186,21 @@ const DRILLS = {
     const handlers = gameHandlers(bot, client);
     const outcome = await runUntil(task, goal, () => {}, handlers.enter_end, () => dimension() === 'the_end' || dimension() === 'end', { minutes: 6 });
     return { drill: 'enter_end', pass: /end$/.test(dimension()) && !died, died, dimension: dimension(), eyesLeft: countOf(bot, 'ender_eye'), ...outcome };
+  },
+  // From the surface 150 blocks off the ring found: the way down to it, the
+  // frames filled, and through (end-portal.js enterEnd, note 1161).
+  async descend(task) {
+    const portal = known().endPortal;
+    if (!portal) return { drill: 'descend', pass: false, skipped: 'no portal found yet: run the stronghold drill first' };
+    await kit([['ender_eye', 0]]);
+    const c = portal.center || portal;
+    await commands(['time set 1000', `effect give ${username} minecraft:slow_falling 90 0 true`, `effect give ${username} minecraft:water_breathing 600 0 true`, `execute in minecraft:overworld run tp ${username} ${c.x + 120} 200 ${c.z + 90}`]);
+    await sleep(4000); await bot.waitForChunksToLoad();
+    const from = where();
+    const goal = { kind: 'win', request: 'endgame rehearsal', endPortal: portal, gameProgress: { version: 1, milestones: { nether_entered: { at: 1 }, stronghold_located: { at: 1, ...portal } } } };
+    const handlers = gameHandlers(bot, client);
+    const outcome = await runUntil(task, goal, () => {}, handlers.enter_end, () => dimension() === 'the_end' || dimension() === 'end', { minutes: Number(process.env.ENDGAME_MINUTES || 30) });
+    return { drill: 'descend', pass: /end$/.test(dimension()) && !died, died, dimension: dimension(), from, portal: c, at: where(), eyesLeft: countOf(bot, 'ender_eye'), ...outcome };
   },
   async dragon(task) {
     // Straight onto the spawn platform, where the portal lands a player:

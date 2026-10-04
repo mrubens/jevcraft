@@ -67,14 +67,21 @@ async function recoverEye(bot, task, search, save, actions) {
   const beforeMovement = { scafoldingBlocks: movement.scafoldingBlocks, allow1by1towers: movement.allow1by1towers };
   Object.assign(movement, { scafoldingBlocks: [], allow1by1towers: false });
   try {
-    const deadline = Date.now() + 3000;
+    // The eye comes down from where its flight ended, a dozen blocks on and
+    // some way up, and lies where it lands: looked for until it has come to
+    // rest, twelve seconds at the most, not for three from the moment the
+    // flight ended, while it was still in the air (note 1167). One eye in
+    // five breaks; of the six thrown on 2026-10-04 (the rehearsal's four,
+    // 25594's and 25591's first) five were not picked up, and each was a
+    // pearl fetched from the Nether before the search went on.
+    const deadline = Date.now() + PICKUP_MS;
     do {
       task.check(); checkAir(bot); checkThreats(bot);
       const drops = Object.values(bot.entities).filter(e => e.getDroppedItem?.()?.name === 'ender_eye' &&
-        e.position.distanceTo(vector(pending.end)) < 12 && e.position.distanceTo(bot.entity.position) < 24 && dryStanding(bot, e.position.floored()));
+        e.position.distanceTo(vector(pending.end)) < 16 && e.position.distanceTo(bot.entity.position) < 32 && Math.abs(e.velocity?.y || 0) < 0.05);
       for (const drop of drops.slice(0, 3)) {
         const p = drop.position.floored(), destination = new goals.GoalNear(p.x, p.y, p.z, 1);
-        const route = await surveyRoute(bot, task, movement, destination, 300);
+        const route = await surveyRoute(bot, task, movement, destination, 600);
         if (route.status !== 'success' || !route.path.every(policy.allowed)) continue;
         const before = countOf(bot, 'ender_eye');
         await actions.navigate(bot, task, destination, { timeoutMs: 8000, stallMs: 2500, stopWhen: () => countOf(bot, 'ender_eye') > before });
@@ -90,6 +97,7 @@ async function recoverEye(bot, task, search, save, actions) {
 }
 
 const WATER_GAIN = 8, WALK_ON_MS = 3 * 60000;
+const PICKUP_MS = 12000;
 async function walkBearing(bot, task, goal, save, target, actions, client) {
   const search = goal.strongholdSearch, surface = surfaceMovement(bot);
   try {
