@@ -8486,6 +8486,11 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   // The crossing chosen for the kit a death left on the far side (note 1233).
   { const cr = require('./corpse-run'), run = goal.corpseRun; if (goal.errand?.for === cr.KIT_ERRAND && run?.status === 'open' && run.dimension === 'nether') tree.cross_now.description += ` This crossing was chosen for the kit dropped at the death in the Nether, taken up there before anything else: ${Object.entries(run.items || {}).map(([n, c]) => `${c > 1 ? `${c} ` : ''}${n.replaceAll('_', ' ')}`).join(', ')}.`; }
   for (const o of entry) tree[`top_up_${o.key}`] = { description: `${o.says}${soFar({ carried: countOf(bot, o.item) }, o.key)}` };
+  // What a crossing short of food came to, by the points carried (note
+  // 1257): 25584 and 25590 (2026-10-04 20:40 to 21:00Z), thirteen pearls
+  // banked each, stood at 2 and 3 health at their fortresses with nothing
+  // to eat.
+  if (foodItem && Number.isFinite(foodItem.carried) && foodItem.carried < 36) tree.cross_now.description += ` In the record (2026-10-04 12:00 to 21:00Z), of 37 crossings made with under 16 food points carried 26 turned back for food within fifteen minutes, a median stay of 3 to 5 minutes; of 13 with 16 to 35 points 4 did (a median stay of 9 minutes); of 39 with 36 or more, 5 (16 minutes). ${foodItem.carried} are carried now.`;
   if (empty.some(i => i.key === 'food' && i.carried === 0)) {
     const minutes = Math.max(0, Math.round((hungerNow - 17) / NETHER_HUNGER_AN_HOUR * 60));
     tree.cross_now.description += ` No food at all is carried: in the Nether hunger falls about ${NETHER_HUNGER_AN_HOUR} an hour with nothing to eat${hungerNow >= 18 ? `, and at hunger ${hungerNow} health stops coming back in about ${minutes} minute${minutes === 1 ? '' : 's'}` : ', and health is not coming back now'}.`;

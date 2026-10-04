@@ -224,3 +224,14 @@ test('on the trip chosen for the kit a death left in the Nether, the crossing is
   assert.equal(await crossingKitReady(b, { check() {}, opportunityClient: client }, goal, () => {}, client), true);
   assert.equal(asked, 0);
 });
+
+test('a crossing short of food is asked with what such crossings came to (note 1257)', async () => {
+  const { crossingKitReady } = require('../src/work');
+  const b = bot({ items: [['stick', 4], ['iron_ingot', 9], ['bucket'], ['cobblestone', 128], ['stone_pickaxe'], ['golden_boots'], ['oak_log', 8], ['crafting_table'], ['cooked_beef', 1]], dimension: 'overworld' });
+  b.game.difficulty = 'normal'; b.game.gameMode = 'survival';
+  let asked = null;
+  const client = { systemOne: async ({ questions }) => { asked = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'cross_now', confidence: 0.7 } } }; } };
+  await crossingKitReady(b, { check() {}, opportunityClient: client }, { kind: 'win' }, () => {}, client);
+  assert.ok(asked, 'asked');
+  assert.match(JSON.stringify(asked.cross_now), /of 37 crossings made with under 16 food points carried 26 turned back for food within fifteen minutes/);
+});
