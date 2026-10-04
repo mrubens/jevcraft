@@ -66,12 +66,39 @@ test('the survival layer picks up close drops first', () => {
   assert.equal(goal.corpseRun, undefined);
 });
 
-test('three walks that make no ground and the things are given up', async () => {
-  const { bot, goal, said } = world();
-  const move = async () => {};
-  for (let i = 0; i < 3; i++) assert.equal(await corpseRunStep(bot, new Task('win'), goal, () => {}, { move, collect: async () => false }), true);
-  assert.equal(goal.corpseRun.status, 'unreachable');
-  assert.match(said.at(-1), /can't get back/);
+test('three walks that get no nearer: whether the things are given up is asked, told of the walks; the code does not close the run (note 1179)', async () => {
+  const { bot, goal } = world();
+  const asked = [], legs = [];
+  let answer = 'go_back';
+  const client = { systemOne: async ({ questions }) => { asked.push(JSON.stringify(Object.values(questions)[0])); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: answer, confidence: 0.9 }])) }; } };
+  const task = Object.assign(new Task('run'), { opportunityClient: client });
+  const move = async (b, t, g) => { legs.push(g); throw new Error('No route (noPath)'); };
+  for (let i = 0; i < 3; i++) assert.equal(await corpseRunStep(bot, task, goal, () => {}, { move, collect: async () => false }), true);
+  assert.equal(goal.corpseRun.status, 'open');
+  assert.equal(asked.length, 1);
+  assert.deepEqual(goal.corpseRun.stalled, { walks: 3, at: { x: 0, z: 0 }, error: 'No route (noPath)' });
+  // Far off it goes a leg at a time, and after a leg that failed, to one side of the line.
+  assert.deepEqual(legs.map(g => [g.x, g.z]), [[64, 0], [41, 49], [41, -49]]);
+  answer = 'leave_them';
+  assert.equal(await corpseRunStep(bot, task, goal, () => {}, { move, collect: async () => false }), false);
+  assert.equal(asked.length, 2);
+  assert.match(asked[1], /3 walks toward them from about \(0, 0\) got no nearer \(the last: No route \(noPath\)\)/);
+  assert.equal(goal.corpseRun.status, 'left');
+});
+
+test('a run the code closed as out of reach, its drops never come near, is open again and asked (note 1179)', async () => {
+  const { bot, goal } = world();
+  corpseRun(bot, goal);
+  Object.assign(goal.corpseRun, { status: 'unreachable', choice: 'go_back', stuck: 3, announced: true });
+  const run = corpseRun(bot, goal);
+  assert.equal(run.status, 'open');
+  assert.equal(run.choice, undefined);
+  assert.deepEqual(run.stalled, { walks: 3 });
+  // One whose drops were within the loaded ground stays closed: they have aged.
+  const near = world();
+  corpseRun(near.bot, near.goal);
+  Object.assign(near.goal.corpseRun, { status: 'unreachable', loadedAt: new Date().toISOString() });
+  assert.equal(corpseRun(near.bot, near.goal), null);
 });
 
 test('nothing lying at the spot: gone, said once', async () => {

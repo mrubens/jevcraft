@@ -17,7 +17,7 @@ const { collectNearbyDrops } = require('./drop-collection');
 
 const WORTH = /^(diamond|emerald|iron_ingot|gold_ingot|raw_iron|raw_gold|blaze_rod|blaze_powder|ender_pearl|ender_eye|obsidian|shield|bow|crossbow|arrow|bucket|water_bucket|lava_bucket|flint_and_steel|golden_apple|enchanted_golden_apple|trial_key|ominous_trial_key|ancient_debris|netherite_ingot|netherite_scrap|diamond_block|iron_block|gold_block|golden_carrot|cooked_beef|cooked_porkchop|cooked_mutton|bread)$|_(helmet|chestplate|leggings|boots|sword|pickaxe|axe)$/;
 const CHEAP = /^(wooden|stone)_(sword|pickaxe|axe)$/;
-const TICKING = 128, DESPAWN_MS = 5 * 60000, MARGIN_MS = 20000, KEEP_MS = 3 * 3600000, LEG_MS = 120000, ARRIVE = 6;
+const TICKING = 128, DESPAWN_MS = 5 * 60000, MARGIN_MS = 20000, KEEP_MS = 3 * 3600000, LEG_MS = 120000, ARRIVE = 6, FAR = 96, LEG = 64;
 const ARMOUR = { helmet: 'head', chestplate: 'torso', leggings: 'legs', boots: 'feet' };
 const dim = name => String(name || 'overworld').replace(/^minecraft:/, '').replace(/^the_/, '');
 // Three dimensions: a death in a mine under the bed is not beside the bed.
@@ -51,6 +51,10 @@ function corpseRun(bot, goal, now = Date.now()) {
       respawn: dim(bot.game?.dimension) === where ? { ...bot.entity.position } : null };
   }
   const run = goal.corpseRun;
+  // A run the code once closed as out of reach, its drops never come near
+  // (so not aged a second), is Jev's to close: asked again, told of the
+  // walks that failed (note 1179).
+  if (run.status === 'unreachable' && !run.loadedAt) { run.status = 'open'; delete run.choice; run.stalled = run.stalled || { walks: run.stuck || 3 }; run.stuck = 0; }
   if (run.status !== 'open') return null;
   if (now - Date.parse(run.deathAt) > KEEP_MS) { run.status = 'stale'; return null; }
   if (dim(bot.game?.dimension) !== run.dimension) return null;
@@ -97,12 +101,13 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     // What a chest in the Nether keeps did not drop (rod-stash.js, note 704).
     let kept = ''; try { kept = require('./rod-stash').stashSays(goal); } catch (_) { kept = ''; }
     const keptSays = kept ? ` Not dropped: ${kept}, kept there and counted as held.` : '';
+    const stalled = run.stalled ? ` ${run.stalled.walks} walks toward them${run.stalled.at ? ` from about (${run.stalled.at.x}, ${run.stalled.at.z})` : ''} got no nearer${run.stalled.error ? ` (the last: ${run.stalled.error})` : ''}; the next goes round by another side, a leg at a time.` : '';
     const tree = {
-      go_back: { description: `Go back for ${listed(run.items)}: ${far} blocks off${Math.abs(spot.y - bot.entity.position.y) > 4 ? `, at y ${Math.round(spot.y)}` : ''}. ${left === null ? 'They last until the bot comes within 128 blocks, then five minutes.' : `About ${left} seconds before they vanish.`} When the bot died there, ${about ? `about it were ${about}` : 'nothing hostile was in view'}; it wore ${death.worn?.length ? death.worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} then and wears ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} now. It is ${night ? 'night' : 'day'}.` },
+      go_back: { description: `Go back for ${listed(run.items)}: ${far} blocks off${Math.abs(spot.y - bot.entity.position.y) > 4 ? `, at y ${Math.round(spot.y)}` : ''}. ${left === null ? 'They last until the bot comes within 128 blocks, then five minutes.' : `About ${left} seconds before they vanish.`} When the bot died there, ${about ? `about it were ${about}` : 'nothing hostile was in view'}; it wore ${death.worn?.length ? death.worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} then and wears ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} now. It is ${night ? 'night' : 'day'}.${stalled}` },
       leave_them: { description: `Leave them and go on with what is carried: ${listed(worth(Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])))) || 'nothing worth listing'}. What was dropped is made again, or found, later.${keptSays}` },
     };
     const decision = await require('./decisions').decide('corpse_run', { client, bot, task, goal, save, tree,
-      state: { distance: far, secondsLeft: left, aboutAtDeath: death.about || [], wornAtDeath: death.worn || [], wornNow, night, ...(kept ? { inAChest: kept } : {}) } });
+      state: { distance: far, secondsLeft: left, aboutAtDeath: death.about || [], wornAtDeath: death.worn || [], wornNow, night, ...(run.stalled ? { walksThatGotNoNearer: run.stalled } : {}), ...(kept ? { inAChest: kept } : {}) } });
     if (decision.stale) return false;
     run.choice = decision.path.at(-1); save();
     if (run.choice === 'leave_them') { run.status = 'left'; save(); return false; }
@@ -114,12 +119,26 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
   goal.step = { action: 'corpse_run', to: { ...run.position }, items: { ...run.items } }; save();
   const before = flat(bot.entity.position, spot);
   if (before > ARRIVE) {
-    try { await move(bot, task, new goals.GoalNear(spot.x, spot.y, spot.z, 3), { timeoutMs: LEG_MS, stallMs: 8000, sprint: true, passing: /nether/.test(String(bot.game?.dimension || '')) }); }
-    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    // Far off, a leg at a time over the ground (a walk of a thousand blocks
+    // is not one the pathfinder plans); after a leg that got no nearer, the
+    // next is turned to one side of the straight line and then the other.
+    const here = bot.entity.position, turn = [0, 50, -50, 90, -90][(run.stuck || 0) % 5] * Math.PI / 180;
+    const bearing = Math.atan2(spot.z - here.z, spot.x - here.x) + turn;
+    const leg = before > FAR ? new goals.GoalNearXZ(Math.round(here.x + Math.cos(bearing) * LEG), Math.round(here.z + Math.sin(bearing) * LEG), 4) : new goals.GoalNear(spot.x, spot.y, spot.z, 3);
+    let failed = null;
+    try { await move(bot, task, leg, { timeoutMs: LEG_MS, stallMs: 8000, sprint: true, passing: /nether/.test(String(bot.game?.dimension || '')) }); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; failed = String(err.message || err).slice(0, 120); }
     const after = flat(bot.entity.position, spot);
     if (after > ARRIVE) {
-      if (before - after < 8 && ++run.stuck >= 3) {
-        run.status = 'unreachable'; bot.chat?.(`I can't get back to where I died. I'll make do without those things.`);
+      // Whether the things are given up is Jev's (it closed here on a count
+      // of three: 25594, 2026-10-04 06:11Z, 800 blocks from twelve eyes of
+      // ender, a diamond sword, a bow, 51 arrows and its iron armor, never
+      // within sight of them). Every third walk that gets no nearer, the
+      // question is asked again with what failed.
+      if (before - after >= 8) run.stuck = 0;
+      else if (++run.stuck % 3 === 0) {
+        run.stalled = { walks: (run.stalled?.walks || 0) + 3, at: { x: Math.round(bot.entity.position.x), z: Math.round(bot.entity.position.z) }, ...(failed ? { error: failed } : {}) };
+        delete run.choice; delete run.announced;
       }
       save(); return true;
     }
