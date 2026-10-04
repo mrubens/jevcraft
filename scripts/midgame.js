@@ -67,7 +67,10 @@ const END_LIMIT_MS = Math.max(FULL_LIMIT_MS, Number(process.env.MIDGAME_END_HOUR
 // hours with five blaze rods in its chests, two more burned with it a
 // minute before, and a fresh trial takes three hours and more to five.
 const RODS_KEEP = 4, PEARLS_KEEP = 4;
-const limitFor = kept => kept && kept.rods >= RODS_WANTED && kept.pearls >= 12 ? END_LIMIT_MS : kept && (kept.rods >= RODS_KEEP || kept.pearls >= PEARLS_KEEP) ? FULL_LIMIT_MS : kept && (kept.rods >= 1 || kept.pearls >= 1) ? KEPT_LIMIT_MS : LIMIT_MS;
+// The rods wanted and four pearls kept is the End's hours (note 1241):
+// mid-242 on 25595 (2026-10-04 16:35Z), seven rods and five pearls in its
+// chests at eighteen hours, the furthest of the fourteen, had six hours left.
+const limitFor = kept => kept && kept.rods >= RODS_WANTED && kept.pearls >= PEARLS_KEEP ? END_LIMIT_MS : kept && (kept.rods >= RODS_KEEP || kept.pearls >= PEARLS_KEEP) ? FULL_LIMIT_MS : kept && (kept.rods >= 1 || kept.pearls >= 1) ? KEPT_LIMIT_MS : LIMIT_MS;
 const BLAZE_RODS = 6, PEARLS = 12;
 const trials = () => { try { return fs.readdirSync(LOG_DIR).filter(f => f.endsWith('.json')).map(f => JSON.parse(fs.readFileSync(path.join(LOG_DIR, f), 'utf8'))).sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt)); } catch (_) { return []; } };
 const saveTrial = t => { fs.mkdirSync(LOG_DIR, { recursive: true }); fs.writeFileSync(path.join(LOG_DIR, `${t.world}.json`), JSON.stringify(t, null, 2)); };
