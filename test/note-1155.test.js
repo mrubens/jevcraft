@@ -75,3 +75,21 @@ test('with no arrow left and crystals still standing, the place offered is by th
   assert.equal(move[1].target, 'fountain');
   assert.match(move[1].action, /0 arrows are left.*2 healing crystals still stand on their pillars, out of the sword's reach, and heal the dragon while it flies near/);
 });
+
+test('under the perched head and a block or two short of it, the bot goes up on blocks laid under its feet and strikes (note 1176)', async () => {
+  const { bot, goal, task } = fixture(new Vec3(8.5, 64, 7.5), 20);
+  const dragon = bot.entities[20], phase = registry.entitiesByName.ender_dragon.metadataKeys.indexOf('phase');
+  dragon.position = new Vec3(0.5, 70.2, 0.5); dragon.metadata[phase] = 6;   // its head at (0.5, 69.2, 7): over five blocks up from the ground at 64
+  bot.world.raycast = () => null;   // nothing between the eyes and the head
+  bot.equip = async item => { bot.heldItem = item; }; bot.lookAt = async () => {}; bot.look = async () => {}; bot.setControlState = () => {};
+  const swings = [];
+  bot.attack = e => { swings.push(e.id); if (swings.length === 2) dragon.metadata[phase] = 9; };
+  const pr = require('../src/pillar-recovery'), pillarUp = pr.pillarUp; let lifted = null;
+  pr.pillarUp = async (b, t, y, opts) => { lifted = { y, most: opts.maxBlocks }; b.entity.position = new Vec3(b.entity.position.x, y, b.entity.position.z); };
+  try {
+    const client = { systemOne: async () => ({ answers: { branch_0: { choice: 'under_head' } } }) };
+    await fightEndStep(bot, task, goal, () => {}, { navigate: async () => { bot.entity.position = new Vec3(0.5, 64, 7.5); }, dig: async () => {} }, client);
+  } finally { pr.pillarUp = pillarUp; }
+  assert.deepEqual(lifted, { y: 66, most: 2 });
+  assert.equal(swings.length, 2, 'struck from the blocks');
+});

@@ -513,7 +513,8 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
         const p = new Vec3(Math.floor(head.position.x) + .5, y, Math.floor(head.position.z) + .5);
         if (dryStanding(bot, p)) ground = p;
       }
-      if (ground && head.position.y - ground.y <= 4.5) tree.under_head = {
+      // Within the sword's reach from the ground, or from two blocks laid under the feet.
+      if (ground && head.position.y - ground.y <= (actions.dig ? 6.4 : 4.5)) tree.under_head = {
         description: { action: 'Run to the ground under the perched dragon\'s head and strike it with the sword for as long as it sits: the sword reaches the dragon only here, its breath pools on the ground before its head, and it takes off within seconds',
           headBlocksOff: Math.round(head.position.distanceTo(bot.entity.position)), headBlocksOverItsGround: Math.round((head.position.y - ground.y) * 10) / 10, dragonHealth: beforeDragon, health: bot.health,
           voidEdgeBlocks: voidEdge(bot, ground), endermenNearRoute: endermenNearRoute(bot, bot.entity.position, ground) },
@@ -521,8 +522,22 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
           const reached = () => { const h = live(bot, dragon) && perchedHead(bot, dragon); return !h || canStrike(bot, h); };
           try { await actions.navigate(bot, task, new goals.GoalNear(Math.floor(ground.x), ground.y, Math.floor(ground.z), 1), { timeoutMs: 9000, stallMs: 2500, sprint: true, stopWhen: () => reached() || hostileEntities(bot, 4).some(e => live(bot, e)) }); }
           catch (err) { if (['Cancelled', 'Blocked', 'EndEmergency'].includes(err.name)) throw err; }
-          const h = live(bot, dragon) && perchedHead(bot, dragon);
+          let h = live(bot, dragon) && perchedHead(bot, dragon);
           if (!h) throw new Error('The dragon took off before the bot was under its head');
+          // Under it and a block or two short of it: up on blocks laid under
+          // the feet (note 1176). The head sits three to four blocks over
+          // the ground by the fountain, and the sword reaches three from the
+          // eyes. The rehearsals of 2026-10-04 (02:25 to 04:48Z) ended eight
+          // runs under the head "out of the sword's reach".
+          if (!canStrike(bot, h)) {
+            const lift = Math.ceil(h.position.y - (bot.entity.position.y + 1.62) - 2.4);
+            if (lift >= 1 && lift <= 2 && actions.dig) {
+              try { await require('./pillar-recovery').pillarUp(bot, task, Math.floor(bot.entity.position.y) + lift, { dig: actions.dig, maxBlocks: lift, threats: false }); }
+              catch (err) { if (['Cancelled', 'Blocked', 'EndEmergency'].includes(err.name)) throw err; }
+              h = live(bot, dragon) && perchedHead(bot, dragon);
+              if (!h) throw new Error('The dragon took off before the bot was under its head');
+            }
+          }
           if (!canStrike(bot, h)) throw new Error('Under the perched head, and it is out of the sword\'s reach');
           await strikeWhilePerched(10000);
         } };
