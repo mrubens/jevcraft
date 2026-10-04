@@ -5334,7 +5334,14 @@ class Survival {
       // cover twice, and the potions took it from 19.6 health to none in
       // nine seconds behind it (note 1101).
       const witchCut = [...cut, ...behind].some(p => p.t.entity.name === 'witch');
-      const coverCost = stanceCost({ mobs, setup: coverBlocks * BLOCK_SECONDS + madeSetup, reaches: m => !m.shoots || m.name === 'creeper' || m.name === 'witch' || open.some(p => p.t.entity.name === m.name), shield: shielded });
+      const coverCost = stanceCost({ mobs, setup: coverBlocks * BLOCK_SECONDS + madeSetup, reaches: m => !m.shoots || m.name === 'creeper' || m.name === 'witch' || open.some(p => p.t.entity.name === m.name)
+        // A shooter that walks, within eight blocks, is round the block in a
+        // second or two: its shots are counted as landing (note 1212), as
+        // the words beside the price say (note 1190). 25594 (2026-10-04
+        // 12:05:39 to 12:05:42Z), bare, took cover at 0.68 and 0.67 from a
+        // skeleton 7 and then 2 blocks off, priced as kept off, and was shot
+        // from 12 health to 5 in nine seconds behind it.
+        || (WALKING_SHOOTERS.test(m.name) && m.distance <= 8), shield: shielded });
       const says = [
         ...cut.map(p => `${p.plan.cells.length === 1 ? 'a block' : `${p.plan.cells.length} blocks, two high,`} in the line from the eyes of ${named(p.t)} to the bot's, ${whereSays(bot, p.plan.cuts)}`),
         ...behind.map(p => `nothing for ${named(p.t)}: the ${p.plan.stoppedBy.name.replaceAll('_', ' ')} at ${p.plan.stoppedBy.cell} is in its line already`)];
