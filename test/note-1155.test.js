@@ -62,3 +62,16 @@ test('the perched head out of reach: the run to the ground under it is offered, 
   assert.deepEqual(swings, [21, 21, 21], 'three swings at the head before it took off');
   assert.equal(goal.endCombat.headSwings, 3);
 });
+
+test('with no arrow left and crystals still standing, the place offered is by the fountain, said with the crystals that still heal the dragon (note 1169)', async () => {
+  const { bot, goal, task } = fixture(new Vec3(40.5, 64, 0.5), 0);
+  bot.entities[30] = { id: 30, name: 'end_crystal', position: new Vec3(40.5, 100, 30.5), yaw: 0, metadata: {}, isValid: true, width: 2, height: 2 };
+  bot.entities[31] = { id: 31, name: 'end_crystal', position: new Vec3(-40.5, 90, 30.5), yaw: 0, metadata: {}, isValid: true, width: 2, height: 2 };
+  let said = null;
+  const client = { systemOne: async ({ questions }) => { said = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'observe' } } }; } };
+  await fightEndStep(bot, task, goal, () => {}, { navigate: async () => {} }, client);
+  const move = Object.entries(said).find(([k]) => k.startsWith('move_'));
+  assert.ok(move, Object.keys(said).join(','));
+  assert.equal(move[1].target, 'fountain');
+  assert.match(move[1].action, /0 arrows are left.*2 healing crystals still stand on their pillars, out of the sword's reach, and heal the dragon while it flies near/);
+});

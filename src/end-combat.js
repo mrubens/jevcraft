@@ -547,9 +547,15 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     const centre = state.arenaCenter ? vector(state.arenaCenter) : new Vec3(0, bot.entity.position.y, 0);
     const arrowsLeft = countOf(bot, 'arrow');
     const byFountain = Math.hypot(bot.entity.position.x - centre.x, bot.entity.position.z - centre.z);
-    const fountain = !crystals.length && !remembered && dragon && !head && arrowsLeft <= FEW_ARROWS
-      ? { name: 'fountain', position: new Vec3(centre.x, bot.entity.position.y, centre.z), range: PERCH_RANGE, arrows: arrowsLeft } : null;
-    const focus = crystals[0] || (remembered && { name: 'unresolved_crystal_location', position: vector(remembered.position) }) ||
+    // And with no arrow left at all, crystals standing or not (note 1169):
+    // a crystal is out of the sword's reach on its pillar, and a new place
+    // to shoot one from is no use with nothing to shoot. The sword at the
+    // perch is what is left, said with the crystals that still heal it.
+    const noArrows = arrowsLeft === 0;
+    const standing = crystals.length + (remembered ? unresolved.length : 0);
+    const fountain = ((!crystals.length && !remembered) || noArrows) && dragon && !head && arrowsLeft <= FEW_ARROWS
+      ? { name: 'fountain', position: new Vec3(centre.x, bot.entity.position.y, centre.z), range: PERCH_RANGE, arrows: arrowsLeft, crystals: standing } : null;
+    const focus = (noArrows ? null : crystals[0] || (remembered && { name: 'unresolved_crystal_location', position: vector(remembered.position) })) ||
       head || fountain || dragon || (state.arenaCenter && vector(state.arenaCenter)) || (state.lastDragon && vector(state.lastDragon.position));
     // Reposition when arcs are blocked or the dragon is perched, and always
     // expose escape positions when healing or avoiding a breath cloud.
@@ -560,7 +566,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
         ? 'Approach a previously observed crystal location to check whether the crystal remains. Loss of entity tracking did not establish destruction.'
         : !safe ? 'Escape the unsafe current position along this surveyed route'
         : focus?.name === 'ender_dragon_head' ? 'Approach the perched head to get within sword reach'
-        : focus?.name === 'fountain' ? `Go to stand about ${PERCH_RANGE} blocks from the fountain the dragon perches on, and wait there for the sword at its head when it lands: ${focus.arrows} arrow${focus.arrows === 1 ? ' is' : 's are'} left, the sword reaches the dragon only at its perch, and at its perch arrows do nothing to it`
+        : focus?.name === 'fountain' ? `Go to stand about ${PERCH_RANGE} blocks from the fountain the dragon perches on, and wait there for the sword at its head when it lands: ${focus.arrows} arrow${focus.arrows === 1 ? ' is' : 's are'} left, the sword reaches the dragon only at its perch, and at its perch arrows do nothing to it${focus.crystals ? `; ${focus.crystals} healing crystal${focus.crystals === 1 ? ' still stands' : 's still stand'} on ${focus.crystals === 1 ? 'its pillar' : 'their pillars'}, out of the sword's reach, and ${focus.crystals === 1 ? 'heals' : 'heal'} the dragon while it flies near` : ''}`
         : focus?.name === 'end_crystal' ? 'Change firing position for an observed healing crystal'
         : 'Reposition along this surveyed route to gain a future attack opportunity',
         position: { ...route.p }, visits: state.visits[route.key] || 0, target: focus?.name,
