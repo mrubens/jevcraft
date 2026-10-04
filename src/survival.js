@@ -4604,7 +4604,17 @@ class Survival {
     // pocket above takes twenty to thirty-four (shelter.shell) on open
     // ground. The night's shaft pocket (digShaft), straight down from here
     // only: a walk to another column is a walk through the crowd.
-    const column = typeof this.actions.dig === 'function' && typeof this.actions.place === 'function' && shelter.materialStock(bot) >= 1 && !inWater(bot) ? this.shaftColumn({ radius: 0 }) : null;
+    // With no block carried, the shaft is still a way where the ground
+    // under the feet is dirt or the like: dug by hand it drops into the
+    // shaft, and it is the lid (shaftColumn's own rule; the stance asked a
+    // block in the pack first). 25594 (2026-10-04 06:48:54Z), back to life
+    // with nothing, at 3.7 health in the night with a skeleton shooting, a
+    // zombie and a spider about, was offered the run, the fight and its
+    // work, ran back along its own trail and was shot five seconds on
+    // (note 1185).
+    const lidCarried = shelter.materialStock(bot) >= 1;
+    const dirtUnder = /^(dirt|grass_block|podzol|mycelium|coarse_dirt|rooted_dirt|mud|moss_block)$/.test(bot.blockAt(feet.offset(0, -1, 0))?.name || '');
+    const column = typeof this.actions.dig === 'function' && typeof this.actions.place === 'function' && (lidCarried || dirtUnder) && !inWater(bot) ? this.shaftColumn({ radius: 0 }) : null;
     // Not offered where its dig would refuse at once: a biter within three
     // follows the bot down an open shaft, and digShaft stops for one (note
     // 410's rule). mid-205-p chose it three times with a zombie and a
@@ -4630,7 +4640,7 @@ class Survival {
       const firstBiter = coming.filter(t => !shooter(t.entity) && t.entity.name !== 'creeper').sort((a, b) => walkIn(a) - walkIn(b))[0];
       const biterAt = firstBiter ? Math.round(walkIn(firstBiter)) : null;
       const digRace = firstBiter && biterAt < setup ? ` The ${firstBiter.entity.name.replaceAll('_', ' ')} ${Math.round(firstBiter.distance)} blocks off can be at the shaft's top in about ${biterAt} second${biterAt === 1 ? '' : 's'}, before the lid: a biter within three stops the dig (it follows down an open shaft), and the bot is left at the foot of an open shaft that mobs drop into, onto it.` : '';
-      options.dig_down = { expects: { damage: digCost.damage, seconds: digCost.seconds, oneHit }, description: `Dig straight down ${plural(depth, 'block')} where the bot stands, put a block over its head and wait inside for the mobs to lose interest; no fighting. Walled in the ground on every side; about ${setup} seconds of digging and the one block.` + digRace + buildCost + creeperNote + costSays(digCost, bot.health, mobs, { doing: 'digging down', done: 'Shut in below' }) + nightLong,
+      options.dig_down = { expects: { damage: digCost.damage, seconds: digCost.seconds, oneHit }, description: `Dig straight down ${plural(depth, 'block')} where the bot stands, put a block over its head and wait inside for the mobs to lose interest; no fighting.${lidCarried ? '' : ' No block is carried: the dirt dug is the lid.'} Walled in the ground on every side; about ${setup} seconds of digging and the one block.` + digRace + buildCost + creeperNote + costSays(digCost, bot.health, mobs, { doing: 'digging down', done: 'Shut in below' }) + nightLong,
         run: async () => {
           this.report(goal, save, { action: 'dig_down', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, depth, stance: true });
           try { return await this.digShaft(task, goal, save, { start: column.start, bottom: column.bottom, spot: column.spot, here: feet, stance: true }); }

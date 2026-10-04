@@ -2775,6 +2775,19 @@ function crowdBot({ health = 13, food = 14, items = [] } = {}) {
 }
 const crowdMob = (id, name, x, z = 0) => ({ entity: { id, name, position: new Vec3(0.5 + x, 64, 0.5 + z), height: 1.8 }, distance: Math.hypot(x, z), visible: true });
 
+test('back to life with nothing, on dirt, the shaft down is still offered: the dirt dug is the lid; on stone with nothing it is not (note 1185)', () => {
+  const bare = ground => {
+    const bot = crowdBot({ health: 3.7 });
+    bot.inventory = { items: () => [], slots: {} };
+    bot.blockAt = p => ({ position: p.floored(), name: p.y < 64 ? ground : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', diggable: true, digTime: () => (ground === 'dirt' ? 750 : 7500) });
+    const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+    return survival.stanceOptions(new Task('night'), {}, () => {}, [crowdMob(4, 'skeleton', 9), crowdMob(2, 'zombie', 0, 15)], false);
+  };
+  const dirt = bare('dirt');
+  assert.match(dirt.dig_down.description, /Dig straight down \d blocks where the bot stands.*No block is carried: the dirt dug is the lid\./);
+  assert.equal(bare('stone').dig_down, undefined);
+});
+
 test('in a crowd every stance says what the mobs cost it over the same fifteen seconds, the pillar and the pocket as well as the fight', () => {
   const bot = crowdBot();
   const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
