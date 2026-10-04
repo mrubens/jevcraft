@@ -202,6 +202,22 @@ async function kitChoice(bot, task, goal, save, actions, missing, { client, mob,
     else {
       // The old order, for the tests' stand-in only (note 707).
       const oldOrder = tree.make_kit_here ? 'make_kit_here' : tree.return_for_kit ? 'return_for_kit' : 'fight_with_carried';
+      // Iron armour short on a blaze hunt: the spawner's fight is with
+      // several at once, not the one the line above prices, and what the
+      // fights took by the pieces worn is on record (kit-record.js, note
+      // 1020), said here as the ladder says it (note 1219). From 06:00 to
+      // 11:26Z on 2026-10-04 this question was asked twelve times in the
+      // Nether in a helmet and chestplate, 'one blaze fought so: about 6
+      // seconds, 2.7 health lost', and answered fight_with_carried twelve
+      // times; three of the day's four deaths at a spawner were in those two
+      // pieces, fifteen rods dropped with them.
+      const ironShort = [...here, ...away, ...k.unplanned].filter(p => /^iron_(helmet|chestplate|leggings|boots)$/.test(p.item));
+      if (mob === 'blaze' && ironShort.length) {
+        let rec = ''; try { rec = require('./kit-record').benefitOf('iron_armour').before || ''; } catch (_) { rec = ''; }
+        const at = ` At a blaze spawner the fight is with up to four at once, not one. Iron armour short (${listed(ironShort.map(p => words(p.item)))}): ${rec}. On 2026-10-04 (06:00 to 11:26Z) three of the four deaths at a spawner were in a helmet and chestplate alone, fifteen rods dropped with them.`;
+        tree.fight_with_carried.description += at;
+        for (const key of ['make_kit_here', 'return_for_kit']) if (tree[key]) tree[key].description += ` The iron pieces: ${rec}.`;
+      }
       const decision = await decide('combat_kit', { client, bot, task, goal, save, tree, context: { oldOrder },
         state: { missing: all, carried: carriedFightSays(bot, mob), ...(mob ? { against: mob } : {}), dimension: dimension(bot), health: bot.health, hunger: bot.food, ironIngotsCarried: carriedIron } });
       if (decision.stale) return false;

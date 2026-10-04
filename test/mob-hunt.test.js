@@ -295,6 +295,9 @@ test('in the Nether with a stone sword and no armour, the kit is Jev\'s choice w
   // What the boots are for, and what going without has been, said on both (note 900).
   assert.match(options.make_kit_here, /Golden boots: a piglin leaves a player wearing any one gold armour piece alone in the Nether/);
   assert.match(options.fight_with_carried, /Without golden boots: every piglin in the Nether goes for the bot on sight \(141 piglin hits/);
+  // Iron armour short on a blaze hunt: the spawner's fight and the record of the pieces are said (note 1219).
+  assert.match(options.fight_with_carried, /At a blaze spawner the fight is with up to four at once, not one\. Iron armour short \(.*iron.*\): its blaze fights in the record .*in a helmet and chestplate 130 fights took 12\.9 health each, in three or four iron pieces 54 took 4\.4/);
+  assert.match(options.return_for_kit, /The iron pieces: its blaze fights in the record/);
   assert.match(options.return_for_kit, /iron sword, iron helmet, iron chestplate, iron leggings and shield: 23 iron ingots, from 23 iron ore mined there/);
   assert.match(options.return_for_kit, /40 blocks off/);
   assert.deepEqual(back, ['portal']);
