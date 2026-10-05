@@ -101,6 +101,36 @@ const ARENAS = Object.freeze({
     open: [1625.5, 64, 1605.5],
     wall: [1625.5, 64, 1605.5],
   },
+  // A blaze spawner in the open on a fortress platform (spawner-drill.js):
+  // a cavern in the rock with a nether brick floor, the cage on a brick
+  // platform one step up at its east end, the bot twenty-two blocks west of
+  // it, outside the sixteen the cage wakes at.
+  spawner_open: {
+    shell: [2300, 58, 2300, 2342, 84, 2320],
+    hollow: [2304, 62, 2304, 2338, 80, 2316],
+    fills: [[[2304, 62, 2304, 2338, 62, 2316], 'nether_bricks'], [[2327, 63, 2307, 2333, 63, 2313], 'nether_bricks']],
+    blocks: [[[2330, 64, 2310], 'spawner{SpawnData:{entity:{id:"minecraft:blaze"}}}']],
+    open: [2308.5, 63, 2310.5],
+    wall: [2308.5, 63, 2310.5],
+    cage: [2330, 64, 2310],
+  },
+  // The cage buried in a sealed cavity in netherrack, as 25584's was
+  // (2026-10-04 19:55 to 22:15Z: the cage at 308 66 136 in a room x 303 to
+  // 310, z 133 to 139, y 66 to 68, five to seven blazes piled in it, no
+  // lasting rod in two hours and three deaths): a room eight by seven and
+  // three high with the cage on its floor, five blocks of rock between it
+  // and the end of the passage the bot stands in, fourteen from the cage.
+  spawner_buried: {
+    shell: [2400, 52, 2400, 2440, 82, 2424],
+    hollow: [2406, 66, 2411, 2414, 68, 2413],
+    chamber: [2420, 66, 2409, 2427, 68, 2415],
+    blocks: [[[2425, 66, 2412], 'spawner{SpawnData:{entity:{id:"minecraft:blaze"}}}']],
+    open: [2411.5, 66, 2412.5],
+    wall: [2411.5, 66, 2412.5],
+    cage: [2425, 66, 2412],
+    // Blazes in the room when the bot comes, as 25584's cage had them.
+    piled: [[2422.5, 67, 2410.5], [2423.5, 67, 2414.5], [2426.5, 67, 2410.5], [2421.5, 67, 2413.5]],
+  },
   holding: {
     shell: [2096, 72, 2096, 2108, 84, 2108],
     hollow: [2101, 77, 2101, 2103, 79, 2103],
@@ -341,7 +371,8 @@ const box = ([x1, y1, z1, x2, y2, z2], block) => `fill ${x1} ${y1} ${z1} ${x2} $
 // into solid rock and smothered in twelve seconds with a perfect score of
 // nothing. A silent stage failure looks exactly like a combat failure.
 function arenaBuild(name, { dimension = 'minecraft:the_nether' } = {}) {
-  const arena = ARENAS[name];
+  // A name, or an arena itself (a lane of one moved aside, laneOf).
+  const arena = typeof name === 'string' ? ARENAS[name] : name;
   if (!arena) throw new Error(`Unknown arena ${name}`);
   const [x1, y1, z1, x2, y2, z2] = arena.shell;
   return [...[`forceload add ${x1 - 16} ${z1 - 16} ${x2 + 16} ${z2 + 16}`,
@@ -379,7 +410,7 @@ const place = ([x, y, z]) => `${x} ${y} ${z}`;
 // shell and kills another session's mobs there mid-drill.
 const SWEEP_PAD = 5;
 function sweep(name, { dimension = 'minecraft:the_nether' } = {}) {
-  const [x1, y1, z1, x2, y2, z2] = ARENAS[name].shell;
+  const [x1, y1, z1, x2, y2, z2] = (typeof name === 'string' ? ARENAS[name] : name).shell;
   return `execute in ${dimension} run kill @e[type=!minecraft:player,x=${x1 - SWEEP_PAD},y=${y1},z=${z1 - SWEEP_PAD},dx=${x2 - x1 + 2 * SWEEP_PAD},dy=${y2 - y1},dz=${z2 - z1 + 2 * SWEEP_PAD}]`;
 }
 
@@ -478,4 +509,18 @@ function table(rows) {
   return [line(header), `|${widths.map(w => '-'.repeat(w + 2)).join('|')}|`, ...body.map(line)].join('\n');
 }
 
-module.exports = { ARENAS, DRILLS, KIT, FORTRESS_KIT, CAVE_KIT, TRIAL_KIT, kitOf, HOLDING, drill, arenaDir, sessionSetup, arenaBuild, standingCell, sweep, resetCommands, healthCommand, spawnCommands, median, summarise, table };
+// The same arena a number of lanes over, 160 blocks north each (past where one lane sees the other): a second run of a drill beside the first on one server.
+function laneOf(name, lane = 0) {
+  const arena = ARENAS[name], dz = -160 * lane;
+  if (!lane) return arena;
+  const move = v => (v.length === 6 ? [v[0], v[1], v[2] + dz, v[3], v[4], v[5] + dz] : [v[0], v[1], v[2] + dz]);
+  const out = {};
+  for (const [key, value] of Object.entries(arena)) {
+    if (key === 'fills' || key === 'blocks') out[key] = value.map(([v, block]) => [move(v), block]);
+    else if (key === 'piled') out[key] = value.map(move);
+    else out[key] = Array.isArray(value) ? move(value) : value;
+  }
+  return out;
+}
+
+module.exports = { laneOf, ARENAS, DRILLS, KIT, FORTRESS_KIT, CAVE_KIT, TRIAL_KIT, kitOf, HOLDING, drill, arenaDir, sessionSetup, arenaBuild, standingCell, sweep, resetCommands, healthCommand, spawnCommands, median, summarise, table };
