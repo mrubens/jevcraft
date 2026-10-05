@@ -1863,6 +1863,49 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   // rings around the portal: fortress strips run north to south, so a walk
   // east or west crosses one. Nether bricks in view end the sweep.
   if (handler.dimension === 'nether' && actions.tunnel) { await findFortressStep(bot, task, goal, save, actions); return; }
+  // Arrows from a remembered dungeon's cage, or the skeletons searched for
+  // (note 1326): a dungeon's spawner makes zombies, skeletons or spiders
+  // (half zombies, a quarter each of the others), and one of skeletons
+  // keeps making them while the bot is near. Jev's choice, asked again after
+  // twenty minutes. 25593 and 25592 (2026-10-05 22:25Z) had their bows and
+  // twelve eyes and 0 arrows of 64, and remembered 4 and 11 dungeons.
+  if (step.item === 'arrow' && dimension(bot) === 'overworld' && actions.navigate) {
+    const here = bot.entity.position, now = Date.now();
+    const dungeons = (goal.landmarks || []).filter(l => l.kind === 'dungeon' && (l.dimension || 'overworld') === 'overworld')
+      .map(l => ({ ...l, d: Math.round(Math.hypot(l.x - here.x, l.z - here.z)) })).filter(l => l.d <= 400 && !isSetAside(goal, 'dungeon_cage', `${l.x},${l.z}`)).sort((p, q) => p.d - q.d);
+    if (dungeons.length) {
+      const m = dungeons[0];
+      let pick = goal.arrowWay && now - goal.arrowWay.at < 20 * 60000 ? goal.arrowWay.pick : null;
+      if (!pick) {
+        const rec = HUNT_RECORD.skeleton;
+        const tree = {
+          dungeon_cage: { description: `Walk to the dungeon seen ${m.d} blocks off at (${m.x}, ${m.y}, ${m.z}) and see what its cage makes: half of them make zombies, a quarter skeletons and a quarter spiders; one of skeletons makes a skeleton every few seconds while the bot is within 16 blocks, each dropping up to two arrows. Not a skeleton cage: it is set aside and the search goes on.` },
+          search_skeletons: { description: `Go on looking for skeletons here: they walk in the dark, in caves by day and on open ground at night. The record (${HUNT_RECORD.when}): of the bot's ${rec.n} skeleton hunts, ${rec.died5} were followed by a death within five minutes.` },
+        };
+        const d = await require('./decisions').decide('arrow_way', { client: task.opportunityClient, bot, task, goal, save, tree, state: { wanted: Math.max(0, (step.count || 1) - countOf(bot, 'arrow')), dungeon: { distance: m.d, y: m.y } } });
+        if (d.stale) return;
+        pick = d.path.at(-1) === 'dungeon_cage' ? 'dungeon_cage' : 'search_skeletons';
+        goal.arrowWay = { pick, at: now }; save();
+      }
+      if (pick === 'dungeon_cage') {
+        goal.step = { action: 'to_dungeon_cage', target: { x: m.x, y: m.y, z: m.z }, distance: m.d }; save();
+        const at = new Vec3(m.x, m.y, m.z);
+        if (bot.entity.position.distanceTo(at) > 12) {
+          try { await actions.navigate(bot, task, new goals.GoalNear(m.x, m.y, m.z, 6), { timeoutMs: 120000, stallMs: 15000 }); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+          if (bot.entity.position.distanceTo(at) > 12) return;
+        }
+        // At the dungeon: the skeletons about are the hunt's own question;
+        // with none after a minute here, it is no skeleton cage.
+        const skeletons = Object.values(bot.entities || {}).filter(e => e?.name === 'skeleton' && e.position?.distanceTo(at) <= 16);
+        if (skeletons.length) return;
+        const arrived = goal.arrowWay.arrivedAt ||= now; save();
+        if (now - arrived > 60000) { setAside(goal, 'dungeon_cage', `${m.x},${m.z}`, 'no skeleton about it in a minute there', 6 * 3600000); delete goal.arrowWay; save(); }
+        else await sleep(2000);
+        return;
+      }
+    }
+  }
   // String from a remembered mineshaft's cobwebs, or the spiders searched
   // for (note 1318): Jev's choice, asked again after twenty minutes. Of the
   // bot's 86 spider hunts of 2026-10-05 15 were followed by a death within

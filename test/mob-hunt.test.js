@@ -2359,3 +2359,21 @@ test('string wanted, no spider in view, a mineshaft remembered: where the string
   assert.match(asked.search_spiders, /of the bot's 86 spider hunts, 15 were followed by a death within five minutes/);
   assert.equal(cut.length, 2);
 });
+
+test('arrows wanted, no skeleton in view, a dungeon remembered: where they come from is asked, and the dungeon chosen with no skeleton there in a minute, it is set aside (note 1326)', async () => {
+  const { bot, task, goal } = fixture('skeleton');
+  bot.game.dimension = 'overworld'; bot.game.minY = 0; bot.game.height = 256;
+  delete bot.entities[7];
+  goal.mobHunt = { entity: 'skeleton', item: 'arrow', targetCount: 64 };
+  goal.landmarks = [{ kind: 'dungeon', x: 80, y: 30, z: 0, dimension: 'overworld' }];
+  let asked = null;
+  task.opportunityClient = { systemOne: async ({ questions }) => { asked = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'dungeon_cage' } } }; } };
+  const actions = { acquireStep: async () => {}, explore: async () => assert.fail('not a search'), navigate: async () => { bot.entity.position = new Vec3(80.5, 30, 0.5); } };
+  await prepareMobHunt(bot, task, { entity: 'skeleton', item: 'arrow', count: 64 }, goal, () => {}, actions);
+  assert.match(asked.dungeon_cage, /Walk to the dungeon seen 80 blocks off at \(80, 30, 0\) and see what its cage makes/);
+  assert.match(asked.search_skeletons, /of the bot's 45 skeleton hunts, 5 were followed by a death within five minutes/);
+  goal.arrowWay.arrivedAt = Date.now() - 61000;
+  await prepareMobHunt(bot, task, { entity: 'skeleton', item: 'arrow', count: 64 }, goal, () => {}, actions);
+  const { isSetAside } = require('../src/progress');
+  assert.ok(isSetAside(goal, 'dungeon_cage', '80,0'), 'no skeleton cage: set aside');
+});

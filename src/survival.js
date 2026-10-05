@@ -10859,6 +10859,11 @@ class Survival {
         const nr = require('./night-record');
         if (options.go_for_food) options.go_for_food.description += nr.bareNightSays(bot, 'obtain_food');
         if (options.stay) options.stay.description += nr.bareNightSays(bot, 'secure_shelter');
+        // And on going back to the work in the dark (note 1325): 25585
+        // (2026-10-05 22:05Z), back to life bare at night and sealed in,
+        // left at 0.51 for logs and was dead in three minutes.
+        if (options.leave) options.leave.description += nr.bareNightSays(bot, 'continue_request');
+        if (options.night_mine) options.night_mine.description += nr.bareNightSays(bot, 'continue_request');
       }
       // A food errand Jev chose before the pocket was sealed (survival
       // priority's obtain_food, held as the food plan, note 784): said on

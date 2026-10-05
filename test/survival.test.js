@@ -6355,6 +6355,7 @@ test('sealed in at night, next to bare, hungry: going for food and staying each 
   assert(tree?.go_for_food, `going for food is offered (${Object.keys(tree || {}).join(', ')})`);
   assert.match(tree.go_for_food.description, /With next to no armour on at night in the Overworld, the record .*: going out for food was followed by a death within five minutes 10 times in 49/);
   assert.match(tree.stay.description, /sealing in was followed by a death within five minutes 10 times in 96/);
+  if (tree.leave) assert.match(tree.leave.description, /staying up at the work was followed by a death within five minutes 2 times in 21/);
 });
 
 test('sealed in at night with raw meat, fuel and a furnace carried: cooking it in the pocket is offered, said in points (note 1313)', async () => {

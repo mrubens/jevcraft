@@ -4,6 +4,19 @@
 const { define } = require('./index');
 const { endDecisionInstructions } = require('./end-state');
 
+// Arrows from a remembered dungeon's cage or the skeletons (src/mob-hunt.js prepareMobHunt, note 1326).
+define({
+  id: 'arrow_way', area: 'combat', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'Arrows are wanted and no skeleton is in view: walk to a remembered dungeon and see whether its cage makes skeletons, or go on looking for skeletons here?',
+  trigger: 'A hunt for arrows in the Overworld with a dungeon remembered within 400 blocks and not yet found to be no skeleton cage; asked again after twenty minutes.',
+  source: 'src/mob-hunt.js (prepareMobHunt)',
+  options: [
+    { key: 'dungeon_cage', label: 'walk to the dungeon and see what its cage makes', when: 'always here; said with the walk and the odds of a skeleton cage', level: 'root' },
+    { key: 'search_skeletons', label: 'go on looking for skeletons here', when: 'always here; said with the record of the bot\'s skeleton hunts', level: 'root' },
+  ],
+  instructions: { task: 'Arrows are wanted for the End. Choose where they come from.', guidance: 'Each option says what it costs: the walk and the odds at a dungeon, or the record of the bot\'s own skeleton hunts.' },
+});
+
 // String from a mineshaft's cobwebs or the spiders (src/mob-hunt.js prepareMobHunt, note 1318).
 define({
   id: 'string_way', area: 'combat', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
