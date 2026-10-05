@@ -31,7 +31,8 @@
     "pretest": "node scripts/check-node.js",
     "test": "JEV_NONE_GOOD=0 nice -n 15 node --test --require ./test/support/jev-stand-in.js test/*.test.js",
     "accept": "node scripts/acceptance.js",
-    "build-followup": "node scripts/build-followup-test.js"
+    "build-followup": "node scripts/build-followup-test.js",
+    "skin": "node scripts/create-robot-skin.js"
   },
   "engines": {
     "node": ">=22"
