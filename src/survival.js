@@ -10832,6 +10832,19 @@ class Survival {
       // at 6 health and hunger 17, went out for food in the dark and a
       // spider killed it a minute on; the record was said on the night's
       // own question, not here.
+      // Cook the raw meat carried here, the night spent in the pocket (note
+      // 1313): about 85 in 100 of the meat eaten in the three hours to 21:10Z
+      // (2026-10-05) went down raw, and a sealed pocket is about eight idle
+      // minutes a night. The furnace is put down in the pocket.
+      if (typeof this.actions.acquireStep === 'function') {
+        let cook = null; try { cook = require('./work').cookable(bot); } catch (_) { cook = null; }
+        if (cook?.ready && cook.after - cook.now >= 6) {
+          const first = cook.items.slice().sort((x, y) => (y.after - y.now) - (x.after - x.now))[0];
+          const self = this;
+          options.cook_here = { description: `Cook the raw meat carried here in the pocket, the seal kept: ${cook.items.map(i => `${i.n} ${i.raw.replaceAll('_', ' ')}`).join(', ')}, ${cook.now} food points as carried and ${cook.after} cooked (+${cook.after - cook.now}); ${cook.furnace ? `the ${cook.furnace} carried` : `a furnace made of eight of the ${cook.stone.replaceAll('_', ' ')} carried`} put down in the pocket, ${cook.fuel.replaceAll('_', ' ')} for fuel, about ten seconds an item (${first.n} ${first.raw.replaceAll('_', ' ')} first, about ${first.n * 10 + 6} seconds). The meat is in the furnace, not eaten, while it cooks.`,
+            run: async () => { self.report?.(goal, save, { action: 'cook_food', input: first.raw, output: first.cooked, amount: first.n }); await self.actions.acquireStep(bot, task, first.cooked, countOf(bot, first.cooked) + first.n, goal, save); return true; } };
+        }
+      }
       if (night && /overworld/.test(String(bot.game?.dimension))) {
         const nr = require('./night-record');
         if (options.go_for_food) options.go_for_food.description += nr.bareNightSays(bot, 'obtain_food');

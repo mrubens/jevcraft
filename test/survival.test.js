@@ -5854,20 +5854,20 @@ test('a held stance no longer on offer scouts the run before it asks, as a new q
 // offered only staying and going back to the work, answered "none of these"
 // over and over, and the four leaves chosen were each refused as "threats
 // block the exits" with none in sight, the shaft having no side to open.
-function snowShaft({ health = 0.7, food = 3, timeOfDay = 4619, goal = {} } = {}) {
+function snowShaft({ health = 0.7, food = 3, timeOfDay = 4619, goal = {}, extra = [] } = {}) {
   const origin = new Vec3(0, 81, 0), cap = origin.offset(0, 2, 0);
   const open = new Set([`${origin}`, `${origin.offset(0, 1, 0)}`]);
   const block = p => open.has(`${p}`) || p.y >= 84 ? 'air' : p.equals(cap) ? 'cobbled_deepslate' : p.y < 78 ? 'stone' : 'snow_block';
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal', minY: -64, height: 384 }, entities: {}, health, food, registry: require('minecraft-data')('26.1'),
     time: { timeOfDay }, entity: { position: origin.offset(0.5, 0, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
-    inventory: { items: () => [{ name: 'iron_sword', count: 1 }, { name: 'stone_axe', count: 1 }, { name: 'cobbled_deepslate', count: 62 }], emptySlotCount: () => 10, slots: [] },
+    inventory: { items: () => [{ name: 'iron_sword', count: 1 }, { name: 'stone_axe', count: 1 }, { name: 'cobbled_deepslate', count: 62 }, ...extra], emptySlotCount: () => 10, slots: [] },
     blockAt: p => ({ name: block(p), boundingBox: block(p) === 'air' ? 'empty' : 'block', diggable: true, position: p }),
     pathfinder: { movements: {}, getPathTo: () => ({ status: 'success', path: [] }), setGoal() {} },
     world: { raycast: (from) => ({ intersect: from.offset(0.6, 0, 0) }) } });
   const refuge = { origin: { ...origin }, dimension: 'overworld', shaft: true, top: { x: 0, y: 84, z: 0 } };
   const dug = [], walked = [], explored = [];
   const actions = { dig: async (b, t, p) => { dug.push([p.x, p.y, p.z]); open.add(`${p}`); },
-    navigate: async (b, t, g) => { walked.push([g.x, g.y, g.z]); }, explore: async (b, t, g, s, what) => { explored.push(what); } };
+    navigate: async (b, t, g) => { walked.push([g.x, g.y, g.z]); }, explore: async (b, t, g, s, what) => { explored.push(what); }, acquireStep: async () => {} };
   const survival = new Survival(bot, actions, { state: { shelters: [refuge] }, client: { systemOne: async () => ({}) } });
   return { bot, survival, refuge, dug, walked, explored, goal: { kind: 'win', ...goal } };
 }
@@ -6355,4 +6355,15 @@ test('sealed in at night, next to bare, hungry: going for food and staying each 
   assert(tree?.go_for_food, `going for food is offered (${Object.keys(tree || {}).join(', ')})`);
   assert.match(tree.go_for_food.description, /With next to no armour on at night in the Overworld, the record .*: going out for food was followed by a death within five minutes 10 times in 49/);
   assert.match(tree.stay.description, /sealing in was followed by a death within five minutes 10 times in 96/);
+});
+
+test('sealed in at night with raw meat, fuel and a furnace carried: cooking it in the pocket is offered, said in points (note 1313)', async () => {
+  const { survival, goal, bot } = snowShaft({ timeOfDay: 16000, health: 12, food: 19, extra: [{ name: 'beef', count: 6 }, { name: 'coal', count: 4 }, { name: 'furnace', count: 1 }] });
+  bot.equip = async () => {}; bot.consume = async () => { bot.food = 20; }; bot.deactivateItem = () => {};
+  let tree;
+  survival.decide = async (task, g, save, { id, tree: t }) => { if (id === 'pocket_next') tree = t; return { path: ['stay'], stale: false }; };
+  survival.wait = async () => {};
+  await survival.step(new Task('night'), goal, () => {});
+  assert(tree?.cook_here, `cooking is offered (${Object.keys(tree || {}).join(', ')})`);
+  assert.match(tree.cook_here.description, /6 beef, 18 food points as carried and 48 cooked \(\+30\); the furnace carried put down in the pocket, coal for fuel/);
 });
