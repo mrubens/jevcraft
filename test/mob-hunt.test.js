@@ -2324,3 +2324,17 @@ test('endermen left at the hunt\'s question: the stalk ends for the kind, not go
     err => err.name === 'Blocked' && /The enderman hunt is left for now: Jev chose to leave them/.test(err.message));
   assert.notEqual(goal.step?.action, 'stalk_mob');
 });
+
+test('a hunt for string with a sword and cobwebs about: cutting them is offered beside the spider, and chosen, cut (note 1316)', async () => {
+  const { bot, task, goal } = fixture('spider');
+  bot.game.dimension = 'overworld';
+  bot.findBlocks = ({ matching }) => matching === registry.blocksByName.cobweb.id ? [new Vec3(3, 64, 3), new Vec3(4, 64, 3), new Vec3(5, 64, 3)] : [];
+  let crit = null;
+  const client = { systemOne: async ({ questions }) => { crit = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'cut_cobwebs' } } }; } };
+  const cut = [];
+  const webs = new Set(['3,64,3', '4,64,3', '5,64,3']);
+  const was = bot.blockAt; bot.blockAt = p => webs.has(`${p.x},${p.y},${p.z}`) ? { name: 'cobweb' } : was(p);
+  await huntObserved(bot, task, goal, () => {}, { dig: async (b, t, p) => { cut.push(`${p.x},${p.y},${p.z}`); webs.delete(`${p.x},${p.y},${p.z}`); }, navigate: async () => {} }, client);
+  assert.match(crit.cut_cobwebs, /Cut the 3 cobwebs within \d+ blocks with the sword instead: each drops a string/);
+  assert.ok(cut.length >= 1, 'webs cut');
+});

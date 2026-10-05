@@ -9208,7 +9208,7 @@ async function liveTurn(bot, task, goal, activeWork, survival, saveWork, { clien
       const ate = await maintainVitals(bot, task, report, { client, goal, save, claimed });
       return !!ate || vitalsActed;
     },
-    hunt: () => huntObserved(bot, task, activeWork, saveWork, { navigate }, client),
+    hunt: () => huntObserved(bot, task, activeWork, saveWork, { navigate, dig }, client),
     work: async () => true,
   };
   // A claim that throws is said once and counts as none: survival's step
@@ -9339,7 +9339,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       }
       turnShadow = endTask || ruled ? null : shadowTurn(bot, goal, activeWork, survival); layerNow = 'hunt';
       if (!ruled) require('./turn').takeTurn(bot, 'hunt', 'observed');
-      if (!endTask && !ruled && await huntObserved(bot, task, activeWork, saveWork, { navigate }, decisionClient)) {
+      if (!endTask && !ruled && await huntObserved(bot, task, activeWork, saveWork, { navigate, dig }, decisionClient)) {
         turnShadow?.gave('hunt');
         goal.failures = 0; goal.stalls = 0; delete goal.lastError; delete goal.lastErrorAt; save(); onStep(goal); continue;
       }

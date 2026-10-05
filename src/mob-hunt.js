@@ -1192,6 +1192,20 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // actually been (note 740, the coordinator's 25585: 16 blazes in sword
   // reach, defer answered twice against a row of "1 killed, 21 damage" with
   // nothing said of this cage's own 32 minutes of nothing).
+  // String from cobwebs cut with the sword, beside the spiders (note 1316):
+  // of the bot's 86 spider hunts of 2026-10-05 15 were followed by a death
+  // within five minutes, and two trials with their twelve eyes wanted three
+  // string for a bow.
+  if (state.item === 'string' && typeof actions.dig === 'function' && bot.inventory.items().some(i => /_sword$/.test(i.name))) {
+    const webId = bot.registry.blocksByName.cobweb?.id;
+    const webs = webId != null && bot.findBlocks ? bot.findBlocks({ matching: webId, maxDistance: 32, count: 48 }) : [];
+    const wanted = Math.max(0, huntTarget(bot, goal) - countOf(bot, 'string'));
+    if (webs.length >= 2 && wanted > 0) {
+      const far = Math.round(Math.max(...webs.map(p => p.distanceTo(bot.entity.position))));
+      tree.cut_cobwebs = { description: `Cut the ${webs.length} cobwebs within ${far} blocks with the sword instead: each drops a string, ${wanted} still wanted; a web is a second or so with a sword and no fight. Cobwebs lie in abandoned mineshafts, often round a cave spider's spawner.`,
+        run: async () => { await require('./home-base').cutCobwebs(bot, task, goal, save, actions, webs, wanted); } };
+    }
+  }
   let cageSoFar = null;
   if (state.entity === 'blaze') { try { cageSoFar = require('./cage-yield').annotate(bot, goal, tree); } catch (_) { /* no cage */ } }
   const snapshot = { request: goal.request, ...(cageSoFar?.holdsResting ? { holdsResting: cageSoFar.holdsResting } : {}), resource: state.item, need: state.entity === 'blaze' ? huntTarget(bot, goal) - countOf(bot, state.item) : huntLeft(bot, goal),
