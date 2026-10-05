@@ -1071,3 +1071,18 @@ test('the hand still empty after the second equip: the meal ends said as not in 
   finally { console.log = was; }
   assert.ok(logged.some(l => /food not in hand: cooked_beef slot 36, quickBarSlot 0, hotbar slot holds nothing, offhand nothing, 2 carried/.test(l)), logged.join(' | '));
 });
+
+test('a stale food item: the second equip takes the one carried now, by name (note 1315)', async () => {
+  let eaten = 0; const equipped = [];
+  const stale = { name: 'cooked_beef', count: 2, slot: 12 }, now = { name: 'cooked_beef', count: 3, slot: 20 };
+  let items = [stale];
+  const bot = { food: 17, health: 11, entity: {}, heldItem: null, quickBarSlot: 0,
+    registry: { foodsByName: { cooked_beef: { effectiveQuality: 20.8 } } },
+    inventory: { items: () => items, slots: [] },
+    equip: async item => { equipped.push(item.slot); if (item === stale) { items = [now]; return; } bot.heldItem = item; },
+    consume: async () => { eaten++; bot.food = 20; }, deactivateItem() {},
+  };
+  assert(await maintainVitals(bot, new Task('heal')));
+  assert.deepEqual(equipped, [12, 20], 'the stale one, then the one carried now');
+  assert.equal(eaten, 1);
+});

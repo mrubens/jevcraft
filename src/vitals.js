@@ -1790,7 +1790,11 @@ async function maintainVitals(bot, task, onAction = () => {}, { client = null, g
     // 20:40Z) ended here, 25592 three times in a row at 11 health with a
     // zombie 8 blocks off.
     if (bot.heldItem === null) {
-      try { await bot.equip(food, 'hand'); if (bot._syncWindow) await bot._syncWindow(bot.inventory); } catch (_) { /* read below */ }
+      // The item looked up again by name (note 1315): the one chosen can be
+      // stale, the pack moved meanwhile (a pickup merged into it, a tidy, a
+      // bite), and its equip moves an empty slot to the hand.
+      const fresh = bot.inventory.items().find(i => i.name === food.name) || food;
+      try { await bot.equip(fresh, 'hand'); if (bot._syncWindow) await bot._syncWindow(bot.inventory); } catch (_) { /* read below */ }
       for (let i = 0; i < 6 && bot.heldItem === null; i++) await new Promise(r => setTimeout(r, 50));
     }
     if (bot.heldItem === null) {
