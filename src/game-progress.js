@@ -123,7 +123,7 @@ function preparationStage(bot, goal = {}) {
 // option, hit by hit, for the mobs there.
 const ARMOUR_PIECES = ['iron_armour', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'];
 // The crossing's kit may wait too (crossing-kit.js kitRungs, note 673).
-const DEFERRABLE = new Set(['bed', 'home_site', 'home_level', 'home_stash', 'home_bed', 'home_water', 'home_plot', 'home_pen', 'shield', 'iron_sword', 'bucket', 'golden_boots', 'bow', 'arrows', 'diamond_sword', ...ARMOUR_PIECES, 'nether_pickaxe', 'nether_blocks', 'nether_food', 'nether_chest']);
+const DEFERRABLE = new Set(['bed', 'home_site', 'home_level', 'home_stash', 'home_bed', 'home_water', 'home_plot', 'home_pen', 'shield', 'fishing_rod', 'iron_sword', 'bucket', 'golden_boots', 'bow', 'arrows', 'diamond_sword', ...ARMOUR_PIECES, 'nether_pickaxe', 'nether_blocks', 'nether_food', 'nether_chest']);
 const RUNG_BUDGET_MS = 20 * 60 * 1000, RUNG_WAIT_MS = 30 * 60 * 1000;
 function preparationRung(bot, goal = {}, now = Date.now()) {
   const resting = attemptsFor(goal).of('rung', now);
@@ -437,6 +437,13 @@ function ladderRung(bot, goal, waiting, { allOptional = false } = {}) {
   const pickAfterArmour = best('pickaxe') < 3 && !spare('iron_pickaxe', 3) && best('pickaxe') >= 2 && !beforeNether(goal) && armourOwed();
   if (best('pickaxe') < 3 && !spare('iron_pickaxe', 3) && !pickAfterArmour) return another('iron_pickaxe');
   if (!carried.includes('shield') && ready({ phase: 'shield' })) return { phase: 'shield', action: 'acquire', item: 'shield', count: 1 };
+  // A fishing rod, the food that comes (note 1304): half the questions of
+  // the hour to 18:40Z (2026-10-05) were at hunger under eighteen, 93 in 100
+  // of the hungry and hurt carrying nothing to eat; the rod's 13 sessions
+  // that day caught two fish a minute, where the food errands made 0.3
+  // points a minute. Two of the 19 bots carried one. A rung once two string
+  // are carried, made at once.
+  if (!carried.includes('fishing_rod') && count(bot, 'string') >= 2 && ready({ phase: 'fishing_rod' })) return { phase: 'fishing_rod', action: 'acquire', item: 'fishing_rod', count: 1 };
   if (best('sword') < 3 && ready({ phase: 'iron_sword' })) return another('iron_sword');
   if (!carried.includes('bucket') && !carried.includes('water_bucket') && ready({ phase: 'bucket' })) return { phase: 'bucket', action: 'acquire', item: 'bucket', count: 1 };
   // The home base is not a rung: it is a side trip offered with what it

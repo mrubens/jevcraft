@@ -59,6 +59,7 @@ const RUNG_WHY = {
   home_plot: 'wheat for bread, tomorrow\'s food',
   home_pen: 'cows kept for steak and leather',
   shield: 'blocks arrows and creeper blasts; the fights ahead are easier behind one',
+  fishing_rod: 'food from any water, standing still on the bank: in the record of 2026-10-05 the bot\'s 13 fishing sessions caught 64 cod and salmon in 33 minutes (about ten food points a minute cooked), where its food errands, hunting and searching, made about 0.3 a minute; three sticks and two string, the string a spider\'s drop',
   iron_sword: 'kills faster than stone',
   bucket: 'water for lava, falls and the End portal room',
   golden_boots: 'a piglin leaves a player wearing any one gold armour piece alone in the Nether, save one the player struck (and those near it) for about 30 seconds; a brute ignores gold; four gold ingots at a crafting table',

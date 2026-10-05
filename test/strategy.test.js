@@ -234,7 +234,7 @@ test('once the base\'s bed is claimed, a second bed to carry is Jev\'s option, w
   const { bot, goal } = homeFixture(['golden_boots', 'diamond_sword'], { items: [{ name: 'string', count: 5 }, { name: 'oak_planks', count: 8 }] });
   const stage = { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 };
   const options = strategyOptions(bot, goal, stage);
-  assert.deepEqual(Object.keys(options), ['rung_golden_boots', 'nether_first', 'rung_diamond_sword', 'carry_bed']);
+  assert.deepEqual(Object.keys(options), ['rung_golden_boots', 'nether_first', 'rung_fishing_rod', 'rung_diamond_sword', 'carry_bed']);
   const d = options.carry_bed.description;
   assert.match(d, /three wool and three planks; wool from sheep, or crafted from spiders' string, four string a wool and twelve a bed/);
   assert.match(d, /any night on the Overworld, anywhere there .*the night passes in seconds, instead of about eleven real minutes in a pocket or a night mine and the climb out after/);
