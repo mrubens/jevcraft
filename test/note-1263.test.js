@@ -127,6 +127,16 @@ test('in the Nether with twelve eyes lying at an Overworld death, the run open: 
   const stage = nextGameStage(bot, goal);
   assert.equal(stage.action, 'return_overworld', JSON.stringify(stage));
   assert.match(stage.for, /the 12 eyes of ender lying where the bot died/);
-  goal.corpseRunsEarlier[0].status = 'left';
+  goal.corpseRunsEarlier[0].status = 'left'; goal.corpseRunsEarlier[0].told = require('../src/corpse-run').TOLD;
   assert.notEqual(nextGameStage(bot, goal).phase, 'eyes_out', 'left by Jev: not');
+});
+
+test('eyes left on a question since told more count as lying there to be asked of again (note 1299)', () => {
+  const bot = world([['blaze_powder', 1]]); bot.game.dimension = 'the_nether';
+  const { TOLD } = require('../src/corpse-run');
+  const goal = { version: 1, kind: 'win', request: 'beat the game', gameProgress: { milestones: { nether_entered: { at: 1 }, eyes_obtained: { at: 2 } } },
+    corpseRunsEarlier: [{ deathAt: '2026-10-05T08:08:44Z', status: 'left', told: TOLD - 1, dimension: 'overworld', items: { ender_eye: 12 }, position: { x: 1868, y: 61, z: -341 } }] };
+  assert.equal(nextGameStage(bot, goal).phase, 'eyes_out');
+  goal.corpseRunsEarlier[0].told = TOLD;
+  assert.notEqual(nextGameStage(bot, goal).phase, 'eyes_out');
 });
