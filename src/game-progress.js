@@ -924,7 +924,14 @@ function nextGameStage(bot, goal, skip = new Set()) {
   // and a climb that skips the ladder because the milestone is set walks
   // back to the portal with a stone pickaxe, no bucket and no gold, which
   // is how three Nether trips went in with less than the first one.
-  const supplies = ['ender_eye', 'blaze_rod', 'blaze_powder', 'ender_pearl'].reduce((n, name) => n + count(bot, name), 0);
+  // What the bot's chests hold of them counts as in hand (note 1270): with
+  // every eye put away the pockets read as the early game's, the ladder's
+  // own rungs came first, and 'the Nether now' was the way past them. 25597
+  // (2026-10-05 01:33:06Z), twelve eyes in its chest and its stronghold
+  // placed, 530 blocks along the way to it, was asked of arrows, answered
+  // nether_first, and walked back toward its portal.
+  const stashedSupplies = (() => { try { const st = require('./rod-stash').stashed(goal); return (st.ender_eye || 0) + (st.blaze_rod || 0) + (st.blaze_powder || 0) + (st.ender_pearl || 0); } catch (_) { return 0; } })();
+  const supplies = ['ender_eye', 'blaze_rod', 'blaze_powder', 'ender_pearl'].reduce((n, name) => n + count(bot, name), 0) + stashedSupplies;
   if (where === 'overworld' && !supplies) { const prep = preparationStage(bot, goal); if (prep) return prep; }
   // The kit a fight needs is rebuilt whatever supplies are carried: blaze
   // rods from the stash, taken before the armour lost in a lava death was

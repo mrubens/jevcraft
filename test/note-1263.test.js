@@ -67,3 +67,19 @@ test('the bearings met and eleven eyes in the chest after the one thrown: the wa
   const stage = nextGameStage(world([]), goal);
   assert.equal(stage.action, 'find_stronghold', JSON.stringify(stage));
 });
+
+test('every eye put away and the stronghold placed: the walk there is the stage, not an early rung with the Nether as the way past it (note 1270)', () => {
+  const reg2 = require('minecraft-data')('26.1');
+  // 25597's pack at 01:33Z: a bow and four arrows, no eye, rod or pearl carried.
+  const items = [['iron_pickaxe', 1], ['diamond_sword', 1], ['bow', 1], ['arrow', 4], ['white_bed', 1], ['bucket', 1], ['cobblestone', 56], ['oak_log', 14], ['crafting_table', 1], ['furnace', 1], ['stone_pickaxe', 3]]
+    .map(([name, count], i) => ({ name, count, type: reg2.itemsByName[name].id, slot: 9 + i, durabilityUsed: 0 }));
+  const slots = []; for (const [i, n] of [[5, 'iron_helmet'], [6, 'iron_chestplate'], [7, 'iron_leggings'], [8, 'golden_boots'], [45, 'shield']]) slots[i] = { name: n, type: reg2.itemsByName[n].id, count: 1 };
+  const bot = { registry: reg2, version: '26.1', game: { gameMode: 'survival', dimension: 'overworld' }, time: { timeOfDay: 6000 }, entity: { position: new Vec3(525, 70, -56) }, entities: {},
+    inventory: { items: () => items, slots }, blockAt: () => null, findBlocks: () => [], health: 20, food: 20 };
+  const goal = { version: 1, kind: 'win', request: 'beat the game', gameProgress: { milestones: { nether_entered: { at: 1 }, eyes_obtained: { at: 2 } } },
+    strongholdSearch: { bearings: [{}, {}], throws: 2, estimate: { x: 1839, z: -288 }, spare: { pick: 'throw_one', at: Date.now(), target: 11 } },
+    eyeBank: { at: Date.now(), chestAt: { x: 4, y: 66, z: 5 }, forSearch: true },
+    rodStashes: [{ position: { x: 4, y: 66, z: 5 }, dimension: 'overworld', contents: { ender_eye: 12, ender_pearl: 2, blaze_powder: 1 } }] };
+  const stage = nextGameStage(bot, goal);
+  assert.equal(stage.action, 'find_stronghold', JSON.stringify(stage));
+});
