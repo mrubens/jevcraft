@@ -123,7 +123,7 @@ function preparationStage(bot, goal = {}) {
 // option, hit by hit, for the mobs there.
 const ARMOUR_PIECES = ['iron_armour', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'];
 // The crossing's kit may wait too (crossing-kit.js kitRungs, note 673).
-const DEFERRABLE = new Set(['bed', 'home_site', 'home_level', 'home_stash', 'home_bed', 'home_water', 'home_plot', 'home_pen', 'shield', 'fishing_rod', 'iron_sword', 'bucket', 'golden_boots', 'bow', 'arrows', 'diamond_sword', ...ARMOUR_PIECES, 'nether_pickaxe', 'nether_blocks', 'nether_food', 'nether_chest']);
+const DEFERRABLE = new Set(['bed', 'home_site', 'home_level', 'home_stash', 'home_bed', 'home_water', 'home_plot', 'home_pen', 'shield', 'leather_armour', 'fishing_rod', 'iron_sword', 'bucket', 'golden_boots', 'bow', 'arrows', 'diamond_sword', ...ARMOUR_PIECES, 'nether_pickaxe', 'nether_blocks', 'nether_food', 'nether_chest']);
 const RUNG_BUDGET_MS = 20 * 60 * 1000, RUNG_WAIT_MS = 30 * 60 * 1000;
 function preparationRung(bot, goal = {}, now = Date.now()) {
   const resting = attemptsFor(goal).of('rung', now);
@@ -425,6 +425,16 @@ function ladderRung(bot, goal, waiting, { allOptional = false } = {}) {
   // The bed, the home and the armour can each be left for later (a rung
   // that failed twice without progress, work.js persist): nothing after them
   // needs them to start. The tools before them cannot.
+  // Leather worn while the iron is to come (note 1310): with no armour on
+  // and leather carried, a piece of it is a rung, the chestplate first;
+  // what is carried is worn at once (mob-policy.js wearBestArmour) and iron
+  // replaces it. Two thirds of the deaths of 2026-10-05 were with none on.
+  {
+    const wornAny = [5, 6, 7, 8].some(at => bot.inventory.slots?.[at]) || carried.some(n => /_(helmet|chestplate|leggings|boots)$/.test(n));
+    const leather = count(bot, 'leather');
+    const piece = !wornAny && [['chestplate', 8], ['leggings', 7], ['helmet', 5], ['boots', 4]].find(([, n]) => leather >= n);
+    if (piece && ready({ phase: 'leather_armour' })) return { phase: 'leather_armour', action: 'acquire', item: `leather_${piece[0]}`, count: 1 };
+  }
   if (!carried.some(n => /_bed$/.test(n)) && !goal.survival?.home?.bed?.claimedAt && !isSetAside(goal, 'bed_search', 'wool') && ready({ phase: 'bed' })) return bedRung(bot, goal);
   // After the first Nether entry, with a stone pickaxe that works carried
   // and a piece of armour still to make and not set aside, the iron goes to

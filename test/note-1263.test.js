@@ -147,3 +147,14 @@ test('eyes lying with the walk set for dawn: the Nether goes on meanwhile (note 
     corpseRunsEarlier: [{ deathAt: '2026-10-05T08:08:44Z', status: 'open', waitUntil: Date.now() + 300000, dimension: 'overworld', items: { ender_eye: 12 }, position: { x: 1868, y: 61, z: -341 } }] };
   assert.notEqual(nextGameStage(bot, goal).phase, 'eyes_out');
 });
+
+test('no armour on and leather carried: a leather chestplate is the rung, worn while the iron is to come (note 1310)', () => {
+  const reg2 = require('minecraft-data')('26.1');
+  const items = [['stone_pickaxe', 1], ['stone_sword', 1], ['leather', 15], ['oak_log', 8], ['crafting_table', 1]].map(([name, count], i) => ({ name, count, type: reg2.itemsByName[name].id, slot: 9 + i, durabilityUsed: 0 }));
+  const bot = { registry: reg2, version: '26.1', game: { gameMode: 'survival', dimension: 'overworld' }, time: { timeOfDay: 6000 }, entity: { position: new Vec3(0, 64, 0) }, entities: {},
+    inventory: { items: () => items, slots: [] }, blockAt: () => null, findBlocks: () => [], health: 20, food: 20 };
+  const goal = { version: 1, kind: 'win', request: 'beat the game', gameProgress: { milestones: { nether_entered: { at: 1 } } } };
+  const { gearStage } = require('../src/game-progress');
+  const stage = (gearStage || (() => null))(bot, goal) || nextGameStage(bot, goal);
+  assert.equal(stage.item, 'leather_chestplate', JSON.stringify(stage));
+});

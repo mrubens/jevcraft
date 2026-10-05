@@ -288,6 +288,11 @@ function stashWithdrawals(bot, home, wants = [], { items = bot.inventory.items()
         const name = Object.keys(stored).filter(n => SPARE_ARMOUR.test(n) && n.endsWith(`_${piece}`)).sort((a, b) => (/^diamond/.test(b) ? 1 : 0) - (/^diamond/.test(a) ? 1 : 0))[0];
         if (name) take(name, 1, { slot: 'armour' });
       }
+      // Leather for a set, with nothing worn and no iron spare (note 1310):
+      // the home chests held 5 to 15 leather on four trials and no armour,
+      // and two thirds of the deaths of 2026-10-05 were with none on.
+      const bare = ARMOUR_AT.every(([at, piece]) => !bot.inventory.slots?.[at] && !items.some(i => i.name.endsWith(`_${piece}`)) && !moves.some(m => String(m.item).endsWith(`_${piece}`)));
+      if (bare && stored.leather && !items.some(i => i.name === 'leather')) take('leather', Math.min(24, stored.leather), { slot: 'armour' });
     } else if (totalOf(items, slot.matches) <= slot.low) {
       let need = slot.count - totalOf(items, slot.matches);
       for (const name of Object.keys(stored).filter(slot.matches)) { if (need <= 0) break; need -= take(name, need, { slot: slot.slot }); }

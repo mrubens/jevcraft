@@ -94,3 +94,12 @@ test('a spare iron helmet in the pack with one worn is left in the chest, and co
   const out = stash.stashWithdrawals(back, { stash: { position: { x: 2, y: 64, z: 0 }, contents: { iron_helmet: 1, iron_chestplate: 1, iron_boots: 1 } } }).filter(m => m.slot === 'armour').map(m => m.item).sort();
   assert.deepEqual(out, ['iron_boots', 'iron_helmet']);
 });
+
+test('back from a death with nothing worn and no iron spare: the leather in the chest comes out for a set (note 1310)', () => {
+  const back = bot({});
+  const out = stash.stashWithdrawals(back, { stash: { position: { x: 2, y: 64, z: 0 }, contents: { leather: 15 } } }).filter(m => m.slot === 'armour');
+  assert.deepEqual(out.map(m => [m.item, m.count]), [['leather', 15]]);
+  // An iron piece to take: that, and the leather stays.
+  const iron = stash.stashWithdrawals(bot({}), { stash: { position: { x: 2, y: 64, z: 0 }, contents: { leather: 15, iron_helmet: 1 } } }).filter(m => m.slot === 'armour').map(m => m.item);
+  assert.deepEqual(iron, ['iron_helmet']);
+});
