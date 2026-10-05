@@ -182,7 +182,12 @@ const TRIAL_KIT = Object.freeze({
   offhand: 'shield',
   items: [['iron_sword', 1], ['stone_pickaxe', 1], ['cobblestone', 24], ['coal', 16], ['stick', 8], ['cooked_beef', 6]],
 });
-const KITS = { fortress: () => FORTRESS_KIT, cave: () => CAVE_KIT, trial: () => TRIAL_KIT };
+// What the bots carry back from a death at night (note 1327): no armour, no
+// shield, a stone sword made at home, a few blocks, nothing to eat. Two
+// thirds of the deaths of 2026-10-05 were with no armour on, most of them
+// Overworld zombies and skeletons, at 0.1 to 4 health.
+const BARE_KIT = Object.freeze({ armor: {}, items: [['stone_sword', 1], ['stone_pickaxe', 1], ['cobblestone', 16]] });
+const KITS = { fortress: () => FORTRESS_KIT, cave: () => CAVE_KIT, trial: () => TRIAL_KIT, bare: () => BARE_KIT };
 const kitOf = d => (KITS[d.loadout]?.() || KIT);
 
 // The fortress loadout: the iron set with golden boots for the piglin
@@ -216,6 +221,10 @@ const DRILLS = Object.freeze([
     at: [[2016.5, 77, 2010.5], [2004.5, 77, 2012.5], [2015.5, 77, 2005.5], [2017.5, 77, 2015.5], [2003.5, 77, 2005.5], [2010.5, 77, 2018.5]],
     seconds: 60, expect: { deaths: 0, damage: 16 },
     why: 'The midgame crowds of 2026-09-26 (mid-83-d, mid-92-e, mid-110-k): zombies, a spider, skeletons and a creeper at once on open ground, six to nine blocks off. Each death went through several stances in a few seconds, none carried through.' },
+  { name: 'bare_pair', mode: 'defend', entity: ['zombie', 'skeleton'], count: 2, arena: 'room', stand: 'open',
+    loadout: 'bare', nudge: false, health: 6, hungry: 6,
+    at: [[2014.5, 77, 2010.5], [2004.5, 77, 2014.5]], seconds: 60, expect: { deaths: 0, damage: 6 },
+    why: 'The death of 2026-10-05: no armour, a stone sword, six health and hunger 14, a zombie four blocks off and a skeleton ten; 23 of the 33 deaths of the evening were with no armour on, the zombies\' at 0.1 to 4 health, run from chosen at 51 of 163 deaths under ten health.' },
   { name: 'hoglin_single', mode: 'defend', entity: 'hoglin', count: 1, arena: 'room', stand: 'open',
     at: [[2016.5, 77, 2010.5]], seconds: 45, expect: { deaths: 0, cleared: true, damage: 10 },
     why: 'Death six. A hoglin charges and knocks back.' },
@@ -435,8 +444,9 @@ function resetCommands(user, d, { dimension = 'minecraft:the_nether' } = {}) {
     // (another worktree's drills) keeps its own.
     `execute in ${dimension} run kill @e[type=minecraft:item,${(([x1, y1, z1, x2, y2, z2]) => `x=${x1},y=${y1},z=${z1},dx=${x2 - x1},dy=${y2 - y1},dz=${z2 - z1}`)(arena.shell)}]`, `clear ${user}`, `effect clear ${user}`,
     `execute in ${dimension} run tp ${user} ${place(stand)} ${d.arena === 'corridor' ? 0 : 90} 0`];
-  for (const [slot, item] of Object.entries(kit.armor)) commands.push(`item replace entity ${user} armor.${slot} with minecraft:${item}`);
-  commands.push(`item replace entity ${user} weapon.offhand with minecraft:${kit.offhand}`);
+  // Every slot the kit leaves empty is emptied (the bare kit, note 1327).
+  for (const slot of ['head', 'chest', 'legs', 'feet']) commands.push(`item replace entity ${user} armor.${slot} with minecraft:${kit.armor[slot] || 'air'}`);
+  commands.push(`item replace entity ${user} weapon.offhand with minecraft:${kit.offhand || 'air'}`);
   for (const [item, n] of [...kit.items, ...(d.kit || [])]) commands.push(`give ${user} minecraft:${item} ${n}`);
   commands.push(`effect give ${user} minecraft:instant_health 1 20 true`, `effect give ${user} minecraft:saturation 1 20 true`);
   // Where the death began hungry: from full, the Hunger effect at this

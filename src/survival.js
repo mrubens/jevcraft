@@ -6565,6 +6565,18 @@ class Survival {
       // minutes after it. Run from 51 of 163, fight 35 of 126, retreat 59
       // of 332, shield guard 12 of 99, leave and heal 0 of 30 (2026-10-05,
       // the twelve hours to 21:50Z, flight records).
+      // With no armour on, low, a walker and a skeleton about: the arena's
+      // drill of it (scripts/lib/arena.js bare_pair, note 1327), said beside
+      // the price, which for the pillar counted the skeleton's every shot.
+      {
+        const bare = ![5, 6, 7, 8].some(sl => bot.inventory.slots?.[sl]);
+        const walker = danger.some(t => /^(zombie|husk|drowned|zombie_villager)$/.test(t.entity?.name || '') && t.distance <= 8);
+        const archer = danger.some(t => /^(skeleton|stray|bogged)$/.test(t.entity?.name || '') && t.distance <= 16);
+        if (bare && walker && archer && (bot.health ?? 20) <= 8) {
+          const says = { pillar: 'lived 3 of 3, both killed from the top, no damage taken', run_from: 'died 3 of 3, within about 12 seconds', seal: 'chosen after a run, died with it', fight: 'chosen from the pillar\'s top, lived' };
+          for (const [k, w] of Object.entries(says)) if (options[k] && typeof options[k].description === 'string') options[k].description += ` In the arena's drill of this (2026-10-05: no armour, a stone sword, 6 health, a zombie 4 blocks off and a skeleton 10, six runs): this way ${w}.`;
+        }
+      }
       if ((bot.health ?? 20) < 10) for (const [k, o] of Object.entries(options)) {
         const r = LOW_STANCE_RECORD[k];
         if (r && typeof o.description === 'string') o.description += ` The record under ten health (2026-10-05, the twelve hours to 21:50Z): chosen ${r[0]} times, followed by a death within two minutes ${r[1]}.`;

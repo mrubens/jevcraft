@@ -145,7 +145,7 @@ async function runDrill(d, attempt) {
   // with the kit on before anything is summoned.
   await waitFor(task, () => String(bot.game.dimension).includes('nether') &&
     bot.entity.position.distanceTo({ x: d.at[0][0], y: bot.entity.position.y, z: d.at[0][2] }) < 48 &&
-    bot.inventory.slots?.[45]?.name === 'shield' && countOf(bot, kitOf(d).items[0][0]) >= 1, 30000);
+    (!kitOf(d).offhand || bot.inventory.slots?.[45]?.name === kitOf(d).offhand) && countOf(bot, kitOf(d).items[0][0]) >= 1, 30000);
   await bot.waitForChunksToLoad();
   // Rebuild once if the room is not there; a second failure is the harness's
   // fault and must not be scored as the bot's.
