@@ -253,7 +253,7 @@ test('a death before the last, its list not kept: the eyes the run had made befo
   goal.endPortal = { neededEyes: 12 };
   corpseRun(bot, goal).status = 'done';
   const earlier = corpseRun(bot, goal);
-  Object.assign(earlier, { status: 'left', choice: 'leave_them', told: 5 });
+  Object.assign(earlier, { status: 'left', choice: 'leave_them', told: 6 });
   const asked = [];
   const client = { systemOne: async ({ questions }) => { asked.push(JSON.stringify(Object.values(questions)[0])); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'leave_them', confidence: 0.9 }])) }; } };
   const task = Object.assign(new Task('run'), { opportunityClient: client });
@@ -268,7 +268,7 @@ test('a death before the last, its list not kept: the eyes the run had made befo
   has.goal.survival.deaths.unshift({ at: before, position: { x: 900, y: 69, z: 700 }, dimension: 'overworld', worn: ['iron_helmet'] });
   has.goal.gameProgress = goal.gameProgress; has.give('ender_eye', 12);
   corpseRun(has.bot, has.goal).status = 'done';
-  Object.assign(corpseRun(has.bot, has.goal), { status: 'left', told: 5 });
+  Object.assign(corpseRun(has.bot, has.goal), { status: 'left', told: 6 });
   assert.equal(corpseRun(has.bot, has.goal), null);
 });
 
@@ -462,4 +462,15 @@ test('a new death ends the trip chosen for the death before: it is asked of afre
   corpseRun(bot, goal);
   assert.equal(goal.errand, undefined);
   assert.equal(goal.corpseRun.trip, undefined, 'the new run has no answer yet');
+});
+
+test('eyes lying by the End portal found: going back is said as the walk to the portal, the eyes into its empty frames (note 1292)', async () => {
+  const { bot, goal } = world();
+  goal.survival.deaths[0].position = { x: 1100, y: 64, z: 0 };
+  goal.survival.recovery.inventoryBeforeDeath.ender_eye = 12;
+  goal.endPortal = { center: { x: 1120, y: 32, z: 30 }, frames: [...Array(12)].map((_, i) => ({ position: { x: i, y: 32, z: 0 }, eye: i === 0 })) };
+  let text = '';
+  const client = { systemOne: async ({ questions }) => { text = JSON.stringify(Object.values(questions)[0]); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'go_back', confidence: 0.9 }])) }; } };
+  await corpseRunStep(bot, Object.assign(new Task('run'), { opportunityClient: client }), goal, () => {}, { move: async () => {}, collect: async () => false });
+  assert.match(text, /They lie 36 blocks from the End portal the bot found at \(1120, 32, 30\), 11 of its frames empty: the walk back is the walk to the portal, and the 12 eyes go into its frames there\./);
 });

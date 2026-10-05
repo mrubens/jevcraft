@@ -28,7 +28,7 @@ const flat = (a, b) => Math.hypot(a.x - b.x, (a.y ?? b.y) - (b.y ?? a.y), a.z - 
 // ender, a diamond sword and its iron armor against 'what was dropped is
 // made again, or found, later', left them at 0.56 to 0.42. The eyes were
 // ninety hours of the run.
-const TOLD = 5;
+const TOLD = 6;
 function madeAgain(items = {}) {
   const out = [];
   const n = name => items[name] || 0;
@@ -296,6 +296,14 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     const stalled = run.stalled ? ` ${run.stalled.walks} walks toward them${run.stalled.at ? ` from about (${run.stalled.at.x}, ${run.stalled.at.z})` : ''} got no nearer, straight and to each side${run.stalled.error ? ` (the last: ${run.stalled.error})` : ''}.` : '';
     const eyes = eyesLostBy(bot, goal, run);
     if (eyes) run.toldEyes = true;
+    // Eyes lying by the End portal the bot found (note 1292): the walk back
+    // is the walk to the portal, and its frames are filled there. 25597
+    // (mid-243-ma-end-2, 2026-10-05 13:23Z) left its twelve eyes 45 blocks
+    // from its portal, 0.49 to 0.45, told only what making them again takes.
+    const ring = goal.endPortal?.center || goal.gameProgress?.endPortal?.center;
+    const emptyFrames = (goal.endPortal?.frames || goal.gameProgress?.endPortal?.frames || []).filter(fr => !fr.eye).length;
+    const nearRing = ring && run.items.ender_eye && /overworld/.test(run.dimension) ? Math.round(Math.hypot(ring.x - run.position.x, ring.z - run.position.z)) : null;
+    const ringSays = nearRing != null && nearRing <= 300 ? ` They lie ${nearRing} blocks from the End portal the bot found at (${ring.x}, ${ring.y}, ${ring.z})${emptyFrames ? `, ${emptyFrames} of its frames empty` : ''}: the walk back is the walk to the portal, and the ${run.items.ender_eye} eyes go into its frames there.` : '';
     const eyesSay = eyes ? ` The eyes of ender this run had made before that death are not carried, in a chest or in the portal's frames now: they dropped at a death since, this one or one after it, and the goal wants ${eyes}.` : '';
     // What the eyes were on this run's own clock (note 1189): the minutes of
     // play its rods and pearls took.
@@ -323,7 +331,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     const underSays = under ? ` The place is under the ground (y ${Math.round(spot.y)}, ${Math.round(Math.abs(dy))} blocks ${dy < 0 ? 'down' : 'up'} from here): the hour does not reach it, and what was about it at the death does not burn at dawn; the bot goes there with ${carriesWeapon ? `a ${carriesWeapon}` : 'no sword or axe'} and ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'}.` : '';
     run.told = TOLD;
     const tree = {
-      go_back: { description: `Go back for ${listed(run.items)}: ${far} blocks off${far >= 100 ? `, about ${minutes} minute${minutes > 1 ? 's' : ''}' ${climbSeconds ? 'walk and climb' : 'walk'}` : ''}${Math.abs(spot.y - bot.entity.position.y) > 4 ? `, at y ${Math.round(spot.y)}` : ''}. ${left === null ? 'They last until the bot comes within 128 blocks, then five minutes.' : `About ${left} seconds before they vanish.`} ${death.cause ? `The bot ${death.cause} there; when it died, ` : 'When the bot died there, '}${about ? `about it were ${about}` : 'nothing hostile was in view'}; it wore ${death.worn?.length ? death.worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} then and wears ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} now. ${hour}${underSays}${stalled}${earlier}${eyesSay}${alsoLying}` },
+      go_back: { description: `Go back for ${listed(run.items)}: ${far} blocks off${far >= 100 ? `, about ${minutes} minute${minutes > 1 ? 's' : ''}' ${climbSeconds ? 'walk and climb' : 'walk'}` : ''}${Math.abs(spot.y - bot.entity.position.y) > 4 ? `, at y ${Math.round(spot.y)}` : ''}. ${left === null ? 'They last until the bot comes within 128 blocks, then five minutes.' : `About ${left} seconds before they vanish.`} ${death.cause ? `The bot ${death.cause} there; when it died, ` : 'When the bot died there, '}${about ? `about it were ${about}` : 'nothing hostile was in view'}; it wore ${death.worn?.length ? death.worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} then and wears ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} now. ${hour}${underSays}${stalled}${earlier}${eyesSay}${ringSays}${alsoLying}` },
       leave_them: { description: `Leave them and go on with what is carried: ${listed(worth(Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])))) || 'nothing worth listing'}. What was dropped is made again, or found, later${again ? `: ${again}` : ''}.${took}${keptSays}` },
     };
     // By night, and the drops not ageing (the bot not within 128 blocks of
