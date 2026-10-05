@@ -945,9 +945,12 @@ function nextGameStage(bot, goal, skip = new Set()) {
   // took the portal at home and searched the Nether for a fortress, the
   // run's question asked only in the Overworld.
   if (where === 'nether' && !count(bot, 'ender_eye')) {
-    const runs = [goal.corpseRun, ...(goal.corpseRunsEarlier || [])].filter(r => r && (r.status === 'open' || (r.status === 'left' && r.told !== require('./corpse-run').TOLD)) && !r.loadedAt && /overworld/.test(String(r.dimension)) && (r.items?.ender_eye || 0) > 0);
+    const runs = [goal.corpseRun, ...(goal.corpseRunsEarlier || [])].filter(r => r && (r.status === 'open' || (r.status === 'left' && r.told !== require('./corpse-run').TOLD)) && !r.loadedAt && !(r.waitUntil > Date.now()) && /overworld/.test(String(r.dimension)) && (r.items?.ender_eye || 0) > 0);
     const lying = runs.reduce((n, r) => n + r.items.ender_eye, 0);
     // A run left on a question since told more is asked again there too (note 1299).
+    // One set for dawn is not (note 1300): 25597 (2026-10-05 15:47 to 15:52Z),
+    // wait_for_day chosen, went into the Nether with the other things and
+    // was sent straight out again, twice in five minutes.
     if (lying) return { phase: 'eyes_out', action: 'return_overworld', for: `the ${lying} eye${lying === 1 ? '' : 's'} of ender lying where the bot died in the Overworld` };
   }
   // With the eyes made and enough of them held, the Nether's own rungs

@@ -140,3 +140,10 @@ test('eyes left on a question since told more count as lying there to be asked o
   goal.corpseRunsEarlier[0].told = TOLD;
   assert.notEqual(nextGameStage(bot, goal).phase, 'eyes_out');
 });
+
+test('eyes lying with the walk set for dawn: the Nether goes on meanwhile (note 1300)', () => {
+  const bot = world([['blaze_powder', 1]]); bot.game.dimension = 'the_nether';
+  const goal = { version: 1, kind: 'win', request: 'beat the game', gameProgress: { milestones: { nether_entered: { at: 1 }, eyes_obtained: { at: 2 } } },
+    corpseRunsEarlier: [{ deathAt: '2026-10-05T08:08:44Z', status: 'open', waitUntil: Date.now() + 300000, dimension: 'overworld', items: { ender_eye: 12 }, position: { x: 1868, y: 61, z: -341 } }] };
+  assert.notEqual(nextGameStage(bot, goal).phase, 'eyes_out');
+});
