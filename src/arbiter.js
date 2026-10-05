@@ -478,7 +478,15 @@ function workBodySays(bot, mobs) {
   // and starved to the mobs 90 blocks from them.
   const diff = String(bot.game?.difficulty ?? 'normal');
   const starve = fed && food <= 6 ? ` At hunger 6 or less the bot cannot sprint; at 0 health falls a point every four seconds${/hard|3/.test(diff) ? ', to death' : /easy|1/.test(diff) ? ', to ten' : ', to a single point'}; sprinting costs a point of hunger for about every 40 blocks.` : '';
-  return `Health ${Math.round(hp * 10) / 10}: ${back}.${starve}${near.length ? ` ${far.length ? 'Mobs about now, within sixteen blocks and the shooters farther off whose fire reaches the bot' : 'Mobs within sixteen blocks now'}: ${near.join(heals ? '; ' : '. ')}.` : ''}`;
+  // The night's record beside the work, next to bare in the Overworld at
+  // night (note 1302): 25597 (2026-10-05 16:46 to 16:51Z), back to life
+  // bare by night, took the work at 0.45 three times and died three times
+  // in five minutes, told only its health.
+  const t = bot.time?.timeOfDay;
+  const dark = Number.isFinite(t) && t >= 12542 && t <= 23460 && /overworld/.test(String(bot.game?.dimension || ''));
+  let nightSays = '';
+  if (dark) { try { nightSays = require('./night-record').bareNightSays(bot, 'continue_request'); } catch (_) { nightSays = ''; } }
+  return `Health ${Math.round(hp * 10) / 10}: ${back}.${starve}${nightSays}${near.length ? ` ${far.length ? 'Mobs about now, within sixteen blocks and the shooters farther off whose fire reaches the bot' : 'Mobs within sixteen blocks now'}: ${near.join(heals ? '; ' : '. ')}.` : ''}`;
 }
 function withSays(option, c, bot, state, mobs, now) {
   const add = [];
