@@ -8943,10 +8943,42 @@ function patrolChoice(bot, trips) {
   return ['explore'].find(k => trips[k]) || 'search';
 }
 
+// With no pickaxe, the dig to the End portal's ring by hand or a pickaxe
+// made first: Jev's choice (note 1289). The tunnel made a stone pickaxe a
+// precondition: 25597 (2026-10-05 07:23 to 07:55Z), its twelve eyes in the
+// pack sixty blocks from its ring and thirty-one above it, in a sandstone pit
+// with the nearest wood 39 blocks off and no route to it, was sent for that
+// wood half an hour, the dig itself never weighed. Asked again after twenty
+// minutes, or sooner from somewhere more than 32 blocks off.
+const PORTAL_DIG_REASK_MS = 1200000;
+async function portalPickaxeFirst(bot, task, goal, save, target) {
+  const here = bot.entity.position, now = Date.now();
+  const last = goal.portalDig;
+  if (last && now - last.at < PORTAL_DIG_REASK_MS && here.distanceTo(new Vec3(last.from.x, last.from.y, last.from.z)) <= 32) return last.pick === 'pickaxe_first';
+  const t = target && Number.isFinite(target.x) ? target : (goal.endPortal?.center || null);
+  const down = t ? Math.max(0, Math.round(here.y - t.y)) : 0, up = t ? Math.max(0, Math.round(t.y - here.y)) : 0;
+  const across = t ? Math.round(Math.hypot(t.x - here.x, t.z - here.z)) : 0;
+  const digs = 3 * (down + up) + 2 * Math.max(0, across - down - up);
+  const minutes = Math.max(1, Math.round(digs * 6 / 60));
+  let wood = null;
+  try { wood = require('./pickaxe-budget').nearestWood(bot, goal); } catch (_) { wood = null; }
+  const eyes = bot.inventory.items().filter(i => i.name === 'ender_eye').reduce((n, i) => n + i.count, 0);
+  const tree = {
+    by_hand: { description: `Dig the way to the ring by hand: ${across} blocks across and ${down ? `${down} down` : up ? `${up} up` : 'level'}, about ${digs} blocks dug (stairs, up to three for each block of height and two for each stair across); stone comes away by hand in about 7.5 s a block and sandstone in about 4, dropping nothing; about ${minutes} minutes. ${eyes ? `The ${eyes} eyes go with the bot.` : ''}`.trim() },
+    pickaxe_first: { description: `Make a stone pickaxe first, then dig: ${wood ? wood.says : 'no wood is known about here'}; a wooden pickaxe from it, then stone for the stone one. The dig with it is about a quarter of the time by hand.` },
+  };
+  const decision = await require('./decisions').decide('portal_dig', { client: task.opportunityClient, bot, task, goal, save, tree,
+    state: { digs, across, down, up, minutesByHand: minutes, woodDistance: wood?.distance ?? null, eyesCarried: eyes } });
+  if (decision.stale) return false;
+  const pick = decision.path.at(-1) === 'by_hand' ? 'by_hand' : 'pickaxe_first';
+  goal.portalDig = { pick, at: now, from: { x: Math.floor(here.x), y: Math.floor(here.y), z: Math.floor(here.z) } };
+  save();
+  return pick === 'pickaxe_first';
+}
 function endPortalActions() {
   return { navigate, surfaceStep, dig,
     tunnel: async (bot, task, goal, save, target, resource) => {
-      if (pickaxeTier(bot) < 1) { await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); return; }
+      if (pickaxeTier(bot) < 1 && await portalPickaxeFirst(bot, task, goal, save, target)) { await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); return; }
       await resourceTunnelStep(bot, task, goal, save, target, resource, { dig, navigate });
     } };
 }
@@ -9515,4 +9547,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { miningCandidates, portalSurfaceFirst, nightUpSays, oreToTunnel, gatherRests, gatherResting, relightPortalAt, stairPickaxeWanted, pickaxeForStair, siteHoldEnds, exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
+module.exports = { portalPickaxeFirst, endPortalActions, miningCandidates, portalSurfaceFirst, nightUpSays, oreToTunnel, gatherRests, gatherResting, relightPortalAt, stairPickaxeWanted, pickaxeForStair, siteHoldEnds, exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };

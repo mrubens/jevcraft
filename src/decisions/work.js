@@ -549,6 +549,19 @@ define({
   instructions: workInstructions('The bot died in the Nether and came back to life by its bed with empty hands. What it dropped lies where it died and does not age until the bot is near it again. Choose whether it goes straight back for it or makes a kit again first. Each option says what it costs and risks.'),
 });
 
+// The dig to the End portal's ring with no pickaxe (src/work.js portalPickaxeFirst, note 1289).
+define({
+  id: 'portal_dig', area: 'resources', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'The way to the End portal\'s ring is to be dug and the bot has no pickaxe: dig it by hand, or make a stone pickaxe first?',
+  trigger: 'At the End portal stage, the walk to the ring failed and a tunnel is next, no pickaxe carried; asked again after twenty minutes or from more than 32 blocks off.',
+  source: 'src/work.js (portalPickaxeFirst), src/end-portal.js (enterEnd)',
+  options: [
+    { key: 'by_hand', label: 'dig the way to the ring by hand', when: 'always here; said with the blocks to dig and the time by hand', level: 'root' },
+    { key: 'pickaxe_first', label: 'make a stone pickaxe first, then dig', when: 'always here; said with the nearest wood known', level: 'root' },
+  ],
+  instructions: workInstructions('The bot is at its End portal stage with no pickaxe, and the way to the ring must be dug. Choose whether it digs by hand or makes a pickaxe first. Each option says what it costs.'),
+});
+
 // The stronghold's search with no spare eye (src/game-progress.js gameStep, note 1268).
 define({
   id: 'search_spare', area: 'resources', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
