@@ -19,6 +19,14 @@ const ARENAS = Object.freeze({
     // Three from the west wall: a bunker is one step away.
     wall: [2003.5, 77, 2010.5],
   },
+  // A flooded room in the Overworld (note 1331): water two deep over the
+  // floor, a bank of stone along the west wall to climb out on.
+  pool: {
+    shell: [1996, 72, 2096, 2024, 90, 2124],
+    hollow: [2001, 77, 2101, 2019, 85, 2119],
+    fills: [[[2001, 77, 2101, 2019, 78, 2119], 'water'], [[2001, 77, 2101, 2003, 78, 2119], 'stone']],
+    open: [2010.5, 77, 2110.5],
+  },
   corridor: {
     shell: [2036, 72, 1996, 2064, 84, 2010],
     hollow: [2041, 77, 2002, 2059, 79, 2004],
@@ -225,6 +233,14 @@ const DRILLS = Object.freeze([
     loadout: 'bare', nudge: false, health: 6, hungry: 6,
     at: [[2014.5, 77, 2010.5], [2004.5, 77, 2014.5]], seconds: 60, expect: { deaths: 0, damage: 6 },
     why: 'The death of 2026-10-05: no armour, a stone sword, six health and hunger 14, a zombie four blocks off and a skeleton ten; 23 of the 33 deaths of the evening were with no armour on, the zombies\' at 0.1 to 4 health, run from chosen at 51 of 163 deaths under ten health.' },
+  { name: 'bare_trio', mode: 'defend', entity: ['zombie', 'zombie', 'skeleton'], count: 3, arena: 'room', stand: 'open',
+    loadout: 'bare', nudge: false, health: 6, hungry: 6,
+    at: [[2014.5, 77, 2010.5], [2005.5, 77, 2008.5], [2004.5, 77, 2014.5]], seconds: 60, expect: { deaths: 0, damage: 6 },
+    why: 'bare_pair with a second zombie from the other side, as the night crowds come (2026-10-05): two that bite from two sides and a skeleton ten off, no armour, 6 health.' },
+  { name: 'bare_drowned', mode: 'defend', entity: ['drowned', 'drowned'], count: 2, arena: 'pool', stand: 'open', dimension: 'minecraft:overworld',
+    loadout: 'bare', nudge: false, health: 8, hungry: 6,
+    at: [[2014.5, 77, 2110.5], [2007.5, 77, 2114.5]], seconds: 60, expect: { deaths: 0, damage: 6 },
+    why: 'The drowned of 2026-10-05: 9 of the 41 Overworld deaths of six hours, then 25592 at 23:11Z with its bow: no armour, a stone sword, 8 health, in water two deep with two drowned under it, a bank five blocks west.' },
   { name: 'hoglin_single', mode: 'defend', entity: 'hoglin', count: 1, arena: 'room', stand: 'open',
     at: [[2016.5, 77, 2010.5]], seconds: 45, expect: { deaths: 0, cleared: true, damage: 10 },
     why: 'Death six. A hoglin charges and knocks back.' },

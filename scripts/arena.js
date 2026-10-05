@@ -127,23 +127,26 @@ async function verifyArena(d) {
   const { Vec3 } = require('vec3');
   const cell = standingCell(d);
   const at = (dx, dy, dz) => bot.blockAt(new Vec3(cell.x + dx, cell.y + dy, cell.z + dz));
-  const clear = block => block && ['air', 'cave_air', 'void_air'].includes(block.name);
+  const clear = block => block && ['air', 'cave_air', 'void_air', 'water'].includes(block.name);
   const feet = at(0, 0, 0), head = at(0, 1, 0), floor = at(0, -1, 0);
   const ok = clear(feet) && clear(head) && floor?.boundingBox === 'block';
   return { ok, feet: feet?.name, head: head?.name, floor: floor?.name, cell };
 }
 
+// A drill's own dimension (note 1331): water drills are in the Overworld, the
+// Nether boils it away.
+const dimOf = d => d.dimension || 'minecraft:the_nether';
 async function runDrill(d, attempt) {
   startRun();
   run.entity = d.entity;
-  await commands(resetCommands(username, d));
+  await commands(resetCommands(username, d, { dimension: dimOf(d) }));
   // Put the watcher back on the bot's shoulder: the reset crossed dimensions
   // and a spectator left behind sees an empty room. Harmless when nobody is
   // watching; the server just reports no such player.
   if (audience) await commands([`gamemode spectator ${audience}`, `execute in minecraft:the_nether run tp ${audience} ${d.at[0].join(' ')}`, `spectate ${username} ${audience}`]);
   // The teleport crosses dimensions, so wait for the bot to land on its mark
   // with the kit on before anything is summoned.
-  await waitFor(task, () => String(bot.game.dimension).includes('nether') &&
+  await waitFor(task, () => String(bot.game.dimension).includes(dimOf(d).replace('minecraft:', '').replace('the_', '')) &&
     bot.entity.position.distanceTo({ x: d.at[0][0], y: bot.entity.position.y, z: d.at[0][2] }) < 48 &&
     (!kitOf(d).offhand || bot.inventory.slots?.[45]?.name === kitOf(d).offhand) && countOf(bot, kitOf(d).items[0][0]) >= 1, 30000);
   await bot.waitForChunksToLoad();
@@ -153,7 +156,7 @@ async function runDrill(d, attempt) {
   if (!arena.ok) {
     log({ drill: d.name, attempt, rebuilding: arena });
     await commands(arenaBuild(d.arena));
-    await commands(resetCommands(username, d));
+    await commands(resetCommands(username, d, { dimension: dimOf(d) }));
     await sleep(1500);
     arena = await verifyArena(d);
     if (!arena.ok) throw new Error(`The ${d.arena} arena is not built at ${JSON.stringify(arena.cell)}: feet ${arena.feet}, head ${arena.head}, floor ${arena.floor}`);
@@ -179,7 +182,7 @@ async function runDrill(d, attempt) {
   const step = { action: 'hunt_mob', entity: d.prey || d.entity, item: d.item, count: d.count };
   if (d.mode === 'hunt') goal.step = step;
 
-  await commands(spawnCommands(d));
+  await commands(spawnCommands(d, { dimension: dimOf(d) }));
   await waitFor(task, () => alive(d.entity).length >= d.count, 20000);
   const spawned = alive(d.entity).length;
   const started = Date.now(), deadline = started + d.seconds * 1000;
