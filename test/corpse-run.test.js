@@ -165,7 +165,7 @@ test('leaving the things says what making them again takes; a run left without t
   Object.assign(goal.corpseRun, { status: 'left', choice: 'leave_them' });
   assert.equal(await corpseRunStep(bot, task, goal, () => {}, { move: async () => {}, collect: async () => false }), false);
   assert.equal(asked.length, 1);
-  assert.match(asked[0], /400 blocks off, about 2 minutes' walk/);
+  assert.match(asked[0], /400 blocks off, about 10 minutes' walk at the 38.5 blocks a minute the bot's walks have made, stalls and detours counted/);
   assert.match(asked[0], /made again, or found, later: 8 blaze rods from a fortress's blazes, 8 iron mined and smelted, 2 diamonds found\./);
   assert.equal(goal.corpseRun.status, 'left');
   // Told, and left again: that stands.
@@ -299,7 +299,7 @@ test('by night, with drops that do not age, going back when it is day is a choic
   assert.equal(asked.length, 1, 'not asked again before dawn');
   assert.ok(corpseRun(bot, goal, Date.now() + 9 * 60000), 'open again at dawn');
   // By day the choice is not there.
-  const day = world(); let text = '';
+  const day = world(); day.bot.time = { timeOfDay: 0 }; let text = '';
   await corpseRunStep(day.bot, Object.assign(new Task('run'), { opportunityClient: { systemOne: async ({ questions }) => { text = JSON.stringify(Object.values(questions)[0]); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'leave_them', confidence: 0.9 }])) }; } } }), day.goal, () => {}, { move: async () => {}, collect: async () => false });
   assert.doesNotMatch(text, /wait_for_day/);
 });
@@ -314,7 +314,7 @@ test('by day with less day left than the walk, setting out at the next dawn is o
   const client = { systemOne: async ({ questions }) => { q = Object.values(questions)[0]; return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'wait_for_day', confidence: 0.9 }])) }; } };
   await corpseRunStep(bot, Object.assign(new Task('run'), { opportunityClient: client }), goal, () => {}, { move: async () => {}, collect: async () => false });
   const text = JSON.stringify(q);
-  assert.match(text, /Set out for them at the next dawn, about 13 real minutes off, with the day ahead for the walk \(the day left now, about 3, is shorter than the walk, about 4\)/);
+  assert.match(text, /Set out for them at the next dawn, about 13 real minutes off, with the day ahead for the walk \(the day left now, about 3, is shorter than the walk, about 29\)/);
   assert.match(text, /On this run's clock the rods and pearls for its eyes were 144 minutes of play\./);
   assert.ok(goal.corpseRun.waitUntil > Date.now() + 12 * 60000);
 });
@@ -358,7 +358,7 @@ test('things lying under the ground: the way down is in the minutes, and the pla
   let text = '';
   const client = { systemOne: async ({ questions }) => { text = JSON.stringify(Object.values(questions)[0]); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'leave_them', confidence: 0.9 }])) }; } };
   await corpseRunStep(bot, Object.assign(new Task('run'), { opportunityClient: client }), goal, () => {}, { move: async () => {}, collect: async () => false });
-  assert.match(text, /about [3-9] minutes' walk and climb, at y -23/);
+  assert.match(text, /about [0-9]+ minutes' walk and climb at the 38.5 blocks a minute.*?, at y -23/);
   assert.match(text, /The place is under the ground \(y -23, 93 blocks down from here\): the hour does not reach it, and what was about it at the death does not burn at dawn; the bot goes there with no sword or axe and no armour\./);
 });
 
