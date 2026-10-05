@@ -28,7 +28,19 @@ const countOf = (bot, name) => (bot.inventory?.items() || []).filter(i => i.name
 
 // The eyes the goal wants in all: the frames still empty once the portal is
 // found, else the twelve and the spare the search throws with.
-const portalFrames = goal => { const needed = goal?.gameProgress?.milestones?.stronghold_located && goal?.endPortal?.neededEyes; return Number.isInteger(needed) ? needed : null; };
+// Where the number was not saved with the portal, it is read off the frames
+// the milestone holds (note 1273), as the way into the End reads it
+// (game-progress.js portalNeed): 25593 (2026-10-05 02:54Z), its portal found
+// with twelve frames empty and eleven eyes held, was wanted eleven by the one
+// count and twelve by the other, and nothing was to fetch the twelfth.
+const portalFrames = goal => {
+  const located = goal?.gameProgress?.milestones?.stronghold_located;
+  if (!located) return null;
+  const needed = goal?.endPortal?.neededEyes;
+  if (Number.isInteger(needed)) return needed;
+  const frames = Array.isArray(located.frames) && located.frames.length ? located.frames : Array.isArray(goal?.endPortal?.frames) && goal.endPortal.frames.length ? goal.endPortal.frames : null;
+  return frames ? frames.filter(f => !f.eye).length : null;
+};
 // Once the search's bearings meet at one place (stronghold.js, note 1151),
 // the spare is no longer wanted: the walk goes there without another throw.
 // Or one of the portal's own thrown for the second bearing, where that was

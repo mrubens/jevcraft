@@ -93,3 +93,17 @@ test('with the eyes made and held, golden boots are no rung before the stronghol
   const stage = nextGameStage(bot, goal);
   assert.equal(stage.action, 'find_stronghold', JSON.stringify(stage));
 });
+
+test('the portal found with twelve frames empty and eleven eyes held: twelve is the number, read off the frames (note 1273)', () => {
+  const { eyeTarget, need } = require('../src/eye-need');
+  const frames = Array.from({ length: 12 }, (_, i) => ({ position: { x: 600 + i, y: -37, z: 1540 }, eye: false }));
+  const goal = { version: 1, kind: 'win', request: 'beat the game', gameProgress: { milestones: { nether_entered: { at: 1 }, eyes_obtained: { at: 2 }, stronghold_located: { at: 3, center: { x: 604, y: -37, z: 1540 }, frames } } },
+    endPortal: { center: { x: 604, y: -37, z: 1540 }, frames }, strongholdSearch: { bearings: [{}, {}, {}, {}], estimate: { x: 576, z: 1536 }, spare: { pick: 'throw_one', at: 1, target: 11 } },
+    rodStashes: [{ position: { x: 575, y: 94, z: 1531 }, dimension: 'overworld', contents: { ender_eye: 11 } }, { position: { x: -108, y: 49, z: 32 }, dimension: 'nether', contents: { ender_pearl: 1 } }] };
+  assert.equal(eyeTarget(goal), 12);
+  const n = need(world([]), goal);
+  assert.equal(n.rodsLeft, 1, 'a rod for the twelfth eye\'s powder');
+  assert.equal(n.pearlsLeft, 0, 'its pearl is in the chest in the Nether');
+  frames[0].eye = true;
+  assert.equal(eyeTarget(goal), 11, 'a frame filled already is one less');
+});
