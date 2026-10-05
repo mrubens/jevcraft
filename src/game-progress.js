@@ -1215,6 +1215,7 @@ async function gameStep(bot, task, goal, save, actions) {
   noteFoodTrip(bot, goal, save);
   if (goal.foodTrip && (Date.now() - goal.foodTrip.at >= FOOD_TRIP_MS || !require('./crossing-kit').kitRungs(bot, goal).some(r => r.phase === 'nether_food'))) { delete goal.foodTrip; save(); }
   settleOptIns(bot, goal);
+  try { require('./nether-shortcut').settle(bot, goal, save, { eyesCarried: count(bot, 'ender_eye'), wanted: require('./eye-need').eyeTarget(goal) }); } catch (_) { /* kept next step */ }
   let stage = nextGameStage(bot, goal);
   // The search begun, one bearing had, and eleven or twelve eyes held, none
   // to spare: one of them thrown for the second bearing, or a spare fetched
@@ -1330,7 +1331,7 @@ async function gameStep(bot, task, goal, save, actions) {
     const kitTrip = stage.for === require('./corpse-run').KIT_ERRAND && goal.corpseRun?.status === 'open';
     if (stage.action === 'enter_nether' && await require('./mob-hunt').goldForPiglins(bot, task, goal, save, actions, { crossing: true })) return false;
     // No eye of ender goes through the portal to the Nether (eye-bank.js bankBeforeNether, note 1264).
-    if (stage.action === 'enter_nether' && dimension(bot) === 'overworld' && (count(bot, 'ender_eye') >= 8 || (count(bot, 'ender_eye') > 0 && (goal.strongholdSearch?.bearings || []).length >= 1))) {
+    if (stage.action === 'enter_nether' && dimension(bot) === 'overworld' && !require('./nether-shortcut').carriesEyesBack(goal) && (count(bot, 'ender_eye') >= 8 || (count(bot, 'ender_eye') > 0 && (goal.strongholdSearch?.bearings || []).length >= 1))) {
       await require('./eye-bank').bankBeforeNether(bot, task, goal, save, actions.stashActions || actions);
       // Put away or not, the step ends here: with an eye still in the pack the portal is not walked through.
       return false;

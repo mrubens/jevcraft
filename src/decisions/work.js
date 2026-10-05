@@ -562,6 +562,19 @@ define({
   instructions: workInstructions('The bot has made its eyes of ender and thrown one; it holds eleven or twelve and the search wants one more bearing. Choose whether one of them is thrown or a spare is fetched first. Each option says its odds or its record.'),
 });
 
+// The way to a far chest of the bot's through the Nether (src/nether-shortcut.js, note 1279).
+define({
+  id: 'nether_shortcut', area: 'resources', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'The End portal is found and the eyes are in a chest of the bot\'s far off in the Overworld: go there and back through the Nether, or walk?',
+  trigger: 'In the Overworld, the stronghold located, about to walk to a chest of the bot\'s more than 600 blocks off; asked once for each chest.',
+  source: 'src/nether-shortcut.js (ask), src/rod-stash.js (collect)',
+  options: [
+    { key: 'through_nether', trip: 'the Nether', label: 'there and back through the Nether by portals', when: 'always here; said with both distances and the Nether\'s record', level: 'root' },
+    { key: 'walk', label: 'walk there and back over the ground', when: 'always here; said with the distance and the walk out\'s record', level: 'root' },
+  ],
+  instructions: workInstructions('The bot has found the End portal; the eyes it needs are in its chest far off in the Overworld. Choose whether to go there and back through the Nether, where a block is eight here, or walk. Each option says its distance and its record.'),
+});
+
 define({
   id: 'spare_kit_now', area: 'resources', parent: null, kind: 'upkeep', primitive: 'choice', stakes: 'low', tree: true,
   question: 'The bot is by its home chest, and the chest lacks a spare pickaxe or sword the bot carries or can make now: leave a spare kit there, or go on?',

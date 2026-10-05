@@ -401,6 +401,12 @@ async function collect(bot, task, goal, save, actions = {}) {
     // time over the ground, from the surface: a walk of a thousand blocks is
     // not one the pathfinder plans, and three that failed wrote the chest off.
     const flat = Math.hypot(cell.x - bot.entity.position.x, cell.z - bot.entity.position.z);
+    // Far off with the End portal found: the way there through the Nether is
+    // Jev's to weigh against the walk (note 1279). 25597 (2026-10-05 04:44Z),
+    // its End portal found 1,790 blocks from the chest holding its twelve
+    // eyes, set off on foot for them; its walk out had taken 3 h 44 min.
+    const sc = require('./nether-shortcut');
+    if (entry.dimension === 'overworld' && flat > sc.FAR && task?.opportunityClient && await sc.ask(bot, task, goal, save, P(cell), Math.round(flat))) return false;
     if (entry.dimension === 'overworld' && flat > 96 && actions.navigate) {
       let depth = 0; try { depth = require('./levels').depthHere(bot) || 0; } catch (_) { depth = 0; }
       goal.step = { action: 'collect_rod_stash', at: P(cell), distance: Math.round(flat), items: { ...entry.contents }, way: depth >= 3 && actions.surfaceStep ? 'up to the surface first' : 'a leg at a time' }; save?.();

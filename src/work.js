@@ -5058,7 +5058,7 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
   // had cast beside its stronghold for one blaze rod, went home by the old
   // one 37 blocks off and came out 1,450 blocks from its End portal and its
   // eleven eyes, where the one it came in by was 97 blocks off.
-  const sh = goal?.gameProgress?.milestones?.stronghold_located?.center || goal?.endPortal?.center;
+  const sh = require('./nether-shortcut').exitTarget(goal);
   if (where === 'nether' && sh && known.length > 1) {
     const overs = (goal.portals || []).filter(q => q.dimension === 'overworld');
     const exitOf = q => { const x = q.x * 8, z = q.z * 8; const o = overs.filter(v => Math.hypot(v.x - x, v.z - z) <= 128).sort((u, v) => Math.hypot(u.x - x, u.z - z) - Math.hypot(v.x - x, v.z - z))[0]; return o || { x, z }; };
