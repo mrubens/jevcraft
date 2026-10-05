@@ -28,3 +28,14 @@ test('throw_one chosen and the twelve in the chest: the step is one eye out of i
   assert.equal(chestItems[0].count, 11, 'eleven left for the portal');
   surface.surfaceReturnComplete = was;
 });
+
+test('a withdraw that failed with the stack on the cursor: it goes back into the chest before the window closes (note 1322)', async () => {
+  const { putBackHeld } = require('../src/rod-stash');
+  const clicks = [];
+  const window = { inventoryStart: 27, slots: Array(63).fill(null), selectedItem: { type: 9, count: 11, name: 'ender_eye', stackSize: 16 } };
+  window.slots[0] = { type: 9, count: 16, stackSize: 16 }; // full stack of the same: not that slot
+  const bot = { clickWindow: async (slot) => { clicks.push(slot); window.selectedItem = null; } };
+  assert.equal(await putBackHeld(bot, window), true);
+  assert.deepEqual(clicks, [1], 'the first empty chest slot');
+  assert.equal(await putBackHeld(bot, window), false, 'nothing held, nothing done');
+});

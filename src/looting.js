@@ -178,7 +178,7 @@ async function takeWanted(bot, task, window) {
       if (got > 0) took[item.name] = (took[item.name] || 0) + got;
       if (got < item.count) left[item.name] = (left[item.name] || 0) + item.count - Math.max(0, got);
     }
-  } finally { window.close(); }
+  } finally { try { await require('./rod-stash').putBackHeld(bot, window); } catch (_) {} window.close(); }
   return { took, left };
 }
 

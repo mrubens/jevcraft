@@ -346,6 +346,17 @@ function keepOption(bot, task, goal, save, actions, { then = null, thenSays = ''
 }
 
 // The lid opened, the contents read before and after, the lid shut.
+async function putBackHeld(bot, window) {
+  if (!window?.selectedItem) return false;
+  const end = Number.isInteger(window.inventoryStart) ? window.inventoryStart : 27;
+  const held = window.selectedItem;
+  const same = window.slots.slice(0, end).findIndex(i => i && i.type === held.type && i.count < (i.stackSize || 64));
+  const slot = same >= 0 ? same : window.slots.slice(0, end).findIndex(i => !i);
+  if (slot < 0) return false;
+  await bot.clickWindow(slot, 0, 0);
+  if (window.selectedItem) { const empty = window.slots.slice(0, end).findIndex(i => !i); if (empty >= 0) await bot.clickWindow(empty, 0, 0); }
+  return true;
+}
 async function withStash(bot, task, entry, save, work) {
   const block = bot.blockAt(V(entry.position));
   if (block?.name !== 'chest') { entry.lostAt = new Date().toISOString(); save?.(); throw new Error(`The chest at ${at(entry.position)} is not there`); }
@@ -356,6 +367,12 @@ async function withStash(bot, task, entry, save, work) {
     read();
     return await work(window);
   } finally {
+    // What a failed withdraw left on the cursor goes back into the chest
+    // before the window closes (note 1322): mineflayer's transfer picks the
+    // whole stack up, throws 'destination full' with it held, and a window
+    // closed so drops it on the ground. 25595 (2026-10-05 15:36Z) lost its
+    // eleven banked eyes so, its pockets full.
+    try { await putBackHeld(bot, window); } catch (_) { /* said by the read */ }
     try { if (bot._syncWindow) await bot._syncWindow(window); } catch (_) { /* read as it is */ }
     read();
     window.close();
@@ -473,4 +490,4 @@ async function collect(bot, task, goal, save, actions = {}) {
   }
 }
 
-module.exports = { PEARLS_LOST, pearlsLostSays, keepOption, nearStash, stashes, withContents, listed, dimOf, countOf, KEPT, HELD, ROD_MIN, stashed, stashSays, heldSays, carriedSays, chestCell, chestMaking, stashOffer, offerSays, stashRods, collectStage, collect, withStash, rodsEquivalent };
+module.exports = { putBackHeld, PEARLS_LOST, pearlsLostSays, keepOption, nearStash, stashes, withContents, listed, dimOf, countOf, KEPT, HELD, ROD_MIN, stashed, stashSays, heldSays, carriedSays, chestCell, chestMaking, stashOffer, offerSays, stashRods, collectStage, collect, withStash, rodsEquivalent };

@@ -273,6 +273,9 @@ async function findStronghold(bot, task, goal, save, actions, client) {
         await actions.navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 2), { timeoutMs: 60000, stallMs: 8000 });
         if (bot.entity.position.distanceTo(new Vec3(p.x + 0.5, p.y + 0.5, p.z + 0.5)) > 4) return;
       }
+      // A free slot first (note 1322): a withdraw into a full pack lost
+      // 25595's eleven banked eyes on the ground.
+      if ((bot.inventory.emptySlotCount?.() ?? 1) <= 0) { const e = new Error('No free slot in the pack to take an eye of ender into'); e.name = 'Blocked'; throw e; }
       await rs.withStash(bot, task, chest, save, async window => {
         const eye = window.containerItems().find(i => i.name === 'ender_eye');
         if (eye) await window.withdraw(eye.type, null, 1);

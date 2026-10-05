@@ -464,6 +464,8 @@ async function withChest(bot, task, goal, save, home, actions, work) {
     rememberContents(home, window); save();
     return await work(window);
   } finally {
+    // What a failed withdraw left on the cursor goes back first (rod-stash.js putBackHeld, note 1322).
+    try { await require('./rod-stash').putBackHeld(bot, window); } catch (_) {}
     try { if (bot._syncWindow) await bot._syncWindow(window); } catch (_) {}
     rememberContents(home, window); save();
     window.close();
