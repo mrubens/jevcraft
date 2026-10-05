@@ -314,9 +314,13 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
   // (25590, 2026-10-04 09:29 to 09:46Z), eight ender pearls and a rod in its
   // chests, was ended sixteen minutes after it was taken up again as 'loop:
   // flipping smelt <-> detour'.
+  // Nor the hour's cuts (note 1291): mid-243-ma-end-1 (25597, 2026-10-05
+  // 08:27 to 09:29Z), taken up again with its stronghold found and its
+  // twelve eyes lying by it, walked the Overworld toward them and was ended
+  // as 'no Nether in 60 minutes played'.
   const reasons = [...deathSays, ...loops.map(l => keeps ? `held through a loop (${l}) with ${keptSays}: played on` : `loop: ${l}`), ...strandedSays,
     ...(timedOut ? MILESTONES.filter(k => !(k in at)).map(k => `missing ${said}: ${k}`) : []),
-    ...(all ? [] : cutReasons(trial.world, Math.round(playedMs / 60000), Object.fromEntries(Object.entries(at).map(([k, t]) => [k, Math.round(playedBy(t) / 60000)])), { casting: castingLately(a.frames, to) }))];
+    ...(all || keeps ? [] : cutReasons(trial.world, Math.round(playedMs / 60000), Object.fromEntries(Object.entries(at).map(([k, t]) => [k, Math.round(playedBy(t) / 60000)])), { casting: castingLately(a.frames, to) }))];
   return { world: trial.world, source: trial.source, ...(trial.arm ? { arm: trial.arm } : {}), from: new Date(from).toISOString(), minutes: Math.round((to - from) / 60000),
     pass: all && !reasons.length, done: all || timedOut || reasons.some(r => !/^(died|held) /.test(r)), failedAlready: reasons.length > 0, reasons, ...(deaths.length && keeps ? { playedOnAfterDeath: { deaths: deaths.length, kept } } : {}), ...(stranded ? { stranded } : {}),
     ...(!/fortress|nether/.test(trial.world || '') && at.nether != null && playedBy(at.nether) > CUT_MINUTES * 60000 ? { netherAfterTheHour: Math.round(playedBy(at.nether) / 60000) } : {}),

@@ -18,3 +18,20 @@ test('eyes made or a stronghold found: the End\'s hours, with nothing in the pac
     assert.deepEqual(keptNow(identity), { rods: 0, pearls: 0 });
   } finally { fs.rmSync(file, { force: true }); }
 });
+
+test('a trial keeping its eyes is not cut for no Nether in its first hour (note 1291)', () => {
+  const { verdict } = require('../scripts/midgame');
+  const identity = '127_0_0_1-25995-Jev';
+  const t0 = Date.parse('2026-10-05T08:27:00Z');
+  const frames = [];
+  for (let s = 0; s < 3900; s += 30) frames.push({ at: new Date(t0 + s * 1000).toISOString(), kind: 'observation', snapshot: { position: { x: s / 3, y: 64, z: 0 }, dimension: 'overworld', health: 20, inventory: { cobblestone: 20 }, step: { action: 'corpse_run' } } });
+  const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'note-1291-'));
+  fs.writeFileSync(path.join(dir, `${identity}-${new Date(t0).toISOString().replace(/[:.]/g, '-')}.jsonl`), frames.map(f => JSON.stringify(f)).join('\n') + '\n');
+  try {
+    const at = { world: 'mid-243-zz-end-1', startedAt: new Date(t0).toISOString() }, now = t0 + 65 * 60000;
+    const kept = verdict(at, { now, dir, identity, kept: { rods: 6, pearls: 12 } });
+    assert.ok(!kept.reasons.some(r => /^cut:/.test(r)), JSON.stringify(kept.reasons));
+    const bare = verdict(at, { now, dir, identity, kept: { rods: 0, pearls: 0 } });
+    assert.ok(bare.reasons.some(r => /^cut: no Nether/.test(r)), JSON.stringify(bare.reasons));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
