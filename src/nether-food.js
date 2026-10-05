@@ -99,9 +99,13 @@ function foodNeed(bot, goal) {
 
 // The stay's food, from crossing-kit.js: the minutes the goal still wants in
 // the Nether, and the points that carries at forty an hour.
-function stayFacts(bot) {
+// With the goal, the rods and pearls in the bot's chests count (note 1280):
+// read from the pockets alone, 25593 (2026-10-05 05:08Z), one blaze rod
+// wanted for its twelfth eye and at its fortress, was told 'the goal still
+// wants about 120 minutes in the Nether' and turned back for food.
+function stayFacts(bot, goal = bot?._goal || null) {
   const { netherStay } = require('./crossing-kit');
-  const stay = netherStay(bot), { points } = foodStock(bot);
+  const stay = netherStay(bot, goal), { points } = foodStock(bot);
   const lasts = Math.round(points / HUNGER_AN_HOUR * 60);
   return { ...stay, carried: points, lasts, short: Math.max(0, stay.points - points) };
 }
