@@ -5051,6 +5051,20 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
   // With blaze rods carried, the portal the way in began at, where it is one
   // remembered: its way back is known (note 762). 25588 (11:50Z) made for a
   // portal 114 blocks off with its way in beginning at another.
+  // With the stronghold found, the way out in the Nether is weighed by where
+  // each portal comes out: the walk to it here and the walk from its
+  // Overworld side to the stronghold, the whole of the way (note 1276).
+  // Nearest first, 25593 (2026-10-05 03:57 to 03:59Z), through the portal it
+  // had cast beside its stronghold for one blaze rod, went home by the old
+  // one 37 blocks off and came out 1,450 blocks from its End portal and its
+  // eleven eyes, where the one it came in by was 97 blocks off.
+  const sh = goal?.gameProgress?.milestones?.stronghold_located?.center || goal?.endPortal?.center;
+  if (where === 'nether' && sh && known.length > 1) {
+    const overs = (goal.portals || []).filter(q => q.dimension === 'overworld');
+    const exitOf = q => { const x = q.x * 8, z = q.z * 8; const o = overs.filter(v => Math.hypot(v.x - x, v.z - z) <= 128).sort((u, v) => Math.hypot(u.x - x, u.z - z) - Math.hypot(v.x - x, v.z - z))[0]; return o || { x, z }; };
+    const cost = q => Math.hypot(q.x - here.x, q.z - here.z) + Math.hypot(exitOf(q).x - sh.x, exitOf(q).z - sh.z);
+    known.sort((u, v) => cost(u) - cost(v));
+  }
   let p = known[0];
   if (where === 'nether' && require('./walk-out').rodsCarried(bot)) {
     const start = require('./walk-out').backTrail(require('./walk-out').wayInOf(bot, goal), here)?.start;
