@@ -43,3 +43,14 @@ test('food taken up before the Nether holds while still on offer, not asked at e
   await strategyStep(bot, new Task('t'), goal, () => {}, stage, { decide, now: () => now });
   assert.equal(asked.length, 1, 'held');
 });
+
+test('a rung that would gather says what the chest at home holds toward it (note 1324)', () => {
+  const { rungTakes } = require('../src/strategy');
+  const { catalogPlan, planningInventory } = require('../src/work');
+  const items = [['stone_pickaxe', 1], ['crafting_table', 1], ['oak_log', 4]].map(([name, count], i) => ({ name, count, type: registry.itemsByName[name].id, slot: 9 + i, durabilityUsed: 0 }));
+  const bot = overworld(20, []); bot.inventory.items = () => items;
+  const goal = { kind: 'win', survival: { home: { origin: { x: 0, y: 64, z: 0 }, stash: { position: { x: 3, y: 64, z: 40 }, contents: { raw_iron: 50, coal: 64 } } } } };
+  const rung = { phase: 'iron_chestplate', action: 'acquire', item: 'iron_chestplate', count: 1 };
+  const says = rungTakes(bot, goal, rung, (b, item, count, g) => catalogPlan(b, item, count, planningInventory(b), g));
+  assert.match(says, /The chest at home \(3, 64, 40\), \d+ blocks off, holds toward it .*raw iron.*: taken out there, the gathering under it is skipped\./);
+});

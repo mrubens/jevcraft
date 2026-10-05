@@ -41,3 +41,14 @@ test('a heading with a swim says the drowned with it (note 1320)', () => {
   const s = headingFacts([{ biome: 'beach', from: 0, to: 30, has: 'no trees' }], ground);
   assert.match(s, /a swim of about 16; drowned live in the water and come up after a swimmer, 9 of the 41 Overworld deaths/);
 });
+
+test('raw meat carried with fuel and a furnace: cooking it now is an upkeep offer, said in points (note 1323)', async () => {
+  const { upkeepOffers } = require('../src/work');
+  const reg = require('minecraft-data')('26.1');
+  const items = [['beef', 6], ['coal', 4], ['furnace', 1], ['stone_pickaxe', 1]].map(([name, count], i) => ({ name, count, type: reg.itemsByName[name].id, slot: 9 + i, durabilityUsed: 0 }));
+  const bot = { registry: reg, version: '26.1', game: { dimension: 'overworld', gameMode: 'survival' }, time: { timeOfDay: 6000 }, health: 20, food: 15, entity: { position: new Vec3(0, 64, 0) }, entities: {},
+    inventory: { items: () => items, slots: [], emptySlotCount: () => 20 }, findBlocks: () => [], blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }) };
+  const { options } = await upkeepOffers(bot, { check() {} }, { kind: 'win' }, () => {});
+  assert.ok(options.cook_meat, Object.keys(options).join(','));
+  assert.match(options.cook_meat.description, /Cook the raw meat carried now: 6 beef, 18 food points as carried and 48 cooked \(\+30\); the furnace carried put down here, coal for fuel/);
+});

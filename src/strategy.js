@@ -191,7 +191,22 @@ function rungTakes(bot, goal, rung, planFor) {
   const byAction = {};
   for (const st of steps) { const k = `${st.action} ${words(st.item || st.block || st.mob)}`; byAction[k] = (byAction[k] || 0) + (st.count || 1); }
   const list = Object.entries(byAction).map(([k, n]) => { const [action, ...rest] = k.split(' '); return `${action.replaceAll('_', ' ')} ${n} ${rest.join(' ')}`; }).join(', ');
-  return ` From the pockets as they are it takes: ${list}${gather.length ? '' : ' (all of it from what is carried: no gathering)'}.${oreFacts(bot, goal, steps)}${pickaxeLeft(bot, planSpends(steps))}`;
+  // What the chest at home holds toward it (note 1324): taken out there,
+  // the gathering under it is skipped (home-stash.js planWants). 25595
+  // (2026-10-05) kept 50 raw iron and 64 coal at home and was offered its
+  // iron armour as 'mine 19 iron ore', dying bare between.
+  let homeSays = '';
+  if (gather.length) {
+    try {
+      const home = require('./home-base').homeOf(bot, goal);
+      const wants = home?.stash?.position ? require('./home-stash').rungWants(bot, rung, { home, goal }).filter(w => w.item !== rung.item) : [];
+      if (wants.length) {
+        const p = home.stash.position, d = Math.round(Math.hypot(p.x - bot.entity.position.x, p.z - bot.entity.position.z));
+        homeSays = ` The chest at home (${p.x}, ${p.y}, ${p.z}), ${d} blocks off, holds toward it ${wants.map(w => `${w.count} ${words(w.item)}`).join(', ')}: taken out there, the gathering under it is skipped.`;
+      }
+    } catch (_) { homeSays = ''; }
+  }
+  return ` From the pockets as they are it takes: ${list}${gather.length ? '' : ' (all of it from what is carried: no gathering)'}.${homeSays}${oreFacts(bot, goal, steps)}${pickaxeLeft(bot, planSpends(steps))}`;
 }
 
 // What a plan uses up, net: what its steps consume less what they make.

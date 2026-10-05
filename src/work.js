@@ -1365,6 +1365,23 @@ async function upkeepOffers(bot, task, goal, save) {
     options.leave_batch = { description: `Leave the batch where it is for good: ${w.what} in the furnace at ${w.at}, ${lb.distance} blocks off. It is not offered again; it is taken out only if the work brings the bot within ${LEFT_NEAR} blocks of the furnace, and the ${String(lb.batch.item).replaceAll('_', ' ')} wanted is made again from what is carried or gathered.${w.tried}`,
       run: async () => { lb.left.forgone = Date.now(); save(); } };
   }
+  // The raw meat carried cooked now, at a furnace put down here (note
+  // 1323): of the meat eaten in the three hours to 21:10Z (2026-10-05) about
+  // 85 in 100 went down raw, a third of what it gives cooked, and half of
+  // all questions were asked at hunger under eighteen.
+  {
+    let cook = null; try { cook = cookable(bot); } catch (_) { cook = null; }
+    if (cook?.ready && cook.after - cook.now >= 16 && !isSetAside(goal, 'upkeep', 'cook_meat')) {
+      const first = cook.items.slice().sort((x, y) => (y.after - y.now) - (x.after - x.now))[0];
+      const secs = first.n * 10 + (cook.furnace ? 2 : 6);
+      options.cook_meat = { description: `Cook the raw meat carried now: ${cook.items.map(i => `${i.n} ${i.raw.replaceAll('_', ' ')}`).join(', ')}, ${cook.now} food points as carried and ${cook.after} cooked (+${cook.after - cook.now}); ${cook.furnace ? `the ${cook.furnace} carried` : `a furnace made of eight of the ${cook.stone.replaceAll('_', ' ')} carried`} put down here, ${cook.fuel.replaceAll('_', ' ')} for fuel, ${first.n} ${first.raw.replaceAll('_', ' ')} first, about ${secs} seconds standing at it.${cookStandsSays(bot, cook, secs)}`,
+        run: async () => {
+          goal.step = { action: 'cook_meat', item: first.cooked, raw: first.n }; save();
+          try { await acquireStep(bot, task, first.cooked, countOf(bot, first.cooked) + first.n, goal, save); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'upkeep', 'cook_meat', String(err.message).slice(0, 120), 600000); save(); }
+        } };
+    }
+  }
   return { options, budget };
 }
 
