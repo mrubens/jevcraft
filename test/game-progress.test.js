@@ -412,3 +412,22 @@ test('a sword with swings left is a sword: the stone sword is not asked for over
   assert.notEqual(stageWith(34), 'stone_sword', '34 swings left');
   assert.equal(stageWith(5), 'stone_sword', 'five swings left: another is made');
 });
+
+test('a walk back to drops lying by the End portal takes the eyes from the chest here first (note 1283)', async () => {
+  const { bot, goal, task } = fixture(); observeProgress(bot, goal);
+  bot.entity.position = new Vec3(4.5, 87, 5.5);
+  goal.gameProgress.milestones.stronghold_located = { at: 1, center: { x: 1878, y: 32, z: -294 } };
+  goal.rodStashes = [{ position: { x: 4, y: 66, z: 5 }, dimension: 'overworld', contents: { ender_eye: 12 } }];
+  goal.corpseRun = { deathAt: '2026-10-05T05:30:00Z', position: { x: 1870, y: 63, z: -300 }, dimension: 'overworld', items: { diamond_sword: 1 }, status: 'open', passes: 0, stuck: 0 };
+  const stash = require('../src/rod-stash'), collect = stash.collect;
+  let collected = 0, ran = 0;
+  stash.collect = async () => { collected++; goal.rodStashes[0].contents = {}; return true; };
+  try {
+    const actions = { corpse_run: async () => { ran++; return true; } };
+    assert.equal(await gameStep(bot, task, goal, () => {}, actions), false);
+    assert.equal(collected, 1, 'the eyes first');
+    assert.equal(ran, 0);
+    await gameStep(bot, task, goal, () => {}, actions);
+    assert.equal(ran, 1, 'then the walk');
+  } finally { stash.collect = collect; }
+});

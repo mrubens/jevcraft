@@ -1247,6 +1247,22 @@ async function gameStep(bot, task, goal, save, actions) {
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
   // Back for what the last death dropped, before anything else: close to
   // the respawn its drops have five minutes (corpse-run.js).
+  // A walk back to drops lying by the End portal, the eyes in a chest of the
+  // bot's here: the eyes are taken out first and go with it (note 1283).
+  // 25597 (2026-10-05 05:54Z), back to life at home beside its twelve eyes
+  // and its kit lying by its stronghold 1,833 blocks off, set out for the
+  // kit with the eyes left in the chest, a second walk of 1,833 owed after.
+  try {
+    const run = goal.corpseRun, sh = goal.gameProgress?.milestones?.stronghold_located?.center;
+    if (actions.corpse_run && dimension(bot) === 'overworld' && sh && run?.status === 'open' && run.dimension === 'overworld' && Math.hypot(run.position.x - sh.x, run.position.z - sh.z) <= 600) {
+      const here = bot.entity.position, rs = require('./rod-stash');
+      const chest = rs.stashes(goal).filter(c => c.dimension === 'overworld' && (c.contents?.ender_eye || 0) > 0 && Math.hypot(c.position.x - here.x, c.position.z - here.z) <= 96)[0];
+      if (chest && Math.hypot(run.position.x - here.x, run.position.z - here.z) > 600) {
+        const took = await rs.collect(bot, task, goal, save, actions.stashActions || actions);
+        if (took || rs.stashes(goal).some(c => c === chest && (c.contents?.ender_eye || 0) > 0)) return false;
+      }
+    }
+  } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
   if (actions.corpse_run && stage.phase !== 'complete' && await actions.corpse_run(bot, task, goal, save)) return false;
   // Strategy: which of the open rungs, or a side trip, is Jev's to choose
   // (strategy.js). A side trip that ran is this step's work.
