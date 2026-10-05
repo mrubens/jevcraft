@@ -937,7 +937,14 @@ function nextGameStage(bot, goal, skip = new Set()) {
   // rods from the stash, taken before the armour lost in a lava death was
   // made again, skipped the ladder, and the bot went through the Nether and
   // back in no armour and died to one creeper on the far shore.
-  if (where === 'overworld' && supplies) { const gear = gearStage(bot, goal); if (gear) return gear; }
+  // With the eyes made and enough of them held, the Nether's own rungs
+  // (golden boots, its food, blocks and pickaxe) are no part of the kit:
+  // the way on is the stronghold (note 1271). 25593 (2026-10-05 01:40Z),
+  // eleven eyes in its pack and its stronghold placed 1,380 blocks off, went
+  // for raw gold and smelted four ingots for golden boots.
+  const eyesHeldNow = count(bot, 'ender_eye') + (() => { try { return require('./eye-bank').banked(goal); } catch (_) { return 0; } })();
+  const netherDone = m.eyes_obtained && eyesHeldNow >= eyeTarget(goal);
+  if (where === 'overworld' && supplies) { const gear = gearStage(bot, goal); if (gear && !(netherDone && /^(golden_boots|nether_)/.test(String(gear.phase)))) return gear; }
   if (where === 'end') return m.dragon_defeated ? { phase: 'return_alive', action: 'exit_end' } : { phase: 'defeat_dragon', action: 'fight_dragon' };
   // Survey throws deliberately spend eyes. Do not send Jev back to the Nether
   // after each throw while it still has a spare and twelve portal eyes. A

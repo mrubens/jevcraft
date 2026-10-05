@@ -83,3 +83,13 @@ test('every eye put away and the stronghold placed: the walk there is the stage,
   const stage = nextGameStage(bot, goal);
   assert.equal(stage.action, 'find_stronghold', JSON.stringify(stage));
 });
+
+test('with the eyes made and held, golden boots are no rung before the stronghold (note 1271)', () => {
+  const goal = { version: 1, kind: 'win', request: 'beat the game', gameProgress: { milestones: { nether_entered: { at: 1 }, eyes_obtained: { at: 2 } } },
+    strongholdSearch: { bearings: [{}, {}], throws: 2, estimate: { x: 576, z: 1536 }, spare: { pick: 'throw_one', at: Date.now(), target: 11 } } };
+  const kit = GEAR.filter(([n]) => n !== 'golden_boots');
+  const items = [...kit, ['ender_eye', 11]].map(([name, count], i) => ({ name, count, type: reg.itemsByName[name].id, slot: 9 + i, durabilityUsed: 0 }));
+  const bot = { ...world([]), inventory: { items: () => items, slots: [] } };
+  const stage = nextGameStage(bot, goal);
+  assert.equal(stage.action, 'find_stronghold', JSON.stringify(stage));
+});
