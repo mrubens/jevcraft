@@ -256,6 +256,30 @@ async function findStronghold(bot, task, goal, save, actions, client) {
   // spare is still what the search needs.
   // The twelve put away in the bot's chest for the search are the portal's all the same (eye-bank.js, note 1197).
   // One of the twelve thrown for the second bearing, where Jev chose it (search_spare, note 1268).
+  // The one to throw, where Jev chose it, is taken out of the chest the
+  // twelve are kept in when none is carried (note 1295): 25592
+  // (mid-242-cf-nether-2, 2026-10-05 01:30 to 14:30Z), its twelve put away
+  // at home and throw_one chosen, was told 'needs another spare Eye of
+  // Ender' at every pass for thirteen hours, the throw asking for one in
+  // the pack.
+  if (search.spare?.pick === 'throw_one' && !estimate && throwAgain && countOf(bot, 'ender_eye') < 1) {
+    const rs = require('./rod-stash');
+    const chest = rs.stashes(goal).filter(c => c.dimension === 'overworld' && !c.lostAt && (c.contents?.ender_eye || 0) > 0)
+      .sort((a, b) => horizontal(a.position, bot.entity.position) - horizontal(b.position, bot.entity.position))[0];
+    if (chest) {
+      const p = chest.position;
+      goal.step = { action: 'eye_from_chest', at: { x: p.x, y: p.y, z: p.z }, for: 'the eye Jev chose to throw for the second bearing' }; save();
+      if (bot.entity.position.distanceTo(new Vec3(p.x + 0.5, p.y + 0.5, p.z + 0.5)) > 4) {
+        await actions.navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 2), { timeoutMs: 60000, stallMs: 8000 });
+        if (bot.entity.position.distanceTo(new Vec3(p.x + 0.5, p.y + 0.5, p.z + 0.5)) > 4) return;
+      }
+      await rs.withStash(bot, task, chest, save, async window => {
+        const eye = window.containerItems().find(i => i.name === 'ender_eye');
+        if (eye) await window.withdraw(eye.type, null, 1);
+      });
+      return;
+    }
+  }
   const throwOne = search.spare?.pick === 'throw_one' && !estimate && countOf(bot, 'ender_eye') >= 1;
   const noSpare = !throwOne && (countOf(bot, 'ender_eye') + require('./eye-bank').banked(goal) <= 12 || countOf(bot, 'ender_eye') < 1);
   if (throwAgain && noSpare) {
