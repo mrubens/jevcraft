@@ -29,3 +29,17 @@ test('with food carried, or at hunger eighteen, it is not added', () => {
   const full = strategyOptions(overworld(19, PACK), goalOf(), stage);
   assert.ok(!full?.take_up_nether_food);
 });
+
+test('food taken up before the Nether holds while still on offer, not asked at every step (note 1319)', async () => {
+  const { strategyStep } = require('../src/strategy');
+  const { Task } = require('../src/skills');
+  const bot = overworld(6, PACK), goal = goalOf(), asked = [];
+  let now = Date.now();
+  const decide = async (id, { tree }) => { asked.push(Object.keys(tree)); return { path: ['take_up_nether_food'], stale: false }; };
+  await strategyStep(bot, new Task('t'), goal, () => {}, stage, { decide, now: () => now });
+  now += 5000;
+  await strategyStep(bot, new Task('t'), goal, () => {}, stage, { decide, now: () => now });
+  now += 5000;
+  await strategyStep(bot, new Task('t'), goal, () => {}, stage, { decide, now: () => now });
+  assert.equal(asked.length, 1, 'held');
+});

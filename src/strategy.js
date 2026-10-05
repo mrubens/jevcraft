@@ -670,7 +670,13 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
   // its own (a side trip, the ladder's plain default) still holds the old
   // way, by the tree's shape and the ladder's stage.
   let choice = null, heldOption = null;
-  if (held?.rungPhase) {
+  // Food before the Nether, taken up, holds while it is still on offer
+  // (note 1319): its rung is made here, not one of the open rungs, so the
+  // rung hold read it as finished. 25598 (2026-10-05 21:38 to 21:40Z),
+  // hunger 6 with its stronghold found, was asked this every four seconds
+  // and answered it 12 times.
+  if (held?.choice === 'take_up_nether_food' && options.take_up_nether_food && now() - held.at < HOLD_MS) { choice = held.choice; heldOption = options.take_up_nether_food; }
+  else if (held?.rungPhase) {
     // Held by the open rungs themselves (game-progress.js openRungs), not by
     // the tree's shape: that list does not change regime with stage.phase
     // (rung_* keys against stage_* ones) the way the tree does, so a rung
@@ -816,6 +822,9 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
   }
   if (option.stage) return null;
   // A step set aside to go without, taken up again now.
+  // The food before the Nether is a rung made here and nowhere on the
+  // ladder, so its answer is kept for the hold above (note 1319), not let go.
+  if (option.takeUp && choice === 'take_up_nether_food') return { stage: option.rung };
   if (option.takeUp) { attemptsFor(goal).clear('rung', option.rung.phase); require('./game-progress').optIn(goal, option.rung.phase); delete goal.strategy; save(); return { stage: option.rung }; }
   if (option.rung) return option.rung.phase === stage.phase ? null : { stage: option.rung };
   // Setting steps aside is not work: nothing to run in the world, no step to
