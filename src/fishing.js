@@ -276,6 +276,11 @@ async function fishWithRod(bot, task, spot, actions, goal, save, { want = 4, sec
 // The rod's option, where it can be done: a rod carried, or two string to
 // make one of, and open water with a bank within 32 blocks. `target`: the
 // reserve the food is for, in points; `supply`: the points carried.
+// What the bot's fishing has come to, beside its food errands (note 1303):
+// 13 sessions on five trials (2026-10-05 09:25 to 18:18Z, flight records)
+// caught 64 cod and salmon in 33 minutes; the 64 food errands of the three
+// hours to 18:40Z, 178 minutes in all, ended 49 food points up.
+const FISH_RECORD = 'In the record (2026-10-05, 09:25 to 18:18Z) the bot\'s 13 fishing sessions caught 64 cod and salmon in 33 minutes, about two a minute (about ten food points a minute cooked); its 64 food errands of the three hours to 18:40Z, hunting and searching, 178 minutes in all, ended 49 food points up.';
 function rodChoice(bot, task, goal, save, actions, { target = 12, supply = 0, walkFacts = () => ({}) } = {}) {
   if (!/overworld/.test(String(bot.game?.dimension || 'overworld'))) return null;
   const { isSetAside, setAside } = require('./progress');
@@ -292,7 +297,7 @@ function rodChoice(bot, task, goal, save, actions, { target = 12, supply = 0, wa
   return {
     target: { x: spot.stand.x, y: spot.stand.y, z: spot.stand.z },
     description: { action: `Fish with the rod from the bank at the water ${spot.distance} blocks off, until ${want} cod or salmon are caught or four minutes pass (a threat ends it sooner). ` +
-        `A bite comes 5 to 30 seconds after each cast under open sky (about twice that under a roof), and about 72 catches in 100 are a cod or a salmon (${raw} hunger raw and safe to eat so, ${f.cooked_cod.foodPoints} and ${f.cooked_salmon.foodPoints} cooked); the rest are junk, treasure, a tropical fish (1) or a pufferfish (poison, never eaten). The bot stands still on the bank while it fishes.`,
+        `A bite comes 5 to 30 seconds after each cast under open sky (about twice that under a roof), and about 72 catches in 100 are a cod or a salmon (${raw} hunger raw and safe to eat so, ${f.cooked_cod.foodPoints} and ${f.cooked_salmon.foodPoints} cooked); the rest are junk, treasure, a tropical fish (1) or a pufferfish (poison, never eaten). The bot stands still on the bank while it fishes. ${FISH_RECORD}`,
       water: { x: spot.water.x, y: spot.water.y, z: spot.water.z }, distance: spot.distance,
       rod: rod ? `carried, ${castsLeft(bot, rod)} casts left in it` : `made first from 3 sticks and 2 of the ${string} string carried (the sticks from planks, at a crafting table)`,
       openSky: spot.openSky, fishWanted: want, secondsAFish: each, catchSeconds: expected * each, pointsExpectedRaw: expected * raw, pointsExpectedCooked: cooked,

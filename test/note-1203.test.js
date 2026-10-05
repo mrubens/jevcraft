@@ -60,6 +60,7 @@ test('on the water with no land animal: before, the search alone; now a cod in o
   assert.equal(rod.pointsExpectedRaw, 12); assert.equal(rod.pointsExpectedCooked, 32);
   assert.equal(rod.openSky, true); assert.equal(rod.walkSeconds, 0);
   assert.match(rod.action, /72 catches in 100 are a cod or a salmon \(2 hunger raw and safe to eat so, 5 and 6 cooked\)/);
+  assert.match(rod.action, /13 fishing sessions caught 64 cod and salmon in 33 minutes, about two a minute .* 64 food errands .* ended 49 food points up/);
   // The minutes to the food count the rod's wait (food-plan.js).
   assert.equal(require('../src/food-plan').minutesOf('fish_with_rod', choices.fish_with_rod, 'surface'), 198000);
 });
