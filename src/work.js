@@ -9054,7 +9054,7 @@ function gameHandlers(bot, decisionClient) {
         wolves: (bot, task, goal, save, sit) => require('./wolves').commandWolves(bot, task, goal, save, sit),
         // Back for a death's drops (corpse-run.js).
         spare_kit: (bot, task, goal, save) => require('./home-stash').askSpareKit(bot, task, goal, save, homeActions(), decisionClient),
-        corpse_run: (bot, task, goal, save) => require('./corpse-run').corpseRunStep(bot, task, goal, save, { move: navigate, surface: surfaceStep }),
+        corpse_run: (bot, task, goal, save) => require('./corpse-run').corpseRunStep(bot, task, goal, save, { move: navigate, surface: surfaceStep, gatherFood: (b, t, g, sv) => gatherNetherFood(b, t, g, sv, Date.now()) }),
         take_cache: async (bot, task, goal, save) => {
           const { nearCache, emptyCache } = require('./field-cache');
           const near = nearCache(bot, goal);

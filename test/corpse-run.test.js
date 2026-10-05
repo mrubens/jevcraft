@@ -253,7 +253,7 @@ test('a death before the last, its list not kept: the eyes the run had made befo
   goal.endPortal = { neededEyes: 12 };
   corpseRun(bot, goal).status = 'done';
   const earlier = corpseRun(bot, goal);
-  Object.assign(earlier, { status: 'left', choice: 'leave_them', told: 6 });
+  Object.assign(earlier, { status: 'left', choice: 'leave_them', told: 7 });
   const asked = [];
   const client = { systemOne: async ({ questions }) => { asked.push(JSON.stringify(Object.values(questions)[0])); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'leave_them', confidence: 0.9 }])) }; } };
   const task = Object.assign(new Task('run'), { opportunityClient: client });
@@ -268,7 +268,7 @@ test('a death before the last, its list not kept: the eyes the run had made befo
   has.goal.survival.deaths.unshift({ at: before, position: { x: 900, y: 69, z: 700 }, dimension: 'overworld', worn: ['iron_helmet'] });
   has.goal.gameProgress = goal.gameProgress; has.give('ender_eye', 12);
   corpseRun(has.bot, has.goal).status = 'done';
-  Object.assign(corpseRun(has.bot, has.goal), { status: 'left', told: 6 });
+  Object.assign(corpseRun(has.bot, has.goal), { status: 'left', told: 7 });
   assert.equal(corpseRun(has.bot, has.goal), null);
 });
 
@@ -479,7 +479,7 @@ test('eyes lying by the End portal found: going back is said as the walk to the 
 test('a closed run hands over to the latest earlier one due to be asked, and left runs never come near stay on the list (note 1293)', () => {
   const { bot, goal } = world();
   const run = corpseRun(bot, goal);
-  Object.assign(run, { status: 'left', told: 6 });
+  Object.assign(run, { status: 'left', told: 7 });
   const eyes = { deathAt: new Date(Date.now() - 6 * 3600000).toISOString(), position: { x: 1868, y: 61, z: -341 }, dimension: 'overworld', items: { ender_eye: 12 }, status: 'left', told: 5, passes: 0, stuck: 0 };
   const older = { deathAt: new Date(Date.now() - 11 * 3600000).toISOString(), position: { x: -211, y: 93, z: -324 }, dimension: 'nether', items: { iron_sword: 1 }, status: 'left', told: 5, passes: 0, stuck: 0 };
   goal.corpseRunsEarlier = [older, eyes];
@@ -488,9 +488,25 @@ test('a closed run hands over to the latest earlier one due to be asked, and lef
   assert.ok(goal.corpseRunsEarlier.includes(older), 'the older left run kept');
   // Told everything already: nothing opens, and nothing is thrown away.
   const b = world();
-  Object.assign(corpseRun(b.bot, b.goal), { status: 'left', told: 6 });
-  const e2 = { ...eyes, told: 6 }, o2 = { ...older, told: 6 };
+  Object.assign(corpseRun(b.bot, b.goal), { status: 'left', told: 7 });
+  const e2 = { ...eyes, told: 7 }, o2 = { ...older, told: 7 };
   b.goal.corpseRunsEarlier = [o2, e2];
   corpseRun(b.bot, b.goal);
   assert.equal(b.goal.corpseRunsEarlier.length + (b.goal.corpseRun === e2 || b.goal.corpseRun === o2 ? 1 : 0), 2, JSON.stringify({ list: b.goal.corpseRunsEarlier.map(r => [r.status, r.told]), now: [b.goal.corpseRun.status, b.goal.corpseRun.items] }));
+});
+
+test('a long walk with little food carried: getting food first is offered, and chosen, the food is gathered before the walk (note 1298)', async () => {
+  const { bot, goal } = world();
+  goal.survival.deaths[0].position = { x: 1100, y: 64, z: 0 };
+  let text = '', gathered = 0, moved = 0;
+  const client = { systemOne: async ({ questions }) => { text = JSON.stringify(Object.values(questions)[0]); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'food_first', confidence: 0.9 }])) }; } };
+  const task = Object.assign(new Task('run'), { opportunityClient: client });
+  const r = await corpseRunStep(bot, task, goal, () => {}, { move: async () => { moved++; }, collect: async () => false, gatherFood: async () => { gathered++; } });
+  assert.match(text, /Get food for the walk first, here: hunted, cooked or taken from a chest, toward 28 food points carried \(0 now\)/);
+  assert.equal(r, true); assert.equal(gathered, 1); assert.equal(moved, 0);
+  assert.equal(goal.corpseRun.choice, 'go_back');
+  goal.corpseRun.foodFirst.at = Date.now() - 21 * 60000;
+  await corpseRunStep(bot, task, goal, () => {}, { move: async () => { moved++; }, collect: async () => false, gatherFood: async () => { gathered++; } });
+  assert.equal(gathered, 1, 'twenty minutes spent: no more');
+  assert.equal(goal.corpseRun.foodFirst, undefined);
 });

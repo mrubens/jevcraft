@@ -28,7 +28,7 @@ const flat = (a, b) => Math.hypot(a.x - b.x, (a.y ?? b.y) - (b.y ?? a.y), a.z - 
 // ender, a diamond sword and its iron armor against 'what was dropped is
 // made again, or found, later', left them at 0.56 to 0.42. The eyes were
 // ninety hours of the run.
-const TOLD = 6;
+const TOLD = 7;
 function madeAgain(items = {}) {
   const out = [];
   const n = name => items[name] || 0;
@@ -280,7 +280,7 @@ async function kitTrip(bot, task, goal, save, now = Date.now()) {
   return true;
 }
 
-async function corpseRunStep(bot, task, goal, save, { move = navigate, collect = collectNearbyDrops, surface = null, room = null } = {}) {
+async function corpseRunStep(bot, task, goal, save, { move = navigate, collect = collectNearbyDrops, surface = null, room = null, gatherFood = null } = {}) {
   const run = corpseRun(bot, goal);
   if (!run && await kitTrip(bot, task, goal, save)) return false;
   if (!run) { save(); return false; }
@@ -363,13 +363,30 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     // them): going when it is day is a choice of its own, not leaving them.
     // By day too, when the walk is longer than the day that is left.
     const toDawn = Number.isFinite(t) ? Math.max(1, Math.round(((DAY.DAWN - t + 24000) % 24000) / 1200)) : null;
+    // Food for the walk first, where little is carried for it (note 1298):
+    // 25597 (2026-10-05 15:37Z), twelve eyes 1895 blocks off and nothing to
+    // eat, the walk there costing about 47 hunger sprinted, left them.
+    const foodWant = Math.min(30, Math.round(far / 40));
+    if (gatherFood && far >= 300 && foodCarried < foodWant) tree.food_first = { description: `Get food for the walk first, here: hunted, cooked or taken from a chest, toward ${foodWant} food points carried (${foodCarried} now), then set out for them; the drops do not age meanwhile. Twenty minutes at most on the food; then the walk with what there is.` };
     if (toDawn !== null && (night || minutes > until) && !run.loadedAt && /overworld/.test(run.dimension)) tree.wait_for_day = { description: `Set out for them at ${night ? 'dawn' : 'the next dawn'}, about ${toDawn} real minute${toDawn === 1 ? '' : 's'} off, with the day ahead for the walk${night ? '' : ` (the day left now, about ${until}, is shorter than the walk, about ${minutes})`}, and go on with other things until then: the drops do not age while the bot is not within 128 blocks of them. Asked again at dawn.` };
     const decision = await require('./decisions').decide('corpse_run', { client, bot, task, goal, save, tree,
       state: { distance: far, secondsLeft: left, aboutAtDeath: death.about || [], wornAtDeath: death.worn || [], wornNow, night, ...(until !== null ? { [night ? 'minutesToDawn' : 'minutesToNight']: until } : {}), ...(run.stalled ? { walksThatGotNoNearer: run.stalled } : {}), ...(kept ? { inAChest: kept } : {}) } });
     if (decision.stale) return false;
-    if (decision.path.at(-1) === 'wait_for_day') { run.waitUntil = Date.now() + toDawn * 60000; save(); return false; }
-    run.choice = decision.path.at(-1); save();
+    if (decision.path.at(-1) === 'food_first') { run.choice = 'go_back'; run.foodFirst = { at: Date.now(), want: foodWant }; save(); }
+    else if (decision.path.at(-1) === 'wait_for_day') { run.waitUntil = Date.now() + toDawn * 60000; save(); return false; }
+    if (decision.path.at(-1) !== 'food_first') run.choice = decision.path.at(-1); save();
     if (run.choice === 'leave_them') { run.status = 'left'; tripCameToNothing(bot, goal, run, save); save(); return false; }
+  }
+  // The food for the walk, where that was chosen: a pass of the gathering
+  // at a time, until it is carried or twenty minutes are spent on it.
+  if (run.foodFirst) {
+    let have = 0; try { have = require('./foraging').foodSupply(bot); } catch (_) { have = 0; }
+    if (have < run.foodFirst.want && Date.now() - run.foodFirst.at < 20 * 60000 && gatherFood) {
+      goal.step = { action: 'food_for_walk', want: run.foodFirst.want, have, to: { ...run.position } }; save();
+      await gatherFood(bot, task, goal, save);
+      return true;
+    }
+    delete run.foodFirst; save();
   }
   if (!run.announced) {
     run.announced = true;

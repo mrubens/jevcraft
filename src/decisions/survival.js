@@ -424,6 +424,7 @@ define({
   options: [
     { key: 'go_back', trip: 'the drops', label: 'go back for the drops', when: 'always', level: 'root' },
     { key: 'leave_them', label: 'leave them and go on', when: 'always', level: 'root' },
+    { key: 'food_first', label: 'get food for the walk first, then go back for them', when: 'a walk of 300 blocks or more with less food carried than the walk costs sprinted (to 30 points); twenty minutes at most on the food', level: 'root' },
     { key: 'wait_for_day', label: 'go back for them when it is day', when: 'by night in the Overworld, the drops not ageing (the bot not within 128 blocks of them since)', level: 'root' },
   ],
   instructions: { task: 'The bot died and has come back to life. Choose whether it goes back for what it dropped.', guidance: 'Each option says what is there, how far, how long the drops last, what was about when the bot died there and what it wore then and wears now.' },
