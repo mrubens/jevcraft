@@ -149,6 +149,33 @@ async function walkBearing(bot, task, goal, save, target, actions, client) {
       } };
       if (Object.keys(tree).length >= 3) break;
     }
+    // The surface's waypoints no nearer, or all of them walked again and
+    // again: a leg straight along the bearing by the walk that digs and
+    // steps down, as a death's drops are gone back for (corpse-run.js), and
+    // the waypoints asked again from where it ends (note 1272). On high
+    // ground the surveyed surface ended at the drop round it: 25593
+    // (2026-10-05 02:33 to 02:42Z, 672 blocks from where its bearings met,
+    // eleven eyes carried) and 25597 (02:24 to 02:42Z, 1,403 off) each walked
+    // the same four cells of a hilltop, a ten-block square every ten seconds,
+    // sixty-three visits each.
+    {
+      const here = bot.entity.position, d0 = horizontal(here, target);
+      const best = Object.values(tree).map(o => ({ gain: d0 - horizontal(o.target, target), visits: search.visited[key(o.target)] || 0 })).sort((x, y) => y.gain - x.gain)[0];
+      const stuckHere = !best || best.gain < 4 || Object.values(tree).every(o => (search.visited[key(o.target)] || 0) >= 3);
+      if (stuckHere && d0 > 24 && !(search.legRest > Date.now())) {
+        surface.restore();
+        const k = Math.min(1, 48 / d0), leg = new goals.GoalNearXZ(Math.round(here.x + (target.x - here.x) * k), Math.round(here.z + (target.z - here.z) * k), 4);
+        goal.step = { action: 'follow_eye_bearing', way: 'a leg straight along the bearing, down off the high ground', target }; save();
+        try { await actions.navigate(bot, task, leg, { timeoutMs: 120000, stallMs: 8000 }); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[stronghold] the leg along the bearing: ${String(err.message || err).slice(0, 160)}`); }
+        const gained = d0 - horizontal(bot.entity.position, target);
+        search.moves++;
+        // A leg that made no ground rests five minutes: the waypoints and the stall's own questions have their turn.
+        if (gained < 8) search.legRest = Date.now() + 5 * 60000;
+        save();
+        if (gained >= 8) return;
+      }
+    }
     if (!Object.keys(tree).length) {
       surface.restore();
       await actions.explore(bot, task, goal, save, 'stronghold approach', { surfaceOnly: true });
