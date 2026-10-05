@@ -1038,7 +1038,11 @@ function nextGameStage(bot, goal, skip = new Set()) {
   if (rodsShort && where === 'overworld' && keptAll && !pearlsWanting) {
     const over = require('./rod-stash').stashes(goal).filter(c => c.dimension === 'overworld' && require('./rod-stash').withContents(c));
     const rodsOver = over.reduce((n, c) => n + (c.contents?.blaze_rod || 0), 0), powderOver = over.reduce((n, c) => n + (c.contents?.blaze_powder || 0), 0), eyesOver = over.reduce((n, c) => n + (c.contents?.ender_eye || 0), 0);
-    if (count(bot, 'blaze_rod') + rodsOver >= rodsFor(target - eyes - eyesOver, count(bot, 'blaze_powder') + powderOver)) {
+    // (`eyes` holds the eyes in the bot's Overworld chests already, note 1274: taken off twice, eleven eyes put away
+    // and a rod wanted for the twelfth read as nothing wanted, and 25593, 2026-10-05 03:22Z, walked 340 blocks back
+    // to take its eyes out of the chest by its stronghold before going for the rod.)
+    void eyesOver;
+    if (count(bot, 'blaze_rod') + rodsOver >= rodsFor(target - eyes, count(bot, 'blaze_powder') + powderOver) && rodsOver + powderOver > 0) {
       const take = require('./rod-stash').collectStage(bot, goal, Date.now(), { resting: true });
       if (take) return take;
     }
