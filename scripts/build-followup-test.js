@@ -23,7 +23,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const stamp = () => new Date().toTimeString().slice(0, 8);
 // What the bot says when a request has reached a resting point. Blocked and
 // budget-exhausted both invite another try, so both end the step as failures.
-const DONE = /done!|you got|i've got|i'm here|all done|i'm at /i;
+// A change to a building that already stands finishes by saying so, not by
+// announcing a building is done, so the driver waited out the clock on a step
+// that had already succeeded.
+const DONE = /done!|is changed, and|you got|i've got|i'm here|all done|i'm at /i;
 const STUCK = /say "jev resume"|ask me to build it again|taking a while/i;
 
 const tester = mineflayer.createBot({
