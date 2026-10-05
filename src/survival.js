@@ -4668,7 +4668,13 @@ class Survival {
     const getsIn = m => bites(m) && !!plan && arrives(m) < plan.shutAt;
     const sealPriced = plan ? stanceCost({ mobs: mobs.filter(m => !bites(m) || getsIn(m)), setup: plan.seconds, reaches: m => inCellIds.has(m.id) || getsIn(m) }) : null;
     const sealCost = (inCell.length ? ` ${ownCellsSays(inCell)}: ${inCell.length === 1 ? 'it is' : 'they are'} inside the pocket, and closed, it shuts ${inCell.length === 1 ? 'it' : 'them'} in with the bot.` : '') + (sealPriced ? costSays(sealPriced, bot.health, mobs, { doing: 'building', done: 'Shut in' }) : '');
-    if (shelter.materialStock(bot) >= 4) options.seal = { ...(sealPriced ? { expects: { damage: sealPriced.damage, seconds: sealPriced.seconds, oneHit } } : {}), description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.' + race + buildCost + creeperNote + sealCost + nightLong + unseen + (high ? ` The bot stands ${high} block${high === 1 ? '' : 's'} above the ground beside it: the walls go up beside nothing, placed against open air.` : ''),
+    // A hostile in the bot's own cells is shut in with it: no seal (note
+    // 1328, physical safety). 25593 (2026-10-05 23:05:12 to 23:05:19Z), its
+    // twelve eyes held, chose the seal five times with a skeleton 0.1 blocks
+    // off and a zombie 0.5, priced at 8 damage in fifteen seconds, and went
+    // from 13.3 health to none in seven.
+    const shutIn = inCell.filter(t => t.entity?.name !== 'creeper');
+    if (shelter.materialStock(bot) >= 4 && !shutIn.length) options.seal = { ...(sealPriced ? { expects: { damage: sealPriced.damage, seconds: sealPriced.seconds, oneHit } } : {}), description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.' + race + buildCost + creeperNote + sealCost + nightLong + unseen + (high ? ` The bot stands ${high} block${high === 1 ? '' : 's'} above the ground beside it: the walls go up beside nothing, placed against open air.` : ''),
       run: () => this.sealHere(task, goal, save, danger) };
     // The classic enderman roof (note 727, after 713's and 718's own "not
     // fixed"): an enderman is 2.9 blocks tall and cannot path into a cell

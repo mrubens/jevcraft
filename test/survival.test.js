@@ -3458,15 +3458,14 @@ test('at the foot of a shaft open onto a tunnel, the mobs drop into the bot\'s o
   const inCell = survival.stanceOptions(new Task('t'), {}, () => {}, [zombie(1, 0.5, 9, 0.5), zombie(2, 0.7, 9, 0.7), zombie(3, 0.3, 9, 0.3)], false);
   assert.match(inCell.pillar.description, /3 zombies stand in the bot's own cells with it: the pillar's first block goes into the cell under the bot's feet, and no block goes where a body is, so it does not rise while they stay there/);
   assert.match(inCell.pillar.description, /Not up while they stand there, 3 zombies still reach it/);
-  assert.match(inCell.seal.description, /3 zombies stand in the bot's own cells with it: they are inside the pocket, and closed, it shuts them in with the bot/);
-  assert.doesNotMatch(inCell.seal.description, /none of them reaches it/);
+  assert.equal(inCell.seal, undefined, 'a mob in the bot\'s own cells: no seal, it would shut them in (note 1328)');
   assert.match(inCell.fight.description, /3 zombies stand in the bot's own cells with it, at arm's length whatever the cells round it hold/);
   // One of three in its cell: the one shut in with it is said, not the kind.
   const one = survival.stanceOptions(new Task('t'), {}, () => {}, [zombie(1, 0.5, 9, 0.5), zombie(2, 0.5, 11, 2.5), zombie(3, 0.5, 11, 3.5)], false);
   // And the one at the shaft's lip 2.8 blocks off can drop in before the
   // lid's 0.6 seconds are done (note 581): it is in with the bot too; the
   // one behind it at 3.6 finds the lid on.
-  assert.match(one.seal.description, /A zombie stands in the bot's own cells with it: it is inside the pocket, and closed, it shuts it in with the bot\..*Shut in, 2 zombies still reach it\./);
+  assert.equal(one.seal, undefined, 'one in its cells: no seal either (note 1328)');
 });
 
 test('in water with a drowned, the stances say so, no pillar, pocket or bunker is offered, and getting out of the water is', () => {
