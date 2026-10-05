@@ -7351,7 +7351,12 @@ function idleOptions(bot, goal) {
   const raw = Object.entries(RAW_FOOD).filter(([item]) => stock[item] > 0);
   if (raw.length) {
     const [item, cooked] = raw.sort((a, b) => stock[b[0]] - stock[a[0]])[0];
-    options.cook_food = { description: `Cook the ${stock[item]} raw ${item.replaceAll('_', ' ')} being carried; cooked food restores far more hunger.`, item: cooked, count: stock[item] };
+    // Said in points, raw and cooked (note 1312): of the meat eaten in the
+    // three hours to 21:10Z (2026-10-05) about 85 in 100 was eaten raw, 204
+    // raw mutton to 21 cooked and 136 raw beef to 12.
+    const pts = n => bot.registry?.foodsByName?.[n]?.foodPoints || 0;
+    const n = stock[item], rawPts = n * pts(item), cookedPts = n * pts(cooked);
+    options.cook_food = { description: `Cook the ${n} raw ${item.replaceAll('_', ' ')} being carried: ${rawPts} food points eaten raw, ${cookedPts} cooked (+${cookedPts - rawPts}), about ten seconds an item in a furnace.`, item: cooked, count: n };
   }
   const carried = bot.inventory.items().map(i => i.name);
   const missing = STONE_TOOLS.filter(tool => !carried.some(name => name.endsWith(tool.slice(5)) && toolTier(name) >= 2));

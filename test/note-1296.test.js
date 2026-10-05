@@ -25,3 +25,12 @@ test('a hunt is said with how the bot\'s own hunts of that mob went (note 1309)'
   assert.match(src, /spider: \{ n: 86, died5: 15 \}/);
   assert.match(src, /were followed by a death within five minutes/);
 });
+
+test('cooking the raw meat carried is said in points, raw and cooked (note 1312)', () => {
+  const { idleOptions } = require('../src/work');
+  const reg = require('minecraft-data')('26.1');
+  const items = [{ name: 'beef', count: 18, type: reg.itemsByName.beef.id }];
+  const bot = { registry: reg, version: '26.1', game: { dimension: 'overworld' }, entity: { position: new Vec3(0, 64, 0) }, inventory: { items: () => items, slots: [] }, findBlocks: () => [], blockAt: () => null };
+  const o = idleOptions(bot, {});
+  assert.match(o.cook_food.description, /Cook the 18 raw beef being carried: 54 food points eaten raw, 144 cooked \(\+90\)/);
+});
