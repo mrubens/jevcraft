@@ -1086,3 +1086,13 @@ test('a stale food item: the second equip takes the one carried now, by name (no
   assert.deepEqual(equipped, [12, 20], 'the stale one, then the one carried now');
   assert.equal(eaten, 1);
 });
+
+test('the food gone from the pack by the bite (eaten just before): no error, chosen again next (note 1317)', async () => {
+  let items = [{ name: 'mutton', count: 1, slot: 36 }];
+  const bot = { food: 15, health: 11, entity: {}, heldItem: null, quickBarSlot: 0,
+    registry: { foodsByName: { mutton: { effectiveQuality: 3.2 } } },
+    inventory: { items: () => items, slots: [] },
+    equip: async () => { items = []; }, consume: async () => {}, deactivateItem() {},
+  };
+  assert.equal(await maintainVitals(bot, new Task('heal')), false);
+});

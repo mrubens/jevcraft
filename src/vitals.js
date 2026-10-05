@@ -1801,6 +1801,12 @@ async function maintainVitals(bot, task, onAction = () => {}, { client = null, g
       // What the hand and the hotbar hold when this happens (note 1314):
       // a second equip and 300 ms did not bring it back on 25595 (21:16Z).
       const q = bot.quickBarSlot, at = 36 + (Number.isInteger(q) ? q : -100);
+      // The food gone from the pack by the bite (note 1317): eaten just
+      // before, the pack read before the server said so. 25595 (2026-10-05
+      // 21:29Z): 'mutton slot 36, hotbar slot holds nothing, 0 carried'.
+      // Not an error: the next tick chooses from what is carried.
+      const left = bot.inventory.items().filter(i => i.name === food.name).reduce((n, i) => n + i.count, 0);
+      if (!left) { console.log(`[vitals] the ${food.name} was gone from the pack by the bite (eaten just before): chosen again next`); return false; }
       console.log(`[vitals] food not in hand: ${food.name} slot ${food.slot}, quickBarSlot ${q}, hotbar slot holds ${bot.inventory.slots?.[at]?.name || 'nothing'}, offhand ${bot.inventory.slots?.[45]?.name || 'nothing'}, ${bot.inventory.items().filter(i => i.name === food.name).reduce((n, i) => n + i.count, 0)} carried`);
       throw new Error('The food was not in hand to eat');
     }
