@@ -384,7 +384,8 @@ function noneGood(id, decision, listed, { bot, goal, state, last = null }) {
   const calmAlways = CALM_WHEN_NONE_GOOD.has(id) && ng > 0 && ng >= bestW;
   if (!why && !SAY_ONLY.has(id) && (ng >= 2 * bestW || calmAlways) && ng > 0) {
     const KEEP = require('../intention').KEEP;
-    const calm = keys.find(k => k !== NONE_GOOD_KEY && (listed[k]?.ladderNext || KEEP.test(k) || CALM_KEY[id] === k))
+    const calm = (CALM_FIRST[id] || []).find(k => keys.includes(k))
+      || keys.find(k => k !== NONE_GOOD_KEY && (listed[k]?.ladderNext || KEEP.test(k) || CALM_KEY[id] === k))
       // A stall's detour has no 'keep on' of its own: none good at twice the
       // best listed is the rest waited out or another way at it from here,
       // not the listed way that leaves (note 1252). 25593 (2026-10-04
@@ -542,6 +543,12 @@ const SAY_ONLY = new Set(['encounter_stance', 'body_way', 'shot_answer', 'ranged
 // outside came to nothing, and a zombie had it at 10:12:24.
 const CALM_WHEN_NONE_GOOD = new Set(['upkeep', 'pocket_next']);
 const CALM_KEY = Object.freeze({ pocket_next: 'stay' });
+// Before keep_at_it at a stall's rung question, where the bot is stuck in
+// the terrain: working free of it (note 1285). 25597 (2026-10-05 07:23 to
+// 07:40Z), in a sandstone pit eight blocks under the sky by its End portal
+// with its twelve eyes, answered none good at twice the best a dozen times
+// and was given keep_at_it each time, the walk to the wood 'no route'.
+const CALM_FIRST = Object.freeze({ rung_progress: ['work_free'] });
 const CALM_ORDER = Object.freeze({ stillness_detour: ['until_rest_ends', 'differently', 'work_free'] });
 // The questions about the plan, which wait while a fight is on (danger.js
 // fightOn, note 696): the legs, the fortress's questions, the detours, the

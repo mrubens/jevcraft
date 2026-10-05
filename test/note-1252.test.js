@@ -15,3 +15,13 @@ test('at a stall\'s detour, none good at twice the best listed is another way fr
   const d = await decide('stillness_detour', { client: asked({ none_good: 0.40, pearls_overworld: 0.15, pearls_barter: 0.12, differently: 0.11, work_free: 0.1 }), bot, goal: { kind: 'win' }, tree: tree(), state: {} });
   assert.deepEqual(d.path, ['differently']);
 });
+
+test('at the rung\'s stall question, none good at twice the best works free of the terrain where that is offered, before keep_at_it (note 1285)', async t => {
+  process.env.JEV_NONE_GOOD = '1';
+  const { decide } = require('../src/decisions');
+  const bot = { entity: { position: new Vec3(1883.5, 63, -367.5) }, game: { dimension: 'overworld', gameMode: 'survival' }, inventory: { items: () => [] }, health: 20, food: 17, entities: {}, time: { timeOfDay: 1000 } };
+  const client = { systemOne: async () => ({ answers: { branch_0: { choice: 'none_good', confidence: 0.4, probabilities: { none_good: 0.54, keep_at_it: 0.15, differently: 0.12, work_free: 0.1 } } } }) };
+  const tree = { keep_at_it: { description: 'Keep at it.' }, differently: { description: 'Another way.' }, work_free: { description: 'Work free of the terrain.' } };
+  const d = await decide('rung_progress', { client, bot, goal: { kind: 'win' }, tree, state: {} });
+  assert.deepEqual(d.path, ['work_free']);
+});
