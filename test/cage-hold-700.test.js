@@ -144,10 +144,12 @@ test('25591 at 22:58:06Z: beside a live cage with an iron sword and no pickaxe, 
   try { const { bot, goal } = make(); await upkeepStep(bot, { check() {} }, goal, () => {}, client); } finally { delete process.env.JEV_BLAZE_GOAL; }
   assert.equal(asked.length, 1);
   const { options, state } = asked[0];
+  // What is carried is said on each answer (note 1267).
+  assert.match(options.carry_on, /Carried now: 1 blaze rod\..* A death drops them where it happens\./);
   assert.equal(Object.keys(options)[0], 'carry_on', `order: ${Object.keys(options)}`);
   assert.match(options.carry_on, /^Carry on with the fight at the spawner 4 blocks off, with the iron sword: a blaze needs a sword, not a pickaxe; asked again in five minutes/);
   assert(options.fetch_stems, `offered: ${Object.keys(options)}`);
-  assert.match(options.fetch_stems, /It leaves the spawner 4 blocks off, where the rods are, and they need a sword, which is carried\.$/);
+  assert.match(options.fetch_stems, /It leaves the spawner 4 blocks off, where the rods are, and they need a sword, which is carried\. Carried now: 1 blaze rod\./);
   assert.doesNotMatch(options.fetch_stems, /Wood carried is sticks/);
   assert.match(JSON.stringify(state), /No pickaxe is carried; the rods need a sword, not a pickaxe, and an iron sword is carried\./);
   assert.doesNotMatch(JSON.stringify(state), /gets one first/);

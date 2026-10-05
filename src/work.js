@@ -1160,7 +1160,24 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
         carry: ` The work in hand is the walk back for what the bot dropped at its death (${u.list}), ${u.far} blocks off: ${time}.` };
     }
   } catch (_) { dropsSay = { chore: '', carry: '' }; }
-  const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description + (k === 'carry_on' ? dropsSay.carry : dropsSay.chore), run: async () => { chosen = k; await o.run(); } }]));
+  // In the Nether with the eyes' makings in the pack, each answer says so
+  // (note 1267): 25597 (2026-10-05 00:06:43Z), eleven pearls and its last
+  // rod carried and 144 blocks from its portal, 'about 3 minutes' by hand,
+  // took the fetch of a stem 76 blocks back the other way at 0.53, was back
+  // at its blaze spawner twenty minutes later and under fire.
+  let setSays = { chore: '', carry: '' };
+  try {
+    if (/nether/.test(String(bot.game?.dimension || '')) && goal?.kind === 'win') {
+      const pearls = countOf(bot, 'ender_pearl'), rods = countOf(bot, 'blaze_rod'), eyes = countOf(bot, 'ender_eye');
+      if (pearls >= 4 || rods >= 1 || eyes >= 1) {
+        const list = [eyes ? `${eyes} eye${eyes === 1 ? '' : 's'} of ender` : null, pearls ? `${pearls} ender pearl${pearls === 1 ? '' : 's'}` : null, rods ? `${rods} blaze rod${rods === 1 ? '' : 's'}` : null].filter(Boolean).join(', ');
+        let left = ''; try { const n = require('./eye-need').need(bot, goal); left = !n.rodsLeft && !n.pearlsLeft ? ' With what the chests hold, that is every rod and pearl the eyes want.' : ''; } catch (_) { left = ''; }
+        setSays = { chore: ` Carried now: ${list}.${left} A death on the way drops them where it happens; a chore that walks away from the portal is that much more of the Nether walked with them.`,
+          carry: ` Carried now: ${list}.${left} A death drops them where it happens.` };
+      }
+    }
+  } catch (_) { setSays = { chore: '', carry: '' }; }
+  const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description + (k === 'carry_on' ? dropsSay.carry + setSays.carry : dropsSay.chore + setSays.chore), run: async () => { chosen = k; await o.run(); } }]));
   try { await decideAction(bot, task, goal, save, client, onStep, tree, { situation: `${lead ? `${lead} ` : ''}${due.every(k => ['fetch_batch', 'leave_batch'].includes(k)) ? 'A batch left cooking in a furnace far off is done. Choose whether to go back for it, leave it for good, or carry on with the work.' : 'Something the bot keeps in its pockets is running short. Choose whether to see to it now or carry on with the work.'}` }, 'upkeep'); }
   finally { if (chosen === 'carry_on') goal.step = step; }
   // A pickaxe made is done: the work it was made for is the step again. Left
