@@ -39,3 +39,16 @@ test('four beds for the End: made from carried wool, and given up after twenty m
   items.pop();
   assert.equal(await prepareEndSupplies(bot, task, goal, () => {}, { acquireStep: async () => assert.fail('no more bed hunting') }), true);
 });
+
+test('a top-up taken up a while: its time and what the count did meanwhile are said beside it (note 1307)', async () => {
+  const { bot, items, goal, task } = fixture();
+  const bow = items.find(i => i.name === 'bow'); bow.durabilityUsed = registry.itemsByName.bow.maxDurability - 1;
+  goal.endKit = { spent: { bow: { ms: 40 * 60000, since: Date.parse('2026-10-05T17:04:00Z'), from: 0 } } };
+  let text = '';
+  task.opportunityClient = { systemOne: async ({ questions }) => { text = JSON.stringify(Object.values(questions)[0]); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'top_up_bow', confidence: 0.9 }])) }; } };
+  let slow = 0;
+  await prepareEndSupplies(bot, task, goal, () => {}, { acquireStep: async () => { slow++; } });
+  assert.match(text, /Taken up already for about 40 minutes of play since 17:04Z, the bow carried going from 0 to \d+ meanwhile/);
+  assert.equal(slow, 1);
+  assert.ok(goal.endKit.spent.bow.ms >= 40 * 60000);
+});

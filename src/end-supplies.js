@@ -155,7 +155,11 @@ async function prepareEndSupplies(bot, task, goal, save, actions, client = task.
   if (!pick) {
     const ring = goal.endPortal?.center && bot.entity?.position ? ` The portal's ring is ${Math.round(Math.hypot(bot.entity.position.x - goal.endPortal.center.x, bot.entity.position.z - goal.endPortal.center.z))} blocks off and ${Math.round(bot.entity.position.y - goal.endPortal.center.y)} under where the bot stands.` : '';
     const tree = { enter_now: { description: `Go to the End with what is carried now: ${kitSays(items)}; health ${Math.round((bot.health ?? 20) * 10) / 10}.${ring} Short of what the code would take: ${short.map(i => i.key).join(', ')}. ${rehearsedSays()} There is no way back out of the End but the dragon's death or the bot's own, and a death there leaves everything carried on its island.` } };
-    for (const i of short) tree[`top_up_${i.key}`] = { description: i.says };
+    // What each top-up has come to so far (note 1307): 25593 (2026-10-05
+    // 17:04 to 20:50Z) chose the bow again and again, its time on string
+    // said nowhere, the End's ring 700 blocks off and its twelve eyes held.
+    const spentSays = key => { const sp = kit.spent?.[key]; if (!sp || sp.ms < 5 * 60000) return ''; return ` Taken up already for about ${Math.round(sp.ms / 60000)} minutes of play since ${new Date(sp.since).toISOString().slice(11, 16)}Z, the ${key} carried going from ${sp.from} to ${counts[key] ?? 0} meanwhile.`; };
+    for (const i of short) tree[`top_up_${i.key}`] = { description: i.says + spentSays(i.key) };
     // The old order, for the tests' stand-in only (note 707).
     const oldOrder = `top_up_${(short.find(i => !['food', 'health'].includes(i.key)) || short[0]).key}`;
     const decision = await decide('end_kit', { client, bot, task, goal, save, tree, context: { oldOrder },
@@ -173,7 +177,10 @@ async function prepareEndSupplies(bot, task, goal, save, actions, client = task.
     try { await require('./eye-bank').eyesNow(bot, task, goal, save, actions, client, { errand: `for the End's kit (${item.key})` }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[eyes_now] ${String(err.message || err).slice(0, 200)}`); }
   }
-  await topUp(bot, task, goal, save, actions, kit.choice?.target != null ? { ...item, target: kit.choice.target } : item);
+  const sp = (kit.spent ||= {})[item.key] ||= { ms: 0, since: now, from: item.carried };
+  const began = Date.now();
+  try { await topUp(bot, task, goal, save, actions, kit.choice?.target != null ? { ...item, target: kit.choice.target } : item); }
+  finally { sp.ms += Date.now() - began; save(); }
   return false;
 }
 module.exports = { prepareEndSupplies, kitItems, rehearsedSays, END_BEDS, REHEARSED };
