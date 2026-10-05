@@ -123,6 +123,13 @@ function keptNow(identity = IDENTITY) {
     const g = JSON.parse(fs.readFileSync(path.join(STATE, `${identity}.json`), 'utf8')), goal = g.goal || g;
     const chests = (goal.rodStashes || []).filter(c => !c.lostAt && !c.unreachable);
     const sum = k => chests.reduce((n, c) => n + Number(c.contents?.[k] || 0), 0);
+    // Eyes made are the rods and the pearls played through, wherever they
+    // lie now (note 1290): mid-243-ma-nether-1 (25597, 2026-10-05 08:08:44Z)
+    // drowned with its twelve eyes by its stronghold, its End portal found,
+    // and three minutes later, its pack and chests empty of rods and pearls,
+    // was ended at its 24 hours and a new world put on its port.
+    const made = goal.gameProgress?.milestones || {};
+    if (made.eyes_obtained || made.stronghold_located || made.end_portal_located) return { rods: RODS_WANTED, pearls: Math.max(PEARLS_KEEP, 12) };
     return { rods: sum('blaze_rod') + sum('blaze_powder') / 2 + sum('ender_eye') / 2, pearls: sum('ender_pearl') + sum('ender_eye') };
   } catch (_) { return { rods: 0, pearls: 0 }; }
 }
