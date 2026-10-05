@@ -204,3 +204,26 @@ test('the climb record reads what a question offered and what it cost', () => {
   assert.equal(overheadOf('water or lava in or beside it'), 'water or lava in or beside it');
   assert.equal(overheadOf('amethyst block in the way'), 'in the way: amethyst block');
 });
+
+test('25597: two sandstone under the sand in the column beside are dug from below, the sand drained where it lands, and the column stepped into (note 1287)', async () => {
+  const { drainPlan, drainOverhead } = require('../src/fall-column');
+  const { digGuardPlugin } = require('../src/skills');
+  // Feet at y 56 (25597's 64): its own column sandstone at 58, sand 59 to 62,
+  // open at 63; east, the foot open, sandstone at the head and over it, sand on that.
+  const cells = { '0,57,0': 'air', '0,58,0': 'sandstone', '1,56,0': 'air', '1,57,0': 'sandstone', '1,58,0': 'sandstone' };
+  for (let y = 59; y <= 62; y++) { cells[`0,${y},0`] = 'sand'; cells[`1,${y},0`] = 'sand'; }
+  const { bot, log, nameAt } = sim({ cells, ground: y => (y <= 55 ? 'andesite' : y <= 62 ? 'sandstone' : 'air'), items: [['cobblestone', 37]] });
+  digGuardPlugin(bot);
+  const feet = bot.entity.position.floored();
+  const plan = drainPlan(bot, feet, { up: 7, top: 63, canDig: () => true, digSeconds: () => 4 });
+  assert.equal(plan.mode, 'side');
+  assert.deepEqual(plan.side.dir, new Vec3(1, 0, 0));
+  const navigate = async (b, t, goalBlock) => { b.entity.position = new Vec3(goalBlock.x + 0.5, goalBlock.y, goalBlock.z + 0.5); };
+  const done = await drainOverhead(bot, task, plan, { dig: digAction, navigate });
+  assert.equal(log.buried, 0, 'nothing in the body');
+  assert.deepEqual(log.digs.slice(0, 2).map(d => d.at), ['1,57,0', '1,58,0'], 'the two sandstone, from below');
+  assert.equal(log.digs.filter(d => d.at === '1,56,0').length, 4, 'the sand dug where it lands, at the foot, a sand each');
+  for (let y = 56; y <= 63; y++) assert.equal(nameAt(new Vec3(1, y, 0)), 'air', `open at y ${y}`);
+  assert.equal(done.stepped, true);
+  assert.equal(nameAt(new Vec3(0, 58, 0)), 'sandstone', 'its own column untouched');
+});

@@ -33,6 +33,8 @@ const breaksFall = b => BREAKS_FALL.test(b?.name || '');
 const open = b => !!b && b.boundingBox !== 'block' && !/water|lava|bubble_column/.test(b.name || '');
 const LIQUID = /^(water|lava|flowing_water|flowing_lava|bubble_column)$/;
 const liquid = b => LIQUID.test(b?.name || '') || [true, 'true'].includes(b?.getProperties?.().waterlogged);
+// The farthest a block is dug from the eyes.
+const REACH = 4.5;
 const AROUND = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
 // Seconds a falling block takes to come down after the block under it goes:
 // two ticks before it moves, then its fall (a block in about seven ticks,
@@ -131,7 +133,7 @@ function drainSays(plan) {
   const kinds = [...new Set(plan.cells.filter(falls).map(b => b.name.replaceAll('_', ' ')))].join(' and ');
   if (plan.mode === 'torch') return `${plan.falls} block${plan.falls === 1 ? '' : 's'} of ${kinds} in it come down once the block holding ${plan.falls === 1 ? 'it' : 'them'} is dug, through the body's cells onto its floor: a torch goes on the floor at the feet first (${plan.torch.says}), and each that lands in its cell breaks and drops, standing still; the block over the head is dug again while anything comes down into it, until what is over the head is open or stays put; then the torch is taken up and the climb goes on a block put under the feet at a time.${plan.runs > 1 ? ` ${plan.runs} runs of falling blocks, a torch put down under each.` : ''}`;
   const d = plan.side.dir, dir = d.x > 0 ? 'east' : d.x < 0 ? 'west' : d.z > 0 ? 'south' : 'north';
-  return `${plan.falls} block${plan.falls === 1 ? '' : 's'} of ${kinds} over it fall as each under it is dug, and no torch is carried or makeable to break them: the column ${dir} is dug at head height from where the bot stands, each falling block landing in the cell beside the head (not the body's) and dug again as the next comes down, until it is open overhead; then its foot is dug, the bot steps in, and climbs it a block put under the feet at a time.`;
+  return `${plan.falls} block${plan.falls === 1 ? '' : 's'} of ${kinds} over it fall as each under it is dug, and no torch is carried or makeable to break them: the column ${dir} is dug at head height from where the bot stands, what holds them up dug from below and each falling block landing beside the body (not in its cells) and dug again as the next comes down, until it is open overhead; then its foot is dug, the bot steps in, and climbs it a block put under the feet at a time.`;
 }
 
 // Waits until nothing is falling in a column (no falling_block entity over
@@ -217,7 +219,33 @@ async function drainOverhead(bot, task, plan, { dig, place, navigate } = {}) {
   // Standing still, the cell beside the head dug again as each block comes
   // down into it; nothing here is over the body.
   const guard = () => !bot.entity.position.floored().equals(feet) ? 'the bot has moved off the cell it drains from' : null;
-  const dug = await drainCell(bot, task, head, { dig, guard });
+  // What holds the run up in the column beside is dug first, from below, up
+  // to the block the run sits on (note 1287): the drain digs a cell only with
+  // what falls straight over it. 25597 (2026-10-05 07:34 to 07:50Z), its feet
+  // at y 64 under sandstone at 65 and 66 and four sand to open sky, its twelve
+  // eyes in the pack sixty blocks from its End portal, had the side drain
+  // chosen and dig nothing: the sandstone at head height beside it had
+  // sandstone, not sand, over it.
+  // What comes down lies on the lowest floor in the column: the foot where
+  // it is open, else the cell beside the head.
+  const landing = open(bot.blockAt(foot)) ? foot : head;
+  let held = 0;
+  if (plan.side.column?.falls > 0) {
+    const eye = bot.entity.position.offset(0, 1.62, 0);
+    for (let c = head, i = 0; i < 8; c = c.offset(0, 1, 0), i++) {
+      const b = bot.blockAt(c);
+      if (!b || falls(b)) break;
+      if (open(b)) continue;
+      if (eye.distanceTo(c.offset(0.5, 0.5, 0.5)) > REACH) throw Object.assign(new Error(`Stopped draining the column at (${c.x}, ${c.y}, ${c.z}): the ${b.name.replaceAll('_', ' ')} holding the run up is out of reach`), { name: 'DrainStopped' });
+      const why = guard();
+      if (why) throw Object.assign(new Error(`Stopped draining the column at (${c.x}, ${c.y}, ${c.z}): ${why}`), { name: 'DrainStopped' });
+      const under = falls(bot.blockAt(c.offset(0, 1, 0)));
+      await dig(bot, task, c, { requireDrops: false });
+      held++;
+      if (under) break;
+    }
+  }
+  const dug = held + await drainCell(bot, task, landing, { dig, guard });
   if (!open(bot.blockAt(foot))) await dig(bot, task, foot, { requireDrops: false });
   const { goals } = require('mineflayer-pathfinder');
   const movements = bot.pathfinder?.movements, canDig = movements?.canDig;
