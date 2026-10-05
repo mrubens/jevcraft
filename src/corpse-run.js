@@ -117,10 +117,25 @@ function corpseRun(bot, goal, now = Date.now()) {
   // The last death's run closed (or none made for it): the latest of the
   // earlier ones still open is the run in hand, asked of Jev as its own.
   if (run) settle(run);
-  while (run?.status !== 'open' && goal.corpseRunsEarlier.length) {
-    goal.corpseRunFor = goal.corpseRunFor || run?.deathAt || death.at;
-    run = goal.corpseRun = goal.corpseRunsEarlier.pop(); delete run.choice; delete run.announced;
-    settle(run);
+  // The earlier ones not taken up stay on the list, left ones whose drops
+  // were never come near among them, so a later fact can open them again
+  // (note 1293): 25597 (mid-243-ma-end-2, 2026-10-05 14:15Z), leaving a
+  // Nether death's iron, popped its twelve eyes' run, left at 13:23Z, and
+  // the run of the day before, and kept neither.
+  if (run?.status !== 'open' && goal.corpseRunsEarlier.length) {
+    const keep = r => ['left', 'unreachable'].includes(r.status) && !r.loadedAt && now - Date.parse(r.deathAt) <= KEEP_MS;
+    const closed = run;
+    for (let i = goal.corpseRunsEarlier.length - 1; i >= 0; i--) {
+      const r = goal.corpseRunsEarlier[i];
+      settle(r);
+      if (r.status !== 'open') continue;
+      goal.corpseRunsEarlier.splice(i, 1);
+      goal.corpseRunFor = goal.corpseRunFor || closed?.deathAt || death.at;
+      run = goal.corpseRun = r; delete run.choice; delete run.announced;
+      break;
+    }
+    goal.corpseRunsEarlier = goal.corpseRunsEarlier.filter(r => r.status === 'open' || keep(r));
+    if (run === closed && closed && keep(closed) && !goal.corpseRunsEarlier.includes(closed) && closed.deathAt !== death.at) goal.corpseRunsEarlier.push(closed);
   }
   if (!run) return null;
   if (run.waitUntil > now) return null;

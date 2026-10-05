@@ -474,3 +474,22 @@ test('eyes lying by the End portal found: going back is said as the walk to the 
   await corpseRunStep(bot, Object.assign(new Task('run'), { opportunityClient: client }), goal, () => {}, { move: async () => {}, collect: async () => false });
   assert.match(text, /They lie 36 blocks from the End portal the bot found at \(1120, 32, 30\), 11 of its frames empty: the walk back is the walk to the portal, and the 12 eyes go into its frames there\./);
 });
+
+test('a closed run hands over to the latest earlier one due to be asked, and left runs never come near stay on the list (note 1293)', () => {
+  const { bot, goal } = world();
+  const run = corpseRun(bot, goal);
+  Object.assign(run, { status: 'left', told: 6 });
+  const eyes = { deathAt: new Date(Date.now() - 6 * 3600000).toISOString(), position: { x: 1868, y: 61, z: -341 }, dimension: 'overworld', items: { ender_eye: 12 }, status: 'left', told: 5, passes: 0, stuck: 0 };
+  const older = { deathAt: new Date(Date.now() - 11 * 3600000).toISOString(), position: { x: -211, y: 93, z: -324 }, dimension: 'nether', items: { iron_sword: 1 }, status: 'left', told: 5, passes: 0, stuck: 0 };
+  goal.corpseRunsEarlier = [older, eyes];
+  const next = corpseRun(bot, goal);
+  assert.equal(next?.items?.ender_eye, 12, 'the eyes\' run, asked again with what it was not told');
+  assert.ok(goal.corpseRunsEarlier.includes(older), 'the older left run kept');
+  // Told everything already: nothing opens, and nothing is thrown away.
+  const b = world();
+  Object.assign(corpseRun(b.bot, b.goal), { status: 'left', told: 6 });
+  const e2 = { ...eyes, told: 6 }, o2 = { ...older, told: 6 };
+  b.goal.corpseRunsEarlier = [o2, e2];
+  corpseRun(b.bot, b.goal);
+  assert.equal(b.goal.corpseRunsEarlier.length + (b.goal.corpseRun === e2 || b.goal.corpseRun === o2 ? 1 : 0), 2, JSON.stringify({ list: b.goal.corpseRunsEarlier.map(r => [r.status, r.told]), now: [b.goal.corpseRun.status, b.goal.corpseRun.items] }));
+});
