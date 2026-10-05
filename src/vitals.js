@@ -1785,6 +1785,14 @@ async function maintainVitals(bot, task, onAction = () => {}, { client = null, g
     });
     // The hand can empty between the equip and the bite (a slot resync);
     // mineflayer's consume reads the held item's name without looking.
+    // Equipped once more where it did, and the hand read again after a
+    // moment (note 1306): seven meals in two hours (2026-10-05 18:40 to
+    // 20:40Z) ended here, 25592 three times in a row at 11 health with a
+    // zombie 8 blocks off.
+    if (bot.heldItem === null) {
+      try { await bot.equip(food, 'hand'); if (bot._syncWindow) await bot._syncWindow(bot.inventory); } catch (_) { /* read below */ }
+      for (let i = 0; i < 6 && bot.heldItem === null; i++) await new Promise(r => setTimeout(r, 50));
+    }
     if (bot.heldItem === null) throw new Error('The food was not in hand to eat');
     // A bite the server never finished (the hand was taken by something else
     // mid-bite: a shield raised by the stance that came after, a hit's

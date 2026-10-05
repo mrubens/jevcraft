@@ -1047,3 +1047,15 @@ test('the step aside from under gravel walks on until the head is clear of the b
     assert(stoppedAt >= 4.24, `walked until the head's box left x 3: stopped at ${stoppedAt}`);
   } finally { motion.move = original; }
 });
+
+test('the hand empty after the equip: the food is equipped again and eaten, not given up (note 1306)', async () => {
+  let eaten = 0, equips = 0;
+  const bot = { food: 17, health: 11, entity: {}, heldItem: null,
+    registry: { foodsByName: { cooked_beef: { effectiveQuality: 20.8 } } },
+    inventory: { items: () => [{ name: 'cooked_beef', count: 2 }] },
+    equip: async item => { equips++; if (equips >= 2) bot.heldItem = item; }, consume: async () => { eaten++; bot.food = 20; }, deactivateItem() {},
+  };
+  assert(await maintainVitals(bot, new Task('heal')));
+  assert.equal(eaten, 1);
+  assert.equal(equips, 2);
+});
