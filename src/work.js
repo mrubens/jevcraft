@@ -6498,6 +6498,17 @@ async function portalStep(bot, task, goal, save, client) {
   }
   // A frame whose blocks are not loaded is a portal somewhere else, not ten
   // missing obsidian: go and look at it before planning another.
+  // Past six hundred blocks that portal is not walked to, as a known one is
+  // not (walkToKnownPortal): the frame's plan is let go and one is made
+  // nearer (note 1275). 25593 (2026-10-05 03:29Z), its End portal found and
+  // one blaze rod wanted for the twelfth eye, set off for the frame of its
+  // first portal 1,450 blocks back, a lava pool noted 30 blocks from where
+  // it stood.
+  if (goal.portalFrame && goal.portalFrame.origin && goal.portalFrame.blocks.some(p => !bot.blockAt(pos(p)))
+      && Math.hypot(goal.portalFrame.origin.x - bot.entity.position.x, goal.portalFrame.origin.z - bot.entity.position.z) > 600) {
+    goal.portalFrameFar = { origin: { ...goal.portalFrame.origin }, at: Date.now() };
+    delete goal.portalFrame; save();
+  }
   if (goal.portalFrame && goal.portalFrame.blocks.some(p => !bot.blockAt(pos(p)))) {
     const o = goal.portalFrame.origin;
     goal.step = { action: 'return_to_portal', portal: { ...o } }; save();
