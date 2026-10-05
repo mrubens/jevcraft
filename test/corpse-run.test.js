@@ -473,6 +473,7 @@ test('eyes lying by the End portal found: going back is said as the walk to the 
   const client = { systemOne: async ({ questions }) => { text = JSON.stringify(Object.values(questions)[0]); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'go_back', confidence: 0.9 }])) }; } };
   await corpseRunStep(bot, Object.assign(new Task('run'), { opportunityClient: client }), goal, () => {}, { move: async () => {}, collect: async () => false });
   assert.match(text, /They lie 36 blocks from the End portal the bot found at \(1120, 32, 30\), 11 of its frames empty: the walk back is the walk to the portal, and the 12 eyes go into its frames there\./);
+  assert.match(text, /Sprinting costs a point of hunger \(saturation first\) for about every 40 blocks, about 28 for this walk sprinted; the bot is at hunger \d+ with nothing carried to eat/);
 });
 
 test('a closed run hands over to the latest earlier one due to be asked, and left runs never come near stay on the list (note 1293)', () => {

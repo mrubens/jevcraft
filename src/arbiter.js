@@ -472,7 +472,13 @@ function workBodySays(bot, mobs) {
     fed = points ? '' : ', and nothing carried is food, so it does not come back while the work goes on';
   }
   const back = heals ? 'it comes back meanwhile, at hunger eighteen or more' : `it does not come back at hunger ${food}${fed}`;
-  return `Health ${Math.round(hp * 10) / 10}: ${back}.${near.length ? ` ${far.length ? 'Mobs about now, within sixteen blocks and the shooters farther off whose fire reaches the bot' : 'Mobs within sixteen blocks now'}: ${near.join(heals ? '; ' : '. ')}.` : ''}`;
+  // What hunger itself does from six down, nothing carried to eat (note
+  // 1296): 25597 (2026-10-05 14:55 to 15:13Z), on its way to its twelve eyes
+  // with nothing to eat, answered work over survival at hunger 7 down to 1
+  // and starved to the mobs 90 blocks from them.
+  const diff = String(bot.game?.difficulty ?? 'normal');
+  const starve = fed && food <= 6 ? ` At hunger 6 or less the bot cannot sprint; at 0 health falls a point every four seconds${/hard|3/.test(diff) ? ', to death' : /easy|1/.test(diff) ? ', to ten' : ', to a single point'}; sprinting costs a point of hunger for about every 40 blocks.` : '';
+  return `Health ${Math.round(hp * 10) / 10}: ${back}.${starve}${near.length ? ` ${far.length ? 'Mobs about now, within sixteen blocks and the shooters farther off whose fire reaches the bot' : 'Mobs within sixteen blocks now'}: ${near.join(heals ? '; ' : '. ')}.` : ''}`;
 }
 function withSays(option, c, bot, state, mobs, now) {
   const add = [];
@@ -1163,4 +1169,4 @@ function packSays(bot) {
   } catch (_) { return ''; }
 }
 
-module.exports = { packSays, fightStands, ASKS, PROMISE_MS, promiseOf, promised, withUnkept, notAsked, blowOf, BLOWS_LEFT, STRUCK_MS, mobWouldSays, rungWatch, ABSENT_PASSES, ASK_MS, answerOrCut, claimSays, ALERTS, mode, arbitrate, rule, take, shadow, watch, watchOnce, unwatch, outranks, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, RULING_MAX_MS, FIGHT_ACTIONS, IDLE_MS, WATCH_MS, FOOD_BANDS, broken };
+module.exports = { workBodySays, packSays, fightStands, ASKS, PROMISE_MS, promiseOf, promised, withUnkept, notAsked, blowOf, BLOWS_LEFT, STRUCK_MS, mobWouldSays, rungWatch, ABSENT_PASSES, ASK_MS, answerOrCut, claimSays, ALERTS, mode, arbitrate, rule, take, shadow, watch, watchOnce, unwatch, outranks, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, RULING_MAX_MS, FIGHT_ACTIONS, IDLE_MS, WATCH_MS, FOOD_BANDS, broken };
