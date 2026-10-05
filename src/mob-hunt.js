@@ -1863,6 +1863,46 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   // rings around the portal: fortress strips run north to south, so a walk
   // east or west crosses one. Nether bricks in view end the sweep.
   if (handler.dimension === 'nether' && actions.tunnel) { await findFortressStep(bot, task, goal, save, actions); return; }
+  // String from a remembered mineshaft's cobwebs, or the spiders searched
+  // for (note 1318): Jev's choice, asked again after twenty minutes. Of the
+  // bot's 86 spider hunts of 2026-10-05 15 were followed by a death within
+  // five minutes; 25593 remembered four mineshafts and hunted spiders for
+  // its bow's string four hours.
+  if (step.item === 'string' && dimension(bot) === 'overworld' && actions.dig && actions.navigate && bot.inventory.items().some(i => /_sword$/.test(i.name))) {
+    const here = bot.entity.position, now = Date.now();
+    const shafts = (goal.landmarks || []).filter(l => l.kind === 'mineshaft' && (l.dimension || 'overworld') === 'overworld')
+      .map(l => ({ ...l, d: Math.round(Math.hypot(l.x - here.x, l.z - here.z)) })).filter(l => l.d <= 400 && !isSetAside(goal, 'mineshaft_webs', `${l.x},${l.z}`)).sort((p, q) => p.d - q.d);
+    if (shafts.length) {
+      const m = shafts[0];
+      let pick = goal.stringWay && now - goal.stringWay.at < 20 * 60000 ? goal.stringWay.pick : null;
+      if (!pick) {
+        const rec = HUNT_RECORD.spider;
+        const tree = {
+          mineshaft_webs: { description: `Walk to the mineshaft seen ${m.d} blocks off at (${m.x}, ${m.y}, ${m.z}) and cut its cobwebs with the sword, a string a web and no fight: a mineshaft's corridors are hung with them, and often a cave spider's spawner sits among them (its spiders poison).` },
+          search_spiders: { description: `Go on looking for spiders here, rings of 24 blocks about; they come out at night. The record (${HUNT_RECORD.when}): of the bot's ${rec.n} spider hunts, ${rec.died5} were followed by a death within five minutes.` },
+        };
+        const d = await require('./decisions').decide('string_way', { client: task.opportunityClient, bot, task, goal, save, tree, state: { wanted: Math.max(0, (step.count || 1) - countOf(bot, 'string')), mineshaft: { distance: m.d, y: m.y } } });
+        if (d.stale) return;
+        pick = d.path.at(-1) === 'mineshaft_webs' ? 'mineshaft_webs' : 'search_spiders';
+        goal.stringWay = { pick, at: now }; save();
+      }
+      if (pick === 'mineshaft_webs') {
+        goal.step = { action: 'to_mineshaft_webs', target: { x: m.x, y: m.y, z: m.z }, distance: m.d }; save();
+        const near = () => bot.entity.position.distanceTo(new Vec3(m.x, m.y, m.z)) <= 24;
+        if (!near()) {
+          try { await actions.navigate(bot, task, new goals.GoalNear(m.x, m.y, m.z, 4), { timeoutMs: 120000, stallMs: 15000 }); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+          if (!near()) return;
+        }
+        const webId = bot.registry.blocksByName.cobweb?.id;
+        const webs = webId != null && bot.findBlocks ? bot.findBlocks({ matching: webId, maxDistance: 32, count: 48 }) : [];
+        if (!webs.length) { setAside(goal, 'mineshaft_webs', `${m.x},${m.z}`, 'no cobweb within 32 blocks of it', 3600000); delete goal.stringWay; save(); return; }
+        try { await require('./home-base').cutCobwebs(bot, task, goal, save, actions, webs, Math.max(1, (step.count || 1) - countOf(bot, 'string'))); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'mineshaft_webs', `${m.x},${m.z}`, String(err.message).slice(0, 120), 1800000); save(); }
+        return;
+      }
+    }
+  }
   // A hunt circles where it started, in rings of twenty-four blocks, rather
   // than walking the map's frontier: the mob comes to the bot at night. By
   // day underground the caves are the hunting ground, not the surface.

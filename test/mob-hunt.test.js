@@ -2338,3 +2338,24 @@ test('a hunt for string with a sword and cobwebs about: cutting them is offered 
   assert.match(crit.cut_cobwebs, /Cut the 3 cobwebs within \d+ blocks with the sword instead: each drops a string/);
   assert.ok(cut.length >= 1, 'webs cut');
 });
+
+test('string wanted, no spider in view, a mineshaft remembered: where the string comes from is asked, and the mineshaft chosen, its webs are cut (note 1318)', async () => {
+  const { bot, task, goal } = fixture('spider');
+  bot.game.dimension = 'overworld'; bot.game.minY = 0; bot.game.height = 256;
+  delete bot.entities[7];
+  bot.inventory.slots[36] = { name: 'iron_sword', slot: 36, count: 1, durabilityUsed: 0, type: registry.itemsByName.iron_sword.id };
+  goal.landmarks = [{ kind: 'mineshaft', x: 100, y: 40, z: 0, dimension: 'overworld' }];
+  const webs = new Set(['101,40,0', '102,40,0']);
+  bot.findBlocks = ({ matching }) => matching === registry.blocksByName.cobweb.id ? [...webs].map(k => new Vec3(...k.split(',').map(Number))) : [];
+  const was = bot.blockAt; bot.blockAt = p => webs.has(`${p.x},${p.y},${p.z}`) ? { name: 'cobweb' } : was(p);
+  let asked = null;
+  task.opportunityClient = { systemOne: async ({ questions }) => { asked = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'mineshaft_webs' } } }; } };
+  const cut = [];
+  const actions = { acquireStep: async () => {}, explore: async () => assert.fail('not a spider search'),
+    navigate: async () => { bot.entity.position = new Vec3(100.5, 40, 0.5); },
+    dig: async (b, t, p) => { cut.push(`${p.x},${p.y},${p.z}`); webs.delete(`${p.x},${p.y},${p.z}`); } };
+  await prepareMobHunt(bot, task, { entity: 'spider', item: 'string', count: 3 }, goal, () => {}, actions);
+  assert.match(asked.mineshaft_webs, /Walk to the mineshaft seen 100 blocks off at \(100, 40, 0\) and cut its cobwebs/);
+  assert.match(asked.search_spiders, /of the bot's 86 spider hunts, 15 were followed by a death within five minutes/);
+  assert.equal(cut.length, 2);
+});

@@ -4,6 +4,19 @@
 const { define } = require('./index');
 const { endDecisionInstructions } = require('./end-state');
 
+// String from a mineshaft's cobwebs or the spiders (src/mob-hunt.js prepareMobHunt, note 1318).
+define({
+  id: 'string_way', area: 'combat', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'String is wanted and no spider is in view: walk to a remembered mineshaft and cut its cobwebs, or go on looking for spiders here?',
+  trigger: 'A hunt for string in the Overworld with a sword carried and a mineshaft remembered within 400 blocks; asked again after twenty minutes.',
+  source: 'src/mob-hunt.js (prepareMobHunt)',
+  options: [
+    { key: 'mineshaft_webs', label: 'walk to the mineshaft and cut its cobwebs', when: 'always here; said with the walk and the cave spider spawner a mineshaft often holds', level: 'root' },
+    { key: 'search_spiders', label: 'go on looking for spiders here', when: 'always here; said with the record of the bot\'s spider hunts', level: 'root' },
+  ],
+  instructions: { task: 'String is wanted for a bow or a fishing rod. Choose where it comes from.', guidance: 'Each option says what it costs: the walk and what lies at a mineshaft, or the record of the bot\'s own spider hunts.' },
+});
+
 define({
   id: 'hunt_target', area: 'combat', parent: 'rung_progress', kind: 'combat', primitive: 'choice', stakes: 'high', tree: true,
   question: 'The request needs a mob\'s drop: which observed mob should the bot fight now, or leave them for now?',
