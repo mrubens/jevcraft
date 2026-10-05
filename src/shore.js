@@ -202,9 +202,7 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
       // (2026-10-05 03:39 to 04:17Z), its bearings meeting at (1839, -288)
       // out at sea, got within 200 blocks of it at 04:09Z and swam 250 back
       // to the desert it had walked, twice in forty minutes.
-      const est = goal.strongholdSearch?.estimate, located = goal.gameProgress?.milestones?.stronghold_located;
-      const toward = est && !located && (goal.strongholdSearch.bearings || []).length >= 2 ? { key: 'stronghold', x: Math.round(est.x), z: Math.round(est.z), biome: 'stronghold' } : null;
-      if (await crossSea(bot, task, goal, save, { move, toward })) return true;
+      if (await crossSea(bot, task, goal, save, { move })) return true;
       const headings = [[1, 0], [0, 1], [-1, 0], [0, -1]];
       goal.seaHeading ??= Math.floor(Math.random() * 4); save();
       const [dx, dz] = headings[goal.seaHeading];
@@ -586,7 +584,13 @@ function knownLand(bot, goal) {
   return found.filter(p => flat(p) > 24).sort((a, b) => flat(a) - flat(b))[0] || null;
 }
 
+// The place the stronghold's bearings meet, while it is unfound: every swim out of sight of land goes on toward it (note 1277), whoever asks for the swim.
+function strongholdToward(goal) {
+  const est = goal?.strongholdSearch?.estimate, located = goal?.gameProgress?.milestones?.stronghold_located;
+  return est && !located && (goal.strongholdSearch.bearings || []).length >= 2 ? { key: 'stronghold', x: Math.round(est.x), z: Math.round(est.z), biome: 'stronghold' } : null;
+}
 async function crossSea(bot, task, goal, save, { segmentMs = SEGMENT_MS, swimMs = SWIM_MS, move = navigate, toward = null } = {}) {
+  toward = strongholdToward(goal) || toward;
   const { inWater } = require('./survival');
   const { setAside } = require('./progress');
   // Why a crossing was not made, for the audit: the reason it declined.
@@ -642,4 +646,4 @@ async function crossSea(bot, task, goal, save, { segmentMs = SEGMENT_MS, swimMs 
   return before - flat() >= 4 || !!goal.step.landInView;
 }
 
-module.exports = { noteBadShore, badShore, hiddenFrom, landingsAbout, shoreLand, shoreLandYielding, clearHeadroom, reachShore, digToShore, notchOut, stepOut, crossSea, atSea, knownLand, landInView, ownGround };
+module.exports = { strongholdToward, noteBadShore, badShore, hiddenFrom, landingsAbout, shoreLand, shoreLandYielding, clearHeadroom, reachShore, digToShore, notchOut, stepOut, crossSea, atSea, knownLand, landInView, ownGround };
