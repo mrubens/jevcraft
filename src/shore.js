@@ -196,7 +196,15 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
     const unloaded = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => { for (let r = 1; r <= 24; r++) for (const dy of [0, 1]) if (!bot.blockAt(feetNow.offset(dx * r, dy, dz * r))) return true; return false; });
     if (!land.length && atSea(bot) && !unloaded && !landInView(bot, 48, new Set())) {
       policy.restore();
-      if (await crossSea(bot, task, goal, save, { move })) return true;
+      // On the stronghold's search with a place the bearings meet, the swim
+      // is on toward that place, not back to the land walked (note 1277): a
+      // stronghold lies under the sea as often as under land. 25597
+      // (2026-10-05 03:39 to 04:17Z), its bearings meeting at (1839, -288)
+      // out at sea, got within 200 blocks of it at 04:09Z and swam 250 back
+      // to the desert it had walked, twice in forty minutes.
+      const est = goal.strongholdSearch?.estimate, located = goal.gameProgress?.milestones?.stronghold_located;
+      const toward = est && !located && (goal.strongholdSearch.bearings || []).length >= 2 ? { key: 'stronghold', x: Math.round(est.x), z: Math.round(est.z), biome: 'stronghold' } : null;
+      if (await crossSea(bot, task, goal, save, { move, toward })) return true;
       const headings = [[1, 0], [0, 1], [-1, 0], [0, -1]];
       goal.seaHeading ??= Math.floor(Math.random() * 4); save();
       const [dx, dz] = headings[goal.seaHeading];
@@ -596,7 +604,8 @@ async function crossSea(bot, task, goal, save, { segmentMs = SEGMENT_MS, swimMs 
   const flat = () => Math.hypot(target.x - bot.entity.position.x, target.z - bot.entity.position.z);
   goal.step = { action: 'cross_sea', toward: { x: target.x, z: target.z }, land: target.biome, from: { ...start.floored() } }; save();
   const heading = Math.abs(target.x - start.x) > Math.abs(target.z - start.z) ? (target.x < start.x ? 'west' : 'east') : (target.z < start.z ? 'north' : 'south');
-  bot.chat?.(target.key === 'home' ? `No land in sight. Swimming for home, ${Math.round(flat())} blocks ${heading}.`
+  bot.chat?.(target.key === 'stronghold' ? `No land in sight. Swimming on for where the eyes point, ${Math.round(flat())} blocks ${heading}.`
+    : target.key === 'home' ? `No land in sight. Swimming for home, ${Math.round(flat())} blocks ${heading}.`
     : target === toward ? `No land in sight. Swimming for the ${target.biome} I saw, ${Math.round(flat())} blocks ${heading}.`
       : `No land in sight. Swimming for the ${target.biome} I walked, ${Math.round(flat())} blocks ${heading}.`);
   // Off the pillar and into the sea: the nearest open water toward the land.
