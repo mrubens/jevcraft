@@ -7637,7 +7637,7 @@ function sideTrips(bot, goal, client) {
   // Animals: a wolf tamed with bones, sheep and chickens bred in the field
   // (wolves.js, breeding.js).
   const wolves = require('./wolves'), breeding = require('./breeding');
-  if (wolves.tameReady(bot, goal)) trips.tame_wolf = { description: wolves.tameSays(bot, goal, { walk: blocks => tripTime(bot, Math.round(blocks)) }),
+  if (wolves.tameReady(bot, goal)) trips.tame_wolf = { description: wolves.tameSays(bot, goal, { walk: blocks => tripTime(bot, Math.round(blocks)) }), inView: !!wolves.wildWolf(bot, goal),
     says: "I'll tame that wolf", run: (b, t, g, sv) => wolves.tameWolf(b, t, g, sv, { navigate }) };
   // What a bred animal is worth, in the game's terms: a calf or a lamb is
   // grown in twenty real minutes; a grown cow is one to three beef (eight

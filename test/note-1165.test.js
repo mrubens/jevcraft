@@ -54,3 +54,11 @@ test('a rung that would gather says what the chest at home holds toward it (note
   const says = rungTakes(bot, goal, rung, (b, item, count, g) => catalogPlan(b, item, count, planningInventory(b), g));
   assert.match(says, /The chest at home \(3, 64, 40\), \d+ blocks off, holds toward it .*raw iron.*: taken out there, the gathering under it is skipped\./);
 });
+
+test('a wild wolf in view is its own choice at the top, not one of the side trips (note 1329)', () => {
+  const { strategyTree } = require('../src/strategy');
+  const tree = strategyTree({ stage_x: { description: 'x' }, tame_wolf: { description: 'Tame the wolf', trip: false, side: true }, deep_dark: { description: 'dd', trip: true, side: true }, explore: { description: 'ex', trip: true, side: true } });
+  assert.ok(tree.tame_wolf, Object.keys(tree).join(','));
+  assert.ok(tree.side_trip?.children?.deep_dark);
+  assert.equal(tree.side_trip.children.tame_wolf, undefined);
+});

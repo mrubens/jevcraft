@@ -529,7 +529,12 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
   const home = !toolless && homeOption(bot, goal, planFor);
   if (home) options.home_base = home;
   if (fit && !toolless) for (const [key, side] of Object.entries(sides)) {
-    if (side && !isSetAside(goal, 'strategy_side', key)) options[key] = { description: side.description, says: side.says, run: side.run, side: true, trip: true };
+    // A wild wolf in view with bones carried is its own choice at the top,
+    // not one of the side trips under one (note 1329): offered there once in
+    // ten hours of 2026-10-05, with the bones carried in a fifth of the
+    // packs and two thirds of the deaths with no armour on, the zombies and
+    // skeletons a tamed wolf goes for.
+    if (side && !isSetAside(goal, 'strategy_side', key)) options[key] = { description: side.description, says: side.says, run: side.run, side: true, trip: !(key === 'tame_wolf' && side.inView) };
   }
   // Work that needs no walk or daylight (smelting the ore carried) is on
   // offer at any hour while nothing is on the bot.
