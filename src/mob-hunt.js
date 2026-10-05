@@ -4,6 +4,9 @@ const { goals } = require('mineflayer-pathfinder');
 const { handlers, combatGear, durable, carriedEquipment, equipped, readyEquipment, kitReady, observedDead, shooter, hasFood, SHOOTERS, FIGHT_FLOOR: HUNT_FLOOR } = require('./mob-policy');
 const { threats, checkThreats, NeedsSafety } = require('./danger');
 const { canStrike, defenseWeapon, bowReady, shoot, strike } = require('./combat');
+// The bot's hunts of 2026-10-05 (08:50 to 20:50Z, flight records and deaths): a
+// hunt counted from its stalk's start, a death within five minutes of it (note 1309).
+const HUNT_RECORD = { when: '2026-10-05, 08:50 to 20:50Z', spider: { n: 86, died5: 15 }, enderman: { n: 212, died5: 25 }, skeleton: { n: 45, died5: 5 }, blaze: { n: 295, died5: 11 } };
 const { deflect } = require('./projectile-guard');
 const { aimAtEntity } = require('./projectiles');
 const { dryStanding } = require('./mining-access');
@@ -1289,6 +1292,11 @@ function huntSays(bot, target, { handler, distance, mob, one, all, others, spawn
   // player takes them (pearl-record.js endermanSays, note 790).
   const drop = target.name === 'blaze' ? ` A blaze drops a rod about half the time; ${item.replaceAll('_', ' ')}s are what the request needs now, and the drop is picked up after.${require('./blaze-stand').measuredSays('open', bot).says}`
     : target.name === 'enderman' ? ` Its drop is picked up after. ${require('./pearl-record').endermanSays(bot)}` : ` Its drop is picked up after.`;
+  // How the bot's own hunts of this kind went, beside the fight's price
+  // (note 1309): the price is one fight with this mob alone; the hunts that
+  // came after it were the night, the others drawn in and the walk.
+  const huntRec = HUNT_RECORD[target.name];
+  const huntRecordSays = huntRec ? ` The record (${HUNT_RECORD.when}): of the bot's ${huntRec.n} hunts of a ${target.name.replaceAll('_', ' ')}, ${huntRec.died5} were followed by a death within five minutes.` : '';
   const price = !mob || handler.passive ? '' : all
     ? ` With ${mobsSaid(others)} reaching the bot here too and fighting with it: about ${all.fightHere.seconds} seconds and ${all.fightHere.damageTaken} damage from ${Math.round(bot.health * 10) / 10} health${all.fightHere.healthAfter <= 0 ? ' (more than the bot has)' : `, ${all.fightHere.healthAfter} after`}; this one alone would be about ${one.fightHere.seconds} seconds and ${one.fightHere.damageTaken}.${spawnerSays}`
     : ` About ${one.fightHere.seconds} seconds and ${one.fightHere.damageTaken} damage from ${Math.round(bot.health * 10) / 10} health, ${one.fightHere.healthAfter} after; it lands about ${mob.hitsBot} a hit through what is worn.${spawnerSays || ''}`;
@@ -1297,7 +1305,7 @@ function huntSays(bot, target, { handler, distance, mob, one, all, others, spawn
   const beside = [lavaNear ? ' Lava is within two blocks of it: a knockback there lands in it.' : '', dropNear ? ' A drop is within three blocks of it.' : '',
     hitters.length ? ` ${hitters.length} ${[...new Set(hitters.map(e => e.name.replaceAll('_', ' ')))].join(' and ')} within six blocks of it: ${[...new Set(hitters.map(e => UNPROVOKED[e.name].note))].join('; ')}.` : '',
     footing ? ` ${footing.trim()}` : ''].join('');
-  return `Fight the ${name} ${where}${seen ? '' : ', out of sight now (heard through the walls; it comes once it sees the bot)'}, in the open: ${how}.${drop}${price}${withNewcomers}${note}${beside}`;
+  return `Fight the ${name} ${where}${seen ? '' : ', out of sight now (heard through the walls; it comes once it sees the bot)'}, in the open: ${how}.${drop}${huntRecordSays}${price}${withNewcomers}${note}${beside}`;
 }
 // The blazes about, as the hunt's facts: how many, seen or heard, their
 // heights against the bot, a spawner seen, and what they are for.

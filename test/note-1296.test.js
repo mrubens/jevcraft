@@ -19,3 +19,9 @@ test('by night in the Overworld, next to bare: the night\'s record is said besid
   assert.match(workBodySays(bot(16000), []), /With next to no armour on at night in the Overworld, the record .*: staying up at the work was followed by a death within five minutes 2 times in 21/);
   assert.doesNotMatch(workBodySays(bot(6000), []), /next to no armour/);
 });
+
+test('a hunt is said with how the bot\'s own hunts of that mob went (note 1309)', () => {
+  const src = require('fs').readFileSync(require.resolve('../src/mob-hunt'), 'utf8');
+  assert.match(src, /spider: \{ n: 86, died5: 15 \}/);
+  assert.match(src, /were followed by a death within five minutes/);
+});
