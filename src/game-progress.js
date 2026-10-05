@@ -944,6 +944,18 @@ function nextGameStage(bot, goal, skip = new Set()) {
   // for raw gold and smelted four ingots for golden boots.
   const eyesHeldNow = count(bot, 'ender_eye') + (() => { try { return require('./eye-bank').banked(goal); } catch (_) { return 0; } })();
   const netherDone = m.eyes_obtained && eyesHeldNow >= eyeTarget(goal);
+  // At the End portal with the eyes it wants, the eyes go into its frames
+  // before any rung (note 1284): in the frames none can be lost, and a death
+  // with them in the pack drops them where it happens. 25597 (2026-10-05
+  // 07:17Z), sixty blocks from its portal with its twelve eyes and no
+  // armour, was sent for a stone sword, wood and iron with them in its pack.
+  {
+    const ep = goal.endPortal, frames = Array.isArray(ep?.frames) && ep.frames.length ? ep.frames : m.stronghold_located?.frames;
+    const need = Number.isInteger(ep?.neededEyes) ? ep.neededEyes : Array.isArray(frames) ? frames.filter(f => !f.eye).length : null;
+    const c = ep?.center || m.stronghold_located?.center, here = bot.entity?.position;
+    if (where === 'overworld' && c && here && !ep?.litAt && Number.isInteger(need) && need > 0 && count(bot, 'ender_eye') >= need && Math.hypot(here.x - c.x, here.z - c.z) <= 300)
+      return { phase: 'fill_end_portal', action: 'fill_end_portal' };
+  }
   if (where === 'overworld' && supplies) { const gear = gearStage(bot, goal); if (gear && !(netherDone && /^(golden_boots|nether_)/.test(String(gear.phase)))) return gear; }
   if (where === 'end') return m.dragon_defeated ? { phase: 'return_alive', action: 'exit_end' } : { phase: 'defeat_dragon', action: 'fight_dragon' };
   // Survey throws deliberately spend eyes. Do not send Jev back to the Nether

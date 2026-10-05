@@ -8943,6 +8943,13 @@ function patrolChoice(bot, trips) {
   return ['explore'].find(k => trips[k]) || 'search';
 }
 
+function endPortalActions() {
+  return { navigate, surfaceStep, dig,
+    tunnel: async (bot, task, goal, save, target, resource) => {
+      if (pickaxeTier(bot) < 1) { await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); return; }
+      await resourceTunnelStep(bot, task, goal, save, target, resource, { dig, navigate });
+    } };
+}
 function gameHandlers(bot, decisionClient) {
   return {
         // Which open rung, or a side trip, next: Jev's choice (strategy.js).
@@ -8958,11 +8965,8 @@ function gameHandlers(bot, decisionClient) {
         rest_work: async (b, t, g, sv, { until }) => { const work = await restWork(b, t, g, sv, {}); return { idle: !work.length, says: restWorkSays(b, work, { until }) }; },
         planFor: (b, item, count, g) => catalogPlan(b, item, count, planningInventory(b), g),
         enter_nether: (bot, task, goal, save) => netherStep(bot, task, goal, save, decisionClient || task.opportunityClient),
-        enter_end: (bot, task, goal, save) => enterEnd(bot, task, goal, save, { navigate, surfaceStep, dig,
-          tunnel: async (bot, task, goal, save, target, resource) => {
-            if (pickaxeTier(bot) < 1) { await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); return; }
-            await resourceTunnelStep(bot, task, goal, save, target, resource, { dig, navigate });
-          } }),
+        fill_end_portal: (bot, task, goal, save) => enterEnd(bot, task, goal, save, endPortalActions(), { fillOnly: true }),
+        enter_end: (bot, task, goal, save) => enterEnd(bot, task, goal, save, endPortalActions()),
         fight_dragon: (bot, task, goal, save) => fightEndStep(bot, task, goal, save, { navigate, dig }, decisionClient),
         exit_end: (bot, task, goal, save) => exitEnd(bot, task, goal, save, { navigate }),
         prepare_combat: (bot, task, goal, save) => prepareCombatGear(bot, task, goal, save, { acquireStep }),

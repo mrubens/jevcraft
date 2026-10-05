@@ -431,3 +431,21 @@ test('a walk back to drops lying by the End portal takes the eyes from the chest
     assert.equal(ran, 1, 'then the walk');
   } finally { stash.collect = collect; }
 });
+
+test('at the End portal with the eyes it wants, the eyes go into its frames before any rung (note 1284)', async () => {
+  const { bot, goal, task } = fixture(); observeProgress(bot, goal);
+  bot.inventory.items = () => [{ name: 'ender_eye', count: 12 }, { name: 'stone_pickaxe', count: 1 }];
+  bot.entity.position = new Vec3(1854, 69, -355);
+  const frames = Array.from({ length: 12 }, (_, i) => ({ position: { x: 1876 + (i % 5), y: 32, z: -296 + Math.floor(i / 5) }, eye: i === 0 }));
+  goal.gameProgress.milestones.nether_entered = { at: 1 }; goal.gameProgress.milestones.eyes_obtained = { at: 2 };
+  goal.gameProgress.milestones.stronghold_located = { at: 3, center: { x: 1878, y: 32, z: -294 }, frames };
+  goal.endPortal = { center: { x: 1878, y: 32, z: -294 }, frames };
+  assert.equal(nextGameStage(bot, goal).action, 'fill_end_portal');
+  let filled = 0;
+  await gameStep(bot, task, goal, () => {}, { fill_end_portal: async () => { filled++; }, strategy: async () => null });
+  assert.equal(filled, 1);
+  goal.endPortal.litAt = Date.now();
+  assert.notEqual(nextGameStage(bot, goal).action, 'fill_end_portal', 'lit: on with the kit');
+  bot.entity.position = new Vec3(500, 69, -355); delete goal.endPortal.litAt;
+  assert.notEqual(nextGameStage(bot, goal).action, 'fill_end_portal', 'far from it: the walk is the ladder\'s');
+});

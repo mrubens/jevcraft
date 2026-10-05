@@ -41,7 +41,9 @@ function activePortal(bot, center) {
 const SURFACE_FIRST = 48, SURFACE_Y = 50, LEG = 48, UNDER_FAR = 96;
 // Beside the ring: within this of its middle across the ground, and this of its level.
 const NEAR_FLAT = 5, NEAR_DOWN = 2;
-async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000, entryMs = 12000 } = {}) {
+// `fillOnly`: the eyes put into the frames and the portal lit, and no step
+// into it (note 1284): the kit for the End is made up after, the eyes safe.
+async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000, entryMs = 12000, fillOnly = false } = {}) {
   const check = () => {
     task.check(); checkAir(bot); checkThreats(bot);
     if (bot.health < 12 || bot.isAlive === false) throw blocked('End portal work interrupted by low health');
@@ -246,6 +248,10 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
       throw blocked('End portal Eye insertion lacks both frame and inventory confirmation');
     }
     if (!activePortal(bot, center)) throw blocked('Filled frames have not produced nine observed active End portal blocks');
+    if (fillOnly) {
+      if (!goal.endPortal.litAt) { goal.endPortal.litAt = Date.now(); save(); bot.chat?.('The End portal is lit. The kit for the End next.'); }
+      return;
+    }
     // Approach a cardinal edge. The final short crossing intentionally enters
     // verified portal cells; the general pathfinder cannot treat a lava-backed
     // portal interior as ordinary dry walking terrain.
