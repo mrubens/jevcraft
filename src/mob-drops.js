@@ -5,7 +5,7 @@
 // spiders against a bed with no sheep in five hundred blocks.
 const BONES = { items: ['bone', 'arrow', 'bow'], drops: 'up to two bones and two arrows, now and then its bow', for: 'bone meal grows the wheat at once and bones tame wolves; arrows and a bow are the bow step' };
 const FLESH = { items: ['rotten_flesh', 'iron_ingot', 'carrot', 'potato'], drops: 'rotten flesh, rarely an iron ingot, a carrot or a potato', for: 'rotten flesh is food in a pinch that may bring on hunger' };
-const STRING = { items: ['string', 'spider_eye'], drops: 'up to two string, now and then a spider eye', for: 'four string craft a white wool (three wool a bed), and string makes bows' };
+const STRING = { items: ['string', 'spider_eye'], drops: 'up to two string, now and then a spider eye', for: 'four string craft a white wool (three wool a bed), string makes bows, and two string and three sticks make a fishing rod (its 13 sessions on 2026-10-05 caught two fish a minute, where the food errands made about 0.3 food points a minute)' };
 const MOB_DROPS = {
   spider: STRING, cave_spider: STRING,
   skeleton: BONES, stray: BONES, bogged: BONES, parched: BONES,
