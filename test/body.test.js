@@ -189,3 +189,14 @@ test('the survival step hands its client to the vitals: a head in a block is ask
   await survival.step(new Task('vitals'), {}, () => {}).catch(() => {});
   assert.ok(seen.some(k => k.includes('step_aside') && k.includes('dig_out')), `asked: ${JSON.stringify(seen)}`);
 });
+
+test('under ten health each stance says what it came to on the bot\'s own record (note 1321)', async () => {
+  const zombie = { id: 4, name: 'zombie', type: 'hostile', position: new Vec3(2.5, 65, 0.5), height: 1.95, width: 0.6, isValid: true };
+  const { bot } = spanBot(zombie, { health: 7 });
+  const survival = new Survival(bot, { navigate: async () => {}, place: async () => {}, dig: async () => {} }, { state: { shelters: [] }, client: { systemOne: async () => ({}) } });
+  let tree;
+  survival.decide = async (task, goal, save, q) => { if (q.id === 'encounter_stance') tree = q.tree; return { path: ['fight'], stale: false }; };
+  await survival.flee(new Task('span'), {}, () => {}).catch(() => {});
+  assert.ok(tree, 'asked');
+  assert.match(tree.fight.description, /The record under ten health \(2026-10-05, the twelve hours to 21:50Z\): chosen 126 times, followed by a death within two minutes 35\./);
+});

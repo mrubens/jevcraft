@@ -174,7 +174,7 @@ function headingFacts(stretches, ground = null) {
   let water;
   if (ground?.length) {
     const w = waterAhead(ground);
-    water = w ? `water on the ground from ${w.from} to ${w.to} blocks${w.landAt ? `, land again past it at ${w.landAt.d} (a swim of about ${w.to - w.from + 4})` : ' to the edge of what is loaded'}` : `dry ground all the way to ${ground.at(-1).d} blocks`;
+    water = w ? `water on the ground from ${w.from} to ${w.to} blocks${w.landAt ? `, land again past it at ${w.landAt.d} (a swim of about ${w.to - w.from + 4}${DROWNED_SAYS})` : ' to the edge of what is loaded'}` : `dry ground all the way to ${ground.at(-1).d} blocks`;
   } else {
     const wet = stretches.find(st => WATER_BIOME.test(st.biome));
     const past = wet && stretches.find(st => st.from > wet.to && !WATER_BIOME.test(st.biome));
@@ -183,6 +183,10 @@ function headingFacts(stretches, ground = null) {
   return `${stretches.map(st => words(st.biome)).join(', then ')}; ${water}; ${trees ? `trees in the ${words(trees.biome)} from ${trees.from} blocks` : 'no trees in any biome seen that way'}`;
 }
 
+// The drowned in the water, said with a swim (note 1320): 9 of the 41
+// Overworld deaths of the six hours to 21:45Z (2026-10-05) were to drowned,
+// the second cause after zombies.
+const DROWNED_SAYS = '; drowned live in the water and come up after a swimmer, 9 of the 41 Overworld deaths of the six hours to 21:45Z on 2026-10-05 were to them';
 // Across water that lies along the chosen heading, to the land past it:
 // the surface search walks only on dry ground, and every way out of trial
 // 35's desert crossed a river, a lake or the sea.

@@ -34,3 +34,10 @@ test('cooking the raw meat carried is said in points, raw and cooked (note 1312)
   const o = idleOptions(bot, {});
   assert.match(o.cook_food.description, /Cook the 18 raw beef being carried: 54 food points eaten raw, 144 cooked \(\+90\)/);
 });
+
+test('a heading with a swim says the drowned with it (note 1320)', () => {
+  const { headingFacts } = require('../src/exploration');
+  const ground = [{ d: 4, water: false }, { d: 8, water: true }, { d: 20, water: true }, { d: 24, water: false, x: 24, z: 0 }];
+  const s = headingFacts([{ biome: 'beach', from: 0, to: 30, has: 'no trees' }], ground);
+  assert.match(s, /a swim of about 16; drowned live in the water and come up after a swimmer, 9 of the 41 Overworld deaths/);
+});

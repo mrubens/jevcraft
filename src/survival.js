@@ -593,6 +593,7 @@ const HOPPERS = new Set(['slime', 'magma_cube']);
 const STRIKING_STANCES = new Set(['fight', 'fight_from_footing', 'rail_and_fight', 'strike_from_above', 'shield_guard', 'low_ceiling', 'close_in', 'charge_nearest']);
 // The work's steps that are the blaze hunt going at them: carrying on with
 // one of these is not said to gain nothing toward the rods (note 614).
+const LOW_STANCE_RECORD = { retreat: [332, 59], run_from: [163, 51], fight: [126, 35], shield_guard: [99, 12], block_creeper: [81, 9], pillar: [63, 11], take_cover: [58, 14], out_of_sight: [33, 3], leave_and_heal: [30, 0], seal: [21, 1], shield_the_blast: [16, 4], get_out_of_water: [16, 1], eat: [15, 2] };
 const HUNT_STEPS = new Set(['stalk_mob', 'hunt', 'hunt_mob', 'close_in', 'charge_nearest', 'blaze_sortie', 'break_spawner', 'collect_rods', 'collect_drop', 'down_for_the_drop', 'dig_toward_them', 'dig_down_to_them', 'cross_toward', 'return_to_blazes']);
 const STANCE_IDLE_MS = 10 * 60000;
 const carriedCount = bot => { try { return bot.inventory?.items?.().reduce((n, i) => n + (i.count || 0), 0) ?? 0; } catch (_) { return 0; } };
@@ -6558,6 +6559,15 @@ class Survival {
       if (crowdGrew && typeof options[held.choice]?.description === 'string') {
         const ago = Math.max(1, Math.round((Date.now() - held.at) / 1000));
         options[held.choice].description += ` Held now, chosen ${ago} second${ago === 1 ? '' : 's'} ago with ${held.crowd.n} within ${crowdX.CROWD_WITHIN} blocks: ${crowdNow.length} are within ${crowdX.CROWD_WITHIN} now, and its figures above are for them.`;
+      }
+      // Under ten health, each stance with what it came to on the bot's own
+      // record (note 1321): a choice under ten health, a death within two
+      // minutes after it. Run from 51 of 163, fight 35 of 126, retreat 59
+      // of 332, shield guard 12 of 99, leave and heal 0 of 30 (2026-10-05,
+      // the twelve hours to 21:50Z, flight records).
+      if ((bot.health ?? 20) < 10) for (const [k, o] of Object.entries(options)) {
+        const r = LOW_STANCE_RECORD[k];
+        if (r && typeof o.description === 'string') o.description += ` The record under ten health (2026-10-05, the twelve hours to 21:50Z): chosen ${r[0]} times, followed by a death within two minutes ${r[1]}.`;
       }
       // Each stance's price rides with it (not in its words): what the code
       // takes when Jev says none is good (decisions/index.js pickWhenNoneGood, note 691).
