@@ -118,3 +118,15 @@ test('eleven eyes in the chest by the stronghold and a rod wanted for the twelft
   assert.notEqual(stage.action, 'collect_rod_stash', JSON.stringify(stage));
   assert.notEqual(stage.action, 'find_stronghold');
 });
+
+test('in the Nether with twelve eyes lying at an Overworld death, the run open: out to them (note 1297)', () => {
+  const bot = world([['blaze_powder', 1]]); bot.game.dimension = 'the_nether';
+  const goal = { version: 1, kind: 'win', request: 'beat the game', gameProgress: { milestones: { nether_entered: { at: 1 }, eyes_obtained: { at: 2 }, stronghold_located: { at: 3, center: { x: 1878, y: 32, z: -294 } } } },
+    corpseRun: { deathAt: '2026-10-05T15:13:37Z', status: 'open', dimension: 'overworld', items: { raw_iron: 21 }, position: { x: 1787, y: 63, z: -309 } },
+    corpseRunsEarlier: [{ deathAt: '2026-10-05T08:08:44Z', status: 'open', dimension: 'overworld', items: { ender_eye: 12 }, position: { x: 1868, y: 61, z: -341 } }] };
+  const stage = nextGameStage(bot, goal);
+  assert.equal(stage.action, 'return_overworld', JSON.stringify(stage));
+  assert.match(stage.for, /the 12 eyes of ender lying where the bot died/);
+  goal.corpseRunsEarlier[0].status = 'left';
+  assert.notEqual(nextGameStage(bot, goal).phase, 'eyes_out', 'left by Jev: not');
+});

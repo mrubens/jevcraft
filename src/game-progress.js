@@ -937,6 +937,18 @@ function nextGameStage(bot, goal, skip = new Set()) {
   // rods from the stash, taken before the armour lost in a lava death was
   // made again, skipped the ladder, and the bot went through the Nether and
   // back in no armour and died to one creeper on the far shore.
+  // In the Nether with eyes of ender lying at a death in the Overworld, the
+  // run open and the drops never come near: out to them, as with eyes
+  // carried (note 1297); there the walk for them is Jev's question
+  // (corpse-run.js). 25597 (2026-10-05 15:19Z), back to life at home with
+  // its twelve eyes lying by its End portal and go_back chosen for them,
+  // took the portal at home and searched the Nether for a fortress, the
+  // run's question asked only in the Overworld.
+  if (where === 'nether' && !count(bot, 'ender_eye')) {
+    const runs = [goal.corpseRun, ...(goal.corpseRunsEarlier || [])].filter(r => r && r.status === 'open' && !r.loadedAt && /overworld/.test(String(r.dimension)) && (r.items?.ender_eye || 0) > 0);
+    const lying = runs.reduce((n, r) => n + r.items.ender_eye, 0);
+    if (lying) return { phase: 'eyes_out', action: 'return_overworld', for: `the ${lying} eye${lying === 1 ? '' : 's'} of ender lying where the bot died in the Overworld` };
+  }
   // With the eyes made and enough of them held, the Nether's own rungs
   // (golden boots, its food, blocks and pickaxe) are no part of the kit:
   // the way on is the stronghold (note 1271). 25593 (2026-10-05 01:40Z),
