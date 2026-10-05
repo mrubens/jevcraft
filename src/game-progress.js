@@ -950,7 +950,7 @@ function nextGameStage(bot, goal, skip = new Set()) {
   const eyesBanked = require('./eye-bank').banked(goal);
   if (where === 'overworld' && m.stronghold_located && (Number.isInteger(portalNeed) ? count(bot, 'ender_eye') + eyesBanked >= portalNeed : count(bot, 'ender_eye') + eyesBanked >= 1)) return { phase: 'enter_end', action: 'enter_end' };
   // The search goes with the spare in the pack and the twelve put away, where that was chosen (eye-bank.js, note 1197).
-  if (where === 'overworld' && !m.stronghold_located && goal.strongholdSearch && ((count(bot, 'ender_eye') + eyesBanked >= EYES_WANTED && count(bot, 'ender_eye') >= 1) || goal.strongholdSearch.pendingPickup)) {
+  if (where === 'overworld' && !m.stronghold_located && goal.strongholdSearch && ((count(bot, 'ender_eye') + eyesBanked >= eyeTarget(goal) && count(bot, 'ender_eye') >= 1) || goal.strongholdSearch.pendingPickup)) {
     return { phase: 'find_stronghold', action: 'find_stronghold' };
   }
   // The one number of enough (eye-need.js): the twelve frames and the spare
@@ -1197,6 +1197,34 @@ async function gameStep(bot, task, goal, save, actions) {
   if (goal.foodTrip && (Date.now() - goal.foodTrip.at >= FOOD_TRIP_MS || !require('./crossing-kit').kitRungs(bot, goal).some(r => r.phase === 'nether_food'))) { delete goal.foodTrip; save(); }
   settleOptIns(bot, goal);
   let stage = nextGameStage(bot, goal);
+  // The search begun, one bearing had, and eleven or twelve eyes held, none
+  // to spare: one of them thrown for the second bearing, or a spare fetched
+  // from the Nether first, is Jev's (search_spare, note 1268). By rule the
+  // twelve were kept and the spare fetched: 25593 (2026-10-04 23:19Z to
+  // 2026-10-05 00:30Z), twelve eyes held and one bearing, went into the
+  // Nether five times for one pearl and was killed there by a ghast.
+  try {
+    const search = goal.strongholdSearch, ms = goal.gameProgress?.milestones || {};
+    const client = actions?.client || task.opportunityClient;
+    if (client && dimension(bot) === 'overworld' && search && !ms.stronghold_located && !search.estimate && (search.bearings || []).length >= 1 && !search.spare) {
+      const held = count(bot, 'ender_eye') + require('./eye-bank').banked(goal);
+      if (held >= 11 && held <= 12) {
+        const filled = k => { let p = 0; const c = (n, r) => { let x = 1; for (let i = 0; i < r; i++) x = x * (n - i) / (i + 1); return x; }; for (let i = 0; i < k; i++) p += c(12, i) * Math.pow(0.1, i) * Math.pow(0.9, 12 - i); return 1 - p; };
+        const pct = x => Math.round(x * 100);
+        const after = 0.8 * filled(12 - held) + 0.2 * filled(12 - (held - 1));
+        const tree = {
+          throw_one: { description: `Throw one of the ${held} eyes held for the second bearing now. One eye in five breaks when thrown; four times in five it is picked up again. The portal wants twelve less the frames that come filled already (each one time in ten: at least one of the twelve about ${pct(filled(1))} times in 100, at least two about ${pct(filled(2))}). So about ${pct(after)} times in 100 the eyes held fill the portal with this throw made; short, the frames are counted there and the rest fetched then, the number known. From where two bearings meet the place is walked to and dug for with no more thrown.` },
+          fetch_spare: { description: `Keep the ${held}, in the chest, and go into the Nether for a pearl first (and a blaze rod where no powder is left), then throw the spare. The eyes stay safe; the trip is the Nether's: from 16:00 to 19:00Z on 2026-10-04 seventeen of the trials' bots died there, and 25593 on this same errand at 00:30Z, a ghast's fireball, its two rods with it.` },
+        };
+        const decision = await require('./decisions').decide('search_spare', { client, bot, task, goal, save, tree, state: { eyesHeld: held, bearings: search.bearings.length } });
+        if (!decision.stale) {
+          const pick = decision.path.at(-1);
+          search.spare = { pick, at: Date.now(), ...(pick === 'throw_one' ? { target: held - 1 } : {}) }; save();
+          if (pick === 'throw_one') { bot.chat?.(`One of my ${held} eyes for the second bearing, then.`); stage = nextGameStage(bot, goal); }
+        }
+      }
+    }
+  } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
   // Back for what the last death dropped, before anything else: close to
   // the respawn its drops have five minutes (corpse-run.js).
   if (actions.corpse_run && stage.phase !== 'complete' && await actions.corpse_run(bot, task, goal, save)) return false;

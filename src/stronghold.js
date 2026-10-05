@@ -228,7 +228,9 @@ async function findStronghold(bot, task, goal, save, actions, client) {
   // pearl twice in five minutes. Without a place the bearings meet at, the
   // spare is still what the search needs.
   // The twelve put away in the bot's chest for the search are the portal's all the same (eye-bank.js, note 1197).
-  const noSpare = countOf(bot, 'ender_eye') + require('./eye-bank').banked(goal) <= 12 || countOf(bot, 'ender_eye') < 1;
+  // One of the twelve thrown for the second bearing, where Jev chose it (search_spare, note 1268).
+  const throwOne = search.spare?.pick === 'throw_one' && !estimate && countOf(bot, 'ender_eye') >= 1;
+  const noSpare = !throwOne && (countOf(bot, 'ender_eye') + require('./eye-bank').banked(goal) <= 12 || countOf(bot, 'ender_eye') < 1);
   if (throwAgain && noSpare) {
     if (!estimate) throw blocked('Stronghold search needs another spare Eye of Ender; preserving twelve for the portal');
     if (toEstimate < 12) {
@@ -266,7 +268,7 @@ async function findStronghold(bot, task, goal, save, actions, client) {
     // of 2026-10-04 (09:22 to 09:29Z), twelve in its chest and one carried,
     // was refused the throw at every pass, 'Need a spare Eye of Ender beyond
     // the 12 reserved', and stood seven minutes where it had put them.
-    const bearing = await throwEye(bot, task, { reserve: Math.max(0, 12 - require('./eye-bank').banked(goal)) });
+    const bearing = await throwEye(bot, task, { reserve: throwOne ? Math.max(0, countOf(bot, 'ender_eye') - 1) : Math.max(0, 12 - require('./eye-bank').banked(goal)) });
     search.throws++;
     search.bearings = [...search.bearings, bearing].slice(-32); search.pendingPickup = bearing;
     search.estimate = triangulate(search.bearings);

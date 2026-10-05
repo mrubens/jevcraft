@@ -549,6 +549,19 @@ define({
   instructions: workInstructions('The bot died in the Nether and came back to life by its bed with empty hands. What it dropped lies where it died and does not age until the bot is near it again. Choose whether it goes straight back for it or makes a kit again first. Each option says what it costs and risks.'),
 });
 
+// The stronghold's search with no spare eye (src/game-progress.js gameStep, note 1268).
+define({
+  id: 'search_spare', area: 'resources', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'The search for the stronghold has one bearing and eleven or twelve eyes held, none to spare: throw one of them for the second bearing, or fetch a spare from the Nether first?',
+  trigger: 'In the Overworld, the search begun with one bearing and no place the bearings meet, eleven or twelve eyes carried or in the bot\'s chest; asked once.',
+  source: 'src/game-progress.js (gameStep), src/stronghold.js, src/eye-need.js (eyeTarget)',
+  options: [
+    { key: 'throw_one', label: 'throw one of the eyes held for the second bearing', when: 'always here; said with the odds of the throw and of the portal\'s frames', level: 'root' },
+    { key: 'fetch_spare', trip: 'the Nether', label: 'keep them and fetch a spare pearl from the Nether first', when: 'always here; said with the record of that trip', level: 'root' },
+  ],
+  instructions: workInstructions('The bot has made its eyes of ender and thrown one; it holds eleven or twelve and the search wants one more bearing. Choose whether one of them is thrown or a spare is fetched first. Each option says its odds or its record.'),
+});
+
 define({
   id: 'spare_kit_now', area: 'resources', parent: null, kind: 'upkeep', primitive: 'choice', stakes: 'low', tree: true,
   question: 'The bot is by its home chest, and the chest lacks a spare pickaxe or sword the bot carries or can make now: leave a spare kit there, or go on?',

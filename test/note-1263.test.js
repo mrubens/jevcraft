@@ -41,3 +41,20 @@ test('twelve eyes in the chest on the Overworld side and one pearl wanted: the N
   assert.notEqual(there.action, 'home_with_rods', JSON.stringify(there));
   assert.equal(there.phase, 'obtain_ender_pearls', JSON.stringify(there));
 });
+
+test('one of the twelve chosen for the second bearing: the eyes held less one are what is wanted, the chest is opened and the search goes on (note 1268)', () => {
+  const { eyeTarget } = require('../src/eye-need');
+  const goal = { version: 1, kind: 'win', request: 'beat the game', gameProgress: { milestones: { nether_entered: { at: 1 }, eyes_obtained: { at: 2 } } }, strongholdSearch: { bearings: [{}], throws: 1 },
+    eyeBank: { at: Date.now(), chestAt: { x: -33, y: 94, z: 135 }, forNether: true },
+    rodStashes: [{ position: { x: -33, y: 94, z: 135 }, dimension: 'overworld', contents: { ender_eye: 12 } }] };
+  assert.equal(eyeTarget(goal), 13);
+  assert.notEqual(nextGameStage(world([]), goal).action, 'find_stronghold', 'by the rule the spare is fetched first');
+  goal.strongholdSearch.spare = { pick: 'throw_one', at: Date.now(), target: 11 };
+  assert.equal(eyeTarget(goal), 11);
+  assert.equal(nextGameStage(world([]), goal).action, 'collect_rod_stash', 'the eyes come out of the chest');
+  goal.rodStashes[0].contents = {};
+  const stage = nextGameStage(world([['ender_eye', 12]]), goal);
+  assert.equal(stage.action, 'find_stronghold', JSON.stringify(stage));
+  // The thrown eye broken: eleven still go on with the search.
+  assert.equal(nextGameStage(world([['ender_eye', 11]]), goal).action, 'find_stronghold');
+});
