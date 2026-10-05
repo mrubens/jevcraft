@@ -1793,7 +1793,13 @@ async function maintainVitals(bot, task, onAction = () => {}, { client = null, g
       try { await bot.equip(food, 'hand'); if (bot._syncWindow) await bot._syncWindow(bot.inventory); } catch (_) { /* read below */ }
       for (let i = 0; i < 6 && bot.heldItem === null; i++) await new Promise(r => setTimeout(r, 50));
     }
-    if (bot.heldItem === null) throw new Error('The food was not in hand to eat');
+    if (bot.heldItem === null) {
+      // What the hand and the hotbar hold when this happens (note 1314):
+      // a second equip and 300 ms did not bring it back on 25595 (21:16Z).
+      const q = bot.quickBarSlot, at = 36 + (Number.isInteger(q) ? q : -100);
+      console.log(`[vitals] food not in hand: ${food.name} slot ${food.slot}, quickBarSlot ${q}, hotbar slot holds ${bot.inventory.slots?.[at]?.name || 'nothing'}, offhand ${bot.inventory.slots?.[45]?.name || 'nothing'}, ${countOf(bot, food.name)} carried`);
+      throw new Error('The food was not in hand to eat');
+    }
     // A bite the server never finished (the hand was taken by something else
     // mid-bite: a shield raised by the stance that came after, a hit's
     // knock) comes back from the library as "Promise timed out" after two
