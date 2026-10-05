@@ -27,7 +27,12 @@ const { decide } = require('./decisions');
 // poured against an enderman (end-combat.js). With one, the enderman took
 // the bucket and the next knockback had nothing to land in.
 const END_BEDS = 4, END_BED_MS = 20 * 60000;
-const WANTS = { arrow: 192, cobblestone: 64, water_bucket: 2, food: 64, health: 18 };
+// The arrows the code would take (note 1311): 64, the 48 that freed a
+// fresh End in the rehearsal after notes 1155 to 1176 and a margin, not the
+// 192 of the bow-only fight before them. 25593 (2026-10-05), its twelve
+// eyes held, was four hours on the bow alone with 192 arrows still to come
+// from skeletons after it.
+const WANTS = { arrow: 64, cobblestone: 64, water_bucket: 2, food: 64, health: 18 };
 const HOLD_MS = 15 * 60000, ARROW_STEP = 32;
 // The dragon's fight as rehearsed (scripts/endgame.js dragon, port 25578,
 // 2026-10-04; a bow, a diamond sword, iron armour and a shield, no bed

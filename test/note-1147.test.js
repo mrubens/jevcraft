@@ -6,7 +6,7 @@ const { prepareEndSupplies } = require('../src/end-supplies');
 
 function fixture(counts = {}) {
   const slots = [], items = ['iron_sword', 'iron_pickaxe', 'bow', 'arrow', 'cobblestone', 'cooked_beef', 'water_bucket', 'water_bucket', 'white_bed'].map(name => ({ name,
-    count: ({ arrow: 192, cobblestone: 64, cooked_beef: 8, white_bed: 4, ...counts })[name] || 1, durabilityUsed: 0 }));
+    count: ({ arrow: 64, cobblestone: 64, cooked_beef: 8, white_bed: 4, ...counts })[name] || 1, durabilityUsed: 0 }));
   for (const [slot, name] of [[5, 'iron_helmet'], [6, 'iron_chestplate'], [7, 'iron_leggings'], [8, 'iron_boots'], [45, 'shield']]) slots[slot] = { name, count: 1, durabilityUsed: 0 };
   const bot = { registry, health: 20, food: 20, oxygenLevel: 20, inventory: { slots, items: () => items.filter(i => i.count > 0) }, heldItem: items[0] };
   return { bot, items, goal: {}, task: new Task('End supplies') };
@@ -19,11 +19,11 @@ test('the End\'s kit is Jev\'s: with 40 arrows and two beds, going now is offere
   const actions = { acquireStep: async (b, t, name, count) => calls.push({ name, count }) };
   assert.equal(await prepareEndSupplies(bot, task, goal, () => {}, actions, jev(['enter_now'], asked)), true);
   assert.deepEqual(Object.keys(asked[0]).filter(k => k !== 'none_good').sort(), ['enter_now', 'top_up_arrows', 'top_up_beds']);
-  assert.match(asked[0].enter_now, /Go to the End with what is carried now: a bow, arrows 40 of 192, blocks 64 of 64, an iron pickaxe or better, water 2 of 2, beds 2 of 4, food \d+ of 64, health 20 of 18; health 20\. Short of what the code would take: arrows, beds\./);
+  assert.match(asked[0].enter_now, /Go to the End with what is carried now: a bow, arrows 40 of 64, blocks 64 of 64, an iron pickaxe or better, water 2 of 2, beds 2 of 4, food \d+ of 64, health 20 of 18; health 20\. Short of what the code would take: arrows, beds\./);
   assert.match(asked[0].enter_now, /by the bow, on a fresh End, 143 arrows loosed in 25 minutes took the ten crystals and the dragon's whole 200 health; by the sword, with every crystal already down and 16 arrows carried, the dragon's last 146 went in 13 minutes, struck at its head each time it perched on the fountain; the bot alive both times\. The crystals are the arrows' work/);
   assert.match(asked[0].enter_now, /no way back out of the End but the dragon's death or the bot's own/);
   assert.match(asked[0].enter_now, /With fewer arrows, on a fresh End: 48 were enough, the ten crystals down and the dragon dead in 10 minutes, most of its health taken by the sword at its perches, 2 arrows left and the bot never under full health for long; 32 took 7 of the ten crystals before they were gone, and 21 took 3, the dragon healed to 187 of 200 and the bot dead by the fountain 8 minutes in\./);
-  assert.match(asked[0].top_up_arrows, /40 carried, the code would take 192\..*arrows come only from skeletons, none to two each.*until 72 are carried or a quarter hour has gone/);
+  assert.match(asked[0].top_up_arrows, /40 carried, the code would take 64\..*arrows come only from skeletons, none to two each.*until 64 are carried or a quarter hour has gone/);
   assert.match(asked[0].top_up_beds, /Make beds up to 4 first \(2 carried\)/);
   assert.deepEqual(calls, [], 'nothing fetched: it goes');
   assert.equal(goal.preparingEnd, undefined);
@@ -33,21 +33,21 @@ test('the End\'s kit is Jev\'s: with 40 arrows and two beds, going now is offere
 });
 
 test('arrows are topped up thirty-two at a time, and the question asked again when they are carried', async () => {
-  const { bot, items, goal, task } = fixture({ arrow: 40 });
+  const { bot, items, goal, task } = fixture({ arrow: 20 });
   const asked = [], calls = [], answers = ['top_up_arrows', 'enter_now'];
   const actions = { acquireStep: async (b, t, name, count) => { calls.push({ name, count }); } };
   assert.equal(await prepareEndSupplies(bot, task, goal, () => {}, actions, jev(answers, asked)), false);
-  assert.deepEqual(calls, [{ name: 'arrow', count: 72 }]);
-  // Still short of the 72: the hunt goes on with no new question.
-  items.find(i => i.name === 'arrow').count = 55;
+  assert.deepEqual(calls, [{ name: 'arrow', count: 52 }]);
+  // Still short of the 52: the hunt goes on with no new question.
+  items.find(i => i.name === 'arrow').count = 40;
   assert.equal(await prepareEndSupplies(bot, task, goal, () => {}, actions, jev(answers, asked)), false);
   assert.equal(asked.length, 1);
-  assert.deepEqual(calls.at(-1), { name: 'arrow', count: 72 });
-  // At 72 it is asked again.
-  items.find(i => i.name === 'arrow').count = 72;
+  assert.deepEqual(calls.at(-1), { name: 'arrow', count: 52 });
+  // At 52 it is asked again.
+  items.find(i => i.name === 'arrow').count = 52;
   assert.equal(await prepareEndSupplies(bot, task, goal, () => {}, actions, jev(answers, asked)), true);
   assert.equal(asked.length, 2);
-  assert.match(asked[1].top_up_arrows, /72 carried.*until 104 are carried/);
+  assert.match(asked[1].top_up_arrows, /52 carried.*until 64 are carried/);
 });
 
 test('with the whole kit carried nothing is asked', async () => {
