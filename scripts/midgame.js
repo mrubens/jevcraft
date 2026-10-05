@@ -118,6 +118,16 @@ function rodsCarriedNow(frames) {
 }
 // The rods and pearls kept in the bot's own chests now (goal.rodStashes in
 // its state file: a stash in the Nether, a bank past the portal).
+const PAST_PROGRESS_MS = 24 * 3600000;
+const PROGRESS = ['eyes_obtained', 'stronghold_located', 'end_portal_lit', 'end_entered', 'dragon_defeated'];
+function progressAt(identity = IDENTITY) {
+  try {
+    const g = JSON.parse(fs.readFileSync(path.join(STATE, `${identity}.json`), 'utf8')), goal = g.goal || g;
+    const m = goal.gameProgress?.milestones || {};
+    const ats = PROGRESS.map(k => m[k]?.at).filter(Boolean).map(a => Number.isFinite(Number(a)) ? Number(a) : Date.parse(a)).filter(Number.isFinite);
+    return ats.length ? Math.max(...ats) : null;
+  } catch (_) { return null; }
+}
 function keptNow(identity = IDENTITY) {
   try {
     const g = JSON.parse(fs.readFileSync(path.join(STATE, `${identity}.json`), 'utf8')), goal = g.goal || g;
@@ -187,7 +197,12 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
   const from = Date.parse(trial.startedAt);
   const read = to => analyse({ identity, from, to, ...(dir ? { dir } : {}) });
   // The window: the three hours played, run on by the Jev-down time in it.
-  const limit = endHours ? END_LIMIT_MS : limitFor(holds || kept);
+  // A trial past its eyes plays on a day past its latest milestone, never
+  // less than the End's hours (note 1308): mid-242-xa-fortress-10 (25595,
+  // 2026-10-05), eleven eyes and its stronghold found that afternoon, was
+  // two hours from its 48 counted from its start in 2026-10-03.
+  const progress = progressAt(identity);
+  const limit = Math.max(endHours ? END_LIMIT_MS : limitFor(holds || kept), progress && progress > from ? progress - from + PAST_PROGRESS_MS : 0);
   let to = Math.min(now, from + limit), a = read(to), spells = a ? spellsOf(a.frames) : [];
   for (let i = 0; a && spells.length && i < 4; i++) {
     const next = Math.min(now, from + limit + overlapMs(spells, from, to));
@@ -423,4 +438,4 @@ async function main() {
 }
 
 if (require.main === module) main().catch(err => { console.error(err.message); process.exit(1); });
-module.exports = { limitFor, keptNow, reached, counts, verdict, cutReasons, CUT_MINUTES, MILESTONES };
+module.exports = { progressAt, limitFor, keptNow, reached, counts, verdict, cutReasons, CUT_MINUTES, MILESTONES };

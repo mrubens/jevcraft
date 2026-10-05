@@ -35,3 +35,14 @@ test('a trial keeping its eyes is not cut for no Nether in its first hour (note 
     assert.ok(bare.reasons.some(r => /^cut: no Nether/.test(r)), JSON.stringify(bare.reasons));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('a trial past its eyes plays on a day past its latest milestone, past the 48 hours from its start (note 1308)', () => {
+  const { progressAt } = require('../scripts/midgame');
+  const identity = '127_0_0_1-25996-Jev', file = path.join(__dirname, '..', '.bot-state', `${identity}.json`);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const at = Date.parse('2026-10-05T15:00:00Z');
+  try {
+    fs.writeFileSync(file, JSON.stringify({ kind: 'win', gameProgress: { milestones: { nether_entered: { at: 1 }, eyes_obtained: { at: at - 3600000 }, stronghold_located: { at } } } }));
+    assert.equal(progressAt(identity), at);
+  } finally { fs.rmSync(file, { force: true }); }
+});
