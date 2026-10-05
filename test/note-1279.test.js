@@ -34,3 +34,16 @@ test('out by the chest, the way back begins; with the eyes taken, into the Nethe
   assert.equal(goal.netherShortcut, undefined);
   assert.equal(goal.errand, undefined);
 });
+
+test('on the way through the Nether to a far chest, the crossing is not asked of its kit again (note 1281)', async () => {
+  const { crossingKitReady } = require('../src/work');
+  const reg = require('minecraft-data')('26.1');
+  const b = { registry: reg, game: { dimension: 'overworld', gameMode: 'survival' }, inventory: { items: () => [], slots: [] }, entity: { position: new Vec3(0, 64, 0) }, entities: {}, health: 20, food: 20, blockAt: () => null, findBlocks: () => [] };
+  let asked = 0;
+  const client = { systemOne: async () => { asked++; return { answers: { branch_0: { choice: 'cross_now', confidence: 0.7 } } }; } };
+  const goal = goalOf();
+  goal.netherShortcut = { chest: { x: 4, y: 66, z: 5 }, phase: 'out', at: 1 };
+  goal.errand = { dimension: 'nether', items: [], for: sc.ERRAND, at: Date.now() };
+  assert.equal(await crossingKitReady(b, { check() {}, opportunityClient: client }, goal, () => {}, client), true);
+  assert.equal(asked, 0);
+});

@@ -1328,7 +1328,7 @@ async function gameStep(bot, task, goal, save, actions) {
     // Not on the trip chosen for the kit a death left on the far side, as
     // the bot stands (corpse-run.js kitTrip): 25584 (2026-10-04 15:48Z)
     // chose it and was sent for oak logs and iron armour first (note 1234).
-    const kitTrip = stage.for === require('./corpse-run').KIT_ERRAND && goal.corpseRun?.status === 'open';
+    const kitTrip = (stage.for === require('./corpse-run').KIT_ERRAND && goal.corpseRun?.status === 'open') || (stage.for === require('./nether-shortcut').ERRAND && !!goal.netherShortcut);
     if (stage.action === 'enter_nether' && await require('./mob-hunt').goldForPiglins(bot, task, goal, save, actions, { crossing: true })) return false;
     // No eye of ender goes through the portal to the Nether (eye-bank.js bankBeforeNether, note 1264).
     if (stage.action === 'enter_nether' && dimension(bot) === 'overworld' && !require('./nether-shortcut').carriesEyesBack(goal) && (count(bot, 'ender_eye') >= 8 || (count(bot, 'ender_eye') > 0 && (goal.strongholdSearch?.bearings || []).length >= 1))) {

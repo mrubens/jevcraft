@@ -8404,6 +8404,10 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   // (2026-10-04 15:48:58Z) chose the trip and at the portal was asked of a
   // shield, two of which lay with its drops (note 1234).
   if (goal.errand?.for === require('./corpse-run').KIT_ERRAND && goal.corpseRun?.status === 'open' && goal.corpseRun.dimension === 'nether' && goal.corpseRun.trip?.pick === 'go_now') return true;
+  // So the way through the Nether to a far chest, chosen as the bot stands (nether-shortcut.js, note 1281): 25597
+  // (2026-10-05 05:00 to 05:25Z), its portal planned beside its stronghold, was sent by the crossing's kit for eight
+  // logs on a treeless coast and searched for trees twenty-five minutes.
+  if (goal.errand?.for === require('./nether-shortcut').ERRAND && goal.netherShortcut) return true;
   if (bot.game?.gameMode !== 'survival') return true;
   const items = kitItems(bot), valuables = valuablesAt(bot, goal);
   // The food, blocks and pickaxe were the ladder's to top up (kitRungs):
