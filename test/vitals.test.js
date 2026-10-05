@@ -1059,3 +1059,15 @@ test('the hand empty after the equip: the food is equipped again and eaten, not 
   assert.equal(eaten, 1);
   assert.equal(equips, 2);
 });
+
+test('the hand still empty after the second equip: the meal ends said as not in hand, what the hotbar holds logged (note 1314)', async () => {
+  const bot = { food: 17, health: 11, entity: {}, heldItem: null, quickBarSlot: 0,
+    registry: { foodsByName: { cooked_beef: { effectiveQuality: 20.8 } } },
+    inventory: { items: () => [{ name: 'cooked_beef', count: 2, slot: 36 }], slots: [] },
+    equip: async () => {}, consume: async () => {}, deactivateItem() {},
+  };
+  const logged = []; const was = console.log; console.log = m => logged.push(String(m));
+  try { await maintainVitals(bot, new Task('heal')).catch(err => logged.push(`threw ${err.message}`)); }
+  finally { console.log = was; }
+  assert.ok(logged.some(l => /food not in hand: cooked_beef slot 36, quickBarSlot 0, hotbar slot holds nothing, offhand nothing, 2 carried/.test(l)), logged.join(' | '));
+});
