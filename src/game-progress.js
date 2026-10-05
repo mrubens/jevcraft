@@ -950,7 +950,8 @@ function nextGameStage(bot, goal, skip = new Set()) {
   const eyesBanked = require('./eye-bank').banked(goal);
   if (where === 'overworld' && m.stronghold_located && (Number.isInteger(portalNeed) ? count(bot, 'ender_eye') + eyesBanked >= portalNeed : count(bot, 'ender_eye') + eyesBanked >= 1)) return { phase: 'enter_end', action: 'enter_end' };
   // The search goes with the spare in the pack and the twelve put away, where that was chosen (eye-bank.js, note 1197).
-  if (where === 'overworld' && !m.stronghold_located && goal.strongholdSearch && ((count(bot, 'ender_eye') + eyesBanked >= eyeTarget(goal) && count(bot, 'ender_eye') >= 1) || goal.strongholdSearch.pendingPickup)) {
+  // With the place the bearings meet known, the walk there wants no eye in the pack (stronghold.js throws none there, note 1151): the eyes in the chest are enough (note 1269).
+  if (where === 'overworld' && !m.stronghold_located && goal.strongholdSearch && ((count(bot, 'ender_eye') + eyesBanked >= eyeTarget(goal) && (count(bot, 'ender_eye') >= 1 || (goal.strongholdSearch.estimate && (goal.strongholdSearch.bearings || []).length >= 2))) || goal.strongholdSearch.pendingPickup)) {
     return { phase: 'find_stronghold', action: 'find_stronghold' };
   }
   // The one number of enough (eye-need.js): the twelve frames and the spare

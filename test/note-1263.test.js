@@ -58,3 +58,12 @@ test('one of the twelve chosen for the second bearing: the eyes held less one ar
   // The thrown eye broken: eleven still go on with the search.
   assert.equal(nextGameStage(world([['ender_eye', 11]]), goal).action, 'find_stronghold');
 });
+
+test('the bearings met and eleven eyes in the chest after the one thrown: the walk to the place is the step, not the Nether (note 1269)', () => {
+  const goal = { version: 1, kind: 'win', request: 'beat the game', gameProgress: { milestones: { nether_entered: { at: 1 }, eyes_obtained: { at: 2 } } },
+    strongholdSearch: { bearings: [{}, {}], throws: 2, estimate: { x: 1839, z: -288 }, spare: { pick: 'throw_one', at: Date.now(), target: 11 } },
+    eyeBank: { at: Date.now(), chestAt: { x: 4, y: 66, z: 5 }, forSearch: true },
+    rodStashes: [{ position: { x: 4, y: 66, z: 5 }, dimension: 'overworld', contents: { ender_eye: 11 } }] };
+  const stage = nextGameStage(world([]), goal);
+  assert.equal(stage.action, 'find_stronghold', JSON.stringify(stage));
+});

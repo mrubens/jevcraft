@@ -34,8 +34,12 @@ const portalFrames = goal => { const needed = goal?.gameProgress?.milestones?.st
 // Or one of the portal's own thrown for the second bearing, where that was
 // chosen (search_spare, note 1268): the eyes held then, less the one, are
 // what is wanted until the frames are counted.
-const eyeTarget = goal => portalFrames(goal) ?? (goal?.strongholdSearch?.estimate && (goal.strongholdSearch.bearings || []).length >= 2 ? PORTAL_EYES
-  : goal?.strongholdSearch?.spare?.pick === 'throw_one' && Number.isInteger(goal.strongholdSearch.spare.target) ? goal.strongholdSearch.spare.target : EYES_WANTED);
+// The choice stands once the bearings meet too (note 1269): the twelve
+// came back as the number there, and 25593 and 25597 (2026-10-05 01:03 to
+// 01:07Z), eleven eyes each and their strongholds placed, were sent for the
+// Nether again.
+const eyeTarget = goal => portalFrames(goal) ?? (goal?.strongholdSearch?.spare?.pick === 'throw_one' && Number.isInteger(goal.strongholdSearch.spare.target) ? Math.min(PORTAL_EYES, goal.strongholdSearch.spare.target)
+  : goal?.strongholdSearch?.estimate && (goal.strongholdSearch.bearings || []).length >= 2 ? PORTAL_EYES : EYES_WANTED);
 // Rods that make `eyes` eyes with `powder` already made and no eyes: two powder a rod.
 const rodsFor = (eyes, powder = 0) => Math.ceil(Math.max(0, eyes - powder) / 2);
 
