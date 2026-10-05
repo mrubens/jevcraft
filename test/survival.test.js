@@ -6344,3 +6344,15 @@ test('armour carried and not worn is put on at the survival step, once for each 
   await survival.step(new Task('t'), {}, () => {});
   assert.equal(worn.length, 2, 'not tried again with nothing new carried');
 });
+
+test('sealed in at night, next to bare, hungry: going for food and staying each say the night\'s record (note 1301)', async () => {
+  const seen = { rabbit: [{ x: 0, y: 82, z: 80, count: 2, at: Date.now() - 60000, dimension: 'overworld' }] };
+  const { survival, goal } = snowShaft({ goal: { sightings: seen }, timeOfDay: 16000 });
+  let tree;
+  survival.decide = async (task, g, save, { id, tree: t }) => { if (id === 'pocket_next') tree = t; return { path: ['stay'], stale: false }; };
+  survival.wait = async () => {};
+  await survival.step(new Task('night'), goal, () => {});
+  assert(tree?.go_for_food, `going for food is offered (${Object.keys(tree || {}).join(', ')})`);
+  assert.match(tree.go_for_food.description, /With next to no armour on at night in the Overworld, the record .*: going out for food was followed by a death within five minutes 10 times in 49/);
+  assert.match(tree.stay.description, /sealing in was followed by a death within five minutes 10 times in 96/);
+});

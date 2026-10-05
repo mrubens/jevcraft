@@ -10827,6 +10827,16 @@ class Survival {
           description: `Open the pocket and go for food, the way chosen next: ${known}. Food is the only way health comes back: ${hp} health and hunger ${bot.food}, and health returns only at eighteen or more${(bot.food ?? 20) <= 6 ? `; at hunger 0 the bot starves, a health every four seconds` : ''}. ${heal?.daylight ? `${heal.daylight.charAt(0).toUpperCase()}${heal.daylight.slice(1)}.` : ''}${night ? ` Mobs spawn in the dark on the way; dawn up top is about ${minutesToDawn(bot)} real minutes off.` : ''}${who ? ` Outside is ${who}.` : ''}${outSays}${outHealth}`,
           children: foodWays };
       }
+      // The night's record beside going out for food and staying, where the
+      // bot is next to bare (note 1301): 25597 (2026-10-05 16:45Z), sealed in
+      // at 6 health and hunger 17, went out for food in the dark and a
+      // spider killed it a minute on; the record was said on the night's
+      // own question, not here.
+      if (night && /overworld/.test(String(bot.game?.dimension))) {
+        const nr = require('./night-record');
+        if (options.go_for_food) options.go_for_food.description += nr.bareNightSays(bot, 'obtain_food');
+        if (options.stay) options.stay.description += nr.bareNightSays(bot, 'secure_shelter');
+      }
       // A food errand Jev chose before the pocket was sealed (survival
       // priority's obtain_food, held as the food plan, note 784): said on
       // the way that carries it on and on the stay that puts it off (note
