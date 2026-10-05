@@ -52,6 +52,12 @@ function settle(bot, goal, save, { eyesCarried = 0, wanted = 12 } = {}) {
   if (s.phase === 'back' && sh && flat(here, sh) <= FAR) { delete goal.netherShortcut; if (goal.errand?.for === ERRAND) delete goal.errand; save?.(); return; }
   // Back with nothing to carry yet (the chest not reached): no errand into the Nether.
   if (s.phase === 'back' && eyesCarried < wanted && goal.errand?.for === ERRAND) { delete goal.errand; save?.(); }
+  // Back through the Nether only where a portal comes out by the End
+  // portal: with none there the way back would come out where it went in
+  // (note 1282). 25597 (2026-10-05 05:30Z) died by its stronghold before its
+  // portal there was lit and came back to life by its chest at home.
+  const portalBy = sh && (goal.portals || []).some(p => p.dimension === 'overworld' && flat(p, sh) <= FAR);
+  if (s.phase === 'back' && sh && !portalBy) { delete goal.netherShortcut; if (goal.errand?.for === ERRAND) delete goal.errand; save?.(); return; }
   if (s.phase === 'back' && sh && flat(here, sh) > FAR && eyesCarried >= wanted && !(goal.errand?.for === ERRAND && goal.errand.dimension === 'nether')) {
     goal.errand = { dimension: 'nether', items: [], for: ERRAND, at: Date.now() }; save?.();
   }

@@ -21,6 +21,7 @@ test('far from the chest with the End portal found, the way through the Nether i
 
 test('out by the chest, the way back begins; with the eyes taken, into the Nether again; at the End portal, done', () => {
   const goal = goalOf();
+  goal.portals = [{ x: 1890, y: 37, z: -380, dimension: 'overworld' }];
   goal.netherShortcut = { chest: { x: 4, y: 66, z: 5 }, phase: 'out', at: 1 };
   goal.errand = { dimension: 'nether', items: [], for: sc.ERRAND, at: Date.now() };
   sc.settle(bot(10, 20), goal, () => {}, { eyesCarried: 0, wanted: 11 });
@@ -46,4 +47,13 @@ test('on the way through the Nether to a far chest, the crossing is not asked of
   goal.errand = { dimension: 'nether', items: [], for: sc.ERRAND, at: Date.now() };
   assert.equal(await crossingKitReady(b, { check() {}, opportunityClient: client }, goal, () => {}, client), true);
   assert.equal(asked, 0);
+});
+
+test('with no portal by the End portal, the way back is walked: the shortcut ends (note 1282)', () => {
+  const goal = goalOf();
+  goal.netherShortcut = { chest: { x: 4, y: 66, z: 5 }, phase: 'out', at: 1 };
+  goal.portals = [{ x: 5, y: 65, z: 6, dimension: 'overworld' }];
+  sc.settle(bot(10, 20), goal, () => {}, { eyesCarried: 12, wanted: 11 });
+  assert.equal(goal.netherShortcut, undefined);
+  assert.equal(goal.errand, undefined);
 });
