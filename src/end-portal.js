@@ -300,4 +300,18 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
   }
 }
 
-module.exports = { activePortal, enterEnd, bridgeFootings };
+// The End portal close with its eyes carried, in words (notes 1345, 1347):
+// the frames' distance, the empty frames and the eyes, the seconds the
+// placing takes, and what a death here costs. '' when not near or not
+// carried.
+function endPortalNearSays(bot, goal) {
+  try {
+    const ep = goal?.endPortal; if (!ep?.center || !bot?.entity?.position) return '';
+    const c = ep.center, p = bot.entity.position, d = Math.hypot(p.x - c.x, p.y - c.y, p.z - c.z);
+    const empty = (ep.frames || []).filter(fr => !fr.eye).length;
+    const eyes = (bot.inventory?.items?.() || []).filter(i => i.name === 'ender_eye').reduce((n, i) => n + i.count, 0);
+    if (d > 48 || !empty || !eyes) return '';
+    return ` The End portal's frames are ${Math.round(d)} blocks off, ${empty} of them empty and ${eyes} eye${eyes === 1 ? '' : 's'} of ender carried${eyes >= empty ? `: placing them is about ${Math.max(5, Math.round(empty * 1.5))} seconds and opens the portal` : `, ${empty - eyes} short`}; the End has no night, and a death here leaves the eyes where the bot falls.`;
+  } catch (_) { return ''; }
+}
+module.exports = { endPortalNearSays, activePortal, enterEnd, bridgeFootings };

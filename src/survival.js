@@ -10800,13 +10800,7 @@ class Survival {
       // fill end portal step"; the stall watch then took it away from the
       // portal, and it died at 2 health night-mining with the eyes, which
       // despawned.
-      const endSays = (() => {
-        const ep = goal.endPortal; if (!ep?.center || !bot.entity?.position) return '';
-        const d = bot.entity.position.distanceTo(new Vec3(ep.center.x, ep.center.y, ep.center.z));
-        const empty = (ep.frames || []).filter(fr => !fr.eye).length, eyes = countOf(bot, 'ender_eye');
-        if (d > 48 || !empty || !eyes) return '';
-        return ` The End portal's frames are ${Math.round(d)} blocks off, ${empty} of them empty and ${eyes} eye${eyes === 1 ? '' : 's'} of ender carried${eyes >= empty ? `: placing them is about ${Math.max(5, Math.round(empty * 1.5))} seconds and opens the portal` : `, ${empty - eyes} short`}; the End has no night, and a death here leaves the eyes where the bot falls.`;
-      })();
+      const endSays = require('./end-portal').endPortalNearSays(bot, goal);
       // The step waiting is the surface's (levels.js: a tree's logs, wool,
       // a village) and up there it is night (note 1055): said as that, with
       // the mobs about and what the bot has in hand, not as work under the

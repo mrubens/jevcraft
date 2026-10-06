@@ -931,7 +931,11 @@ function watchRung(bot, goal, { now = Date.now(), waiting = null } = {}) {
   b.idleMs = 0; b.asked++; delete b.due;
   const minutes = Math.round((now - b.bestAt) / 60000);
   const bestSays = `${minutes} minutes on the ${rungSays(rung)} without a new best: ${items.length ? `${have} ${items.map(label).join(' or ')} carried, none more` : 'nothing more of it'}${target ? `; ${target.what} ${Math.round(dist(target.at, here))} blocks off, the nearest yet ${Math.round(b.best.target[tkey])}` : ''}; the farthest from where it began ${Math.round(b.best.far)} blocks${b.lastBest ? `; the last new best was ${b.lastBest}` : ''}`;
-  return { rung, says: due ? `${bestSays}; ${due.says}` : bestSays };
+  // The End portal near with its eyes (note 1347): 25593 (2026-10-06 03:53Z)
+  // was asked this six blocks from its frames with all twelve eyes, the
+  // portal unsaid, and answered work_free: it climbed away and died.
+  const endNear = require('./end-portal').endPortalNearSays(bot, goal);
+  return { rung, says: `${due ? `${bestSays}; ${due.says}` : bestSays}${endNear}` };
 }
 // The rung's question due at the next look, whatever its clock (a hold at
 // its cap, holds.js): said with why.
