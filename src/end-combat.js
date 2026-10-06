@@ -866,14 +866,18 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     const ownPillar = bot._pillarUp && Math.floor(bot.entity.position.x) === bot._pillarUp.x && Math.floor(bot.entity.position.z) === bot._pillarUp.z;
     if (ownPillar && actions.dig) {
       const feet = bot.entity.position.floored();
-      let depth = 0; while (depth < 64 && /^(cobblestone|cobbled_deepslate|end_stone|netherrack|dirt|stone|blackstone|deepslate|andesite|diorite|granite|tuff)$/.test(bot.blockAt(feet.offset(0, -1 - depth, 0))?.name || '')) depth++;
+      let depth = 0; while (depth < 64 && /^(cobblestone|cobbled_deepslate|netherrack|dirt|stone|blackstone|deepslate|andesite|diorite|granite|tuff)$/.test(bot.blockAt(feet.offset(0, -1 - depth, 0))?.name || '')) depth++;
+      // The island's own end stone is no pillar of the bot's (note 1351): the
+      // drill of 2026-10-06 (05:52Z on) was offered this on the ground 755
+      // times, each changing nothing.
+      if (depth < 2) delete bot._pillarUp;
       if (depth >= 2) tree.pillar_down = {
         description: { action: `Dig down the bot's own pillar a block at a time from under the feet, ${depth} blocks to its foot: no fall on the way`, blocks: depth, health: bot.health, dragonHealth: beforeDragon },
         run: async () => {
           for (let n = 0; n < depth; n++) {
             check();
             const under = bot.entity.position.floored().offset(0, -1, 0);
-            if (!/^(cobblestone|cobbled_deepslate|end_stone|netherrack|dirt|stone|blackstone|deepslate|andesite|diorite|granite|tuff)$/.test(bot.blockAt(under)?.name || '')) break;
+            if (!/^(cobblestone|cobbled_deepslate|netherrack|dirt|stone|blackstone|deepslate|andesite|diorite|granite|tuff)$/.test(bot.blockAt(under)?.name || '')) break;
             await actions.dig(bot, task, under);
             for (let i = 0; i < 20 && !bot.entity.onGround; i++) await sleep(50);
           }
