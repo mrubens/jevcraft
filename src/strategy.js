@@ -264,6 +264,8 @@ function rungOption(rung, first, bot, goal, planFor = null) {
   const clock = goal?.rungClocks?.[rung.phase];
   const spent = clock?.activeMs >= 60000 ? ` Worked on for ${Math.round(clock.activeMs / 60000)} minutes so far.` : '';
   const without = WITHOUT[piece] ? ` Until it is done, ${WITHOUT[piece]}.` : '';
+  // An armour rung with nothing worn: the day's deaths with none on and with some (note 1359).
+  const bareRate = bot && /^(iron_armour|leather_armour|iron_(helmet|chestplate|leggings|boots))$/.test(rung.phase) && ![5, 6, 7, 8].some(i => bot.inventory?.slots?.[i]) ? (() => { try { return ' ' + require('./kit-record').bareSays(bot.game?.dimension); } catch (_) { return ''; } })() : '';
   // Said alike whichever rung is first: "the ladder's next step" beside
   // "ahead of the ladder's order" was a thumb on the scale (the critical
   // review, 2026-09-26). The first is marked the ladder's next (ladderNext).
@@ -281,7 +283,7 @@ function rungOption(rung, first, bot, goal, planFor = null) {
   // came to, the same facts the Nether now says of going without it.
   const level = bot && goal ? require('./levels').rungLevelSays(bot, goal, rung.phase) : '';
   const record = require('./kit-record').rungRecordSays(rung.phase, bot?.entity?.position?.y);
-  return { description: `Get ${what}${why ? ` (${why})` : ''}.${kit}${rung.kit ? '' : spareSays(bot, goal, rung)}${bot && goal ? searchSoFar(bot, goal, rung) : ''}${bot && goal ? woolTrip(bot, goal, rung) : ''}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}${spent}${without}${level}${record}${netherCost}`, rung, ladderNext: first };
+  return { description: `Get ${what}${why ? ` (${why})` : ''}.${kit}${rung.kit ? '' : spareSays(bot, goal, rung)}${bot && goal ? searchSoFar(bot, goal, rung) : ''}${bot && goal ? woolTrip(bot, goal, rung) : ''}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}${spent}${without}${bareRate}${level}${record}${netherCost}`, rung, ladderNext: first };
 }
 // A pickaxe rung with a pickaxe still carried is a spare: the ladder counts
 // one under a fifth of its uses (or sixty-four) as worn, and said only

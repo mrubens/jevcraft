@@ -342,6 +342,14 @@ async function kitChoice(bot, task, goal, save, actions, missing, { client, mob,
         tree.fight_with_carried.description += at;
         for (const key of ['make_kit_here', 'return_for_kit']) if (tree[key]) tree[key].description += ` The iron pieces: ${rec}.`;
       }
+      // Nothing worn and armour among the pieces short: the day's record of
+      // deaths with none on and with some (note 1359). combat_kit was answered
+      // fight_with_carried 95 of 100 times from 02:00 to 07:00Z on
+      // 2026-10-06, leather offered six times and never chosen.
+      if (![5, 6, 7, 8].some(i => bot.inventory?.slots?.[i]) && missing.some(d => ['head', 'torso', 'legs', 'feet'].includes(d))) {
+        let says = ''; try { says = ' ' + require('./kit-record').bareSays(bot.game?.dimension); } catch (_) { says = ''; }
+        for (const key of ['fight_with_carried', 'make_kit_here', 'make_leather_here', 'return_for_kit']) if (tree[key]) tree[key].description += says;
+      }
       // The End next (end-supplies.js sets preparingEnd): the dragon's hits
       // through what is worn, and what the rehearsals wore (note 1340).
       // 25593 (2026-10-06 01:08Z), its twelve eyes placed and the ring

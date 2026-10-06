@@ -158,4 +158,15 @@ function rungRecordShort(phase) {
   return ` Its record: ${r ? `${r[0]} of ${RUNGS.trials} trials worked on it before the Nether, a median ${r[2]} minutes each${r[4] ? `, ${r[3]} of ${r[4]} had it by the Nether` : ''}` : 'not worked on in the trials measured'}${s ? `; first Nether stays with it ${pctOf(s[0][1], s[0][0])}% ended in a death and ${pctOf(s[0][2], s[0][0])}% got a rod (${s[0][0]}), without it ${pctOf(s[1][1], s[1][0])}% and ${pctOf(s[1][2], s[1][0])}% (${s[1][0]})` : ''}; ${b.before ? `${b.before}: a benefit before the Nether` : b.benefit ? 'a benefit in the record' : b.measured ? 'no benefit in the record' : 'too few stays to measure'}.`;
 }
 
-module.exports = { BEFORE_NETHER, rungRecordShort, MINUTES, STAYS, RUNGS, RUNG_STAYS, BENEFIT_MIN, BENEFIT_POINTS, ROD_SLACK, familyOf, benefitOf, needBeforeNether, ruleSays, minutesSays, staysSays, rungRecordSays };
+// Deaths a bot-hour with no armour worn against some (note 1359), from the
+// trials' flight records of 2026-10-05 07:00Z to 2026-10-06 07:00Z
+// (artifacts/handoff-live/armour-rate.js): the time is the observations',
+// each death credited to the last hurt frame before it.
+const BARE_RECORD = Object.freeze({ window: '2026-10-05 07:00Z to 2026-10-06 07:00Z',
+  overworld: { bare: [137, 137.9], armoured: [47, 112.4] }, nether: { bare: [71, 26.9], armoured: [55, 44.8] } });
+function bareSays(dimension) {
+  const r = BARE_RECORD[/nether/.test(String(dimension || '')) ? 'nether' : 'overworld'], where = /nether/.test(String(dimension || '')) ? 'the Nether' : 'the Overworld';
+  const rate = ([d, h]) => (Math.round(d / h * 100) / 100).toFixed(2);
+  return `In the trials' record (${BARE_RECORD.window}), in ${where} with no armour worn ${rate(r.bare)} deaths a bot-hour (${r.bare[0]} in ${Math.round(r.bare[1])} bot-hours), with any piece on ${rate(r.armoured)} (${r.armoured[0]} in ${Math.round(r.armoured[1])}).`;
+}
+module.exports = { BARE_RECORD, bareSays, BEFORE_NETHER, rungRecordShort, MINUTES, STAYS, RUNGS, RUNG_STAYS, BENEFIT_MIN, BENEFIT_POINTS, ROD_SLACK, familyOf, benefitOf, needBeforeNether, ruleSays, minutesSays, staysSays, rungRecordSays };
