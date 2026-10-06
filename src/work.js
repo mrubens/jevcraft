@@ -6213,6 +6213,22 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
     const minutes = Math.max(1, Math.ceil((frameFailed.until - Date.now()) / 60000));
     tree[current].description += ` Kept, the frame is made for again: the walk is tried again${frameFailed.legs ? ' and the legs when their rest ends' : ''}, and the staircase in ${minutes} minute${minutes === 1 ? '' : 's'}.`;
   }
+  // Eyes lying at a death in the Nether (note 1362): where a portal made
+  // here comes out against the old one, by the eyes, and the clock that
+  // starts on arrival. 25592 (2026-10-06 08:45Z), its twelve eyes 23 blocks
+  // from its Nether portal and that portal's Overworld side 1,080 blocks off,
+  // chose a new frame here, its Nether side some 130 blocks from them:
+  // within 128 blocks of the bot they age, five minutes to take them.
+  try {
+    const here = bot.entity.position;
+    const lying = [goal.corpseRun, ...(goal.corpseRunsEarlier || [])].filter(r => r && /nether/.test(String(r.dimension || '')) && ['open', 'left'].includes(r.status) && !r.loadedAt && (r.items?.ender_eye || 0) > 0)[0];
+    if (lying) {
+      const ex = { x: here.x / 8, z: here.z / 8 }, d = Math.round(Math.hypot(ex.x - lying.position.x, ex.z - lying.position.z));
+      const old = (goal.portals || []).filter(p => p.dimension === 'nether').map(p => ({ p, d: Math.round(Math.hypot(p.x - lying.position.x, p.z - lying.position.z)) })).sort((u, v) => u.d - v.d)[0];
+      const says = ` The ${lying.items.ender_eye} eyes of ender lie in the Nether at (${Math.round(lying.position.x)}, ${Math.round(lying.position.y)}, ${Math.round(lying.position.z)}): a portal made here comes out about ${d} blocks from them${old ? `, the old portal there ${old.d} blocks from them${(() => { const ow = (goal.portals || []).filter(p => p.dimension === 'overworld').map(p => Math.round(Math.hypot(p.x - here.x, p.z - here.z))).sort((u, v) => u - v)[0]; return ow ? `, its nearest Overworld portal ${ow} blocks from here` : ''; })()}` : ''}. Drops start to age once the bot comes within about 128 blocks, five minutes to take them.`;
+      for (const k of Object.keys(tree)) if (k !== 'none_good' && typeof tree[k].description === 'string') tree[k].description += says;
+    }
+  } catch (_) {}
   const askedBecause = due && due.kind !== 'none' ? due.why : null;
   const decision = await decide('portal_plan', { client, bot, task, goal, save, tree,
     context: { current, oldOrder: ordered[0]?.key || 'build_new', leaveSite: !!siteFailed && (siteFailed.siteFailures || 0) >= 10 },
