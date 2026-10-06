@@ -6583,6 +6583,15 @@ class Survival {
         // most 4 damage. 25585 (2026-10-05 23:46 to 23:47Z) retreated from
         // one twenty times and died to it.
         const near16 = danger.filter(t => t.distance <= 16);
+        // A lone skeleton (note 1334): the drill bare_skeleton, a stone
+        // sword, 8 health, one skeleton nine blocks off on open ground:
+        // chosen as priced, dig down 8 of 8 (it was the cheapest, 4.5) and 7
+        // died; the charge taken, 8 of 8 lived, the skeleton killed, no
+        // damage.
+        if (bare && near16.length === 1 && /^(skeleton|stray|bogged)$/.test(near16[0].entity?.name || '')) {
+          const said = { charge_shooter: 'lived 8 of 8, the skeleton killed, no damage taken', dig_down: 'chosen 8 times, died 7' };
+          for (const [k, w] of Object.entries(said)) if (options[k] && typeof options[k].description === 'string') options[k].description += ` In the arena's drill of this (2026-10-05: no armour, a stone sword, 8 health, one skeleton nine blocks off on open ground, eight runs each way): this way ${w}.`;
+        }
         if (bare && near16.length === 1 && near16[0].entity?.name === 'spider' && near16[0].distance <= 8) {
           if (options.fight && typeof options.fight.description === 'string') options.fight.description += " In the arena's drill of this (2026-10-05: no armour, a stone sword, 8 health, one spider three blocks off, eight runs): this way lived 8 of 8, the spider killed, at most 4 damage taken.";
           for (const k of ['retreat', 'run_from']) if (options[k] && typeof options[k].description === 'string') options[k].description += ' A spider leaps the last blocks at a fleeing player and climbs walls: 25585 (2026-10-05 23:46Z) retreated from one twenty times over about a minute and a half and it caught the bot.';
