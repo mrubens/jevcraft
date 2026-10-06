@@ -21,6 +21,12 @@ if [ "$free" -lt 12 ]; then
   find .clean-run*/recordings -type f -mmin +120 -delete 2>/dev/null
   echo "low disk: recordings older than 2h removed"
 fi
+# The record of options Jev found missing, the same way past 300 MB (note
+# 1355): every bot appends a line at each none good, 903 MB on 2026-10-06.
+m=artifacts/missing-options.jsonl
+if [ -n "$(find $m -size +300M 2>/dev/null)" ]; then
+  gzip -c "$m" > "artifacts/missing-options.part-$(date -u +%Y%m%dT%H%M%SZ).jsonl.gz" && : > "$m" && echo "$m gzipped"
+fi
 # Checkpoint rings of worlds no server runs, past twelve hours (note 1348):
 # a ring is for starting a running trial's moment again; 600 ended ones held
 # 15 GB on 2026-10-06.
