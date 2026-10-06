@@ -1968,10 +1968,11 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
       if (needs && client && typeof bot.blockAt === 'function') {
         const { biomeRay, headingFacts, surfaceRay, HEADINGS } = require('./exploration');
         const legs = state?.legsByHeading || {};
-        const tree = Object.fromEntries(HEADINGS.map((h, i) => [`heading_${h.replace('-', '_')}`, { description: `Head ${h}: ${headingFacts(biomeRay(bot, i), surfaceRay(bot, i), bot)}.${legs[i] ? ` Already searched ${h} ${legs[i] === 1 ? 'once' : `${legs[i]} times`} in this search, and found none that way.` : ''}` }]));
+        const tree = Object.fromEntries(HEADINGS.map((h, i) => [`heading_${h.replace('-', '_')}`, { description: `Head ${h}: ${headingFacts(biomeRay(bot, i), surfaceRay(bot, i), bot)}.${legs[i] ? ` Already searched ${h} ${legs[i] === 1 ? 'once' : `${legs[i]} times`} in this search, and found none that way.` : ''}${require('./anchors').headingSays(bot, goal, i)}` }]));
         try {
+          const anchorsNow = require('./anchors').nowSays(bot, goal);
           const decision = await decide('search_heading', { client, bot, task, goal, save, tree,
-            state: { resource: LOG.test(resource) ? 'wood (any log)' : resource.replaceAll('_', ' '), biome: require('./exploration').biomeView(bot)?.biome, searchLegs: search.attempts,
+            state: { resource: LOG.test(resource) ? 'wood (any log)' : resource.replaceAll('_', ' '), biome: require('./exploration').biomeView(bot)?.biome, searchLegs: search.attempts, ...(anchorsNow ? { fromWhatTheGameComesBackTo: anchorsNow } : {}),
               legsThatWay: Object.fromEntries(Object.entries(legs).map(([i, n]) => [HEADINGS[i], n])) } });
           if (!decision.stale) (search.frontier ||= { heading: 0, legs: 0 }).chosen = HEADINGS.indexOf(decision.path.at(-1).slice(8).replace('_', '-'));
         } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }

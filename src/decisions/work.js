@@ -437,9 +437,9 @@ define({
   trigger: 'A surface search (logs, sand, clay and the like) that needs a new heading: at its start, when a leg is walked, or after three walks that got nowhere. The heading is held until then; the leg is up to 512 blocks.',
   source: 'src/work.js (explore), src/exploration.js (biomeRay)',
   options: [
-    { pattern: 'heading_(east|south_east|south|south_west|west|north_west|north|north_east)', names: 'the heading', label: 'head this way', when: 'always; each says the biomes that way and how often this search went that way', level: 'root', dynamic: true },
+    { pattern: 'heading_(east|south_east|south|south_west|west|north_west|north|north_east)', names: 'the heading', label: 'head this way', when: 'always; each says the biomes that way, how often this search went that way, and how 128 blocks that way changes the distance to each chest of the End\'s makings in this dimension and to the End portal found (note 1371)', level: 'root', dynamic: true },
   ],
-  instructions: workInstructions('The bot is searching for `resource` and none is in view. Choose which way to head. Each heading lists the biomes that way as far as the world is loaded, with what each holds; the search walks up to 512 blocks that way, beyond what is known. `legsThatWay` counts the legs of this search already walked that way, and a walk that met water or cliffs turns the search.'),
+  instructions: workInstructions('The bot is searching for `resource` and none is in view. Choose which way to head. Each heading lists the biomes that way as far as the world is loaded, with what each holds; the search walks up to 512 blocks that way, beyond what is known. `legsThatWay` counts the legs of this search already walked that way, and a walk that met water or cliffs turns the search. `fromWhatTheGameComesBackTo` says how far the bot stands from the chests holding the End\'s makings and the End portal found: the search\'s legs add up, and what is found far off is carried back.'),
 });
 
 // Gathering in the Nether, where the Overworld's walking search found no

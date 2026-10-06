@@ -1082,7 +1082,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
-| `heading_(east\|south_east\|south\|south_west\|west\|north_west\|north\|north_east)` (pattern: names the heading) | root | head this way | always; each says the biomes that way and how often this search went that way |
+| `heading_(east\|south_east\|south\|south_west\|west\|north_west\|north\|north_east)` (pattern: names the heading) | root | head this way | always; each says the biomes that way, how often this search went that way, and how 128 blocks that way changes the distance to each chest of the End's makings in this dimension and to the End portal found (note 1371) |
 
 ### `nether_gather`
 
