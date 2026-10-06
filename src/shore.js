@@ -98,6 +98,40 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
     const land = (await shoreLandYielding(bot, safe, () => task.check())).sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
     // Under fire, the landings the shooters cannot see come first.
     if (shooters.length) land.sort((a, b) => (hiddenFrom(bot, a, shooters) ? 0 : 1) - (hiddenFrom(bot, b, shooters) ? 0 : 1) || a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+    const swimStraight = async bank => {
+      const { inWater } = require('./survival');
+      const flat = () => Math.hypot(bank.x + 0.5 - bot.entity.position.x, bank.z + 0.5 - bot.entity.position.z), before = flat();
+      const out = () => bot.entity.onGround && !inWater(bot) && dryStanding(bot, bot.entity.position);
+      goal.step = { action: 'reach_shore', from: { ...bot.entity.position }, destination: { ...bank }, straight: true };
+      goal.survivalAction = { action: 'reach_shore', straight: true, at: new Date().toISOString() }; save();
+      const began = Date.now();
+      let stuck = 0;
+      while (Date.now() - began < Math.min(60000, before / SWIM_BPS * 2000 + 4000) && flat() > 1.5 && !out()) {
+        const was = bot.entity.position.clone();
+        await motion(bot, task, { label: 'swim_to_bank', keys: ['forward', 'jump'], sneak: false, why: 'swimming straight for the bank in view', guard,
+          look: new Vec3(bank.x + 0.5, bot.entity.position.y + 1.6, bank.z + 0.5), maxMs: SEGMENT_MS, tick: 50, until: () => flat() <= 1.5 || out() });
+        if (Math.hypot(bot.entity.position.x - was.x, bot.entity.position.z - was.z) >= 1) stuck = 0;
+        else if (++stuck >= 2) break;
+      }
+      if (!out() && flat() <= 2.5) {
+        await clearHeadroom(bot, task);
+        await motion(bot, task, { label: 'climb_out_of_water', keys: ['forward', 'jump'], sneak: false, why: 'onto the bank swum to',
+          look: bank.offset(0.5, 1, 0.5), maxMs: 2500, tick: 50, guard, until: out });
+      }
+      if (out()) { state.landed = { position: { ...bot.entity.position }, at: new Date().toISOString(), straight: true }; save(); return 'landed'; }
+      // Nearer the bank: the search is run again from there.
+      if (before - flat() >= 4) return 'nearer';
+      state.failures[`${bank}`] = Date.now(); save();
+      return 'failed';
+    };
+    // In a fight, the nearest open bank is swum for first, straight, the
+    // head kept up (note 1386): the routes below are surveyed a landing at
+    // a time, up to twenty-four, and the bot floats still meanwhile. 25594
+    // (2026-10-06 21:00:40 to 21:00:49Z), bare in a river with a drowned on
+    // it, 'pathing' and pressing no key for nine seconds, was struck from 20
+    // to 0.3, three a second.
+    const nearSwim = fight && !shooters.length ? land.find(p => p.distanceTo(bot.entity.position) <= 24 && openSwim(bot, p, waterY) && !shoreHot(bot, p, { path: false })) : null;
+    if (nearSwim && await swimStraight(nearSwim) !== 'failed') return true;
     const checked = new Set(), unrouted = [];
     let attempts = 0;
     for (const p of land) {
@@ -163,30 +197,7 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
     // and failed in two seconds, and the drowned's trident hit every two
     // until it died (note 501).
     const bank = unrouted.find(p => openSwim(bot, p, waterY) && !shoreHot(bot, p, { path: false }));
-    if (bank) {
-      const flat = () => Math.hypot(bank.x + 0.5 - bot.entity.position.x, bank.z + 0.5 - bot.entity.position.z), before = flat();
-      const out = () => bot.entity.onGround && !inWater(bot) && dryStanding(bot, bot.entity.position);
-      goal.step = { action: 'reach_shore', from: { ...bot.entity.position }, destination: { ...bank }, straight: true };
-      goal.survivalAction = { action: 'reach_shore', straight: true, at: new Date().toISOString() }; save();
-      const began = Date.now();
-      let stuck = 0;
-      while (Date.now() - began < Math.min(60000, before / SWIM_BPS * 2000 + 4000) && flat() > 1.5 && !out()) {
-        const was = bot.entity.position.clone();
-        await motion(bot, task, { label: 'swim_to_bank', keys: ['forward', 'jump'], sneak: false, why: 'swimming straight for the bank in view', guard,
-          look: new Vec3(bank.x + 0.5, bot.entity.position.y + 1.6, bank.z + 0.5), maxMs: SEGMENT_MS, tick: 50, until: () => flat() <= 1.5 || out() });
-        if (Math.hypot(bot.entity.position.x - was.x, bot.entity.position.z - was.z) >= 1) stuck = 0;
-        else if (++stuck >= 2) break;
-      }
-      if (!out() && flat() <= 2.5) {
-        await clearHeadroom(bot, task);
-        await motion(bot, task, { label: 'climb_out_of_water', keys: ['forward', 'jump'], sneak: false, why: 'onto the bank swum to',
-          look: bank.offset(0.5, 1, 0.5), maxMs: 2500, tick: 50, guard, until: out });
-      }
-      if (out()) { state.landed = { position: { ...bot.entity.position }, at: new Date().toISOString(), straight: true }; save(); return true; }
-      // Nearer the bank: the search is run again from there.
-      if (before - flat() >= 4) return true;
-      state.failures[`${bank}`] = Date.now(); save();
-    }
+    if (bank && await swimStraight(bank) !== 'failed') return true;
     // Out at sea with no shore within sight: swim for the land remembered,
     // else hold one heading and look again. mid-218-d searched for a shore
     // in the open sea over and over, drifting, until the stall watch ended

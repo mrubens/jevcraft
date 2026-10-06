@@ -94,7 +94,7 @@ test('a bank in view the route search does not reach in its time is swum for str
   const danger = [{ entity: { id: 9, name: 'drowned', position: new Vec3(5, 55, 5), height: 1.95, isValid: true }, distance: 9, visible: true }];
   const landed = await reachShore(bot, f.task, f.goal, () => {}, { surface: f.surface, fight: danger, move: () => assert.fail('no route was found to walk') });
   assert.equal(landed, true);
-  assert.equal(f.goal.step.straight, true);
+  assert.ok(f.goal.step.straight || f.goal.step.direct, 'swum for straight, before the routes or after them (note 1386)');
   assert.deepEqual(bot.entity.position.floored(), landing);
   // A wall across the water: not swum at.
   const g = fixture();
