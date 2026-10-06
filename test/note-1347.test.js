@@ -15,3 +15,18 @@ test('six blocks from its frames with twelve eyes: said; far, or no eyes: nothin
   assert.equal(endPortalNearSays(bot([700, -33, 1539], 12), goal), '');
   assert.equal(endPortalNearSays(bot([611, -33, 1539], 0), goal), '');
 });
+
+test('note 1369: keep_here chosen and broken off is carried out again on the next pass, not asked', async () => {
+  const eb = require('../src/eye-bank');
+  const rs = require('../src/rod-stash');
+  const orig = rs.stashRods; let stashCalls = 0;
+  rs.stashRods = async () => { stashCalls++; return true; };
+  try {
+    const items = [{ name: 'ender_eye', count: 11 }];
+    const bot = { entity: { position: new Vec3(0, 64, 0) }, game: { dimension: 'overworld' }, inventory: { items: () => items }, health: 20, food: 20, blockAt: p => ({ name: 'chest', position: p, boundingBox: 'block' }), findBlocks: () => [] };
+    const goal = { kind: 'win', eyesNow: { count: 11, at: Date.now() - 60000, pick: 'keep_here' }, rodStashes: [{ position: { x: 3, y: 64, z: 0 }, dimension: 'overworld', contents: {} }] };
+    let asked = 0; const client = { systemOne: async () => { asked++; return { answers: {} }; } };
+    const r = await eb.eyesNow(bot, { check() {} }, goal, () => {}, {}, client, { errand: 'test' });
+    assert.equal(asked, 0); assert.equal(stashCalls, 1); assert.equal(r, 'kept'); assert.equal(goal.eyesNow.done, true);
+  } finally { rs.stashRods = orig; }
+});

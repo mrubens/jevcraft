@@ -37,8 +37,14 @@ async function eyesNow(bot, task, goal, save, actions, client, { errand = 'the e
   const o = offer(bot, goal);
   if (!o || o.eyes <= keepBack) return null;
   const asked = goal.eyesNow, now = Date.now();
-  if (asked && asked.count === o.eyes && now - asked.at < ASK_AGAIN_MS) return null;
-  goal.eyesNow = { count: o.eyes, at: now }; save?.();
+  // Chosen to be put away and not yet put (note 1369): carried out again, not
+  // left for ten minutes. 25598 (2026-10-06 18:00:40Z) chose keep_here six
+  // blocks from its chest with eleven eyes, a creeper broke off the putting,
+  // the question rested, and at 18:10 it died to two skeletons 429 blocks off
+  // with the eleven in its pack.
+  const pending = asked && asked.pick === 'keep_here' && !asked.done && asked.count === o.eyes && now - asked.at < 30 * 60000;
+  if (!pending && asked && asked.count === o.eyes && now - asked.at < ASK_AGAIN_MS) return null;
+  if (!pending) { goal.eyesNow = { count: o.eyes, at: now }; save?.(); }
   const put = o.eyes - keepBack;
   const n = keepBack ? `${put} of the ${o.eyes} eyes of ender` : `${o.eyes} eye${o.eyes === 1 ? '' : 's'} of ender`;
   const all = `${o.eyes} eye${o.eyes === 1 ? '' : 's'} of ender`;
@@ -51,15 +57,17 @@ async function eyesNow(bot, task, goal, save, actions, client, { errand = 'the e
       : `Put the ${n} in ${place}, then go on ${errand} with nothing of the goal's in the pack. A death on the way drops everything carried and leaves the chest as it is; the eyes are counted as held, and taken out again when going to the End is chosen${ring !== null ? ` (the portal's ring is ${ring} blocks from here)` : ''}. ${LOST}` },
     carry_on: { description: `Go on ${errand} with the ${all} in the pack.${search ? ' Found, the portal is filled with no walk back.' : ''} A death drops them where it happens, and they last five minutes once the bot is near again. ${LOST} Asked again in ten minutes, or when the count carried changes.` },
   };
-  let decision;
-  try { decision = await decide('eyes_now', { client, bot, task, goal, save, tree, state: { eyesOfEnderCarried: o.eyes, errand, health: bot.health, food: bot.food, ...(ring !== null ? { blocksToThePortalRing: ring } : {}), riskNow: require('./risk').riskNow(bot) } }); }
+  let decision = pending ? { path: ['keep_here'] } : null;
+  if (!pending) try { decision = await decide('eyes_now', { client, bot, task, goal, save, tree, state: { eyesOfEnderCarried: o.eyes, errand, health: bot.health, food: bot.food, ...(ring !== null ? { blocksToThePortalRing: ring } : {}), riskNow: require('./risk').riskNow(bot) } }); }
   catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[eyes_now] not asked: ${String(err.message || err).slice(0, 300)}`); return null; }
   if (decision.stale) return null;
+  goal.eyesNow = { ...goal.eyesNow, pick: decision.path?.at(-1) }; save?.();
   if (decision.path?.at(-1) !== 'keep_here') return 'carry';
   const stored = await rs().stashRods(bot, task, goal, save, acts, o, { step: 'bank_eyes', rest: ['eye_bank', 'here'], ...(keepBack ? { keepBack: { ender_eye: keepBack } } : {}),
     chat: (list, where) => search ? `Put ${list} in a chest at ${where}. I'll come back for them when the portal is found.` : `Put ${list} in a chest at ${where}. They stay there until I go to the End.` });
   if (!stored) return 'carry';
-  goal.eyeBank = { at: Date.now(), chestAt: o.existing ? o.existing.position : P(o.site.cell), ...(search ? { forSearch: true } : {}) }; save?.();
+  goal.eyeBank = { at: Date.now(), chestAt: o.existing ? o.existing.position : P(o.site.cell), ...(search ? { forSearch: true } : {}) };
+  goal.eyesNow = { ...goal.eyesNow, done: true }; save?.();
   return 'kept';
 }
 
