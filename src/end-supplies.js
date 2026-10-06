@@ -33,7 +33,7 @@ const END_BEDS = 4, END_BED_MS = 20 * 60000;
 // eyes held, was four hours on the bow alone with 192 arrows still to come
 // from skeletons after it.
 const WANTS = { arrow: 64, cobblestone: 64, water_bucket: 2, food: 64, health: 18 };
-const HOLD_MS = 15 * 60000, ARROW_STEP = 32;
+const HOLD_MS = 15 * 60000, ARROW_STEP = 32, FILL_HOLD_MS = 30 * 60000;
 // The dragon's fight as rehearsed (scripts/endgame.js dragon, port 25578,
 // 2026-10-04; a bow, a diamond sword, iron armour and a shield, no bed
 // used). By the bow (01:12Z, a fresh End): the ten crystals and the dragon's
@@ -173,7 +173,11 @@ async function prepareEndSupplies(bot, task, goal, save, actions, client = task.
   const kit = goal.endKit ||= {}, sig = short.map(i => `${i.key}:${i.carried}`).join(',');
   // The eyes set in the frame first holds until the portal is lit, then the
   // kit is asked again (note 1380).
-  if (kit.choice?.pick === 'fill_frame_first' && goal.endPortal?.litAt) { delete kit.choice; save(); }
+  // Or after half an hour (note 1389): held from the day it was chosen,
+  // 25594 (2026-10-06 22:20 to 22:48Z) took its twelve eyes out of its chest
+  // at night with nothing worn on an answer given hours before, and a
+  // drowned took them 400 blocks along the way.
+  if (kit.choice?.pick === 'fill_frame_first' && (goal.endPortal?.litAt || Date.now() - kit.choice.at > FILL_HOLD_MS)) { delete kit.choice; save(); }
   const held = kit.choice && (kit.choice.pick === 'enter_now' || kit.choice.pick === 'fill_frame_first' || now - kit.choice.at < HOLD_MS) ? kit.choice : null;
   let pick = null;
   // Going now holds until the kit is worse than when it was chosen, an item

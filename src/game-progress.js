@@ -1015,7 +1015,7 @@ function nextGameStage(bot, goal, skip = new Set()) {
   // portal 1,300 blocks off with none.
   // Only once the kit's answer is to go (enter_now, fill_frame_first): on a
   // top-up errand the eyes stay put away (eye-bank.js, note 1193).
-  const going = ['enter_now', 'fill_frame_first'].includes(goal.endKit?.choice?.pick);
+  const going = ['enter_now', 'fill_frame_first'].includes(goal.endKit?.choice?.pick) && Date.now() - (goal.endKit.choice.at || 0) < 30 * 60000;
   if (going && where === 'overworld' && m.stronghold_located && !goal.endPortal?.litAt && eyesBanked > 0 && Number.isInteger(portalNeed) && count(bot, 'ender_eye') < portalNeed && count(bot, 'ender_eye') + eyesBanked >= portalNeed) {
     const rs = require('./rod-stash'), here = bot.entity?.position;
     const chest = here && rs.stashes(goal).filter(c => c.dimension === 'overworld' && (c.contents?.ender_eye || 0) > 0)

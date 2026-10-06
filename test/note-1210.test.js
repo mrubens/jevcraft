@@ -31,7 +31,7 @@ test('the twelve eyes in the bot\'s chest and none carried: the chest is the ste
   const goal = { kind: 'win', gameProgress: { version: 1, milestones: { nether_entered: { at: 1 }, eyes_obtained: { at: 2 }, stronghold_located: { at: 3, center: { x: 604, y: -37, z: 1540 },
     frames: Array.from({ length: 12 }, (_, i) => ({ position: { x: i, y: -37, z: 0 }, eye: false })) } } },
     rodStashes: [{ position: { x: 203, y: 63, z: 245 }, dimension: 'overworld', contents: { ender_eye: 12, ender_pearl: 6 }, storedAt: '2026-10-06T17:00:00Z' }],
-    endKit: { choice: { pick: 'fill_frame_first', at: 1 } } };
+    endKit: { choice: { pick: 'fill_frame_first', at: Date.now() } } };
   const stage = stagePastKit(goal, 0);
   assert.equal(stage.phase, 'collect_rod_stash', JSON.stringify(stage));
   assert.deepEqual(stage.at, { x: 203, y: 63, z: 245 });
