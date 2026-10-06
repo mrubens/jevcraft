@@ -6008,7 +6008,7 @@ function planRoutes(bot, goal, { method, frame, placed, sources, here, ingots, r
     // 2026-10-01 16:08Z) took beside_pool_3, climbed to a surface pool in the
     // dark, and a creeper took it from 20 to 6 health on arrival.
     const onTop = v.kind === 'pool' && (sf || !(depth >= L.UNDER)) && Number.isFinite(v.at?.y) && v.at.y >= 50;
-    const nightUp = onTop && nightNow ? { nightSays: ` It is night up there, about ${toDawn} real minutes to dawn.${require('./night-record').keepOnSays('surface', { minutesToDawn: toDawn })}` } : {};
+    const nightUp = onTop && nightNow ? { nightSays: ` It is night up there, about ${toDawn} real minutes to dawn.${require('./night-record').keepOnSays('surface', { minutesToDawn: toDawn, bot })}` } : {};
     const surfaceExtra = sf ? { surfaceSays: ` From ${depth} blocks under rock the walk to it goes by the surface: ${sf.up} blocks up to open sky, across, and ${sf.down} down to it, counted in the price.` } : {};
     const waitExtra = rest ? { waitSays: ` First its way's rest is waited out: ${rest.what} is set aside (${rest.why}) for ${rest.minutes} more minute${rest.minutes === 1 ? '' : 's'}, counted in the price.` } : {};
     // Here: the frame begun, or a frame near where the bot stands.
@@ -8454,7 +8454,7 @@ function nightUpSays(bot) {
     const shield = bot.inventory?.slots?.[45]?.name === 'shield' || (bot.inventory?.items?.() || []).some(i => i.name === 'shield');
     return {
       toDawn,
-      climb: ` It is night up there, ${toDawn < 1 ? 'under a minute' : `about ${toDawn} real minute${toDawn === 1 ? '' : 's'}`} to dawn: mobs spawn in the open until then, and the zombies and skeletons out at dawn burn in the sun. The bot comes out with ${weapon}, ${worn.length ? worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'nothing worn'} and ${shield ? 'a shield' : 'no shield'}.${require('./night-record').keepOnSays('surface', { minutesToDawn: toDawn })}`,
+      climb: ` It is night up there, ${toDawn < 1 ? 'under a minute' : `about ${toDawn} real minute${toDawn === 1 ? '' : 's'}`} to dawn: mobs spawn in the open until then, and the zombies and skeletons out at dawn burn in the sun. The bot comes out with ${weapon}, ${worn.length ? worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'nothing worn'} and ${shield ? 'a shield' : 'no shield'}.${require('./night-record').keepOnSays('surface', { minutesToDawn: toDawn, bot })}`,
       below: ` Up there it is night for ${toDawn < 1 ? 'under a minute' : `about ${toDawn} real minute${toDawn === 1 ? '' : 's'}`} more; this keeps the bot under the rock meanwhile.`,
     };
   } catch (_) { return null; }

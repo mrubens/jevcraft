@@ -107,7 +107,30 @@ function bareNightSays(bot, key) {
   const rest = Object.entries(BARE_NIGHT.by).filter(([k]) => k !== key).map(([, o]) => `${o.says} ${o.died5} of ${o.n}`).join(', ');
   return ` With next to no armour on at night in the Overworld, the record (${BARE_NIGHT.day}, ${BARE_NIGHT.from} to ${BARE_NIGHT.to}): ${r.says} was followed by a death within five minutes ${r.died5} times in ${r.n}, within ten ${r.died10}; beside it, ${rest}.`;
 }
-function keepOnSays(place, { minutesToDawn = null } = {}) {
+// The same by armour, from the flight record of 2026-10-04 00:00Z to
+// 2026-10-06 18:30Z (note 1370): each Overworld bot-second by the place (open
+// sky at y 56 or more, or under it), the hour (night from 12500 to 23500) and
+// whether anything was worn; a death credited to the frame of its last hurt.
+// The record above is every bot's, most of them in iron, and said alone to a
+// bare bot it read seven times too low: 25598 (2026-10-06 18:23Z), nothing
+// worn, hunger 11 and its twelve eyes banked, was told climbing for food
+// six minutes before dawn was "about 1 in 43 of a death", climbed, and was
+// shot dead by a skeleton a minute after it came out.
+const BY_ARMOUR = Object.freeze({ from: '2026-10-04 00:00Z', to: '2026-10-06 18:30Z',
+  surface: { night: { bare: { hours: 44.5, deaths: 71 }, armoured: { hours: 30.4, deaths: 23 } }, day: { bare: { hours: 59.9, deaths: 41 }, armoured: { hours: 44.3, deaths: 12 } } },
+  underground: { night: { bare: { hours: 13.5, deaths: 4 }, armoured: { hours: 28.1, deaths: 7 } }, day: { bare: { hours: 10.2, deaths: 12 }, armoured: { hours: 31.5, deaths: 9 } } },
+});
+const nothingWorn = bot => { try { return ![5, 6, 7, 8].some(slot => bot.inventory?.slots?.[slot]); } catch (_) { return false; } };
+const perHour = r => Math.round(r.deaths / r.hours * 100) / 100;
+function byArmourSays(place, bot, minutesToDawn) {
+  const b = BY_ARMOUR[place === 'deep' ? 'underground' : place];
+  if (!b || !bot) return '';
+  const bare = nothingWorn(bot), mine = b.night[bare ? 'bare' : 'armoured'];
+  const toDawn = Number.isFinite(minutesToDawn) && minutesToDawn > 0 && odds(perHour(mine) * minutesToDawn / 60)
+    ? ` ${bare ? 'Nothing is worn now' : 'Armour is worn now'}: to dawn, about ${minutesToDawn} real minutes, that is ${odds(perHour(mine) * minutesToDawn / 60)} of a death at that rate.` : '';
+  return ` By armour (${BY_ARMOUR.from} to ${BY_ARMOUR.to}), ${WHERE[place === 'deep' ? 'underground' : place]} at night: with nothing worn ${perHour(b.night.bare)} deaths an hour (${b.night.bare.deaths} in ${b.night.bare.hours} bot-hours), in armour ${perHour(b.night.armoured)} (${b.night.armoured.deaths} in ${b.night.armoured.hours}); by day ${perHour(b.day.bare)} and ${perHour(b.day.armoured)}.${toDawn}`;
+}
+function keepOnSays(place, { minutesToDawn = null, bot = null } = {}) {
   const r = RECORD[place];
   if (!r) return '';
   const n = r.night, d = r.day;
@@ -117,7 +140,7 @@ function keepOnSays(place, { minutesToDawn = null } = {}) {
   const toDawn = Number.isFinite(minutesToDawn) && minutesToDawn > 0
     ? `; to dawn, about ${minutesToDawn} real minutes, that is about ${round(n.damagePerHour * minutesToDawn / 60)} health${odds(n.deathsPerHour * minutesToDawn / 60) ? ` and ${odds(n.deathsPerHour * minutesToDawn / 60)} of a death` : ''} at the night's rate${same ? '' : `, ${round((n.damagePerHour - d.damagePerHour) * minutesToDawn / 60)} health more than by day`}`
     : '';
-  return `${lead}${verdict}${toDawn}.`;
+  return `${lead}${verdict}${bot ? '' : toDawn}.${bot ? ' That record is every bot\'s, most of them in iron.' : ''}${byArmourSays(place, bot, minutesToDawn)}`;
 }
 
 // What sealing here at night has come to: the seals, how many were quiet
@@ -211,4 +234,4 @@ function bedSafety(monsters = []) {
     facts: { monstersWithin8OfBed: within8.length, monstersWithin16OfBed: within8.length + within16.length, ...(creeper ? { creeperWithin16OfBed: round(creeper.distance) } : {}), sleepRecord: { band, ...b } } };
 }
 
-module.exports = { BARE_NIGHT, bareNightSays, BARE, bareOf, bareSays, SURFACE_Y, DEEP_Y, CLEAR_MS, CLEAR_WITHIN, RECORD, BEDS, SINCE, bandOf, placeOf, keepOnSays, sealedSays, nightMineSays, facts, holdEnds, holdSays, holdOf, holdNow, bedSafety };
+module.exports = { BY_ARMOUR, byArmourSays, BARE_NIGHT, bareNightSays, BARE, bareOf, bareSays, SURFACE_Y, DEEP_Y, CLEAR_MS, CLEAR_WITHIN, RECORD, BEDS, SINCE, bandOf, placeOf, keepOnSays, sealedSays, nightMineSays, facts, holdEnds, holdSays, holdOf, holdNow, bedSafety };

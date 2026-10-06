@@ -10973,7 +10973,7 @@ class Survival {
       // Out at night, what keeping on with the work there has cost by the
       // record of the place (night-record.js, note 789).
       if (night && !offWorld && options.leave && typeof options.leave.description === 'string')
-        options.leave.description += require('./night-record').keepOnSays(require('./night-record').placeOf({ y: bot.entity?.position?.y, underground: below && !/ That step is at the surface \(/.test(options.leave.description) }), { minutesToDawn: minutesToDawn(bot) });
+        options.leave.description += require('./night-record').keepOnSays(require('./night-record').placeOf({ y: bot.entity?.position?.y, underground: below && !/ That step is at the surface \(/.test(options.leave.description) }), { minutesToDawn: minutesToDawn(bot), bot });
       if (night && !offWorld && options.leave && typeof options.leave.description === 'string') options.leave.description += require('./night-record').bareSays(bot);
       const leaveOff = (() => {
         const key = 'survival:leave_shelter', now = Date.now();
@@ -11704,7 +11704,7 @@ class Survival {
     if (nightPlace) {
       state.nightRecord = nightRec.facts(nightPlace);
       const mins = minutesToDawn(bot);
-      if (tree.continue_request) tree.continue_request.description += nightRec.keepOnSays(nightPlace, { minutesToDawn: mins });
+      if (tree.continue_request) tree.continue_request.description += nightRec.keepOnSays(nightPlace, { minutesToDawn: mins, bot });
       if (tree.continue_request) tree.continue_request.description += nightRec.bareSays(bot);
       if (tree.secure_shelter) tree.secure_shelter.description += nightRec.sealedSays(nightPlace, { minutesToDawn: mins, waiting }) + nightRec.holdSays(sealWhy, { minutesToDawn: mins });
     }
