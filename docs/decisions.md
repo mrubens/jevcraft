@@ -1007,6 +1007,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `drop` | root | drop a stack (which one is asked beside it) | any stack can go |
 | `drop_[a-z0-9_]+` (pattern: names the stack, by its item (and its slot where two stacks share an item)) | drop | drop this stack | any stack but the item the room is for and what the work in hand uses |
+| `chest_here` | root | put the chest carried down and leave the stacks needed least in it | a chest carried, a dry cell beside the bot, and stacks the step in hand does not need (note 1356) |
 | `none` | root | drop nothing and go without | always |
 
 ### `while_cooking`

@@ -371,6 +371,7 @@ define({
   options: [
     { key: 'drop', label: 'drop a stack (which one is asked beside it)', when: 'any stack can go', level: 'root' },
     { pattern: 'drop_[a-z0-9_]+', names: 'the stack, by its item (and its slot where two stacks share an item)', label: 'drop this stack', when: 'any stack but the item the room is for and what the work in hand uses', level: 'drop', dynamic: true },
+    { key: 'chest_here', label: 'put the chest carried down and leave the stacks needed least in it', when: 'a chest carried, a dry cell beside the bot, and stacks the step in hand does not need (note 1356)', level: 'root' },
     { key: 'none', label: 'drop nothing and go without', when: 'always', level: 'root' },
   ],
   instructions: workInstructions('The pockets are full and the work needs room for `roomFor`. Choose a stack to drop, or none. Each option says how much of it is carried and whether it is the only tool of its kind, food, or part of the block reserve.'),

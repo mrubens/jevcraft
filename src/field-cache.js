@@ -113,7 +113,10 @@ function nearCache(bot, goal, reach = REACH) {
   // A chest held for a trip under way stays full; a hold older than half an
   // hour is a trip that ended without saying so (a death, a change of plan).
   const held = c => c.hold && Date.now() - Date.parse(c.placedAt || 0) < 30 * 60 * 1000;
-  return (goal.caches || []).filter(c => c.dimension === dimension && !held(c) && Object.values(c.contents || {}).some(n => n > 0) && !isSetAside(goal, 'field_cache_take', `${c.position.x},${c.position.z}`))
+  // A chest left for room (inventory-tidy.js, note 1356) is taken back only
+  // when the pack has the slots for it, or the taking makes room by dropping.
+  const roomFor = c => !c.room || (bot.inventory?.emptySlotCount?.() ?? 0) >= Object.values(c.contents || {}).filter(n => n > 0).length;
+  return (goal.caches || []).filter(c => c.dimension === dimension && !held(c) && roomFor(c) && Object.values(c.contents || {}).some(n => n > 0) && !isSetAside(goal, 'field_cache_take', `${c.position.x},${c.position.z}`))
     .map(c => ({ cache: c, distance: Math.hypot(c.position.x - here.x, c.position.y - here.y, c.position.z - here.z) }))
     .filter(c => c.distance <= reach).sort((a, b) => a.distance - b.distance)[0] || null;
 }

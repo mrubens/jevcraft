@@ -600,6 +600,16 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
         children: Object.fromEntries(drops.map(([k, o]) => [k, { description: o.description }])) },
       none: { description: tree.none.description },
     };
+    // A chest carried, put down beside the bot and the stacks the run
+    // needs least left in it, remembered as a cache and taken back passing
+    // by (note 1356): a full pack's way that drops nothing. The question was
+    // answered none good 60 times in the hour to 06:40Z on 2026-10-06, its
+    // choices one stack to drop or going without.
+    const stowable = drops.map(([, o]) => o.stack).filter(st => !needed.has(st.name) && !food(st.name) && !weapon(st.name) && !LIFESAVER.test(st.name) && !LIGHTER.test(st.name)
+      && !/_(pickaxe|axe|shovel|hoe)$|bucket|^(ender_eye|ender_pearl|blaze_rod|blaze_powder|shield|bow|arrow|chest|crafting_table|furnace|torch)$|_bed$/.test(st.name))
+      .sort((x, y) => Number(junk(y.name)) - Number(junk(x.name))).slice(0, 4);
+    const chestCellNow = bot.inventory.items().some(i => i.name === 'chest') && stowable.length ? require('./field-cache').chestCell(bot) : null;
+    if (chestCellNow) asked.chest_here = { description: `Put the chest carried down here and leave ${stowable.map(st => `${st.count} ${st.name.replaceAll('_', ' ')}`).join(', ')} in it, making room for the ${name.replaceAll('_', ' ')} with nothing dropped: the chest is remembered and its stacks taken back passing by. About five seconds.` };
     let decision;
     try {
       decision = await decide('inventory_drop', { client, bot, task, tree: asked,
@@ -611,6 +621,23 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
     const pick = decision.path.at(-1);
     console.log(`[room] for ${name}: Jev chose ${pick}${tree[pick]?.stack ? ` (${tree[pick].stack.count} ${tree[pick].stack.name})` : ''}`);
     if (pick === 'none') return false;
+    if (pick === 'chest_here') {
+      try {
+        const chest = bot.inventory.items().find(i => i.name === 'chest');
+        await bot.equip(chest, 'hand'); task?.check?.();
+        await bot.placeBlock(bot.blockAt(chestCellNow.offset(0, -1, 0)), new (require('vec3').Vec3)(0, 1, 0));
+        const placed = bot.blockAt(chestCellNow);
+        if (placed?.name !== 'chest') throw new Error('the chest did not go down');
+        const win = await bot.openContainer(placed);
+        const contents = {};
+        try { for (const st of stowable) { const it = bot.inventory.items().find(i => i.name === st.name); if (!it) continue; await win.deposit(it.type, null, it.count); contents[st.name] = (contents[st.name] || 0) + it.count; } }
+        finally { win.close(); }
+        if (goal) { (goal.caches ||= []).push({ position: { x: chestCellNow.x, y: chestCellNow.y, z: chestCellNow.z }, dimension: String(bot.game?.dimension || 'overworld'), contents, placedAt: new Date().toISOString(), reason: `room for the ${name.replaceAll('_', ' ')}`, room: true }); }
+        bot.chat?.(`Leaving ${Object.entries(contents).map(([n, c]) => `${c} ${n.replaceAll('_', ' ')}`).join(', ')} in a chest here to make room.`);
+        console.log(`[room] for ${name}: a chest put down at ${chestCellNow} with ${JSON.stringify(contents)}`);
+      } catch (err) { task?.check?.(); console.log(`[room] chest here failed: ${String(err.message || err).slice(0, 160)}`); }
+      continue;
+    }
     const stack = tree[pick]?.stack;
     if (!stack) return null;
     task?.check?.();
