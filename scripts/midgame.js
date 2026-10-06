@@ -135,7 +135,17 @@ function eyesHeld(identity = IDENTITY) {
   try {
     const g = JSON.parse(fs.readFileSync(path.join(STATE, `${identity}.json`), 'utf8')), goal = g.goal || g;
     const chests = (goal.rodStashes || []).filter(c => !c.lostAt);
-    const kept = chests.reduce((n, c) => n + Number(c.contents?.ender_eye || 0), 0);
+    // Carried too, and lying where a death left them (note 1390): mid-242-dh-
+    // nether-2 (25598, 2026-10-06 23:2xZ), its twelve eyes out of the chest
+    // and in its pack by its portal, was ended again, its chest empty.
+    let carried = 0;
+    try {
+      const dir = path.join(STATE, 'flight'), f = fs.readdirSync(dir).filter(n => n.startsWith(`${identity}-`) && n.endsWith('.jsonl')).map(n => path.join(dir, n)).sort((x, y) => fs.statSync(y).mtimeMs - fs.statSync(x).mtimeMs)[0];
+      if (f) { const size = fs.statSync(f).size, fd = fs.openSync(f, 'r'), len = Math.min(size, 400000), buf = Buffer.alloc(len); fs.readSync(fd, buf, 0, len, size - len); fs.closeSync(fd);
+        const inv = [...buf.toString('utf8').matchAll(/"inventory":\{[^}]*\}/g)].at(-1)?.[0] || ''; carried = Number((inv.match(/"ender_eye":(\d+)/) || [])[1] || 0); }
+    } catch (_) { carried = 0; }
+    const lying = goal.corpseRun?.status === 'open' ? Number(goal.corpseRun.items?.ender_eye || 0) : 0;
+    const kept = chests.reduce((n, c) => n + Number(c.contents?.ender_eye || 0), 0) + carried + lying;
     const lit = !!goal.endPortal?.litAt || !!goal.gameProgress?.milestones?.end_portal_lit || !!goal.gameProgress?.milestones?.end_entered;
     return { kept, lit, forever: lit || kept >= EYES_FOREVER };
   } catch (_) { return { kept: 0, lit: false, forever: false }; }
