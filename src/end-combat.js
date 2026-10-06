@@ -5,7 +5,7 @@ const { dimension } = require('./game-progress');
 const { countOf, surveyRoute } = require('./skills');
 const { dryStanding } = require('./mining-access');
 const { safeFromHostiles, hostileEntities } = require('./danger');
-const { checkAir, maintainVitals, chooseFood } = require('./vitals');
+const { checkAir, maintainVitals } = require('./vitals');
 const { aimAtEntity, shootBow, throwAt, THROWN, THROWABLE } = require('./projectiles');
 // The dragon's head through the armour worn (Normal: 10 before armour), and
 // what the arena's drill of a bare kit came to under it (note 1343).
@@ -399,7 +399,13 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     if (safeHere()) {
       if (await maintainVitals(bot, task, action => { goal.survivalAction = { ...action, at: new Date().toISOString() }; save(); }, { client, goal, save })) return;
     }
-    if (bot.food < 16 && !chooseFood(bot)) throw blocked('End combat has no carried food to restore hunger');
+    // Hungry with nothing to eat, the fight goes on (note 1381): under
+    // eighteen health does not come back, which every question says, and
+    // standing still in the End brings no food. This stopped the fight at
+    // every step under hunger 16: the arena's drill of 2026-10-06 19:27Z
+    // (full iron, a bow, 16 arrows, 48 snowballs, no food, hunger 15) stood
+    // on the island with "End combat has no carried food to restore hunger"
+    // at each step, and the End's kit lets a bot go with no food at all.
     // No survival layer in the End: the game loop hands the dimension to
     // this step, so a turned enderman is answered here, with the sword,
     // under the same checks as the rest of the fight. In the rehearsal the
