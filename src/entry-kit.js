@@ -5,7 +5,10 @@
 // deaths) read with what it carried in: 108 crossed with a shield in the off
 // hand and none with a spare; 24 shields broke there, and the Nether minutes
 // after a break killed 4.4 an hour against 1.0 in every other Nether minute
-// (20 deaths in 271 minutes, 14 of them a blaze's). The crossing's question
+// (20 deaths in 271 minutes, 14 of them a blaze's). The record said is
+// re-read from 2026-10-05T00:00Z to 2026-10-06T01:00Z (note 1336): 344
+// stays, 210 of them with no armour worn; piglins killed 28 without gold and
+// 2 with, and four pieces worn came to 0.99 deaths an hour against 2.53. The crossing's question
 // (crossing_kit) was asked before all 99 crossings and never said a shield,
 // armour or a ghast, and offered none of them.
 //
@@ -20,11 +23,11 @@ const { countOf } = require('./skills');
 // The record (scripts/nether-kit.js over the window). Each side: [stays,
 // Nether hours, deaths an hour, blaze deaths an hour, rods an hour].
 const RECORD = Object.freeze({
-  window: '2026-09-30T06:00Z to 2026-10-01T04:57Z', stays: 111, trials: 94, hours: 50.3, deaths: 67,
-  shield: { inHand: 108, spares: 0, breaks: 24, deadIn2: 13, afterMin: 271, afterDeaths: 20, afterBlaze: 14, afterRate: 4.42, otherRate: 1.03, makeableAtEntry: 12, makeableAtBreak: 7 },
-  armour: { label: 'four armour pieces worn', with: [64, 26.6, 1.2, 0.23, 1.24], without: [47, 23.7, 1.48, 0.63, 2.28] },
-  stone: { label: '64 or more ghast-proof blocks carried', with: [94, 42.3, 1.25, 0.31, 1.68], without: [17, 8.0, 1.75, 1.0, 2.0] },
-  gold: { label: 'a piece of golden armour worn or carried', with: [36, 16.4, 1.16, 0.3, 1.95], without: [75, 33.8, 1.42, 0.47, 1.63], piglinWith: 1, piglinWithout: 3 },
+  window: '2026-10-05T00:00Z to 2026-10-06T01:00Z', stays: 344, trials: 50, hours: 67.3, deaths: 117,
+  shield: { inHand: 150, spares: 118, breaks: 7, deadIn2: 1, afterMin: 33, afterDeaths: 7, afterBlaze: 2, afterRate: 12.86, otherRate: 1.65, makeableAtEntry: 3, makeableAtBreak: 0 },
+  armour: { label: 'four armour pieces worn', with: [81, 34.5, 0.99, 0.09, 1.19], without: [263, 32.9, 2.53, 0.27, 0.7] },
+  stone: { label: '64 or more ghast-proof blocks carried', with: [188, 39.4, 1.58, 0.15, 1.24], without: [156, 28.0, 1.97, 0.21, 0.54] },
+  gold: { label: 'a piece of golden armour worn or carried', with: [83, 27.5, 1.09, 0.11, 1.38], without: [261, 39.8, 2.18, 0.23, 0.65], piglinWith: 2, piglinWithout: 28 },
 });
 
 const SMELT_SECONDS = 10, CRAFT_SECONDS = 3, PUT_DOWN_SECONDS = 3, LOG_SECONDS = 10.4;
@@ -103,7 +106,7 @@ function offers(bot) {
   if (!s.spare) {
     const c = shieldCost(bot);
     out.push({ key: 'shield', item: 'shield', count: countOf(bot, 'shield') + 1, seconds: c.seconds, mined: c.mined, cut: c.cut,
-      says: `A spare shield, carried in: ${c.says}. ${s.held ? `The shield in the off hand has ${s.left} of its ${s.max} uses left, about ${plural(s.fireballs, 'blaze fireball')} blocked (each takes ${SW.WEAR.fireball})` : 'No shield is in the off hand'}. In the record (${RECORD.window}, ${RECORD.stays} Nether stays): ${r.inHand} crossed with a shield in the off hand and none with a spare; ${r.breaks} shields broke in the Nether, ${r.deadIn2} of those bots dead within two minutes, and the Nether minutes after a break killed ${r.afterRate} an hour (${r.afterDeaths} deaths in ${r.afterMin} minutes, ${r.afterBlaze} a blaze's) against ${r.otherRate} an hour in every other Nether minute. A spare in the pockets goes into the off hand by itself when the one held breaks. At ${r.makeableAtEntry} of the ${r.breaks} crossings whose shield later broke, the pockets made one then; at the break, ${r.makeableAtBreak}.` });
+      says: `A spare shield, carried in: ${c.says}. ${s.held ? `The shield in the off hand has ${s.left} of its ${s.max} uses left, about ${plural(s.fireballs, 'blaze fireball')} blocked (each takes ${SW.WEAR.fireball})` : 'No shield is in the off hand'}. In the record (${RECORD.window}, ${RECORD.stays} Nether stays): ${r.inHand} crossed with a shield in the off hand and ${r.spares} with a spare; ${r.breaks} shields broke in the Nether, ${r.deadIn2} of those bots dead within two minutes, and the Nether minutes after a break killed ${r.afterRate} an hour (${r.afterDeaths} deaths in ${r.afterMin} minutes, ${r.afterBlaze} a blaze's) against ${r.otherRate} an hour in every other Nether minute. A spare in the pockets goes into the off hand by itself when the one held breaks. At ${r.makeableAtEntry} of the ${r.breaks} crossings whose shield later broke, the pockets made one then; at the break, ${r.makeableAtBreak}.` });
   }
   const had = armourHad(bot), missing = Object.keys(IRON_FOR).filter(p => !had.includes(p));
   if (missing.length) {

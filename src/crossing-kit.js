@@ -31,6 +31,7 @@ const { need, rodsFor, EYES_WANTED } = require('./eye-need');
 // Six rods and twelve pearls were the stay's numbers while the ladder wanted
 // eight and sixteen; both read eye-need.js now (seven rods, thirteen pearls).
 const STAY_FOR = { rods: { count: rodsFor(EYES_WANTED), minutes: 60 }, pearls: { count: EYES_WANTED, minutes: 60 } };
+function goldRecord() { try { return require('./entry-kit').rateSays('gold'); } catch (_) { return ''; } }
 function netherStay(bot, goal = null) {
   const wants = need(bot, goal);
   const { rodsLeft, pearlsLeft } = wants;
@@ -128,6 +129,9 @@ function kitItems(bot) {
   const between = pickUses(bot);
   items.push({ key: 'pickaxe', rung: 'nether_pickaxe', short: pickShort(bot), carried: sound, wants: PICKAXES_TAKEN,
     says: `Pickaxe: ${picks.length ? `${picks.map(i => words(i.name)).join(', ')} carried, the best with ${best ?? 'many'} uses left${Number.isFinite(between) ? `, ${between} between the sound ones` : ''}` : 'none carried'}; the code would take ${PICKAXES_TAKEN}, stone or better with at least ${SPARE_PICKAXE_DURABILITY} uses each and ${NETHER_PICK_USES} between them (a new iron pickaxe's, or two new stone ones'), the one in use and a spare: the way out of a pocket, a fortress wall or a buried portal is dug, a tunnel two high wears two uses a block and netherrack mined for blocks one each, and with no wood carried a pickaxe that breaks there is not made again. A stone pickaxe is three cobblestone or blackstone and two sticks.${kitBudgetSays(bot)}` });
+  // The played record of gold carried in (note 1336): it was offered as a
+  // top-up 1,538 times in the day to 2026-10-06 01:00Z and chosen once, with
+  // the record unsaid; piglins killed 28 that crossed without and 2 with.
   // A piece of gold worn: piglins leave a player wearing one be, and go for
   // one with none on sight. mid-242-g crossed in iron with no gold, a piglin
   // hit it from twenty to eight in two blows and the second threw it into
@@ -135,7 +139,7 @@ function kitItems(bot) {
   // (mob-policy.js).
   const gold = bot.inventory.items().concat([5, 6, 7, 8].map(s => bot.inventory.slots?.[s]).filter(Boolean)).filter(i => /^golden_(helmet|chestplate|leggings|boots)$/.test(i?.name || ''));
   items.push({ key: 'gold', short: !gold.length, carried: gold.length, wants: 1,
-    says: `Gold: ${gold.length ? `${gold.map(i => words(i.name)).join(', ')} carried, worn in the Nether` : 'no piece of golden armour carried'}; the code would take one piece, golden boots (four gold ingots). Piglins, in the crimson forests and the wastes, leave a player wearing a piece of gold be, and go for one wearing none on sight: about eight a hit with a gold sword before armour, and a hit near the lava sea is a throw.` });
+    says: `Gold: ${gold.length ? `${gold.map(i => words(i.name)).join(', ')} carried, worn in the Nether` : 'no piece of golden armour carried'}; the code would take one piece, golden boots (four gold ingots). Piglins, in the crimson forests and the wastes, leave a player wearing a piece of gold be, and go for one wearing none on sight: about eight a hit with a gold sword before armour, and a hit near the lava sea is a throw.${gold.length ? '' : ` ${goldRecord()}`}` });
   const logs = logsCarried(bot), table = countOf(bot, 'crafting_table') > 0;
   items.push({ key: 'wood', short: logs < EXPEDITION_LOGS || !table, carried: logs, wants: EXPEDITION_LOGS,
     says: `Wood: ${logs} logs and ${table ? 'a crafting table' : 'no crafting table'} carried; the code would take ${EXPEDITION_LOGS} logs and a table: sticks for the next tools and a table to make them at. The Nether's only trees are the crimson and warped fungi of its forests.` });

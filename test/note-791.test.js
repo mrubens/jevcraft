@@ -42,17 +42,17 @@ test('at the crossing: a spare shield, the cheapest armour piece not had and a s
   assert.deepEqual([shield.key, shield.item, shield.count], ['shield', 'shield', 1]);
   assert.match(shield.says, /^A spare shield, carried in: 1 smelted from the 5 raw iron carried \(10 seconds an ingot in the furnace carried, the coal carried for fuel\); 6 of the 10 planks carried, at the crafting table carried; about 15 seconds in all\./);
   assert.match(shield.says, /The shield in the off hand has 236 of its 336 uses left, about 39 blaze fireballs blocked/);
-  assert.match(shield.says, /108 crossed with a shield in the off hand and none with a spare; 24 shields broke in the Nether, 13 of those bots dead within two minutes, and the Nether minutes after a break killed 4\.42 an hour \(20 deaths in 271 minutes, 14 a blaze's\) against 1\.03 an hour/);
+  assert.match(shield.says, /150 crossed with a shield in the off hand and 118 with a spare; 7 shields broke in the Nether, 1 of those bots dead within two minutes, and the Nether minutes after a break killed 12\.86 an hour \(7 deaths in 33 minutes, 2 a blaze's\) against 1\.65 an hour/);
   assert.match(shield.says, /A spare in the pockets goes into the off hand by itself when the one held breaks\./);
   // Boots are the cheapest piece not had (4 iron); the helmet and chestplate are worn.
   assert.deepEqual([armour.key, armour.item], ['armour', 'iron_boots']);
   assert.match(armour.says, /^Iron boots first, the cheapest of the 2 pieces not had \(boots, leggings; iron boots 4, leggings 7\): 4 iron, 4 smelted from the 5 raw iron carried/);
-  assert.match(armour.says, /with four armour pieces worn, 64 stays \(26\.6 Nether hours\): 1\.2 deaths an hour, 0\.23 of them a blaze's, 1\.24 rods an hour; without, 47 stays \(23\.7 Nether hours\): 1\.48 deaths an hour, 0\.63 of them a blaze's, 2\.28 rods an hour/);
+  assert.match(armour.says, /with four armour pieces worn, 81 stays \(34\.5 Nether hours\): 0\.99 deaths an hour, 0\.09 of them a blaze's, 1\.19 rods an hour; without, 263 stays \(32\.9 Nether hours\): 2\.53 deaths an hour, 0\.27 of them a blaze's, 0\.7 rods an hour/);
   // 130 blocks carried, the crossing's count met, but only 30 of one ghast-proof kind.
   assert.deepEqual([stone.key, stone.item, stone.count], ['stone', 'cobblestone', 64]);
   assert.match(stone.says, /^64 cobblestone, one kind a ghast's fireball does not break, for covers and bridges: 30 carried, 34 more mined/);
   assert.match(stone.says, /netherrack and dirt break under a fireball/);
-  assert.match(stone.says, /without, 17 stays \(8 Nether hours\): 1\.75 deaths an hour, 1 of them a blaze's/);
+  assert.match(stone.says, /without, 156 stays \(28 Nether hours\): 1\.97 deaths an hour, 0\.21 of them a blaze's/);
 });
 
 test('what is had is not offered: a spare carried, four pieces worn or carried, golden boots for the feet, 64 of one ghast-proof kind; the blocks short are the ladder\'s', () => {
@@ -84,7 +84,7 @@ test('the crossing question offers them, cross_now says what going without means
   const goal = { kind: 'win', survival: {} };
   assert.equal(await crossingKitReady(bot, new Task('kit'), goal, () => {}, client), true);
   assert.deepEqual(Object.keys(asked).sort(), ['cross_now', 'top_up_shield']);
-  assert.match(asked.cross_now, /Crossing now goes with no spare shield \(after a break the Nether killed 4\.42 an hour, 1\.03 otherwise\)\./);
+  assert.match(asked.cross_now, /Crossing now goes with no spare shield \(after a break the Nether killed 12\.86 an hour, 1\.65 otherwise\)\./);
   assert.match(asked.top_up_shield, /^A spare shield, carried in: 1 of the 2 iron ingots carried; 6 of the 10 planks carried, at the crafting table carried; about 5 seconds in all\./);
   assert.match(asked.top_up_shield, /Nothing has gone to it yet at this crossing\./);
   // Chosen: the step is the shield's, worked as any acquire is.
@@ -101,7 +101,7 @@ test('in the Nether a spare shield is offered from the pockets while the one hel
   const one = at(120);
   assert.equal(one.band, 1);
   assert.match(one.says, /^Make a spare shield now, from what is carried \(an iron ingot: 1 of the 1 iron ingots carried; 6 of the 6 planks carried, at the crafting table carried\), about 5 seconds standing here: The shield in the off hand has 216 of its 336 uses left/);
-  assert.match(one.says, /The worn one stays in the off hand until it breaks, and the spare goes on by itself then\. Of the 24 shields that broke in the Nether in the record, the pockets made a spare at 7 breaks and none was made/);
+  assert.match(one.says, /The worn one stays in the off hand until it breaks, and the spare goes on by itself then\. Of the 7 shields that broke in the Nether in the record, the pockets made a spare at 0 breaks and none was made/);
   assert.equal(at(230).band, 2, '106 left: a third or fewer');
   // A spare carried, no shield in hand, or no makings: nothing offered.
   assert.equal(kit.netherSpare(carrying({ ...makings, shield: 1 }, { dimension: 'the_nether', shieldUsed: 300 })), null);

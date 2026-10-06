@@ -6583,6 +6583,16 @@ class Survival {
         // most 4 damage. 25585 (2026-10-05 23:46 to 23:47Z) retreated from
         // one twenty times and died to it.
         const near16 = danger.filter(t => t.distance <= 16);
+        // Two skeletons or more, nothing that bites near (note 1336): the
+        // drill bare_skeletons, a stone sword, 8 health, two skeletons nine
+        // and eight off from two sides: dig down chosen 8 of 8, died 8; the
+        // charge forced, 4 of 8 lived; take cover forced, 6 health lost in
+        // its first 4 seconds.
+        const archers16 = near16.filter(t => /^(skeleton|stray|bogged)$/.test(t.entity?.name || ''));
+        if (bare && archers16.length >= 2 && archers16.length === near16.length) {
+          const said = { dig_down: 'chosen 8 of 8, died 8: the arrows land while it digs', charge_shooter: 'lived 4 of 8, each a skeleton killed at a time', take_cover: 'lost 6 health in its first four seconds' };
+          for (const [k, w] of Object.entries(said)) if (options[k] && typeof options[k].description === 'string') options[k].description += ` In the arena's drill of this (2026-10-05: no armour, a stone sword, 8 health, two skeletons eight and nine blocks off from two sides): this way ${w}.`;
+        }
         // A lone skeleton (note 1334): the drill bare_skeleton, a stone
         // sword, 8 health, one skeleton nine blocks off on open ground:
         // chosen as priced, dig down 8 of 8 (it was the cheapest, 4.5) and 7
