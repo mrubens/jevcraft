@@ -318,4 +318,32 @@ function rodChoice(bot, task, goal, save, actions, { target = 12, supply = 0, wa
   };
 }
 
-module.exports = { FISH, TABLE, SPEAR_DEPTH, CATCH_SECONDS, ROD_SECONDS, fishFood, surfaceOver, fishInView, fishCandidates, spearFacts, spear, castSpot, castsLeft, fishWithRod, rodChoice };
+// The rod made first, where none is carried and fewer than two string
+// (note 1378): string is a spider's drop (up to two each, out at night and
+// in caves) or a cobweb's, cut with a sword in a mineshaft. Offered beside
+// the hunts, said with the rod's record against the food errands'. 25598
+// (2026-10-06 18:21 to 19:06Z), its twelve eyes banked, searched for
+// animals forty-five minutes in ground it had hunted out and found none,
+// hunger 14 to 7; fishing was offered 25 times in the day's logs, only
+// where a rod or its string was already carried, and taken twice.
+function rodFirstChoice(bot, task, goal, save, actions, walkFacts = () => ({})) {
+  if (!/overworld/.test(String(bot.game?.dimension || 'overworld')) || rodOf(bot) || !actions?.acquireStep) return null;
+  const { isSetAside } = require('./progress');
+  if (isSetAside(goal, 'forage', 'rod_first')) return null;
+  const string = count(bot, 'string');
+  if (string >= 2) return null;
+  let shaft = null; try { shaft = require('./exploration').knownLandmarks(bot, goal, 'mineshaft', 512)[0] || null; } catch (_) { shaft = null; }
+  let water = null; try { water = castSpot(bot); } catch (_) { water = null; }
+  const night = (() => { const t = bot.time?.timeOfDay ?? 6000; return t >= 13000 && t < 23000; })();
+  return {
+    description: { action: `Make a fishing rod first (three sticks and two string; ${string} string carried), then fish: string is a spider's drop, up to two each (spiders come out at night and live in caves${night ? '; it is night now' : ''}), or a cobweb's, cut with a sword${shaft ? `, as in the mineshaft remembered ${shaft.distance} blocks off at (${shaft.landmark.x}, ${shaft.landmark.z})` : ' in a mineshaft'}. A rod lasts 64 catches and makes any water with a bank a food source, the bot standing still on the bank. ${FISH_RECORD}`,
+      stringCarried: string, ...(water ? { waterWithABank: `${water.distance} blocks off` } : { waterWithABank: 'none within 32 blocks now' }), ...(shaft ? walkFacts(shaft.distance) : {}) },
+    run: async () => {
+      goal.survivalAction = { action: 'rod_first', string, at: new Date().toISOString() }; save?.();
+      try { await actions.acquireStep(bot, task, 'fishing_rod', 1, goal, save); }
+      catch (err) { task.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; require('./progress').setAside(goal, 'forage', 'rod_first', err.message, 600000); save?.(); }
+    },
+  };
+}
+
+module.exports = { rodFirstChoice, FISH, TABLE, SPEAR_DEPTH, CATCH_SECONDS, ROD_SECONDS, fishFood, surfaceOver, fishInView, fishCandidates, spearFacts, spear, castSpot, castsLeft, fishWithRod, rodChoice };

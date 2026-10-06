@@ -162,3 +162,19 @@ test('the food known lists a cod in open water with its points, and the ways say
   assert.equal(require('../src/healing').RAW_MEAT_POINTS.cod, 2);
   assert.match(require('../src/food-facts').overworldWays(bot), /a fishing rod, 3 sticks and 2 string from spiders, brings a catch each 5 to 30 seconds from the bank/);
 });
+
+test('with no rod and no string, making the rod first is offered beside the search, said with its record; run, it fetches a rod (note 1378)', async () => {
+  const items = [], bot = shore(items), fetched = [];
+  const actions = { acquireStep: async (b, t, item, n) => { fetched.push([item, n]); } };
+  const choices = await forageChoices(bot, new Task('food'), {}, () => {}, actions, {});
+  assert(choices.rod_first, Object.keys(choices).join(','));
+  assert.match(choices.rod_first.description.action, /^Make a fishing rod first \(three sticks and two string; 0 string carried\), then fish: string is a spider's drop/);
+  assert.match(choices.rod_first.description.action, /caught 64 cod and salmon in 33 minutes/);
+  assert.match(choices.rod_first.description.waterWithABank, /blocks off/);
+  await choices.rod_first.run();
+  assert.deepEqual(fetched, [['fishing_rod', 1]]);
+  // A rod carried: the rod's own way, not this.
+  items.push({ name: 'fishing_rod', count: 1, durabilityUsed: 0 });
+  const withRod = await forageChoices(bot, new Task('food'), {}, () => {}, actions, {});
+  assert.equal(withRod.rod_first, undefined);
+});

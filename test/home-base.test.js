@@ -236,7 +236,7 @@ test('when the base can feed the bot and is within reach, walking home replaces 
   for (const p of layout.plot) w.set(new Vec3(p.x, p.y + 1, p.z), 'wheat', { age: 7 });
   bot.entity.position = new Vec3(60.5, LEVEL + 1, 0.5);
   const choices = await forageChoices(bot, task, goal, save, actions, {});
-  assert.deepEqual(Object.keys(choices), ['go_home_for_food', 'search_food']);
+  assert.deepEqual(Object.keys(choices), ['go_home_for_food', 'search_food', 'rod_first']);
   assert.equal(choices.go_home_for_food.description.loavesAvailable, 3);
   assert.equal(choices.go_home_for_food.description.distance, Math.round(60.5 - (goal.survival.home.origin.x + 0.5)));
   await choices.go_home_for_food.run();
@@ -248,7 +248,7 @@ test('when the base can feed the bot and is within reach, walking home replaces 
   for (const p of layout.plot) w.set(new Vec3(p.x, p.y + 1, p.z), 'wheat', { age: 7 });
   assert.deepEqual(Object.keys(await forageChoices(bot, task, goal, save, actions, {})).sort(), ['go_home_for_food', 'hunt_9', 'search_food']);
   bot.entity.position = new Vec3(300.5, LEVEL + 1, 0.5); delete bot.entities[9];
-  assert.deepEqual(Object.keys(await forageChoices(bot, task, goal, save, actions, {})), ['search_food']);
+  assert.deepEqual(Object.keys(await forageChoices(bot, task, goal, save, actions, {})), ['search_food', 'rod_first']);
 });
 
 test('wheat seeds are kept for the plot, and the new phases each have one line', () => {

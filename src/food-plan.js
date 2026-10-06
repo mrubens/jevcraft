@@ -102,7 +102,7 @@ function sourceKind(key) {
   if (/^(restock_food|get_food_here|raid_bastion|mushroom_stew)$/.test(k)) return 'restock';
   return null;
 }
-const FOOD_WAY = /^(obtain_food|go_for_food|eat_carried|restock_food|return_for_food|hoglin_\w+|cook_\w+|seen_food_\d+|search_food|go_home_for_food|village_food|get_food_here|raid_bastion|mushroom_stew|fish_with_rod|hunt_\d+)$/;
+const FOOD_WAY = /^(obtain_food|go_for_food|eat_carried|restock_food|return_for_food|hoglin_\w+|cook_\w+|seen_food_\d+|search_food|go_home_for_food|village_food|get_food_here|raid_bastion|mushroom_stew|fish_with_rod|rod_first|hunt_\d+)$/;
 
 // What such ways came to in the record, where the bot is (else all).
 function recordSays(kind, place) {

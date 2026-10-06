@@ -358,6 +358,9 @@ async function forageChoices(bot, task, goal, save, actions, state, { target = 1
       finally { task.interruptCheck = outerCheck; }
     },
   };
+  // Or the rod made first, where neither it nor its string is carried and
+  // no animal is in view or known (note 1378): the ground hunted out.
+  if (!choices.fish_with_rod && !Object.keys(choices).some(k => /^(hunt_|seen_food_)/.test(k))) { try { const first = fishing.rodFirstChoice(bot, task, goal, save, actions, walkFacts); if (first) choices.rod_first = first; } catch (_) { /* nothing to say */ } }
   return choices;
 }
 
