@@ -119,6 +119,18 @@ function deathCost(bot, goal = {}, survival = goal.survival || {}) {
   const stash = require('./home-base').homeOf(bot, goal)?.stash?.position;
   return {
     dropsWorn: worn, dropsGear: gear, dropsValuables: valuables,
+    // The End's makings carried (note 1354): eyes, pearls, rods, powder, with
+    // the run's minutes to them. 25593 (2026-10-06 03:59Z) died night-mining
+    // at 2 health with twelve eyes in its pockets, none of them said here,
+    // and they despawned; seven thousand minutes of the run had made them.
+    ...(() => {
+      const end = {};
+      for (const n of ['ender_eye', 'ender_pearl', 'blaze_rod', 'blaze_powder']) { const c = items.filter(i => i.name === n).reduce((k, i) => k + i.count, 0); if (c) end[words(n)] = c; }
+      if (!Object.keys(end).length) return {};
+      const ms = goal.gameProgress?.milestones || {};
+      const at = ms.eyes_obtained || ms.first_rod || null;
+      return { dropsForTheEnd: end, ...(at && goal.startedAt ? { runMinutesToThem: Math.round((Date.parse(at.at || at) - Date.parse(goal.startedAt)) / 60000) || undefined } : {}) };
+    })(),
     otherStacks: items.length - items.filter(i => Object.hasOwn(VALUABLES, i.name) || gear.includes(words(i.name))).length,
     respawnAt: bed ? 'the bed slept in last' : 'the world spawn', walkBackBlocks: spawn ? Math.round(spawn.distanceTo(here)) : null,
     levelsLost: bot.experience?.level ?? 0,

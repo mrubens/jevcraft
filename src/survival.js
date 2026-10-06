@@ -9424,7 +9424,7 @@ class Survival {
   // The same, said in a sentence with an option.
   atRisk(goal) {
     const cost = this.deathCost(goal);
-    const listed = [...cost.dropsWorn, ...cost.dropsGear, ...Object.entries(cost.dropsValuables).map(([n, c]) => `${c} ${n}`)].join(', ');
+    const listed = [...Object.entries(cost.dropsForTheEnd || {}).map(([n, c]) => `${c} ${n}${c === 1 ? '' : 's'}`), ...cost.dropsWorn, ...cost.dropsGear, ...Object.entries(cost.dropsValuables).map(([n, c]) => `${c} ${n}`)].join(', ');
     return `A death drops everything carried where it happens${listed ? ` (${listed})` : ''}, ${cost.walkBackBlocks != null ? `${cost.walkBackBlocks} blocks from where the bot would respawn` : 'far from where the bot would respawn'}, and it vanishes in five minutes${cost.stashChestBlocks != null ? `; the stash chest is ${cost.stashChestBlocks} blocks off` : '; there is no stash chest'}.`;
   }
 
