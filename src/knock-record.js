@@ -33,8 +33,12 @@ const RECORD = {
 // many touched the lava within 30 seconds. The answers taken over 2026-09-28T04:45Z to
 // 2026-09-29T11:45Z; scripts/knock-record.js reproduces it.
 const STANCES = {
-  ghast: { take_cover: [195, 10], out_of_sight: [152, 10], rail_and_fight: [85, 8], seal: [81, 3], fight_from_footing: [80, 5], out_of_the_push: [63, 2], hold_on_span: [53, 5], keep_working: [36, 3], retreat: [32, 1], fight: [27, 4], nook: [20, 1], return_fireball: [13, 0], pillar: [9, 2] },
-  magma_cube: { fight: [54, 1], shield_guard: [47, 2], pillar: [31, 4], fight_from_footing: [25, 2], retreat: [22, 1], rail_and_fight: [12, 0] },
+  // Re-read over 2026-10-04T00:00Z to 2026-10-06T01:00Z (note 1337), the
+  // third number the deaths within 60 seconds: 25591 (2026-10-06 00:19Z)
+  // took return_fireball against a ghast 63 blocks off with the drop beside
+  // it, was thrown 4.8 blocks off the ledge at y 54 and died in the lava sea.
+  ghast: { return_fireball: [83, 3, 5], retreat: [58, 2, 4], take_cover: [55, 2, 6], keep_working: [29, 2, 2], out_of_sight: [28, 0, 2], out_of_the_push: [20, 0, 0], hold_on_span: [19, 0, 0], rail_and_fight: [14, 0, 0] },
+  magma_cube: { retreat: [38, 2, 3], run_from: [38, 2, 5], shield_guard: [30, 0, 1], rail_and_fight: [27, 1, 2], fight: [24, 3, 3] },
   // With a hoglin about (note 966), the answers over 2026-09-30T00:00Z to
   // 2026-10-03T03:00Z: 25595 (mid-243-ia-fortress-6, 02:36:10Z) held
   // shield_guard on its own span against a hoglin, took the first blow with
@@ -46,7 +50,7 @@ function optionSays(choice, names) {
   const kind = (names || []).includes('ghast') ? 'ghast' : (names || []).includes('magma_cube') ? 'magma_cube' : (names || []).includes('hoglin') ? 'hoglin' : null;
   const r = kind && STANCES[kind]?.[choice];
   if (!r || r[0] < 8) return '';
-  return ` Measured on this bot: ${choice.replaceAll('_', ' ')} chosen with a drop that kills within three blocks and ${kind === 'ghast' ? 'a ghast' : kind === 'hoglin' ? 'a hoglin' : 'magma cubes'} about, ${r[0]} times (each stretch counted once): ${r[1]} of them had the bot in lava within 30 seconds.`;
+  return ` Measured on this bot: ${choice.replaceAll('_', ' ')} chosen with a drop that kills within three blocks and ${kind === 'ghast' ? 'a ghast' : kind === 'hoglin' ? 'a hoglin' : 'magma cubes'} about, ${r[0]} times (each stretch counted once): ${r[1]} of them had the bot in lava within 30 seconds${r[2] != null ? `, and ${r[2]} ended in a death within a minute` : ''}.`;
 }
 // The blocks along the ground a drop is looked for from the bot's feet: the
 // throw that covers nine in ten of that kind's hits, rounded up (a ghast's 5;

@@ -52,3 +52,14 @@ test('a top-up taken up a while: its time and what the count did meanwhile are s
   assert.equal(slow, 1);
   assert.ok(goal.endKit.spent.bow.ms >= 40 * 60000);
 });
+
+test('a counted top-up says what the rest would take at the pace so far (note 1337)', async () => {
+  const { bot, items, goal, task } = fixture();
+  const arrows = items.find(i => i.name === 'arrow');
+  if (arrows) arrows.count = 3; else items.push({ name: 'arrow', count: 3 });
+  goal.endKit = { spent: { arrows: { ms: 24 * 60000, since: Date.parse('2026-10-06T00:46:00Z'), from: 0 } } };
+  let text = '';
+  task.opportunityClient = { systemOne: async ({ questions }) => { text = JSON.stringify(Object.values(questions)[0]); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'enter_now', confidence: 0.9 }])) }; } };
+  await prepareEndSupplies(bot, task, goal, () => {}, { acquireStep: async () => {} });
+  assert.match(text, /the arrows carried going from 0 to 3 meanwhile\. At that pace \(3 in about 24 minutes\), the 61 more to 64 would take about 8 hours\./);
+});

@@ -163,7 +163,17 @@ async function prepareEndSupplies(bot, task, goal, save, actions, client = task.
     // What each top-up has come to so far (note 1307): 25593 (2026-10-05
     // 17:04 to 20:50Z) chose the bow again and again, its time on string
     // said nowhere, the End's ring 700 blocks off and its twelve eyes held.
-    const spentSays = key => { const sp = kit.spent?.[key]; if (!sp || sp.ms < 5 * 60000) return ''; return ` Taken up already for about ${Math.round(sp.ms / 60000)} minutes of play since ${new Date(sp.since).toISOString().slice(11, 16)}Z, the ${key} carried going from ${sp.from} to ${counts[key] ?? 0} meanwhile.`; };
+    // And at the pace so far, what the rest would take (note 1337): 25593
+    // and 25592 (2026-10-06 00:45 to 01:10Z) chose arrows again and again,
+    // 3 got in 24 minutes and 10 lost in 25, the ring found and 12 eyes held.
+    const paceSays = (sp, now, i) => {
+      const got = now - sp.from, left = (i?.wants ?? 0) - now, minutes = sp.ms / 60000;
+      if (!i || !(i.wants > 1) || left <= 0) return '';
+      if (got <= 0) return ` None gained in that time, ${left} more to ${i.wants}.`;
+      const hours = left / (got / minutes) / 60;
+      return ` At that pace (${got} in about ${Math.round(minutes)} minutes), the ${left} more to ${i.wants} would take about ${hours < 1.5 ? `${Math.round(hours * 60)} minutes` : `${Math.round(hours * 2) / 2} hours`}.`;
+    };
+    const spentSays = key => { const sp = kit.spent?.[key]; if (!sp || sp.ms < 5 * 60000) return ''; const now = counts[key] ?? 0; return ` Taken up already for about ${Math.round(sp.ms / 60000)} minutes of play since ${new Date(sp.since).toISOString().slice(11, 16)}Z, the ${key} carried going from ${sp.from} to ${now} meanwhile.${paceSays(sp, now, short.find(i => i.key === key))}`; };
     for (const i of short) tree[`top_up_${i.key}`] = { description: i.says + spentSays(i.key) };
     // The old order, for the tests' stand-in only (note 707).
     const oldOrder = `top_up_${(short.find(i => !['food', 'health'].includes(i.key)) || short[0]).key}`;
