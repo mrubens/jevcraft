@@ -73,6 +73,12 @@ bot.once('spawn', async () => {
       try { await gameStep(bot, task, goal, save, { fight_dragon: (b, t, g, s) => fightEndStep(b, t, g, s, { navigate, dig }, client) }); }
       catch (err) { if (task.cancelled || deaths || err.name === 'Cancelled') throw err; log({ stepError: String(err.message || err).slice(0, 200) }); await sleep(500); }
       if (Date.now() - passAt < 200) await sleep(200);
+      if (step % 60 === 0) {
+        // Which crystals the fight holds standing, and which it sees now (note 1385).
+        const known = Object.values(goal.endCombat?.knownCrystals || {}), inView = Object.values(bot.entities).filter(e => e.name === 'end_crystal');
+        log({ crystals: { byStatus: known.reduce((m, k) => (m[k.status] = (m[k.status] || 0) + 1, m), {}), inView: inView.map(e => [e.position.x, e.position.y, e.position.z].map(Math.round)),
+          standing: known.filter(k => !['destroyed', 'absent_on_revisit'].includes(k.status)).map(k => [k.position.x, k.position.y, k.position.z].map(Math.round)) }, snowballs: countOf(bot, 'snowball') });
+      }
       if (step % 10 === 0) log({ step: goal.step?.action, at: bot.entity?.position && [bot.entity.position.x, bot.entity.position.y, bot.entity.position.z].map(Math.round), health: bot.health, food: bot.food, dragon: goal.endCombat?.dragon, crystalsDown: goal.endCombat?.destroyedCrystals?.length, arrows: countOf(bot, 'arrow') });
     }
     log({ summary: summary(goal.gameProgress?.milestones?.dragon_defeated ? 'WON' : 'STOPPED') });

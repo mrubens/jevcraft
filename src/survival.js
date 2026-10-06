@@ -9806,7 +9806,7 @@ class Survival {
       if (ore?.lit) return true;
       if (ore?.seal) {
         this.report(goal, save, { action: 'night_mine_stop', mined: mine.mined, health: bot.health, food: bot.food });
-        delete this.state.nightMine; this.state.nightMineStopped = { at: Date.now() }; save();
+        delete this.state.nightMine; this.state.nightMineStopped = { at: Date.now(), health: bot.health ?? 20 }; save();
         await this.sealHere(task, goal, save, []);
         return true;
       }
@@ -11134,7 +11134,18 @@ class Survival {
         const w = holdRead.waiting.map(x => x === 'dawn' ? `dawn (about ${minutesToDawn(bot)} real minutes)` : x === 'the threat gone' ? `nothing hostile within ${NR.CLEAR_WITHIN} blocks or in sight for ${NR.CLEAR_MS / 1000} seconds` : 'health back at 20');
         options.stay.description += ` Chosen, the stay is held until ${w.length > 1 ? `${w.slice(0, -1).join(', ')} and ${w.at(-1)}` : w[0]} (what the pocket was sealed for), and not asked again meanwhile unless the bot is hurt, a mob comes within 5 blocks, hunger wants food with none carried or the bed can be slept in.`;
       }
-      const held = holdStay || (this.state.pocketPlan?.key === key && plan.until > Date.now() && (options[plan.choice] || foodWays[plan.choice]) && !forNothing ? plan.choice : null);
+      // The wait for dawn chosen in the night mine (seal_and_wait) holds the
+      // stay, as a stay chosen here does (note 1385): 25598 (2026-10-06
+      // 20:25 to 20:29Z), at 6 health and hunger 13, chose seal_and_wait,
+      // was asked pocket_next two seconds after the pocket closed and chose
+      // night_mine, and then seal_and_wait again, three times in four
+      // minutes. It ends with a mob within 5 blocks, a hit taken, a bed to
+      // sleep in, or twelve minutes.
+      const stopped = this.state.nightMineStopped;
+      const stopHold = stopped && night && options.stay && Date.now() - stopped.at < 12 * 60000 && !threats(bot, 5).length &&
+        (bot.health ?? 20) >= (stopped.health ?? 20) - 0.5 && !(options.go_to_bed || options.sleep_in_nook || options.sleep_beside) ? 'stay' : null;
+      if (stopped && !stopHold && Date.now() - stopped.at > 5000) delete this.state.nightMineStopped;
+      const held = stopHold || holdStay || (this.state.pocketPlan?.key === key && plan.until > Date.now() && (options[plan.choice] || foodWays[plan.choice]) && !forNothing ? plan.choice : null);
       // The nook Jev chose for tonight when the pocket was sealed (shelter
       // method bed_nook) is carried out at bedtime, not asked again.
       // So is the wait for daylight chosen sealed (wait_for_day_sealed), while
