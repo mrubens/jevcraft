@@ -113,7 +113,7 @@ function offers(bot) {
     const piece = missing[0], n = IRON_FOR[piece], iron = ironFor(bot, n, y), wood = countOf(bot, 'crafting_table') ? null : planksFor(bot, 0);
     const seconds = iron.seconds + (wood?.seconds || 0) + CRAFT_SECONDS;
     out.push({ key: 'armour', item: `iron_${piece}`, count: countOf(bot, `iron_${piece}`) + 1, seconds, mined: iron.short > 0,
-      says: `Iron ${piece} first, the cheapest of the ${plural(missing.length, 'piece')} not had (${missing.join(', ')}; iron ${missing.map(p => `${p} ${IRON_FOR[p]}`).join(', ')}): ${n} iron, ${iron.says}${wood ? `; a crafting table, ${wood.says}` : ''}; ${iron.short ? `${mins(seconds)} beside the mining` : mins(seconds)} in all. ${rateSays('armour')}` });
+      says: `Iron ${piece} first, the cheapest of the ${plural(missing.length, 'piece')} not had (${missing.join(', ')}; iron ${missing.map(p => `${p} ${IRON_FOR[p]}`).join(', ')}): ${n} iron, ${iron.says}${wood ? `; a crafting table, ${wood.says}` : ''}; ${iron.short ? `${mins(seconds)} beside the mining` : mins(seconds)} in all. ${rateSays('armour')}${[5, 6, 7, 8].some(x => bot.inventory?.slots?.[x]) ? '' : (() => { try { return ' Nothing is worn now. ' + require('./kit-record').bareSays('the_nether'); } catch (_) { return ''; } })()}` });
   }
   const kinds = GHAST_PROOF.map(k => [k, countOf(bot, k)]).sort((a, b) => b[1] - a[1]), [kind, most] = kinds[0];
   const ghast = kinds.reduce((n, [, v]) => n + v, 0);
