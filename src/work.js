@@ -2648,6 +2648,10 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
   const night = nightUpSays(bot);
   if (night) {
     tree.climb.description += night.climb; for (const k of ['stay_below', 'mine_first', 'dig_site', 'dig_to_water']) if (tree[k]) tree[k].description += night.below;
+    // Next to bare, the night's record beside the climb (note 1332): 25585
+    // (2026-10-05 23:45 to 23:51Z), back to life bare at night, climbed out
+    // at 0.86 for food and died four times in seven minutes.
+    try { const nr = require('./night-record'); tree.climb.description += nr.bareNightSays(bot, 'obtain_food'); } catch (_) { /* no record */ }
     // The dawn waited for here, a way of its own: the climb was made unasked
     // where nothing else was on offer.
     // Not with the dawn under a minute off: the climb itself outlasts it.

@@ -6578,6 +6578,15 @@ class Survival {
         const bare = ![5, 6, 7, 8].some(sl => bot.inventory.slots?.[sl]);
         const walker = danger.some(t => /^(zombie|husk|drowned|zombie_villager)$/.test(t.entity?.name || '') && t.distance <= 8);
         const archer = danger.some(t => /^(skeleton|stray|bogged)$/.test(t.entity?.name || '') && t.distance <= 16);
+        // A lone spider (note 1333): the drill bare_spider, a stone sword,
+        // 8 health, a spider three blocks off: fought 8 of 8, lived 8, at
+        // most 4 damage. 25585 (2026-10-05 23:46 to 23:47Z) retreated from
+        // one twenty times and died to it.
+        const near16 = danger.filter(t => t.distance <= 16);
+        if (bare && near16.length === 1 && near16[0].entity?.name === 'spider' && near16[0].distance <= 8) {
+          if (options.fight && typeof options.fight.description === 'string') options.fight.description += " In the arena's drill of this (2026-10-05: no armour, a stone sword, 8 health, one spider three blocks off, eight runs): this way lived 8 of 8, the spider killed, at most 4 damage taken.";
+          for (const k of ['retreat', 'run_from']) if (options[k] && typeof options[k].description === 'string') options[k].description += ' A spider leaps the last blocks at a fleeing player and climbs walls: 25585 (2026-10-05 23:46Z) retreated from one twenty times over about a minute and a half and it caught the bot.';
+        }
         if (bare && walker && archer && (bot.health ?? 20) <= 8) {
           const says = { pillar: 'lived 3 of 3, both killed from the top, no damage taken', run_from: 'died 3 of 3, within about 12 seconds', seal: 'chosen after a run, died with it', fight: 'chosen from the pillar\'s top, lived' };
           for (const [k, w] of Object.entries(says)) if (options[k] && typeof options[k].description === 'string') options[k].description += ` In the arena's drill of this (2026-10-05: no armour, a stone sword, 6 health, a zombie 4 blocks off and a skeleton 10, six runs): this way ${w}.`;
