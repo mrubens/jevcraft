@@ -46,3 +46,14 @@ test('nothing to light it with, or no whole frame: said, not a silent return; fa
   const far = scene(); far.bot.entity.position = new Vec3(40.5, 50, 12.5);
   assert.equal(await relightPortalAt(far.bot, new Task('home'), far.goal, () => {}), false);
 });
+
+test('note 1338: the Overworld side too, a remembered Overworld portal with no sheet is lit again', async () => {
+  const { relightPortalAt } = require('../src/work');
+  const { bot, goal, used } = scene();
+  bot.game.dimension = 'overworld';
+  goal.portals = [{ x: 5, y: 50, z: 13, dimension: 'overworld' }];
+  bot.entity.position = new Vec3(6.5, 50, 12.5);
+  assert.equal(await relightPortalAt(bot, new Task('home'), goal, () => {}), false, 'the Nether list holds none');
+  assert.equal(await relightPortalAt(bot, new Task('home'), goal, () => {}, 'overworld'), true);
+  assert.equal(used[0], 'flint_and_steel');
+});

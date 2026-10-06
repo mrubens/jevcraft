@@ -6479,7 +6479,26 @@ async function crossing(bot, task, goal, save, client) {
       return false;
     }
   }
-  if (await walkToKnownPortal(bot, task, goal, save, 'overworld')) return false;
+  if (await walkToKnownPortal(bot, task, goal, save, 'overworld')) {
+    // At the portal's place and no sheet in its frame, as in the Nether
+    // (note 896): lit again with what is carried, or, not to be lit, passed
+    // over for half an hour so the portal's making goes on (note 1338).
+    // 25589 (mid-244-er, 2026-10-06 00:50 to 01:30Z) stood a block and a
+    // half from its remembered Overworld portal with no sheet in it, "return
+    // to portal" fifteen passes a second: the walk arrived, no sheet was
+    // found, the step returned, and its log grew 2.5 GB.
+    if (!lowestPortalBlock(bot)) {
+      const here = bot.entity.position;
+      const p = (goal.portals || []).filter(q => q.dimension === 'overworld').sort((u, v) => Math.hypot(u.x - here.x, u.z - here.z) - Math.hypot(v.x - here.x, v.z - here.z))[0];
+      try { if (!await relightPortalAt(bot, task, goal, save, 'overworld') && p) throw new Blocked(`The portal at (${p.x}, ${p.y}, ${p.z}) is not found where it was remembered`); }
+      catch (err) {
+        if (!(err instanceof Blocked)) throw err;
+        if (p) { setAside(goal, 'portal_passed', { x: p.x, y: p.y, z: p.z }, err.message, 30 * 60000); save(); }
+        console.log(`[portal] ${err.message}; passed over for 30 minutes`);
+      }
+    }
+    return false;
+  }
   // The portal's own work is timed for the way it is made (portalMethod):
   // the time its passes take.
   const method = goal.portalMethod;
@@ -7093,8 +7112,8 @@ function createSurvival(bot, options) {
 // over those) lit with the flint and steel or fire charge carried. Throws,
 // said, where the frame is not found or nothing to light it is carried.
 // -> true when a sheet stands after.
-async function relightPortalAt(bot, task, goal, save) {
-  const here = bot.entity.position, where = 'nether';
+async function relightPortalAt(bot, task, goal, save, where = 'nether') {
+  const here = bot.entity.position;
   const p = (goal.portals || []).filter(q => q.dimension === where).sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z))[0];
   if (!p || Math.hypot(p.x - here.x, p.y - here.y, p.z - here.z) > 8) return false;
   const at = new Vec3(p.x, p.y, p.z);
