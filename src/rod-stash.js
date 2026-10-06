@@ -479,6 +479,16 @@ async function collect(bot, task, goal, save, actions = {}) {
       try { await require('./work').dig(bot, task, over.position); console.log(`[stash] dug the ${over.name} over the chest at ${key}`); }
       catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[stash] the ${over.name} over the chest at ${key} would not dig: ${String(err.message || err).slice(0, 100)}`); }
     }
+    // Room first for each kind coming out (note 1367): the take had no room
+    // made and failed 'Bot inventory is full' among 213 tries at 25598's
+    // chest of eleven eyes (2026-10-05 to 10-06), its pack 34 kinds deep.
+    try {
+      const tidy = require('./inventory-tidy');
+      for (const n of KEPT.filter(n => (entry.contents?.[n] || 0) > 0)) {
+        task?.check?.();
+        if (!tidy.roomFor(bot, n, entry.contents[n])) await tidy.makeRoom(bot, task, n, { goal, count: entry.contents[n], keep: new Set(KEPT), purpose: `the ${words(n)} in the chest at ${key}` });
+      }
+    } catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
     const taken = await withStash(bot, task, entry, save, async window => {
       const done = [];
       for (const i of window.containerItems().filter(i => KEPT.includes(i.name))) {
