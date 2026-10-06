@@ -218,7 +218,7 @@ function enclosed(bot) {
 // upright, the landing waited for. -> true when the bot came down.
 const DROP_MOST = 14, DROP_KEEPS = 8;
 // Few arrows: a stack or less. By the fountain: this far from its middle, clear of the landing dragon's head (six and a half blocks before its body, ten health a touch), within the twenty it stays seated for, and a few steps from the head once it sits.
-const FEW_ARROWS = 64, PERCH_RANGE = 12;
+const FEW_ARROWS = 64, PERCH_RANGE = 16;
 function dropOffs(bot, center = null) {
   const here = bot.entity.position, feet = here.floored();
   const solid = c => bot.blockAt(c)?.boundingBox === 'block';
@@ -581,6 +581,39 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
           } };
       }
     }
+    // A caged crystal (note 1350): up a pillar beside its pillar to its
+    // height, the iron bars on the line to it dug out with the pickaxe, and a
+    // throw through the gap. The arena's drill of 2026-10-06 (05:24 to
+    // 05:49Z), full iron and 48 snowballs, took the four the arrows could
+    // reach and then stood twenty minutes with the two caged crystals
+    // healing the dragon, none good answered 347 times.
+    const pick = bot.inventory.items().find(i => /_pickaxe$/.test(i.name) && !/wooden|golden/.test(i.name));
+    if (safe && throwing && actions.dig && pick) {
+      const here = bot.entity.position, carried = blocksCarried(bot);
+      for (const target of crystals.filter(c => caged(bot, c))) {
+        const out = Math.hypot(target.position.x - here.x, target.position.z - here.z), up = target.position.y - here.y;
+        const lift = Math.max(0, Math.ceil(target.position.y + 0.5 - (here.y + 1.62)));
+        if (out > 7 || up < -2 || lift > Math.min(carried, 40)) continue;
+        tree[`open_cage_${target.id}`] = {
+          description: { action: `Pillar up ${lift} blocks beside the caged crystal's pillar, dig out the iron bars between the bot and the crystal with the ${pick.name.replaceAll('_', ' ')}, and throw at it through the gap: iron bars stop a throw, so a caged crystal is reached only so`,
+            position: { ...target.position }, blocks: lift, blocksCarried: carried, out: Math.round(out),
+            fallFromTheTop: `a knock off the top is a fall of ${lift} blocks, about ${Math.max(0, lift - 3)} damage before armour${countOf(bot, 'water_bucket') ? ', a water bucket carried for the landing' : ''}`,
+            crystalBlast: 'the crystal bursts when it breaks, close beside the bot at its height: the arena\'s drill of 2026-10-06 (05:46Z, full iron) took 11.8 from it there, and died on the pillar\'s top twenty-four seconds later, 6 a second, the dragon 70 to 90 blocks off; it took the caged crystal', thrownLeft: THROWABLE.reduce((n, k) => n + countOf(bot, k), 0), health: bot.health },
+          run: async () => {
+            if (lift) await require('./pillar-recovery').pillarUp(bot, task, Math.floor(bot.entity.position.y) + lift, { dig: actions.dig, maxBlocks: lift, threats: false });
+            const eye = bot.entity.position.offset(0, 1.62, 0), mid = target.position.offset(0, 1, 0), dir = mid.minus(eye), len = dir.norm();
+            const bars = [];
+            for (let t = 0; t <= len; t += 0.2) { const c = eye.plus(dir.scaled(t / len)).floored(); if (bot.blockAt(c)?.name === 'iron_bars' && !bars.some(b => b.equals(c))) bars.push(c); }
+            console.log(`[end combat] open cage: up ${lift}, ${bars.length} bar${bars.length === 1 ? '' : 's'} on the line`);
+            for (const c of bars.slice(0, 4)) { check(); if (eye.distanceTo(c.offset(0.5, 0.5, 0.5)) > 4.8) break; await actions.dig(bot, task, c); }
+            for (let n = 0; n < 3 && live(bot, target); n++) {
+              check();
+              if (!aimAtEntity(bot, target, new Vec3(0, 0, 0), bot.entity.position, THROWN)) { console.log('[end combat] open cage: no line yet'); break; }
+              try { await throwCrystal(target, { fromPillar: true }); } catch (err) { if (['Cancelled', 'Blocked', 'EndEmergency', 'NeedsAir'].includes(err.name)) throw err; console.log(`[end combat] open cage throw failed: ${String(err.message || err).slice(0, 160)}`); break; }
+            }
+          } };
+      }
+    }
     if (safe && bot.health >= 12 && bow && countOf(bot, 'arrow') > 0) {
       for (const target of crystals) if (!repeatedCrystalMiss(state, target, bot.entity.position) && aimAtEntity(bot, target)) tree[`crystal_${target.id}`] = {
         description: { action: 'Destroy an observed healing crystal with a clear bow trajectory, removing a source of dragon health regeneration', position: { ...target.position }, arrowsLeft: countOf(bot, 'arrow'), crystalsInView: crystals.length }, run: () => shoot(target),
@@ -699,7 +732,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     const fountain = ((!crystals.length && !remembered) || noArrows) && dragon && !head && arrowsLeft <= FEW_ARROWS
       ? { name: 'fountain', position: new Vec3(centre.x, bot.entity.position.y, centre.z), range: PERCH_RANGE, arrows: arrowsLeft, crystals: standing } : null;
     // Throwing, a caged crystal is not the one gone for: its bars stop a throw (note 1343).
-    const focus = (noArrows ? null : (throwing ? crystals.find(c => !caged(bot, c)) : crystals[0]) || (remembered && { name: 'unresolved_crystal_location', position: vector(remembered.position) })) ||
+    const focus = (noArrows ? null : (throwing ? (crystals.find(c => !caged(bot, c)) || (pick && crystals.find(c => caged(bot, c)))) : crystals[0]) || (remembered && { name: 'unresolved_crystal_location', position: vector(remembered.position) })) ||
       head || fountain || dragon || (state.arenaCenter && vector(state.arenaCenter)) || (state.lastDragon && vector(state.lastDragon.position));
     // Reposition when arcs are blocked or the dragon is perched, and always
     // expose escape positions when healing or avoiding a breath cloud.
