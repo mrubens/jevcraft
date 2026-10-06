@@ -175,13 +175,15 @@ function holdOf(reason, { now = Date.now(), health = 20 } = {}) {
 // Whether the hold holds now. `threatNear`: a hostile within 16 blocks or in
 // sight; `night`: the surface's night (day.js night). Mutates the hold's
 // clear clock. -> { holds, ended: [reasons ended], waiting: [reasons held] }
-function holdNow(hold, { night = false, threatNear = false, health = 20, now = Date.now() } = {}) {
+// `canHeal`: health comes back at all (hunger 18 or more, or food carried to
+// get there): where it cannot, the wait for it is not one (note 1364).
+function holdNow(hold, { night = false, threatNear = false, health = 20, canHeal = true, now = Date.now() } = {}) {
   if (!hold) return { holds: false, ended: [], waiting: [] };
   if (hold.threat) { if (threatNear) hold.clearSince = null; else if (hold.clearSince == null) hold.clearSince = now; }
   const waiting = [], ended = [];
   if (hold.dawn) (night ? waiting : ended).push('dawn');
   if (hold.threat) (hold.clearSince == null || now - hold.clearSince < CLEAR_MS ? waiting : ended).push('the threat gone');
-  if (hold.heal) (health < 20 ? waiting : ended).push('health back');
+  if (hold.heal) (health < 20 && canHeal ? waiting : ended).push(health < 20 && !canHeal ? 'health cannot come back here (hunger under eighteen, no food carried)' : 'health back');
   return { holds: waiting.length > 0, ended, waiting };
 }
 

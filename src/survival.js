@@ -11080,7 +11080,9 @@ class Survival {
       let sealHold = this.state.sealHold || null;
       if (sealHold && !sealHold.origin && Date.now() - sealHold.at <= 180000) sealHold.origin = { ...refuge.origin };
       if (sealHold && (!sealHold.origin || pos(sealHold.origin).distanceTo(pos(refuge.origin)) > 2 || offWorld)) { delete this.state.sealHold; sealHold = null; }
-      const holdRead = sealHold ? NR.holdNow(sealHold, { night: require('./day').night(bot) && !below, threatNear: sealThreatNear(bot, NR.CLEAR_WITHIN), health: bot.health ?? 20 }) : null;
+      const holdRead = sealHold ? NR.holdNow(sealHold, { night: require('./day').night(bot) && !below, threatNear: sealThreatNear(bot, NR.CLEAR_WITHIN), health: bot.health ?? 20,
+        // 25598 (2026-10-06 08:49 to 09:31Z) held its stay 'until dawn and health back' at hunger 17 with no food, through a whole day (note 1364).
+        canHeal: (bot.food ?? 20) >= 18 || require('./mob-policy').hasFood(bot) }) : null;
       // Each of these asks once, when it comes, not at every pass it stays
       // true (note 1088): the ones true when the stay was last chosen are
       // known to that answer. A mob outside within 5 blocks and hunger under
