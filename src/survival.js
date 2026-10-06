@@ -10793,6 +10793,20 @@ class Survival {
       // portal. mid-243-fa sat thirteen minutes sealed in 19 blocks from its
       // fortress, the leave naming only "the obtain blaze rods step".
       const workWhere = rungParts.length ? ` From here that work is ${rungParts.map(x => `${x.what} ${Math.round(x.v)} blocks off`).join(', ')}.` : '';
+      // The End portal close with its eyes carried (note 1345): the fill is
+      // seconds, and past it the End, where there is no night. 25593
+      // (2026-10-06 03:40 to 03:53Z) held its night pocket six blocks from
+      // its portal's frames with all twelve eyes, the leave saying only "the
+      // fill end portal step"; the stall watch then took it away from the
+      // portal, and it died at 2 health night-mining with the eyes, which
+      // despawned.
+      const endSays = (() => {
+        const ep = goal.endPortal; if (!ep?.center || !bot.entity?.position) return '';
+        const d = bot.entity.position.distanceTo(new Vec3(ep.center.x, ep.center.y, ep.center.z));
+        const empty = (ep.frames || []).filter(fr => !fr.eye).length, eyes = countOf(bot, 'ender_eye');
+        if (d > 48 || !empty || !eyes) return '';
+        return ` The End portal's frames are ${Math.round(d)} blocks off, ${empty} of them empty and ${eyes} eye${eyes === 1 ? '' : 's'} of ender carried${eyes >= empty ? `: placing them is about ${Math.max(5, Math.round(empty * 1.5))} seconds and opens the portal` : `, ${empty - eyes} short`}; the End has no night, and a death here leaves the eyes where the bot falls.`;
+      })();
       // The step waiting is the surface's (levels.js: a tree's logs, wool,
       // a village) and up there it is night (note 1055): said as that, with
       // the mobs about and what the bot has in hand, not as work under the
@@ -10815,7 +10829,7 @@ class Survival {
           surfaceStep = ` That step is at the surface (${up.says}), and up there it is night until dawn, about ${minutesToDawn(bot)} real minutes: ${about.length ? `${about.length} hostile mob${about.length === 1 ? '' : 's'} within 24 blocks now (${kinds.join(', ')})` : 'no hostile mob within 24 blocks now, and they spawn in the dark'}, the bot with ${weapon} and ${points} armour point${points === 1 ? '' : 's'}.`;
         }
       } catch (_) { surfaceStep = ''; }
-      options.leave = { description: `Open the pocket and ${foodTrip ? foodTrip.to : `go back to ${waiting || 'work'}`}${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${foodTrip ? foodTrip.says : `${workWhere}${tripNot}`}${night && below ? (surfaceStep || ` ${BELOW_NIGHT}${BELOW_NIGHT_SURFACE}`) : ''}${lidSays}${doorsSay}${outSays}${outHealth}` + outsideFacts.leave + wardenSays(bot) + placeSays + (waitSays?.leave || ''),
+      options.leave = { description: `Open the pocket and ${foodTrip ? foodTrip.to : `go back to ${waiting || 'work'}`}${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${foodTrip ? foodTrip.says : `${workWhere}${endSays}${tripNot}`}${night && below ? (surfaceStep || ` ${BELOW_NIGHT}${BELOW_NIGHT_SURFACE}`) : ''}${lidSays}${doorsSay}${outSays}${outHealth}` + outsideFacts.leave + wardenSays(bot) + placeSays + (waitSays?.leave || ''),
         run: async () => {
           delete this.state.watchedSince;
           // Out at night is a plan for a while, not a moment: without it the
