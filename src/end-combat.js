@@ -14,6 +14,18 @@ function caged(bot, crystal) {
   try { const c = crystal.position.floored(); for (let dx = -2; dx <= 2; dx++) for (let dy = -1; dy <= 3; dy++) for (let dz = -2; dz <= 2; dz++) if (bot.blockAt(c.offset(dx, dy, dz))?.name === 'iron_bars') return true; } catch (_) {}
   return false;
 }
+// The perched dragon's breath (note 1344): sitting and flaming (phase 5)
+// it lays its breath on the ground before its head, Instant Damage of 6 a
+// time that armour does not lessen. The arena's drill of 2026-10-06
+// (04:25Z), full iron at 20 health, walked to four blocks from it to "gain
+// a future attack opportunity" and died there.
+function breathSays(bot, dragon, to) {
+  try {
+    if (!dragon || metadata(bot, dragon, 'phase') !== 5) return {};
+    const head = dragon.position; const d = Math.hypot(to.x - head.x, to.z - head.z);
+    return d <= 8 ? { intoTheBreath: `ends ${Math.round(d)} blocks from the perched dragon while it breathes: its breath lies on the ground before its head, Instant Damage of 6 a time that armour does not lessen; the drill's bot in full iron at 20 health walked in there and died` } : {};
+  } catch (_) { return {}; }
+}
 function blocksCarried(bot) {
   return bot.inventory.items().filter(i => /^(cobblestone|cobbled_deepslate|end_stone|netherrack|dirt|stone|blackstone|deepslate|andesite|diorite|granite|tuff|obsidian)$/.test(i.name)).reduce((n, i) => n + i.count, 0);
 }
@@ -254,11 +266,22 @@ async function arenaRoutes(bot, task, goal, policy, focus, { throwing = false } 
   const target = focus?.position || focus;
   // A throw reaches about 28 blocks up, and less the farther out (note 1343): close in under the pillar.
   const desiredRange = focus?.name === 'end_crystal' ? (throwing ? Math.max(4, Math.min(16, 26 - (target.y - current.y))) : Math.max(24, Math.min(56, (target.y - current.y) * 1.1))) : focus?.range || 0;
-  const floors = bot.findBlocks({ matching: ['end_stone', 'obsidian', 'bedrock'].map(n => bot.registry.blocksByName[n].id),
+  const floorOpts = { matching: ['end_stone', 'obsidian', 'bedrock'].map(n => bot.registry.blocksByName[n].id),
     maxDistance: 64, count: 256, useExtraInfo: block => {
       const p = block.position.offset(.5, 1, .5);
       return p.distanceTo(current) >= 5 && dryStanding(bot, p) && safeEndPoint(bot, p);
-    } });
+    } };
+  const floors = bot.findBlocks(floorOpts);
+  // Throwing, the ground near the crystal too (note 1344): the 256 floor
+  // cells nearest the bot lie within some nine blocks of it, and the
+  // arena's drill of 2026-10-06 (03:46Z) was offered three walks all 43 to
+  // 46 blocks from the crystal it was to close in on.
+  if (throwing && target && focus?.name === 'end_crystal') {
+    const seen = new Set(floors.map(b => `${b.x},${b.y},${b.z}`));
+    let near = 0;
+    try { for (const b of bot.findBlocks({ ...floorOpts, point: new Vec3(target.x, Math.min(target.y, current.y + 8), target.z), maxDistance: 24, count: 256 })) if (!seen.has(`${b.x},${b.y},${b.z}`)) { floors.push(b); near++; } } catch (err) { goal.endCombat.nearFloorError = String(err.message || err).slice(0, 120); }
+    goal.endCombat.nearFloors = near;
+  }
   for (const floor of floors) {
     const p = floor.offset(0, 1, 0), point = p.offset(.5, 0, .5);
     if (!policy.allowed(p)) continue;
@@ -270,7 +293,7 @@ async function arenaRoutes(bot, task, goal, policy, focus, { throwing = false } 
     const score = (focus?.name === 'fountain' ? 0 : (visits[key] || 0) * 30) + (target ? Math.abs(distance - desiredRange) : -point.distanceTo(current)) + Math.abs(point.y - current.y);
     if (!buckets.has(key) || score < buckets.get(key).score) buckets.set(key, { p, key, score });
   }
-  const routes = [], look = goal.endCombat.routeLook = { floors: floors.length, allowed: buckets.size, tried: 0, failed: {} };
+  const routes = [], look = goal.endCombat.routeLook = { floors: floors.length, allowed: buckets.size, tried: 0, failed: {}, best: [...buckets.values()].sort((a, b) => a.score - b.score).slice(0, 3).map(c => [c.key, Math.round(c.score)]) };
   for (const candidate of [...buckets.values()].sort((a, b) => a.score - b.score).slice(0, 10)) {
     task.check();
     const p = candidate.p, destination = new goals.GoalBlock(p.x, p.y, p.z);
@@ -462,18 +485,22 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
         }
       } finally { bot._client.removeListener('explosion', observeExplosion); }
     };
-    const throwCrystal = async target => {
+    // From the top of a pillar chosen for it (pillar_throw) the footing is a
+    // block wide and not a safe place by the End's rule: the throw goes on
+    // there, the fall said where it was chosen (note 1344).
+    const throwCrystal = async (target, { fromPillar = false } = {}) => {
       check();
       let explosion = false;
       const targetPosition = target.position.clone();
       const observeExplosion = packet => { if (vector(packet.center).distanceTo(targetPosition) < 3) explosion = true; };
       bot._client.on('explosion', observeExplosion);
       try {
-        const result = await throwAt(bot, task, target, { guard: () => { check(); if (!safeHere()) throw new Error('End throwing position became unsafe'); } });
+        const result = await throwAt(bot, task, target, { guard: () => { check(); if (!fromPillar && !safeHere()) throw new Error('End throwing position became unsafe'); } });
         result.targetPosition = { ...targetPosition };
         state.shots.push(result); state.shots = state.shots.slice(-256); save();
         const until = Date.now() + Math.min(5000, Math.ceil(result.ticks * 50) + 500);
         while (Date.now() < until && !explosion) { check(); await sleep(50); }
+        console.log(`[end combat] throw at crystal ${target.id}: ${explosion ? 'it blew' : 'it stands'}`);
         result.outcome = explosion && !live(bot, target) ? 'confirmed_crystal_explosion' : live(bot, target) ? 'target_remains' : 'unconfirmed_target_lost';
         if (result.outcome === 'confirmed_crystal_explosion') {
           const evidence = { at: Date.now(), id: target.id, position: { ...targetPosition }, source: 'explosion_and_entity_removed', by: result.item };
@@ -530,18 +557,26 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       const here = bot.entity.position, carried = blocksCarried(bot);
       for (const target of crystals.filter(c => !caged(bot, c))) {
         const out = Math.hypot(target.position.x - here.x, target.position.z - here.z), up = target.position.y - here.y;
-        const lift = Math.ceil(up - 22);
-        if (out > 14 || lift < 1 || lift > 24 || lift > carried) continue;
+        // The least lift with a clear throw from its top (note 1344): the
+        // drill of 2026-10-06 (04:06Z) went up 16 beside the pillar, 5 out,
+        // and the line to the crystal 22 over it ran into the pillar's side.
+        if (out > 16 || up <= 22) continue;
+        let lift = 0;
+        for (let l = Math.max(1, Math.ceil(up - 26)); l <= Math.min(carried, Math.ceil(up) + 1); l++) if (aimAtEntity(bot, target, new Vec3(0, 0, 0), here.offset(0, l, 0), THROWN)) { lift = l; break; }
+        if (!lift) continue;
         tree[`pillar_throw_${target.id}`] = {
-          description: { action: `Pillar up ${lift} blocks here on the blocks carried and throw at the healing crystal from the top: it is ${Math.round(up)} blocks up and ${Math.round(out)} out, over a throw's reach from the ground`,
+          description: { action: `Pillar up ${lift} blocks here on the blocks carried and throw at the healing crystal from the top, where a throw's line to it is clear: it is ${Math.round(up)} blocks up and ${Math.round(out)} out, out of a throw from the ground`,
             position: { ...target.position }, blocks: lift, blocksCarried: carried, fallFromTheTop: `a knock off the top is a fall of ${lift} blocks, about ${Math.max(0, lift - 3)} damage before armour${countOf(bot, 'water_bucket') ? ', a water bucket carried for the landing' : ''}`,
             thrownLeft: THROWABLE.reduce((n, k) => n + countOf(bot, k), 0), health: bot.health },
           run: async () => {
+            const from = bot.entity.position.y;
             await require('./pillar-recovery').pillarUp(bot, task, Math.floor(bot.entity.position.y) + lift, { dig: actions.dig, maxBlocks: lift, threats: false });
             for (let n = 0; n < 3 && live(bot, target); n++) {
               check();
-              if (!aimAtEntity(bot, target, new Vec3(0, 0, 0), bot.entity.position, THROWN)) break;
-              await throwCrystal(target);
+              const line = aimAtEntity(bot, target, new Vec3(0, 0, 0), bot.entity.position, THROWN);
+              if (n === 0) console.log(`[end combat] pillar throw: up ${Math.round(bot.entity.position.y - from)} of ${lift}, the crystal ${Math.round(target.position.y - bot.entity.position.y)} up and ${Math.round(Math.hypot(target.position.x - bot.entity.position.x, target.position.z - bot.entity.position.z))} out, ${line ? 'a line' : 'no line'}`);
+              if (!line) break;
+              try { await throwCrystal(target, { fromPillar: true }); } catch (err) { if (['Cancelled', 'Blocked', 'EndEmergency', 'NeedsAir'].includes(err.name)) throw err; console.log(`[end combat] pillar throw failed: ${String(err.message || err).slice(0, 160)}`); break; }
             }
           } };
       }
@@ -682,7 +717,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
         clearCrystalShot: focus?.name === 'end_crystal' ? route.clearCrystalShot : undefined,
         targetDistance: route.targetDistance, currentTargetDistance: focus?.position?.distanceTo(bot.entity.position),
         desiredHorizontalRange: route.desiredHorizontalRange,
-        voidEdgeBlocks: voidEdge(bot, vector(route.p)), endermenNearRoute: endermenNearRoute(bot, bot.entity.position, vector(route.p)) }, run: async () => {
+        voidEdgeBlocks: voidEdge(bot, vector(route.p)), endermenNearRoute: endermenNearRoute(bot, bot.entity.position, vector(route.p)), ...breathSays(bot, dragon, vector(route.p)) }, run: async () => {
         state.visits[route.key] = (state.visits[route.key] || 0) + 1; save();
         const initiallySafe = safeEndPoint(bot, bot.entity.position);
         // A walk stops for a mob at arm's length: the recorded rehearsal
@@ -791,6 +826,27 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     // on in seconds. Down in the exit portal's basin with the dragon over it,
     // the fresh-End rehearsal (2026-09-24) called that Blocked a minute in,
     // five crystals down, which in the run would end the fight.
+    // Down its own pillar, a block at a time from under the feet (note
+    // 1344): on top of one laid for a throw, the footing is a block wide and
+    // nothing else is offered, and the drill of 2026-10-06 (04:16Z) held on
+    // top of a 35-block pillar.
+    const ownPillar = bot._pillarUp && Math.floor(bot.entity.position.x) === bot._pillarUp.x && Math.floor(bot.entity.position.z) === bot._pillarUp.z;
+    if (ownPillar && actions.dig) {
+      const feet = bot.entity.position.floored();
+      let depth = 0; while (depth < 64 && /^(cobblestone|cobbled_deepslate|end_stone|netherrack|dirt|stone|blackstone|deepslate|andesite|diorite|granite|tuff)$/.test(bot.blockAt(feet.offset(0, -1 - depth, 0))?.name || '')) depth++;
+      if (depth >= 2) tree.pillar_down = {
+        description: { action: `Dig down the bot's own pillar a block at a time from under the feet, ${depth} blocks to its foot: no fall on the way`, blocks: depth, health: bot.health, dragonHealth: beforeDragon },
+        run: async () => {
+          for (let n = 0; n < depth; n++) {
+            check();
+            const under = bot.entity.position.floored().offset(0, -1, 0);
+            if (!/^(cobblestone|cobbled_deepslate|end_stone|netherrack|dirt|stone|blackstone|deepslate|andesite|diorite|granite|tuff)$/.test(bot.blockAt(under)?.name || '')) break;
+            await actions.dig(bot, task, under);
+            for (let i = 0; i < 20 && !bot.entity.onGround; i++) await sleep(50);
+          }
+          delete bot._pillarUp;
+        } };
+    }
     if (!Object.keys(tree).length && !safe) {
       state.heldForMobs = { at: Date.now(), unsafe: unsafeBecause(bot, bot.entity.position).slice(0, 6) }; save();
       goal.step = { action: 'end_hold', unsafe: state.heldForMobs.unsafe }; save();

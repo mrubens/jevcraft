@@ -82,7 +82,10 @@ function aimAtEntity(bot, target, velocity = new Vec3(0, 0, 0), position = bot.e
   // are offered for execution.
   // Favor the center: vanilla bow spread makes a barely exposed edge much
   // less reliable, especially at long range. Edge samples still permit cages.
-  const offsets = target.name === 'end_crystal' ? [1, 1.5, .5, 1.7, .3].flatMap(y =>
+  // A throw at a crystal aims at its middle only (note 1344): the drill of
+  // 2026-10-06 (04:14Z) threw three from a pillar's top at a line solved to
+  // its corner, 0.85 off the middle, and all three missed.
+  const offsets = target.name === 'end_crystal' && physics === THROWN ? [[0, 1, 0], [0, 1.5, 0], [0, .5, 0]] : target.name === 'end_crystal' ? [1, 1.5, .5, 1.7, .3].flatMap(y =>
     [0, -.5, .5, -.85, .85].flatMap(x => [0, -.5, .5, -.85, .85].map(z => [x, y, z]))) :
     [[0, target.name === 'ender_dragon' ? 1.5 : (target.height || 1.8) / 2, 0]];
   for (const offset of offsets) {

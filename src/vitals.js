@@ -1588,6 +1588,26 @@ function airWays(bot, task, onAction = () => {}) {
         run: () => surfaceForAir(bot, task, onAction, { keepOff: { cells, why } }) };
     }
   }
+  // Land, where air is a stroke or two up (note 1344): the head under at
+  // the water's top with the breath going is the swim's, not the climb's.
+  // 25589 (2026-10-06 03:46 to 03:58Z) bobbed at (36, 61, 236) twelve
+  // minutes asked body_way at every dip, swim_to_air and straight_up each
+  // "about 0.8 seconds" and none good near half the time.
+  if (route && route.length <= 3) {
+    try {
+      const here = bot.entity.position, { dryStanding } = require('./mining-access');
+      const land = require('./shore').shoreLand(bot, p => dryStanding(bot, p)).sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
+      if (land && land.distanceTo(here) <= 48) {
+        const d = round(Math.hypot(land.x + 0.5 - here.x, land.z + 0.5 - here.z));
+        ways.swim_to_land = { description: `Swim to the nearest land, ${d} blocks off at (${land.x}, ${land.y}, ${land.z}): about ${round(d / 2.2)} seconds at a swimmer's pace, the head kept up on the way.`,
+          run: async () => {
+            onAction({ action: 'surface', oxygen: bot.oxygenLevel, way: 'swim_to_land', to: { x: land.x, y: land.y, z: land.z } });
+            const { goals } = require('mineflayer-pathfinder');
+            await require('./skills').navigate(bot, task, new goals.GoalNear(land.x, land.y, land.z, 1), { timeoutMs: Math.max(15000, d * 1000), stallMs: 5000 });
+          } };
+      }
+    } catch (_) {}
+  }
   const up = secondsUp(bot);
   if (up != null && up <= left) ways.straight_up = { description: `Swim and dig straight up to air: about ${round(up)} seconds, against ${round(breath)} seconds of breath${up > breath ? ' (past the breath, into the drowning)' : ''}.`,
     run: async () => { onAction({ action: 'surface', oxygen: bot.oxygenLevel, way: 'straight_up' }); await straightUp(bot, task); } };

@@ -18,7 +18,7 @@ const { Task, navigate, countOf } = require('../src/skills');
 const { prepareCombatGear } = require('../src/mob-hunt');
 const { fightEndStep } = require('../src/end-combat');
 const { watchGameProgress, gameStep, dimension } = require('../src/game-progress');
-const { waitFor, inventory } = require('../src/work');
+const { waitFor, inventory, dig } = require('../src/work');
 const { arenaDir } = require('./lib/arena');
 
 const port = Number(process.env.MC_PORT || 25574);
@@ -46,7 +46,8 @@ const summary = result => ({ result, minutes: Math.round((Date.now() - started) 
   crystalsDown: goal?.endCombat?.destroyedCrystals?.length || 0, dragon: goal?.endCombat?.dragon ?? null, shots: goal?.endCombat?.shots?.length || 0,
   arrowsLeft: countOf(bot, 'arrow'), kit: process.env.END_KIT || null, milestones: Object.keys(goal?.gameProgress?.milestones || {}) });
 bot.on('death', () => { if (!staged) return; deaths++; log({ death: true, position: bot.entity?.position }); task.cancel(); });
-bot.on('health', () => { if (staged) lowest = Math.min(lowest, bot.health); });
+let lastHealth = 20;
+bot.on('health', () => { if (!staged) return; lowest = Math.min(lowest, bot.health); if (bot.health < lastHealth) { const d = Object.values(bot.entities).find(e => e.name === 'ender_dragon'); log({ hurt: Math.round((lastHealth - bot.health) * 10) / 10, health: Math.round(bot.health * 10) / 10, dragonOff: d ? Math.round(d.position.distanceTo(bot.entity.position)) : null, step: goal?.step?.action }); } lastHealth = bot.health; });
 bot.on('error', err => log({ error: err.message }));
 bot.on('end', reason => { if (!finishing) { log({ result: 'FAIL', reason: `Disconnected: ${reason}` }); process.exit(1); } });
 bot.once('spawn', async () => {
@@ -65,9 +66,14 @@ bot.once('spawn', async () => {
     log({ phase: 'staged', inventory: inventory(bot), position: bot.entity.position });
     await prepareCombatGear(bot, task, goal, save, { acquireStep: async () => { throw new Error('nothing is made in the drill'); } }).catch(err => log({ gear: err.message }));
     await waitFor(task, () => Object.values(bot.entities).some(e => e.name === 'ender_dragon'), 60000);
-    for (let step = 0; step < 2000 && !goal.gameProgress?.milestones?.dragon_defeated; step++) {
-      await gameStep(bot, task, goal, save, { fight_dragon: (b, t, g, s) => fightEndStep(b, t, g, s, { navigate }, client) });
-      if (step % 10 === 0) log({ step: goal.step?.action, health: bot.health, food: bot.food, dragon: goal.endCombat?.dragon, crystalsDown: goal.endCombat?.destroyedCrystals?.length, arrows: countOf(bot, 'arrow') });
+    // Until the dragon dies or the time is up; a pass that returns at once is paced.
+    for (let step = 0; !goal.gameProgress?.milestones?.dragon_defeated && Date.now() - started < minutes * 60000; step++) {
+      const passAt = Date.now();
+      // A step's error is the live loop's next pass, not the drill's end.
+      try { await gameStep(bot, task, goal, save, { fight_dragon: (b, t, g, s) => fightEndStep(b, t, g, s, { navigate, dig }, client) }); }
+      catch (err) { if (task.cancelled || deaths || err.name === 'Cancelled') throw err; log({ stepError: String(err.message || err).slice(0, 200) }); await sleep(500); }
+      if (Date.now() - passAt < 200) await sleep(200);
+      if (step % 10 === 0) log({ step: goal.step?.action, at: bot.entity?.position && [bot.entity.position.x, bot.entity.position.y, bot.entity.position.z].map(Math.round), health: bot.health, food: bot.food, dragon: goal.endCombat?.dragon, crystalsDown: goal.endCombat?.destroyedCrystals?.length, arrows: countOf(bot, 'arrow') });
     }
     log({ summary: summary(goal.gameProgress?.milestones?.dragon_defeated ? 'WON' : 'STOPPED') });
   } catch (err) {
