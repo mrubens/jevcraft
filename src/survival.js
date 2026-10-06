@@ -6609,7 +6609,7 @@ class Survival {
         // died; the charge taken, 8 of 8 lived, the skeleton killed, no
         // damage.
         if (bare && near16.length === 1 && /^(skeleton|stray|bogged)$/.test(near16[0].entity?.name || '')) {
-          const said = { charge_shooter: 'lived 8 of 8, the skeleton killed, no damage taken', dig_down: 'chosen 8 times, died 7' };
+          const said = { charge_shooter: 'lived 8 of 8, the skeleton killed, no damage taken', dig_down: 'chosen 8 times, died 7', run_from: 'forced 6 times, lived 6', retreat: 'forced 6 times, died 6' };
           for (const [k, w] of Object.entries(said)) if (options[k] && typeof options[k].description === 'string') options[k].description += ` In the arena's drill of this (2026-10-05: no armour, a stone sword, 8 health, one skeleton nine blocks off on open ground, eight runs each way): this way ${w}.`;
         }
         if (bare && near16.length === 1 && near16[0].entity?.name === 'spider' && near16[0].distance <= 8) {
