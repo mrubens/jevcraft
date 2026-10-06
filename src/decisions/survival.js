@@ -116,6 +116,7 @@ define({
     { pattern: 'ore_\\d+', names: 'the ore block, by the number it was given when first offered, kept for it (keys.js)', label: 'dig to this ore', when: 'the nearest of its kind, with its distance, what is carried and what it is for', level: 'root', dynamic: true },
     { key: 'branch', label: 'dig a branch down and along', when: 'always', level: 'root' },
     { key: 'branch_away', label: 'dig the branch away from the spawner or structure that makes the mobs here', when: 'a mob spawner within sixteen blocks, or a dungeon or mineshaft remembered within twenty-four; said with where its end lies from it. Every option here is said with what the place is (mobSourceAbout)', level: 'root' },
+    { key: 'seal_and_wait', label: 'stop the mine and seal a pocket here to wait for dawn', when: 'always; said with the minutes to dawn, that standing still spends no hunger, and whether health comes back meanwhile (note 1379)', level: 'root' },
     { key: 'light_tunnel', label: 'put a torch in the tunnel here', when: 'torches carried and the cells around are dark enough for monsters', level: 'root' },
   ],
   // An ore chosen is its kind, held (note 764): the mine digs on to the
@@ -320,6 +321,7 @@ define({
   source: 'src/end-supplies.js (prepareEndSupplies, kitItems, rehearsedSays)',
   options: [
     { key: 'enter_now', label: 'go to the End with what is carried', when: 'always; said with each item of the kit, what is short, what the rehearsed fight took in arrows and minutes, and that there is no way back but the dragon\'s death or the bot\'s own', level: 'root' },
+    { key: 'fill_frame_first', label: 'take the eyes to the portal and set them in its frame now, the kit after', when: 'the portal found and not lit, the eyes it wants held (carried or in the bot\'s chests); said with how far the ring is and where the eyes are; held until the portal is lit, then this is asked again (note 1380)', level: 'root' },
     { pattern: 'top_up_(bow|arrows|snowballs|blocks|pickaxe|water|beds|enchant|food|health)', names: 'the kit item', label: 'top up this item of the kit first', when: 'the item is short of what the code would take; said with what it is for in the End and how it is got here (arrows only from skeletons, none to two each; beds from sheared wool; water for a landing and against endermen)', level: 'root' },
   ],
   instructions: { task: 'The bot is about to go to the End to fight the dragon. Choose whether to go with what it carries now or to top up one item of its kit first.', guidance: 'Every option says what the item is for and how it is got. The amounts the code would take are a rule of thumb, not a requirement. Going is one way: there is no coming back for what was left behind.' },

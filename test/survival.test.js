@@ -2334,7 +2334,7 @@ test('the night mine\'s next ore is Jev\'s pick of the nearest of each kind, cop
   survival.decide = async (task, goal, save, q) => { tree = q.tree; return { path: ['ore_0'], stale: false }; };
   const pick = await survival.nightTarget(new Task('night'), {}, () => {}, new Vec3(0, 40, 0));
   assert.equal(pick.name, 'copper_ore', 'Jev\'s pick stands');
-  assert.equal(Object.keys(tree).length, 3, 'one of each kind, and the branch');
+  assert.equal(Object.keys(tree).length, 4, 'one of each kind, the branch and stopping to wait');
   assert.match(tree.ore_0.description, /nothing on the ladder wants it/);
   // The decision audit: where each ore lies, what is beside it, and where the branch goes.
   assert.match(tree.ore_0.description, /1 block down\./);

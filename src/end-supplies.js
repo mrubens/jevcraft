@@ -166,7 +166,10 @@ async function prepareEndSupplies(bot, task, goal, save, actions, client = task.
   const now = Date.now(), items = kitItems(bot, goal, actions, now), short = items.filter(i => i.short);
   if (!short.length) { delete goal.preparingEnd; delete goal.endKit; save(); return true; }
   const kit = goal.endKit ||= {}, sig = short.map(i => `${i.key}:${i.carried}`).join(',');
-  const held = kit.choice && (kit.choice.pick === 'enter_now' || now - kit.choice.at < HOLD_MS) ? kit.choice : null;
+  // The eyes set in the frame first holds until the portal is lit, then the
+  // kit is asked again (note 1380).
+  if (kit.choice?.pick === 'fill_frame_first' && goal.endPortal?.litAt) { delete kit.choice; save(); }
+  const held = kit.choice && (kit.choice.pick === 'enter_now' || kit.choice.pick === 'fill_frame_first' || now - kit.choice.at < HOLD_MS) ? kit.choice : null;
   let pick = null;
   // Going now holds until the kit is worse than when it was chosen, an item
   // of it lower (note 1171): not for a quarter hour, and not until any
@@ -178,6 +181,7 @@ async function prepareEndSupplies(bot, task, goal, save, actions, client = task.
   const counts = Object.fromEntries(items.map(i => [i.key, i.carried]));
   const worse = held?.pick === 'enter_now' && Object.entries(held.counts || {}).some(([k, n]) => (counts[k] ?? 0) < n);
   if (held?.pick === 'enter_now' && held.counts && !worse) pick = 'enter_now';
+  else if (held?.pick === 'fill_frame_first') pick = 'fill_frame_first';
   else if (held && held.pick !== 'enter_now') {
     const item = short.find(i => `top_up_${i.key}` === held.pick);
     if (item && !(held.target != null && item.carried >= held.target)) pick = held.pick;
@@ -200,6 +204,20 @@ async function prepareEndSupplies(bot, task, goal, save, actions, client = task.
     };
     const spentSays = key => { const sp = kit.spent?.[key]; if (!sp || sp.ms < 5 * 60000) return ''; const now = counts[key] ?? 0; return ` Taken up already for about ${Math.round(sp.ms / 60000)} minutes of play since ${new Date(sp.since).toISOString().slice(11, 16)}Z, the ${key} carried going from ${sp.from} to ${now} meanwhile.${paceSays(sp, now, short.find(i => i.key === key))}`; };
     for (const i of short) tree[`top_up_${i.key}`] = { description: i.says + spentSays(i.key) };
+    // The eyes to the frame first, the kit after (note 1380): set in the
+    // frame none is lost to a death, and the kit is got near the portal or
+    // anywhere after. 25598 (2026-10-06), its twelve eyes made at 15:40Z and
+    // its portal found 1,300 blocks off, chose the kit's top-ups and going
+    // with them for three hours; it carried eleven to a death at 18:10Z and
+    // went bare and starving 650 blocks the other way. 25594 walked to its
+    // portal with its twelve left in a chest 1,400 blocks back.
+    const ep = goal.endPortal, eyesHeld = countOf(bot, 'ender_eye') + (() => { try { return require('./eye-bank').banked(goal); } catch (_) { return 0; } })();
+    const frames = Array.isArray(ep?.frames) ? ep.frames : [], need = Number.isInteger(ep?.neededEyes) ? ep.neededEyes : frames.length ? frames.filter(f => !f.eye).length : null;
+    if (ep?.center && !ep.litAt && Number.isInteger(need) && need > 0 && eyesHeld >= need && bot.entity?.position) {
+      const off = Math.round(Math.hypot(bot.entity.position.x - ep.center.x, bot.entity.position.z - ep.center.z));
+      const carried = countOf(bot, 'ender_eye');
+      tree.fill_frame_first = { description: `Take the eyes to the portal now and set the ${need} it wants in its frame, then see to the kit: the portal's ring is ${off} blocks off, and ${carried >= need ? `the ${carried} eyes are carried` : `${carried} eyes are carried and the rest are taken from the chest first`}. Set in the frame, no eye is lost to a death; carried, a death drops them where it happens. The portal lit, this question is asked again there, the kit as it stands then.` };
+    }
     // The old order, for the tests' stand-in only (note 707).
     const oldOrder = `top_up_${(short.find(i => !['food', 'health'].includes(i.key)) || short[0]).key}`;
     const decision = await decide('end_kit', { client, bot, task, goal, save, tree, context: { oldOrder },
@@ -209,7 +227,7 @@ async function prepareEndSupplies(bot, task, goal, save, actions, client = task.
     const item = short.find(i => `top_up_${i.key}` === pick);
     kit.choice = { pick, at: now, sig, ...(pick === 'enter_now' ? { counts } : {}), ...(item?.target != null ? { target: item.target } : {}) }; save();
   }
-  if (pick === 'enter_now') { delete goal.preparingEnd; save(); return true; }
+  if (pick === 'enter_now' || pick === 'fill_frame_first') { delete goal.preparingEnd; save(); return true; }
   const item = short.find(i => `top_up_${i.key}` === pick);
   if (!item) { delete kit.choice; save(); return false; }
   // The eyes carried, asked of before the errand (eye-bank.js, note 1193).

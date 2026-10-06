@@ -81,3 +81,22 @@ test('going now holds until an item of the kit is lower than when it was chosen,
   assert.equal(await prepareEndSupplies(bot, task, goal, () => {}, actions, jev(['enter_now'], asked)), true);
   assert.equal(asked.length, 2);
 });
+
+test('with the twelve eyes held and the portal found unlit, setting them in its frame first is offered, held until it is lit, then the kit asked again (note 1380)', async () => {
+  const { bot, items, goal, task } = fixture({ arrow: 20 });
+  items.push({ name: 'ender_eye', count: 12 });
+  bot.entity = { position: { x: 203, y: 63, z: 245 } };
+  goal.endPortal = { center: { x: 604, y: -37, z: 1540 }, frames: Array.from({ length: 12 }, (_, i) => ({ position: { x: i, y: -37, z: 0 }, eye: false })) };
+  const asked = [], calls = [];
+  const actions = { acquireStep: async (b, t, name, count) => calls.push({ name, count }) };
+  assert.equal(await prepareEndSupplies(bot, task, goal, () => {}, actions, jev(['fill_frame_first', 'top_up_arrows'], asked)), true);
+  assert.match(asked[0].fill_frame_first, /^Take the eyes to the portal now and set the 12 it wants in its frame, then see to the kit: the portal's ring is 1356 blocks off, and the 12 eyes are carried\. Set in the frame, no eye is lost to a death/);
+  // Held on the way: not asked again.
+  assert.equal(await prepareEndSupplies(bot, task, goal, () => {}, actions, jev(['top_up_arrows'], asked)), true);
+  assert.equal(asked.length, 1);
+  // Lit: the kit is asked again, with no frame to fill.
+  goal.endPortal.litAt = Date.now(); items.find(i => i.name === 'ender_eye').count = 0;
+  assert.equal(await prepareEndSupplies(bot, task, goal, () => {}, actions, jev(['top_up_arrows'], asked)), false);
+  assert.equal(asked.length, 2);
+  assert.equal(asked[1].fill_frame_first, undefined);
+});

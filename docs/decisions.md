@@ -143,6 +143,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `ore_\d+` (pattern: names the ore block, by the number it was given when first offered, kept for it (keys.js)) | root | dig to this ore | the nearest of its kind, with its distance, what is carried and what it is for |
 | `branch` | root | dig a branch down and along | always |
 | `branch_away` | root | dig the branch away from the spawner or structure that makes the mobs here | a mob spawner within sixteen blocks, or a dungeon or mineshaft remembered within twenty-four; said with where its end lies from it. Every option here is said with what the place is (mobSourceAbout) |
+| `seal_and_wait` | root | stop the mine and seal a pocket here to wait for dawn | always; said with the minutes to dawn, that standing still spends no hunger, and whether health comes back meanwhile (note 1379) |
 | `light_tunnel` | root | put a torch in the tunnel here | torches carried and the cells around are dark enough for monsters |
 
 ### `evening_chore`
@@ -536,6 +537,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
 | `enter_now` | root | go to the End with what is carried | always; said with each item of the kit, what is short, what the rehearsed fight took in arrows and minutes, and that there is no way back but the dragon's death or the bot's own |
+| `fill_frame_first` | root | take the eyes to the portal and set them in its frame now, the kit after | the portal found and not lit, the eyes it wants held (carried or in the bot's chests); said with how far the ring is and where the eyes are; held until the portal is lit, then this is asked again (note 1380) |
 | `top_up_(bow\|arrows\|snowballs\|blocks\|pickaxe\|water\|beds\|enchant\|food\|health)` (pattern: names the kit item) | root | top up this item of the kit first | the item is short of what the code would take; said with what it is for in the End and how it is got here (arrows only from skeletons, none to two each; beds from sheared wool; water for a landing and against endermen) |
 
 ### `crossing_kit`
