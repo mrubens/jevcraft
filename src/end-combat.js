@@ -884,7 +884,13 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
             check();
             const under = bot.entity.position.floored().offset(0, -1, 0);
             if (!/^(cobblestone|cobbled_deepslate|netherrack|dirt|stone|blackstone|deepslate|andesite|diorite|granite|tuff)$/.test(bot.blockAt(under)?.name || '')) break;
-            await actions.dig(bot, task, under);
+            // Dropped into, as the pillar's own column is (note 1382): dug
+            // as a block in the way, the step aside found no footing on a
+            // pillar one wide and threw "No solid adjacent footing", and the
+            // drill of 2026-10-06 19:29Z sat 22 up after its throw until the
+            // dragon struck it off (6, then 5, then the fall).
+            try { await actions.dig(bot, task, under, { dropInto: true, openPit: true, requireDrops: false }); }
+            catch (err) { console.log(`[end combat] pillar down stopped ${n} of ${depth} down: ${String(err.message || err).slice(0, 160)}`); throw err; }
             for (let i = 0; i < 20 && !bot.entity.onGround; i++) await sleep(50);
           }
           delete bot._pillarUp;
