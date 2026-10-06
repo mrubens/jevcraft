@@ -961,7 +961,7 @@ async function searchForSheep(bot, task, goal, save, actions) {
     for (const i of [0, 2, 4, 6]) {
       const h = HEADINGS[i], key = `far_${h}`, n = search.farWays?.[i] || 0;
       ways[key] = { far: i };
-      tree[key] = { description: `Walk far ${h}: ${FAR_LEG} blocks and on, up to ${FAR_LEG * FAR_LEGS}, past the biomes near here, looking for sheep all the way and not asked again until the walk ends or sheep are seen. ${headingFacts(biomeRay(bot, i), surfaceRay(bot, i))}.${n ? ` Walked far ${h} ${n === 1 ? 'once' : `${n} times`} already in this search.` : ''}${walk(FAR_LEG * FAR_LEGS).replace('About', 'All of it about')}`, target: { ...farPoint(bot, i), y } };
+      tree[key] = { description: `Walk far ${h}: ${FAR_LEG} blocks and on, up to ${FAR_LEG * FAR_LEGS}, past the biomes near here, looking for sheep all the way and not asked again until the walk ends or sheep are seen. ${headingFacts(biomeRay(bot, i), surfaceRay(bot, i), bot)}.${n ? ` Walked far ${h} ${n === 1 ? 'once' : `${n} times`} already in this search.` : ''}${walk(FAR_LEG * FAR_LEGS).replace('About', 'All of it about')}`, target: { ...farPoint(bot, i), y } };
     }
   }
   // Underground, the way to any of these is up first (note 749): 25594 was

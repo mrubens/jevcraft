@@ -51,6 +51,9 @@ const REHEARSED = { day: '2026-10-04', bow: { arrows: 143, minutes: 25 }, sword:
   enough: { arrows: 48, minutes: 10, left: 2 } };
 const rehearsedSays = () => `In the rehearsals of ${REHEARSED.day} (a bow, a diamond sword, iron armour and a shield, no bed used): by the bow, on a fresh End, ${REHEARSED.bow.arrows} arrows loosed in ${REHEARSED.bow.minutes} minutes took the ten crystals and the dragon's whole 200 health; by the sword, with every crystal already down and ${REHEARSED.sword.arrows} arrows carried, the dragon's last ${REHEARSED.sword.health} went in ${REHEARSED.sword.minutes} minutes, struck at its head each time it perched on the fountain; the bot alive both times. The crystals are the arrows' work: each stands on a pillar out of the sword's reach and heals the dragon while it stands, an arrow or a few for each of the ten. With fewer arrows, on a fresh End: ${REHEARSED.enough.arrows} were enough, the ten crystals down and the dragon dead in ${REHEARSED.enough.minutes} minutes, most of its health taken by the sword at its perches, ${REHEARSED.enough.left} arrows left and the bot never under full health for long; ${REHEARSED.few[0].arrows} took ${REHEARSED.few[0].crystals} of the ten crystals before they were gone, and ${REHEARSED.few[1].arrows} took ${REHEARSED.few[1].crystals}, the dragon healed to ${REHEARSED.few[1].dragon} of 200 and the bot dead by the fountain ${REHEARSED.few[1].minutes} minutes in.`;
 
+// What is worn and held, said with going (note 1340): 25593 chose the End at
+// 01:26Z on 2026-10-06 with nothing worn and a stone sword, never said here.
+const gearSays = bot => { try { return require('./mob-hunt').endFightGearSays(bot); } catch (_) { return ''; } };
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const bedsOf = bot => bot.inventory.items().filter(i => /_bed$/.test(i.name)).reduce((n, i) => n + i.count, 0);
 
@@ -159,7 +162,7 @@ async function prepareEndSupplies(bot, task, goal, save, actions, client = task.
   }
   if (!pick) {
     const ring = goal.endPortal?.center && bot.entity?.position ? ` The portal's ring is ${Math.round(Math.hypot(bot.entity.position.x - goal.endPortal.center.x, bot.entity.position.z - goal.endPortal.center.z))} blocks off and ${Math.round(bot.entity.position.y - goal.endPortal.center.y)} under where the bot stands.` : '';
-    const tree = { enter_now: { description: `Go to the End with what is carried now: ${kitSays(items)}; health ${Math.round((bot.health ?? 20) * 10) / 10}.${ring} Short of what the code would take: ${short.map(i => i.key).join(', ')}. ${rehearsedSays()} There is no way back out of the End but the dragon's death or the bot's own, and a death there leaves everything carried on its island.` } };
+    const tree = { enter_now: { description: `Go to the End with what is carried now: ${kitSays(items)}; health ${Math.round((bot.health ?? 20) * 10) / 10}.${ring} Short of what the code would take: ${short.map(i => i.key).join(', ')}.${gearSays(bot)} ${rehearsedSays()} There is no way back out of the End but the dragon's death or the bot's own, and a death there leaves everything carried on its island.` } };
     // What each top-up has come to so far (note 1307): 25593 (2026-10-05
     // 17:04 to 20:50Z) chose the bow again and again, its time on string
     // said nowhere, the End's ring 700 blocks off and its twelve eyes held.

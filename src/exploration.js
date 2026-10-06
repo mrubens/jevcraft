@@ -166,7 +166,7 @@ function waterAhead(ray) {
 // A heading said for a choice: the biomes that way, where water starts and
 // whether land comes again past it, and whether trees were seen that way.
 const WATER_BIOME = /ocean|river/;
-function headingFacts(stretches, ground = null) {
+function headingFacts(stretches, ground = null, bot = null) {
   if (!stretches.length) return 'nothing loaded that way';
   const words = n => n.replaceAll('_', ' ');
   const trees = stretches.find(st => st.has && !/no trees/.test(st.has) && /trees|bamboo|mangroves/.test(st.has));
@@ -174,7 +174,7 @@ function headingFacts(stretches, ground = null) {
   let water;
   if (ground?.length) {
     const w = waterAhead(ground);
-    water = w ? `water on the ground from ${w.from} to ${w.to} blocks${w.landAt ? `, land again past it at ${w.landAt.d} (a swim of about ${w.to - w.from + 4}${DROWNED_SAYS})` : ' to the edge of what is loaded'}` : `dry ground all the way to ${ground.at(-1).d} blocks`;
+    water = w ? `water on the ground from ${w.from} to ${w.to} blocks${w.landAt ? `, land again past it at ${w.landAt.d} (a swim of about ${w.to - w.from + 4}${DROWNED_SAYS}${lowSwimSays(bot)})` : ' to the edge of what is loaded'}` : `dry ground all the way to ${ground.at(-1).d} blocks`;
   } else {
     const wet = stretches.find(st => WATER_BIOME.test(st.biome));
     const past = wet && stretches.find(st => st.from > wet.to && !WATER_BIOME.test(st.biome));
@@ -187,6 +187,17 @@ function headingFacts(stretches, ground = null) {
 // Overworld deaths of the six hours to 21:45Z (2026-10-05) were to drowned,
 // the second cause after zombies.
 const DROWNED_SAYS = '; drowned live in the water and come up after a swimmer, 9 of the 41 Overworld deaths of the six hours to 21:45Z on 2026-10-05 were to them';
+// At low health the swim said with what one drowned's hit does (note 1339):
+// 25592 (2026-10-06 01:16 to 01:23Z), at 2 health and hunger 10 for seven
+// minutes on a food search, took a heading over water and a drowned killed
+// it four seconds after it was seen. A drowned's blow is 3 and a thrown
+// trident 8 (normal difficulty); under hunger 18 no health comes back.
+function lowSwimSays(bot) {
+  const h = bot?.health, food = bot?.food;
+  if (!Number.isFinite(h) || h > 8) return '';
+  const r = Math.round(h * 10) / 10;
+  return `; at ${r} health now${Number.isFinite(food) && food < 18 ? `, none coming back at hunger ${food}` : ''}, ${h <= 3 ? 'one blow from a drowned (3) ends it' : 'one thrown trident (8) ends it'}`;
+}
 // Across water that lies along the chosen heading, to the land past it:
 // the surface search walks only on dry ground, and every way out of trial
 // 35's desert crossed a river, a lake or the sea.

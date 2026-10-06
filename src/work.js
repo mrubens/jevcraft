@@ -1968,7 +1968,7 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
       if (needs && client && typeof bot.blockAt === 'function') {
         const { biomeRay, headingFacts, surfaceRay, HEADINGS } = require('./exploration');
         const legs = state?.legsByHeading || {};
-        const tree = Object.fromEntries(HEADINGS.map((h, i) => [`heading_${h.replace('-', '_')}`, { description: `Head ${h}: ${headingFacts(biomeRay(bot, i), surfaceRay(bot, i))}.${legs[i] ? ` Already searched ${h} ${legs[i] === 1 ? 'once' : `${legs[i]} times`} in this search, and found none that way.` : ''}` }]));
+        const tree = Object.fromEntries(HEADINGS.map((h, i) => [`heading_${h.replace('-', '_')}`, { description: `Head ${h}: ${headingFacts(biomeRay(bot, i), surfaceRay(bot, i), bot)}.${legs[i] ? ` Already searched ${h} ${legs[i] === 1 ? 'once' : `${legs[i]} times`} in this search, and found none that way.` : ''}` }]));
         try {
           const decision = await decide('search_heading', { client, bot, task, goal, save, tree,
             state: { resource: LOG.test(resource) ? 'wood (any log)' : resource.replaceAll('_', ' '), biome: require('./exploration').biomeView(bot)?.biome, searchLegs: search.attempts,

@@ -241,6 +241,20 @@ function carriedFightSays(bot, mob) {
 // while the same pieces are missing in the same dimension, and is not
 // planned again meanwhile.
 const KIT_CHOICE_HOLD_MS = 10 * 60000;
+// The End's fight through the armour worn now and with the pieces this
+// question offers (note 1340): the dragon's head and wing and an enderman's
+// blow on Normal, the game's armour formula (combat-estimate.js).
+const END_HITS = { head: 10, wing: 5, enderman: 7 };
+function endFightGearSays(bot, offered = []) {
+  const ce = require('./combat-estimate');
+  const worn = [5, 6, 7, 8].map(i => bot.inventory?.slots?.[i]?.name).filter(Boolean);
+  const slotOf = n => /helmet/.test(n) ? 'head' : /chestplate/.test(n) ? 'torso' : /leggings/.test(n) ? 'legs' : /boots/.test(n) ? 'feet' : null;
+  const withOffered = [...worn.filter(n => !offered.some(o => slotOf(o) === slotOf(n))), ...offered.filter(slotOf)];
+  const hits = names => { const a = ce.armourOf(names); return `${a.points} armour points: the head ${Math.round(ce.afterArmour(END_HITS.head, a) * 10) / 10}, the wing ${Math.round(ce.afterArmour(END_HITS.wing, a) * 10) / 10}, an enderman ${Math.round(ce.afterArmour(END_HITS.enderman, a) * 10) / 10}`; };
+  const iron = ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'];
+  const sword = ['netherite_sword', 'diamond_sword', 'iron_sword', 'stone_sword', 'golden_sword', 'wooden_sword'].find(n => countOf(bot, n));
+  return ` The End is next: the dragon's head strikes for 10 and its wing for 5, an enderman for 7, before armour (Normal). Worn now, ${worn.length ? worn.map(words).join(', ') : 'nothing'}: ${hits(worn)}${offered.some(slotOf) ? `; with ${listed(offered.filter(slotOf).map(words))} too, ${hits(withOffered)}` : ''}; in full iron, ${hits(iron)}. The rehearsals of 2026-10-04 that killed the dragon wore iron armour and struck with a diamond sword; ${sword ? `the sword carried is ${words(sword)}` : 'no sword is carried'}.`;
+}
 async function kitChoice(bot, task, goal, save, actions, missing, { client, mob, now = Date.now() } = {}) {
   // Held while in the same dimension with no piece newly missing: a piece
   // made is the choice carried out, not a new question.
@@ -298,6 +312,17 @@ async function kitChoice(bot, task, goal, save, actions, missing, { client, mob,
         const at = ` At a blaze spawner the fight is with up to four at once, not one. Iron armour short (${listed(ironShort.map(p => words(p.item)))}): ${rec}. On 2026-10-04 (06:00 to 11:26Z) three of the four deaths at a spawner were in a helmet and chestplate alone, fifteen rods dropped with them.`;
         tree.fight_with_carried.description += at;
         for (const key of ['make_kit_here', 'return_for_kit']) if (tree[key]) tree[key].description += ` The iron pieces: ${rec}.`;
+      }
+      // The End next (end-supplies.js sets preparingEnd): the dragon's hits
+      // through what is worn, and what the rehearsals wore (note 1340).
+      // 25593 (2026-10-06 01:08Z), its twelve eyes placed and the ring
+      // found, was asked this with nothing worn and a stone sword, priced
+      // against the mob about, and answered fight_with_carried; at 01:26Z
+      // it chose the End with one arrow and no armour.
+      if (goal.preparingEnd) {
+        const says = endFightGearSays(bot, [...here, ...away, ...k.unplanned].map(p => p.item));
+        tree.fight_with_carried.description += says;
+        for (const key of ['make_kit_here', 'return_for_kit']) if (tree[key]) tree[key].description += says;
       }
       const decision = await decide('combat_kit', { client, bot, task, goal, save, tree, context: { oldOrder },
         state: { missing: all, carried: carriedFightSays(bot, mob), ...(mob ? { against: mob } : {}), dimension: dimension(bot), health: bot.health, hunger: bot.food, ironIngotsCarried: carriedIron } });
@@ -5197,4 +5222,4 @@ function claim(bot, goal = {}) {
     ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}), ...(cage ? { cage: true } : {}) } };
 }
 
-module.exports = { swordFromPack, huntLeft, slotMissSays, pearlsNow, roomForDrop, rodBlazesSays, goldForPiglins, openWallOption, keepClaim, noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };
+module.exports = { endFightGearSays, swordFromPack, huntLeft, slotMissSays, pearlsNow, roomForDrop, rodBlazesSays, goldForPiglins, openWallOption, keepClaim, noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };
