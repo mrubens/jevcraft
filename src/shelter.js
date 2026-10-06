@@ -36,8 +36,36 @@ const buildingMaterials = new Set(['dirt', 'cobblestone', 'cobbled_deepslate', .
 // its crossing four blocks over the lava sea with a ghast 45 to 60 off, and
 // two fireballs later was in the lava.
 const BLAST_PROOF = new Set(['cobblestone', 'cobbled_deepslate', 'blackstone', 'basalt', 'stone', 'andesite', 'diorite', 'granite', 'nether_bricks', 'deepslate', 'tuff', 'end_stone']);
+// What burns, kept out of the Nether's building (note 1376; physical
+// safety): lava sets fire to a burning block within a few blocks of it, and
+// the Nether stands over its lava sea. 25591 (2026-10-06 17:50 to 17:51Z),
+// in iron and holding over the lava sea at y 35 on a floor of white wool,
+// crafted oak planks for the walls of its one-wide footing; four seconds
+// after the last went in it was burning ("in_fire"), the floor burnt away
+// under it, and it fell into the lava four blocks down and died there. The
+// Nether's own woods and the wart blocks do not burn.
+// Lava lights a burning block from up to three blocks under it and a step
+// or more aside (LavaFluid's random tick walks up from the lava), so it is
+// looked for five under the bot's feet and three around, the cells a pocket,
+// a wall or a floor of the bot's goes in; looked at once a second at most.
+const burns = name => /_wool$/.test(name) || (name.endsWith('_planks') && !NETHER_WOOD.includes(name));
+const inNether = bot => /nether/.test(String(bot?.game?.dimension || ''));
+function lavaInReach(bot, now = Date.now()) {
+  const here = bot?.entity?.position;
+  if (!here || typeof bot.blockAt !== 'function') return false;
+  const key = `${Math.floor(here.x)},${Math.floor(here.y)},${Math.floor(here.z)}`, was = bot._lavaInReach;
+  if (was && was.key === key && now - was.at < 1000) return was.near;
+  let near = false;
+  const feet = here.floored ? here.floored() : new Vec3(Math.floor(here.x), Math.floor(here.y), Math.floor(here.z));
+  for (let dy = -5; dy <= 2 && !near; dy++) for (let dx = -3; dx <= 3 && !near; dx++) for (let dz = -3; dz <= 3 && !near; dz++) {
+    if (/lava/.test(bot.blockAt(feet.offset(dx, dy, dz))?.name || '')) near = true;
+  }
+  bot._lavaInReach = { key, at: now, near };
+  return near;
+}
+const builds = (bot, name) => buildingMaterials.has(name) && !(burns(name) && inNether(bot) && lavaInReach(bot));
 function buildingItem(bot, need = 1) {
-  const items = bot.inventory.items().filter(i => buildingMaterials.has(i.name) && i.count >= need);
+  const items = bot.inventory.items().filter(i => builds(bot, i.name) && i.count >= need);
   if (/nether/.test(String(bot.game?.dimension || ''))) { const proof = items.find(i => BLAST_PROOF.has(i.name)); if (proof) return proof; }
   return items.find(i => !LAST_MATERIALS.has(i.name)) || items[0] || null;
 }
@@ -183,7 +211,7 @@ function closedIn(bot, shelter) {
   return open.map(p => ({ x: p.x, y: p.y, z: p.z, name: bot.blockAt(p).name }));
 }
 function materialStock(bot) {
-  return bot.inventory.items().filter(i => buildingMaterials.has(i.name)).reduce((total, i) => total + i.count, 0);
+  return bot.inventory.items().filter(i => builds(bot, i.name)).reduce((total, i) => total + i.count, 0);
 }
 // The planks the logs and stems carried make in the hand (a two-by-two
 // craft, no table): the most of one kind. mid-243-ad stood on its span
@@ -193,7 +221,7 @@ function materialStock(bot) {
 function plankCraft(bot) {
   const stock = {};
   for (const item of bot.inventory.items()) stock[item.name] = (stock[item.name] || 0) + item.count;
-  return plankCrafts(stock)[0] || null;
+  return plankCrafts(stock).filter(c => !(burns(c.item) && inNether(bot) && lavaInReach(bot)))[0] || null;
 }
 function plankCrafts(stock) {
   return plankMaterials.flatMap(item => recipes[item].flatMap(recipe => {
@@ -254,4 +282,4 @@ function beyond(bot, o, door) {
   return [-1, 0, 1].filter(dy => replaceable(bot.blockAt(door.plus(d).offset(0, dy, 0)))).length;
 }
 
-module.exports = { wetBelow, foundation, shell, enclosure, safeSite, shelterSites, missingShell, inside, sealed, closedIn, materialStock, supplyTarget, plankCraft, exits, closures, buildingMaterials, buildingItem, LAST_MATERIALS, NETHER_WOOD, solid, replaceable, fixed };
+module.exports = { burns, builds, lavaInReach, wetBelow, foundation, shell, enclosure, safeSite, shelterSites, missingShell, inside, sealed, closedIn, materialStock, supplyTarget, plankCraft, exits, closures, buildingMaterials, buildingItem, LAST_MATERIALS, NETHER_WOOD, solid, replaceable, fixed };

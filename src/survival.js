@@ -841,7 +841,7 @@ const WALL_FALLING = new Set(['gravel', 'sand', 'red_sand']);
 function wallStock(bot, cells, { extra = 0 } = {}) {
   const floors = cells.filter(c => bot.blockAt(c.offset(0, -1, 0))?.boundingBox !== 'block').length;
   const items = bot.inventory.items();
-  const holding = items.filter(i => shelter.buildingMaterials.has(i.name)).reduce((n, i) => n + i.count, 0) + extra;
+  const holding = items.filter(i => shelter.builds(bot, i.name)).reduce((n, i) => n + i.count, 0) + extra;
   const loose = items.filter(i => WALL_FALLING.has(i.name)).reduce((n, i) => n + i.count, 0);
   const need = floors + cells.length;
   const falling = Math.max(0, need - holding);
@@ -11015,7 +11015,13 @@ class Survival {
         const ordered = { go_for_food: options.go_for_food, ...Object.fromEntries(Object.entries(options).filter(([k]) => k !== 'go_for_food')) };
         for (const k of Object.keys(options)) delete options[k];
         Object.assign(options, ordered);
-        if (options.stay && typeof options.stay.description === 'string') options.stay.description += ` Nothing carried is food and hunger is ${bot.food}: health does not come back in here however long the stay.`;
+        // Said once (note 1377): the stay's own words say it already where
+        // nothing carried is food (pocket-wait.js).
+        if (options.stay && typeof options.stay.description === 'string' && !/health does not come back/.test(options.stay.description)) options.stay.description += ` Nothing carried is food and hunger is ${bot.food}: health does not come back in here however long the stay.`;
+        // Out in the dark for it, the night up there by armour (note 1377).
+        if (night && !offWorld && options.go_for_food && typeof options.go_for_food.description === 'string') {
+          try { options.go_for_food.description += require('./night-record').keepOnSays('surface', { minutesToDawn: minutesToDawn(bot), bot }); } catch (_) { /* no record */ }
+        }
       }
       // After any interruption, the way back to the work is named first,
       // ahead of night_mine, a hunt or the valuables (note 742): 25597's

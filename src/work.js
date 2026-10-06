@@ -1606,7 +1606,7 @@ async function leakResponse(bot, task, p, LIQUID, { placer = place } = {}) {
     const client = task.opportunityClient;
     if (client) {
       const kind = /lava/.test(liquid) ? 'lava' : 'water';
-      const carried = bot.inventory.items().filter(i => buildingMaterials.has(i.name)).reduce((n, i) => n + i.count, 0);
+      const carried = bot.inventory.items().filter(i => require('./shelter').builds(bot, i.name)).reduce((n, i) => n + i.count, 0);
       // Where the liquid is from the bot, and what it is doing to it now
       // (the decision audit, 2026-09-25): water over the head drowns, lava
       // at the feet burns.

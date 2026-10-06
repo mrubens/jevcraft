@@ -162,6 +162,17 @@ function pocketWaitSays(bot, state, goal, { outside = [], near = [], night = fal
   const starving = noFood && hp < 20 && food < 18;
   const foodSays = starving ? ` Nothing carried is food: hunger ${food} does not rise in here, so health does not come back in this pocket however long it waits.` : '';
   if (starving) facts.health = `${Math.round(hp * 10) / 10}, not coming back: nothing carried to eat and hunger ${food}`;
+  // And what the stay to dawn costs of it, where it is night up there (note
+  // 1377): nothing. 25597 (2026-10-06 18:55:27Z), at 5.6 health and hunger
+  // 12 with nothing to eat, three minutes before dawn, was told twice that
+  // health does not come back in the pocket, and once that staying does not
+  // walk the trip; it went for a sheep 85 blocks off in the dark and was
+  // shot dead in 35 seconds.
+  let dawnSays = '';
+  if (starving && night && !noDay) {
+    let light = null; try { light = require('./healing').daylightSays(bot); } catch (_) { light = null; }
+    if (light && /^night/.test(light)) dawnSays = ` Standing still spends no hunger, so hunger stays at ${food} through the stay (${light.replace(/^night: /, '')}); the food set out for then is looked for by day, when the zombies and skeletons out burn in the sun.`;
+  }
   // A trip for food already chosen (note 726): 25598 sealed at 7 health
   // with nothing to eat, chose return_for_food, and was sealed in again a
   // few seconds later with no word that the trip it had just begun was
@@ -258,7 +269,7 @@ function pocketWaitSays(bot, state, goal, { outside = [], near = [], night = fal
   const stayWaits = waitsForNothing ? waitFor.event('the mobs outside to go', { comes: false, why: `${goneSays}, no daylight comes here, and ${starving ? 'health does not come back without food' : 'health is full'}` }) : null;
   return {
     facts, heldOff, minutes, waitsForNothing, stays, waits: stayWaits,
-    stay: ` In this pocket ${minutes} so far.${againstSays}${mobsSays}${countSays}${daySays}${healSays}${foodSays}${tripSays}${nothingComes}${rungLine}`,
+    stay: ` In this pocket ${minutes} so far.${againstSays}${mobsSays}${countSays}${daySays}${healSays}${foodSays}${dawnSays}${tripSays}${nothingComes}${rungLine}`,
     leave: `${againstSays ? ` ${againstSays.trim().replace(/^It was/, 'The pocket was')}` : ''}${mobsSays}${countSays}`,
     claim: { inPocketMinutes: facts.minutes, ...(facts.sealedAgainst ? { sealedAgainst: facts.sealedAgainst } : {}), ...(waitsForNothing ? { waitingFor: facts.waitingFor, staysForNothing: stays } : {}) },
   };
