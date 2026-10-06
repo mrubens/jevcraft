@@ -514,6 +514,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `fight_with_carried` | root | go on with what is carried | always; said with the weapon and armour carried and one fight's estimate against the mob hunted |
 | `make_kit_here` | root | make the pieces that can be made here first | a missing piece can be made from sources in this dimension; said with the iron it takes and the steps |
+| `make_one_here` | root | make one iron piece alone first and wear it | two or more iron armour pieces short that can be made here; the one with the most armour for its iron (chestplate, then leggings, boots, helmet), said with its iron and the armour points before and after; the rest left half an hour (note 1372) |
 | `make_leather_here` | root | make leather pieces for the empty armour slots first | an armour slot empty and the leather carried makes a piece by crafts alone (note 1341); said with the armour points before and after, and the dragon's hits when the End is next |
 | `return_for_kit` | root | go back to the Overworld for the pieces | outside the Overworld, a missing piece made only from Overworld ore; said with the iron, the ore and the trip to the portal |
 

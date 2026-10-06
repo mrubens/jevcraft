@@ -2377,3 +2377,25 @@ test('arrows wanted, no skeleton in view, a dungeon remembered: where they come 
   const { isSetAside } = require('../src/progress');
   assert.ok(isSetAside(goal, 'dungeon_cage', '80,0'), 'no skeleton cage: set aside');
 });
+
+test('with iron pieces short in the Overworld, one piece alone is offered beside the whole kit, made, and the rest left (note 1372)', async () => {
+  const { isSetAside } = require('../src/progress');
+  const { bot, slots, goal, task } = fixture('skeleton');
+  bot.game.dimension = 'overworld';
+  for (const slot of [5, 6, 7, 8, 45]) slots[slot] = null;
+  slots[36] = { name: 'stone_sword', slot: 36, count: 1, type: registry.itemsByName.stone_sword.id, durabilityUsed: 0 };
+  slots[20] = { name: 'stone_pickaxe', slot: 20, count: 1, type: registry.itemsByName.stone_pickaxe.id, durabilityUsed: 0 };
+  const asked = [], fetched = [];
+  const client = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: 'make_one_here', confidence: 0.9 } } }; } };
+  const actions = { acquireStep: async (b, t, item) => { fetched.push(item); } };
+  assert.equal(await prepareCombatGear(bot, task, goal, () => {}, actions, { client }), false);
+  assert.match(asked[0].make_one_here, /^Make iron chestplate alone here first and wear it: 8 iron ingots \(0 carried\), armour points 0 to 6,/);
+  assert(asked[0].make_kit_here);
+  assert.deepEqual(fetched, ['iron_chestplate']);
+  // Made and worn: the rest is left, nothing asked again.
+  slots[6] = { name: 'iron_chestplate', slot: 6, count: 1, type: registry.itemsByName.iron_chestplate.id, durabilityUsed: 0 };
+  assert.equal(await prepareCombatGear(bot, task, goal, () => {}, actions, { client }), true);
+  assert.equal(asked.length, 1);
+  assert(isSetAside(goal, 'rung', 'iron_helmet'));
+  assert.equal(goal.combatKit, undefined);
+});

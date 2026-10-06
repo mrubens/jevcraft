@@ -278,13 +278,17 @@ function leatherPieces(bot, missing) {
     return steps.every(st => st.action === 'craft') ? out : [];
   } catch (_) { return []; }
 }
+// The iron pieces by armour for their iron: the chestplate 6 points for 8,
+// the leggings 5 for 7, the boots 2 for 4, the helmet 2 for 5.
+const ONE_ORDER = ['iron_chestplate', 'iron_leggings', 'iron_boots', 'iron_helmet'];
+const ONE_IRON = { iron_chestplate: 8, iron_leggings: 7, iron_boots: 4, iron_helmet: 5 };
 async function kitChoice(bot, task, goal, save, actions, missing, { client, mob, now = Date.now() } = {}) {
   // Held while in the same dimension with no piece newly missing: a piece
   // made is the choice carried out, not a new question.
   const sig = dimension(bot), was = goal.combatKit;
   const held = was?.sig === sig && now - was.at < KIT_CHOICE_HOLD_MS && missing.every(d => was.missing?.includes(d)) ? was : null;
   const still = list => (list || []).filter(p => missing.includes(p.destination));
-  let pick = held && (held.pick !== 'make_kit_here' || still(held.here).length) ? held.pick : null, here = still(held?.here), away = still(held?.away);
+  let pick = held && (held.pick !== 'make_kit_here' || still(held.here).length) ? held.pick : null, here = still(held?.here), away = still(held?.away), one = held?.one || null;
   if (!pick) {
     const k = kitPieces(bot, missing);
     ({ here, away } = k);
@@ -294,6 +298,19 @@ async function kitChoice(bot, task, goal, save, actions, missing, { client, mob,
       fight_with_carried: { description: `Go on with what is carried: ${carriedFightSays(bot, mob)} Without ${listed(all)} for now; the pieces are left for half an hour, then offered again.` },
     };
     if (here.length) tree.make_kit_here = { description: `Make ${listed(here.map(p => words(p.item)))} here first${k.hereIron ? `: ${k.hereIron} iron ingots, ${carriedIron} carried` : ''}. It takes: ${k.hereSteps.map(s => `${words(s.action)} ${s.count || 1} ${words(s.item || s.block || s.entity)}`).join(', ')}.${away.length ? ` The rest (${listed(away.map(p => words(p.item)))}) cannot be made in the ${Dimension(dimension(bot))}.` : ''}` };
+    // One iron piece alone, the most armour for its iron, beside the whole
+    // kit (note 1372): the record said with this question is of deaths with
+    // nothing worn against any piece on (0.99 against 0.42 a bot-hour in the
+    // Overworld), and the only way to a piece offered was every piece at
+    // once. 25598 (2026-10-06 18:31Z), nothing worn, its twelve eyes banked
+    // and the End next, was offered all six pieces for 27 iron or going on
+    // as it was, and went on as it was, as it had 19 times that day.
+    one = here.length > 1 ? ONE_ORDER.map(n => here.find(p => p.item === n)).find(Boolean) || null : null;
+    if (one) {
+      const ce = require('./combat-estimate'), worn = [5, 6, 7, 8].map(i => bot.inventory?.slots?.[i]?.name).filter(Boolean);
+      const before = ce.armourOf(worn).points, after = ce.armourOf([...worn, one.item]).points;
+      tree.make_one_here = { description: `Make ${words(one.item)} alone here first and wear it: ${ONE_IRON[one.item]} iron ingots (${carriedIron} carried), armour points ${before} to ${after}, the most armour for its iron of the pieces short. The other pieces are left for half an hour, then offered again.` };
+    }
     const leather = leatherPieces(bot, missing);
     if (leather.length) {
       const ce = require('./combat-estimate'), worn = [5, 6, 7, 8].map(i => bot.inventory?.slots?.[i]?.name).filter(Boolean);
@@ -348,7 +365,7 @@ async function kitChoice(bot, task, goal, save, actions, missing, { client, mob,
       // 2026-10-06, leather offered six times and never chosen.
       if (![5, 6, 7, 8].some(i => bot.inventory?.slots?.[i]) && missing.some(d => ['head', 'torso', 'legs', 'feet'].includes(d))) {
         let says = ''; try { says = ' ' + require('./kit-record').bareSays(bot.game?.dimension); } catch (_) { says = ''; }
-        for (const key of ['fight_with_carried', 'make_kit_here', 'make_leather_here', 'return_for_kit']) if (tree[key]) tree[key].description += says;
+        for (const key of ['fight_with_carried', 'make_kit_here', 'make_one_here', 'make_leather_here', 'return_for_kit']) if (tree[key]) tree[key].description += says;
       }
       // The End next (end-supplies.js sets preparingEnd): the dragon's hits
       // through what is worn, and what the rehearsals wore (note 1340).
@@ -360,13 +377,14 @@ async function kitChoice(bot, task, goal, save, actions, missing, { client, mob,
         const says = endFightGearSays(bot, [...here, ...away, ...k.unplanned].map(p => p.item));
         tree.fight_with_carried.description += says;
         for (const key of ['make_kit_here', 'return_for_kit']) if (tree[key]) tree[key].description += says;
+        if (tree.make_one_here) tree.make_one_here.description += endFightGearSays(bot, [one.item]);
       }
       const decision = await decide('combat_kit', { client, bot, task, goal, save, tree, context: { oldOrder },
         state: { missing: all, carried: carriedFightSays(bot, mob), ...(mob ? { against: mob } : {}), dimension: dimension(bot), health: bot.health, hunger: bot.food, ironIngotsCarried: carriedIron } });
       if (decision.stale) return false;
       pick = decision.path.at(-1);
     }
-    goal.combatKit = { pick, sig, missing, at: now, here, away }; save();
+    goal.combatKit = { pick, sig, missing, at: now, here, away, ...(pick === 'make_one_here' ? { one } : {}) }; save();
   }
   if (pick === 'fight_with_carried') {
     for (const destination of missing) setAside(goal, 'rung', PIECE_RUNG[destination][0], 'Jev chose to fight with what is carried', 1800000);
@@ -377,6 +395,18 @@ async function kitChoice(bot, task, goal, save, actions, missing, { client, mob,
     goal.errand = { dimension: 'overworld', items: away.map(p => ({ item: p.item, count: countOf(bot, p.item) + 1 })), for: 'the combat kit', at: now };
     goal.step = { action: 'return_for_kit', pieces: away.map(p => p.item) }; save();
     await actions.returnOverworld(bot, task, goal, save);
+    return false;
+  }
+  if (pick === 'make_one_here') {
+    // Made (and worn by the pass before this one): the rest is gone without
+    // for now, as chosen.
+    if (!one || !missing.includes(one.destination)) {
+      for (const destination of missing) setAside(goal, 'rung', PIECE_RUNG[destination][0], 'Jev chose one piece and to fight with what is carried', 1800000);
+      delete goal.combatKit; save();
+      return true;
+    }
+    goal.step = { action: 'prepare_combat_equipment', destination: one.destination, item: one.item }; save();
+    await actions.acquireStep(bot, task, one.item, countOf(bot, one.item) + 1, goal, save);
     return false;
   }
   if (pick === 'make_leather_here') {
