@@ -26,3 +26,16 @@ test('the portal found and no number of frames saved: the way to the End wants t
   const two = located(); two.gameProgress.milestones.stronghold_located.frames[0].eye = two.gameProgress.milestones.stronghold_located.frames[1].eye = true;
   assert.equal(stagePastKit(two, 10).phase, 'enter_end');
 });
+
+test('the twelve eyes in the bot\'s chest and none carried: the chest is the step before the way to the End, not the portal (note 1388)', () => {
+  const goal = { kind: 'win', gameProgress: { version: 1, milestones: { nether_entered: { at: 1 }, eyes_obtained: { at: 2 }, stronghold_located: { at: 3, center: { x: 604, y: -37, z: 1540 },
+    frames: Array.from({ length: 12 }, (_, i) => ({ position: { x: i, y: -37, z: 0 }, eye: false })) } } },
+    rodStashes: [{ position: { x: 203, y: 63, z: 245 }, dimension: 'overworld', contents: { ender_eye: 12, ender_pearl: 6 }, storedAt: '2026-10-06T17:00:00Z' }],
+    endKit: { choice: { pick: 'fill_frame_first', at: 1 } } };
+  const stage = stagePastKit(goal, 0);
+  assert.equal(stage.phase, 'collect_rod_stash', JSON.stringify(stage));
+  assert.deepEqual(stage.at, { x: 203, y: 63, z: 245 });
+  // Taken out and carried, the way to the End.
+  goal.rodStashes[0].contents = {};
+  assert.equal(stagePastKit(goal, 12).phase, 'enter_end');
+});

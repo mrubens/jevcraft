@@ -1007,6 +1007,21 @@ function nextGameStage(bot, goal, skip = new Set()) {
     : Array.isArray(framesOf) && framesOf.length ? framesOf.filter(f => !f.eye).length : null);
   // Eyes in the bot's Overworld chest are held (eye-bank.js, note 1193): the End's kit is seen to with them put away.
   const eyesBanked = require('./eye-bank').banked(goal);
+  // The eyes the portal still wants taken out of the chest first, where
+  // they lie, while it is unlit (note 1388): the way to the End counted the
+  // banked eyes as held and walked to the portal without them. 25598
+  // (2026-10-06 20:00 to 21:38Z), told to set its twelve eyes in the frame
+  // first, set off from beside its chest at (203, 63, 245) and stood at its
+  // portal 1,300 blocks off with none.
+  // Only once the kit's answer is to go (enter_now, fill_frame_first): on a
+  // top-up errand the eyes stay put away (eye-bank.js, note 1193).
+  const going = ['enter_now', 'fill_frame_first'].includes(goal.endKit?.choice?.pick);
+  if (going && where === 'overworld' && m.stronghold_located && !goal.endPortal?.litAt && eyesBanked > 0 && Number.isInteger(portalNeed) && count(bot, 'ender_eye') < portalNeed && count(bot, 'ender_eye') + eyesBanked >= portalNeed) {
+    const rs = require('./rod-stash'), here = bot.entity?.position;
+    const chest = here && rs.stashes(goal).filter(c => c.dimension === 'overworld' && (c.contents?.ender_eye || 0) > 0)
+      .map(c => ({ c, d: Math.round(here.distanceTo(new (require('vec3').Vec3)(c.position.x, c.position.y, c.position.z))) })).sort((x, y) => x.d - y.d)[0];
+    if (chest) return { phase: 'collect_rod_stash', action: 'collect_rod_stash', at: chest.c.position, distance: chest.d, items: { ...chest.c.contents }, for: 'the eyes the End portal wants' };
+  }
   if (where === 'overworld' && m.stronghold_located && (Number.isInteger(portalNeed) ? count(bot, 'ender_eye') + eyesBanked >= portalNeed : count(bot, 'ender_eye') + eyesBanked >= 1)) return { phase: 'enter_end', action: 'enter_end' };
   // The search goes with the spare in the pack and the twelve put away, where that was chosen (eye-bank.js, note 1197).
   // With the place the bearings meet known, the walk there wants no eye in the pack (stronghold.js throws none there, note 1151): the eyes in the chest are enough (note 1269).
