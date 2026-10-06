@@ -586,4 +586,4 @@ function foundEntries(known = {}) {
     dimension: l.dimension, firstAt: l.firstAt }));
 }
 
-module.exports = { ROUTE_TIMED_OUT, legGoal, biomeView, biomeTrips, biomeRay, headingFacts, surfaceRay, waterAhead, swimAcross, HEADINGS, foundEntries, goToLandmark, foundSentence, AREA, DETECTORS, LANDMARK_KINDS, areaOf, markExplored, rememberLandmark, noticeLandmarks, knownLandmarks, unexploredArea, explorationSummary, summaryText, exploreStep };
+module.exports = { biomeName, ROUTE_TIMED_OUT, legGoal, biomeView, biomeTrips, biomeRay, headingFacts, surfaceRay, waterAhead, swimAcross, HEADINGS, foundEntries, goToLandmark, foundSentence, AREA, DETECTORS, LANDMARK_KINDS, areaOf, markExplored, rememberLandmark, noticeLandmarks, knownLandmarks, unexploredArea, explorationSummary, summaryText, exploreStep };

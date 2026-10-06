@@ -71,8 +71,23 @@ function kitItems(bot, goal, actions = {}, now = Date.now()) {
   // a fresh End, no armour, a stone sword, one arrow and 48 snowballs) threw
   // 7 and took 2 crystals 24 and 27 blocks over its feet.
   const snow = countOf(bot, 'snowball'), SNOW = 32;
+  // The nearest snowy ground in what is loaded (note 1368): 25598 (2026-10-06
+  // 16:15Z), twelve eyes banked, was offered snowballs with no word of where
+  // snow lies and chose arrows, at a skeleton or less a kill.
+  const snowNear = (() => {
+    try {
+      const here = bot.entity.position.floored(), name = require('./exploration').biomeName;
+      let best = null;
+      for (let dx = -160; dx <= 160; dx += 16) for (let dz = -160; dz <= 160; dz += 16) {
+        const d = Math.hypot(dx, dz); if (d > 160 || (best && d >= best.d)) continue;
+        const b = name(bot, bot.blockAt(here.offset(dx, 70 - here.y, dz)));
+        if (b && /snow|frozen|ice_spikes|grove|jagged|frozen_peaks/.test(b)) best = { d: Math.round(d), biome: b.replaceAll('_', ' ') };
+      }
+      return best;
+    } catch (_) { return null; }
+  })();
   out.push({ key: 'snowballs', item: 'snowball', carried: snow, wants: SNOW, short: snow < SNOW && arrows < REHEARSED.enough.arrows, target: Math.min(SNOW, snow + 16),
-    says: `Dig snowballs up to ${SNOW} first (${snow} carried): one is dug from each snow layer with a shovel, on the snowy plains, taiga and slopes, sixteen to a stack. A thrown snowball or egg breaks an end crystal as an arrow does, thrown at half an arrow's speed: it reaches about 28 blocks up, so a crystal on one of the taller pillars is thrown at from a pillar of blocks part way up. In the arena's drill of 2026-10-06 (a fresh End, no armour, a stone sword, one arrow and 48 snowballs), 7 thrown took 2 crystals 24 and 27 blocks over the bot's feet. With the same kit and an iron pickaxe, after the throws from a pillar's top, the caged crystals opened with the pickaxe and the wait by the perch moved out to 16 blocks (2026-10-06 05:52 to 06:23Z): the dragon dead in about 31 minutes on a fresh End, the bot alive throughout, its lowest health 4; before those (04:47Z) the same kit died at seven minutes in the perched dragon's breath.` });
+    says: `Dig snowballs up to ${SNOW} first (${snow} carried): one is dug from each snow layer with a shovel, on the snowy plains, taiga and slopes, sixteen to a stack. ${snowNear ? `Snowy ground in what is loaded: the ${snowNear.biome} about ${snowNear.d} blocks off.` : 'No snowy biome is in what is loaded within 160 blocks.'} A thrown snowball or egg breaks an end crystal as an arrow does, thrown at half an arrow's speed: it reaches about 28 blocks up, so a crystal on one of the taller pillars is thrown at from a pillar of blocks part way up. In the arena's drill of 2026-10-06 (a fresh End, no armour, a stone sword, one arrow and 48 snowballs), 7 thrown took 2 crystals 24 and 27 blocks over the bot's feet. With the same kit and an iron pickaxe, after the throws from a pillar's top, the caged crystals opened with the pickaxe and the wait by the perch moved out to 16 blocks (2026-10-06 05:52 to 06:23Z): the dragon dead in about 31 minutes on a fresh End, the bot alive throughout, its lowest health 4; before those (04:47Z) the same kit died at seven minutes in the perched dragon's breath.` });
   const blocks = countOf(bot, 'cobblestone');
   out.push({ key: 'blocks', item: 'cobblestone', carried: blocks, wants: WANTS.cobblestone, short: blocks < WANTS.cobblestone, target: WANTS.cobblestone,
     says: `Take cobblestone up to ${WANTS.cobblestone} first (${blocks} carried): the blocks laid in the End for a way off the entry platform, a pocket from endermen and a pillar's foot.` });
