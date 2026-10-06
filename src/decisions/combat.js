@@ -97,6 +97,7 @@ define({
   source: 'src/end-combat.js (fightEndStep)',
   options: [
     { pattern: 'crystal_\\d+', names: 'the crystal, by its entity id', label: 'shoot this healing crystal', when: 'in view with a solved arrow path and not missed repeatedly', level: 'root', dynamic: true },
+    { pattern: 'throw_\\d+', names: 'the crystal, by its entity id', label: 'throw a snowball or egg at this healing crystal', when: 'no bow with arrows, a snowball or egg carried, the crystal in view with a solved throw (note 1342)', level: 'root', dynamic: true },
     { key: 'shoot_dragon', label: 'shoot the flying dragon', when: 'a bow, arrows and a clear trajectory', level: 'root' },
     { key: 'bed_bomb', label: 'blow a bed beside the perched dragon\'s head', when: 'the dragon perched, a bed carried, health fourteen or more, and a trench line within twelve blocks that a walk reaches', level: 'root' },
     { key: 'under_head', label: 'run to the ground under the perched dragon\'s head and strike it with the sword for as long as it sits', when: 'the dragon perched, its head within forty blocks and out of the sword\'s reach, standable ground under it, a sword carried; said with how far the head is, how high over its ground, the void\'s edge and the endermen by the way', level: 'root' },

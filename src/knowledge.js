@@ -49,6 +49,10 @@ function knowledge(registry) {
   // Gravel can drop flint probabilistically; each actual mining action still
   // verifies pickup and retries with a bounded search budget.
   sources.flint ||= [{ block: 'gravel', allowedTools: [], depth: null }];
+  // A snow layer dug with a shovel drops snowballs (the registry lists none):
+  // the snowy biomes' common snow, where a snow block is seldom natural and
+  // is left as a crafted thing unless seen (note 1342).
+  (sources.snowball ||= []).push({ block: 'snow', allowedTools: Object.keys(registry.blocksByName.snow?.harvestTools || {}).map(id => registry.items[id]?.name).filter(Boolean).sort((a, b) => toolOrder(a) - toolOrder(b)), depth: null });
   const result = { sources, mobSources: mobSources(), recipes: vanilla.recipes, smelting: vanilla.smelting };
   cached.set(registry, result);
   return result;
@@ -120,8 +124,9 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
   // for the breaking, a plank a block (note 754e): 25583 stood in a
   // mineshaft with no pickaxe and no wood carried and was told the nearest
   // wood was an oak log 54 blocks off.
+  // Snow layers lie natural on the snowy biomes (note 1342), though a recipe makes them.
   const usableSource = (name, source) => !name.endsWith('_concrete') &&
-    !(data.recipes[source.block] && !/(ore|log|stem|hyphae|wood)$/.test(source.block) &&
+    !(data.recipes[source.block] && !(source.block === 'snow' && name === 'snowball') && !/(ore|log|stem|hyphae|wood)$/.test(source.block) &&
       (source.block === name ? !(/_planks$/.test(name) && observed.has(source.block)) : !observed.has(source.block)));
   // These costs rank real acquisition methods; they do not authorize actions.
   // Evaluate the recipe graph in bounded passes instead of recursively

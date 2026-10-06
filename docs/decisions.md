@@ -520,7 +520,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `end_kit`
 
-**Go to the End with the kit carried now, or first top up one named item of it (a bow, arrows, cobblestone, an iron pickaxe, water buckets, beds, an enchantment, food, health)?**
+**Go to the End with the kit carried now, or first top up one named item of it (a bow, arrows, snowballs, cobblestone, an iron pickaxe, water buckets, beds, an enchantment, food, health)?**
 
 - When: On the way to the End portal, the eyes in hand and the portal found, in Survival, with an item of the End's kit short of what the code would take; asked again when the item chosen is topped up (arrows thirty-two at a time) or after a quarter hour on it, and going now holds while the kit is as it was.
 - Decision tree, choice; stakes medium; ledger kind `strategy`
@@ -532,7 +532,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
 | `enter_now` | root | go to the End with what is carried | always; said with each item of the kit, what is short, what the rehearsed fight took in arrows and minutes, and that there is no way back but the dragon's death or the bot's own |
-| `top_up_(bow\|arrows\|blocks\|pickaxe\|water\|beds\|enchant\|food\|health)` (pattern: names the kit item) | root | top up this item of the kit first | the item is short of what the code would take; said with what it is for in the End and how it is got here (arrows only from skeletons, none to two each; beds from sheared wool; water for a landing and against endermen) |
+| `top_up_(bow\|arrows\|snowballs\|blocks\|pickaxe\|water\|beds\|enchant\|food\|health)` (pattern: names the kit item) | root | top up this item of the kit first | the item is short of what the code would take; said with what it is for in the End and how it is got here (arrows only from skeletons, none to two each; beds from sheared wool; water for a landing and against endermen) |
 
 ### `crossing_kit`
 
@@ -1553,6 +1553,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
 | `crystal_\d+` (pattern: names the crystal, by its entity id) | root | shoot this healing crystal | in view with a solved arrow path and not missed repeatedly |
+| `throw_\d+` (pattern: names the crystal, by its entity id) | root | throw a snowball or egg at this healing crystal | no bow with arrows, a snowball or egg carried, the crystal in view with a solved throw (note 1342) |
 | `shoot_dragon` | root | shoot the flying dragon | a bow, arrows and a clear trajectory |
 | `bed_bomb` | root | blow a bed beside the perched dragon's head | the dragon perched, a bed carried, health fourteen or more, and a trench line within twelve blocks that a walk reaches |
 | `under_head` | root | run to the ground under the perched dragon's head and strike it with the sword for as long as it sits | the dragon perched, its head within forty blocks and out of the sword's reach, standable ground under it, a sword carried; said with how far the head is, how high over its ground, the void's edge and the endermen by the way |

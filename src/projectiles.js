@@ -8,6 +8,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Vanilla 26.1 BowItem / AbstractArrow: full draw speed 3, then each tick
 // position += velocity, velocity *= float(0.99), velocity.y -= 0.05.
 const DRAG = Math.fround(.99), GRAVITY = .05, SPEED = 3;
+// A thrown snowball or egg (ThrowableProjectile, note 1342): thrown at 1.5,
+// gravity 0.03 a tick, the same drag. Any projectile breaks an end crystal.
+const ARROW = { drag: DRAG, gravity: GRAVITY, speed: SPEED }, THROWN = { drag: DRAG, gravity: .03, speed: 1.5 };
+const THROWABLE = ['snowball', 'egg', 'brown_egg', 'blue_egg'];
 function sentAimMatches(rotation, solution) {
   if (!rotation || !Number.isFinite(rotation.yaw) || !Number.isFinite(rotation.pitch)) return false;
   const yaw = Math.PI - rotation.yaw * Math.PI / 180, pitch = -rotation.pitch * Math.PI / 180;
@@ -16,12 +20,13 @@ function sentAimMatches(rotation, solution) {
   const tolerance = .2 * Math.PI / 180, difference = yaw - solution.yaw;
   return Math.abs(Math.atan2(Math.sin(difference), Math.cos(difference))) < tolerance && Math.abs(pitch - solution.pitch) < tolerance;
 }
-function arrowPosition(origin, velocity, ticks) {
-  const sum = (1 - DRAG ** ticks) / (1 - DRAG);
-  return origin.plus(velocity.scaled(sum)).offset(0, -GRAVITY * (ticks - sum) / (1 - DRAG), 0);
+function arrowPosition(origin, velocity, ticks, { drag = DRAG, gravity = GRAVITY } = ARROW) {
+  const sum = (1 - drag ** ticks) / (1 - drag);
+  return origin.plus(velocity.scaled(sum)).offset(0, -gravity * (ticks - sum) / (1 - drag), 0);
 }
 
-function bowSolution(origin, target, targetVelocity = new Vec3(0, 0, 0)) {
+function bowSolution(origin, target, targetVelocity = new Vec3(0, 0, 0), physics = ARROW) {
+  const { drag: DRAG, gravity: GRAVITY, speed: SPEED } = physics;
   const required = ticks => {
     const sum = (1 - DRAG ** ticks) / (1 - DRAG);
     const aim = target.plus(targetVelocity.scaled(ticks));
@@ -33,7 +38,7 @@ function bowSolution(origin, target, targetVelocity = new Vec3(0, 0, 0)) {
       let low = previous, high = ticks;
       for (let n = 0; n < 20; n++) { const middle = (low + high) / 2; if (required(middle).norm() > SPEED) low = middle; else high = middle; }
       const duration = (low + high) / 2, velocity = required(duration);
-      return { velocity, ticks: duration, yaw: Math.atan2(-velocity.x, -velocity.z), pitch: Math.asin(Math.max(-1, Math.min(1, velocity.y / SPEED))),
+      return { velocity, ticks: duration, physics, yaw: Math.atan2(-velocity.x, -velocity.z), pitch: Math.asin(Math.max(-1, Math.min(1, velocity.y / SPEED))),
         target: target.plus(targetVelocity.scaled(duration)) };
     }
     previous = ticks;
@@ -44,7 +49,7 @@ function bowSolution(origin, target, targetVelocity = new Vec3(0, 0, 0)) {
 function clearShot(bot, origin, solution, target) {
   let previous = origin;
   for (let ticks = .5; ticks < solution.ticks + .5; ticks += .5) {
-    const point = arrowPosition(origin, solution.velocity, Math.min(ticks, solution.ticks));
+    const point = arrowPosition(origin, solution.velocity, Math.min(ticks, solution.ticks), solution.physics || ARROW);
     if (!bot.blockAt(point)) return false;
     const segment = point.minus(previous), length = segment.norm();
     if (length && bot.world.raycast(previous, segment.scaled(1 / length), length)) return false;
@@ -63,7 +68,7 @@ function clearShot(bot, origin, solution, target) {
   return true;
 }
 
-function aimAtEntity(bot, target, velocity = new Vec3(0, 0, 0), position = bot.entity.position) {
+function aimAtEntity(bot, target, velocity = new Vec3(0, 0, 0), position = bot.entity.position, physics = ARROW) {
   const origin = position.offset(0, 1.52, 0);
   // Sample the actual target volume. In particular, a cage is not assumed to
   // be transparent; only trajectories whose block-shape raycasts are clear
@@ -74,7 +79,7 @@ function aimAtEntity(bot, target, velocity = new Vec3(0, 0, 0), position = bot.e
     [0, -.5, .5, -.85, .85].flatMap(x => [0, -.5, .5, -.85, .85].map(z => [x, y, z]))) :
     [[0, target.name === 'ender_dragon' ? 1.5 : (target.height || 1.8) / 2, 0]];
   for (const offset of offsets) {
-    const solution = bowSolution(origin, target.position.offset(...offset), velocity);
+    const solution = bowSolution(origin, target.position.offset(...offset), velocity, physics);
     if (solution && clearShot(bot, origin, solution, target)) return { ...solution, origin };
   }
   return null;
@@ -168,4 +173,36 @@ async function shootBow(bot, task, target, { guard = () => {}, threatCheck = che
   }
 }
 
-module.exports = { arrowPosition, bowSolution, clearShot, aimAtEntity, shootBow, sentAimMatches };
+// A snowball or egg thrown at a target along a clear observed line (note
+// 1342): looked along until the sent rotation carries the angles, then used
+// once; confirmed by one fewer carried and the projectile's entity seen.
+async function throwAt(bot, task, target, { guard = () => {}, item = null, confirmationMs = 2000 } = {}) {
+  const held = item || THROWABLE.find(n => countOf(bot, n) > 0);
+  const stack = held && bot.inventory.items().find(i => i.name === held);
+  if (!stack) throw new Error('Nothing to throw is carried');
+  const check = () => { task.check(); guard(); if (bot.health <= 0 || bot.entities[target.id] !== target || target.isValid === false) throw new Error('Throw interrupted by a changed target'); };
+  check();
+  let solution = aimAtEntity(bot, target, new Vec3(0, 0, 0), bot.entity.position, THROWN);
+  if (!solution) throw new Error('No clear observed throw to this target');
+  bot.pathfinder?.setGoal?.(null); bot.clearControlStates(); await bot.equip(stack, 'hand'); check();
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
+    check();
+    solution = aimAtEntity(bot, target, new Vec3(0, 0, 0), bot.entity.position, THROWN);
+    if (!solution) throw new Error('The throw\'s line closed before release');
+    if (sentAimMatches(bot.lastSentRotation, solution)) break;
+    await bot.look(solution.yaw, solution.pitch, false); await sleep(60);
+  }
+  if (!sentAimMatches(bot.lastSentRotation, solution)) throw new Error('The throw\'s yaw and pitch did not settle before their deadline');
+  const before = countOf(bot, held), start = bot.entity.position.clone();
+  let thrown = null;
+  const onSpawn = e => { if (/snowball|egg/.test(e.name || '') && e.position.distanceTo(start.offset(0, 1.52, 0)) <= 3) thrown = e; };
+  bot.on('entitySpawn', onSpawn);
+  try {
+    bot.activateItem();
+    const until = Date.now() + confirmationMs;
+    while (Date.now() < until) { task.check(); if (before - countOf(bot, held) >= 1 && thrown) return { at: Date.now(), targetId: target.id, target: target.name, item: held, ticks: solution.ticks, origin: { ...solution.origin }, aim: { ...solution.target } }; await sleep(50); }
+    throw new Error('The throw lacks a matching projectile and one fewer carried');
+  } finally { bot.removeListener('entitySpawn', onSpawn); bot.deactivateItem(); }
+}
+module.exports = { throwAt, THROWN, THROWABLE, ARROW, arrowPosition, bowSolution, clearShot, aimAtEntity, shootBow, sentAimMatches };

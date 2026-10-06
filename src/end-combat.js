@@ -6,7 +6,7 @@ const { countOf, surveyRoute } = require('./skills');
 const { dryStanding } = require('./mining-access');
 const { safeFromHostiles, hostileEntities } = require('./danger');
 const { checkAir, maintainVitals, chooseFood } = require('./vitals');
-const { aimAtEntity, shootBow } = require('./projectiles');
+const { aimAtEntity, shootBow, throwAt, THROWN, THROWABLE } = require('./projectiles');
 const { decide } = require('./decisions');
 
 // The dragon_fight question lives in decisions/combat.js (no fallback:
@@ -445,6 +445,26 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
         }
       } finally { bot._client.removeListener('explosion', observeExplosion); }
     };
+    const throwCrystal = async target => {
+      check();
+      let explosion = false;
+      const targetPosition = target.position.clone();
+      const observeExplosion = packet => { if (vector(packet.center).distanceTo(targetPosition) < 3) explosion = true; };
+      bot._client.on('explosion', observeExplosion);
+      try {
+        const result = await throwAt(bot, task, target, { guard: () => { check(); if (!safeHere()) throw new Error('End throwing position became unsafe'); } });
+        result.targetPosition = { ...targetPosition };
+        state.shots.push(result); state.shots = state.shots.slice(-256); save();
+        const until = Date.now() + Math.min(5000, Math.ceil(result.ticks * 50) + 500);
+        while (Date.now() < until && !explosion) { check(); await sleep(50); }
+        result.outcome = explosion && !live(bot, target) ? 'confirmed_crystal_explosion' : live(bot, target) ? 'target_remains' : 'unconfirmed_target_lost';
+        if (result.outcome === 'confirmed_crystal_explosion') {
+          const evidence = { at: Date.now(), id: target.id, position: { ...targetPosition }, source: 'explosion_and_entity_removed', by: result.item };
+          state.destroyedCrystals.push(evidence); bot.emit('end_combat', { crystal: evidence }); progress = true;
+          if (state.knownCrystals?.[crystalKey(target)]) Object.assign(state.knownCrystals[crystalKey(target)], { status: 'destroyed', confirmedAt: evidence.at });
+        }
+      } finally { bot._client.removeListener('explosion', observeExplosion); }
+    };
     const wetSays = () => { const turned = hostileEntities(bot, 64).filter(e => live(bot, e) && e.name === 'enderman' && e.position.distanceTo(bot.entity.position) < 20).sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position));
       return `The bot stands in the water it poured at its feet, ${turned.length} turned enderm${turned.length === 1 ? 'an' : 'en'} within twenty blocks, the nearest ${Math.round(turned[0]?.position.distanceTo(bot.entity.position) ?? 0)} off: water hurts an enderman and it teleports off rather than cross it, and the shot is drawn standing in it.`; };
     // The sword at the perched head, swing after swing at its pace, while
@@ -469,6 +489,18 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     };
     const bow = bot.inventory.items().some(i => i.name === 'bow' && durable(bot.registry, i));
     let noShot = !safe ? `not safe here (${unsafeBecause(bot, bot.entity.position).slice(0, 3).join(', ')})` : bot.health < 12 ? 'health under twelve' : !bow || !countOf(bot, 'arrow') ? 'no bow or arrows' : !dragon ? 'no dragon in view' : perched(bot, dragon) ? 'perched' : null;
+    // A snowball or an egg breaks a crystal as an arrow does (note 1342):
+    // thrown at 1.5 with more drop, it reaches about 28 blocks up. Offered
+    // where no arrow is: 25593 (2026-10-06 01:49Z) chose the End with one
+    // arrow and three eggs, and the arena's drill of that kit (01:53 to
+    // 01:58Z) loosed its one arrow, took no crystal and only watched after.
+    const throwable = THROWABLE.find(n => countOf(bot, n) > 0);
+    if (safe && throwable && !(bow && countOf(bot, 'arrow') > 0)) {
+      const left = THROWABLE.reduce((n, k) => n + countOf(bot, k), 0);
+      for (const target of crystals) if (!repeatedCrystalMiss(state, target, bot.entity.position) && aimAtEntity(bot, target, new Vec3(0, 0, 0), bot.entity.position, THROWN)) tree[`throw_${target.id}`] = {
+        description: { action: `Throw a ${throwable.replaceAll('_', ' ')} at an observed healing crystal along a clear line: any projectile breaks one, removing a source of the dragon's healing`, position: { ...target.position }, thrownLeft: left, crystalsInView: crystals.length }, run: () => throwCrystal(target),
+      };
+    }
     if (safe && bot.health >= 12 && bow && countOf(bot, 'arrow') > 0) {
       for (const target of crystals) if (!repeatedCrystalMiss(state, target, bot.entity.position) && aimAtEntity(bot, target)) tree[`crystal_${target.id}`] = {
         description: { action: 'Destroy an observed healing crystal with a clear bow trajectory, removing a source of dragon health regeneration', position: { ...target.position }, arrowsLeft: countOf(bot, 'arrow'), crystalsInView: crystals.length }, run: () => shoot(target),

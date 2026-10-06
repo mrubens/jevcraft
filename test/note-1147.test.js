@@ -18,8 +18,8 @@ test('the End\'s kit is Jev\'s: with 40 arrows and two beds, going now is offere
   const asked = [], calls = [];
   const actions = { acquireStep: async (b, t, name, count) => calls.push({ name, count }) };
   assert.equal(await prepareEndSupplies(bot, task, goal, () => {}, actions, jev(['enter_now'], asked)), true);
-  assert.deepEqual(Object.keys(asked[0]).filter(k => k !== 'none_good').sort(), ['enter_now', 'top_up_arrows', 'top_up_beds']);
-  assert.match(asked[0].enter_now, /Go to the End with what is carried now: a bow, arrows 40 of 64, blocks 64 of 64, an iron pickaxe or better, water 2 of 2, beds 2 of 4, food \d+ of 64, health 20 of 18; health 20\. Short of what the code would take: arrows, beds\./);
+  assert.deepEqual(Object.keys(asked[0]).filter(k => k !== 'none_good').sort(), ['enter_now', 'top_up_arrows', 'top_up_beds', 'top_up_snowballs']);
+  assert.match(asked[0].enter_now, /Go to the End with what is carried now: a bow, arrows 40 of 64, snowballs 0 of 32, blocks 64 of 64, an iron pickaxe or better, water 2 of 2, beds 2 of 4, food \d+ of 64, health 20 of 18; health 20\. Short of what the code would take: arrows, snowballs, beds\./);
   assert.match(asked[0].enter_now, /by the bow, on a fresh End, 143 arrows loosed in 25 minutes took the ten crystals and the dragon's whole 200 health; by the sword, with every crystal already down and 16 arrows carried, the dragon's last 146 went in 13 minutes, struck at its head each time it perched on the fountain; the bot alive both times\. The crystals are the arrows' work/);
   assert.match(asked[0].enter_now, /no way back out of the End but the dragon's death or the bot's own/);
   assert.match(asked[0].enter_now, /With fewer arrows, on a fresh End: 48 were enough, the ten crystals down and the dragon dead in 10 minutes, most of its health taken by the sword at its perches, 2 arrows left and the bot never under full health for long; 32 took 7 of the ten crystals before they were gone, and 21 took 3, the dragon healed to 187 of 200 and the bot dead by the fountain 8 minutes in\./);

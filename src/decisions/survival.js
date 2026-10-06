@@ -314,12 +314,12 @@ define({
 // The kit for the End, before its portal (note 1147).
 define({
   id: 'end_kit', area: 'strategy', parent: 'rung_progress', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
-  question: 'Go to the End with the kit carried now, or first top up one named item of it (a bow, arrows, cobblestone, an iron pickaxe, water buckets, beds, an enchantment, food, health)?',
+  question: 'Go to the End with the kit carried now, or first top up one named item of it (a bow, arrows, snowballs, cobblestone, an iron pickaxe, water buckets, beds, an enchantment, food, health)?',
   trigger: 'On the way to the End portal, the eyes in hand and the portal found, in Survival, with an item of the End\'s kit short of what the code would take; asked again when the item chosen is topped up (arrows thirty-two at a time) or after a quarter hour on it, and going now holds while the kit is as it was.',
   source: 'src/end-supplies.js (prepareEndSupplies, kitItems, rehearsedSays)',
   options: [
     { key: 'enter_now', label: 'go to the End with what is carried', when: 'always; said with each item of the kit, what is short, what the rehearsed fight took in arrows and minutes, and that there is no way back but the dragon\'s death or the bot\'s own', level: 'root' },
-    { pattern: 'top_up_(bow|arrows|blocks|pickaxe|water|beds|enchant|food|health)', names: 'the kit item', label: 'top up this item of the kit first', when: 'the item is short of what the code would take; said with what it is for in the End and how it is got here (arrows only from skeletons, none to two each; beds from sheared wool; water for a landing and against endermen)', level: 'root' },
+    { pattern: 'top_up_(bow|arrows|snowballs|blocks|pickaxe|water|beds|enchant|food|health)', names: 'the kit item', label: 'top up this item of the kit first', when: 'the item is short of what the code would take; said with what it is for in the End and how it is got here (arrows only from skeletons, none to two each; beds from sheared wool; water for a landing and against endermen)', level: 'root' },
   ],
   instructions: { task: 'The bot is about to go to the End to fight the dragon. Choose whether to go with what it carries now or to top up one item of its kit first.', guidance: 'Every option says what the item is for and how it is got. The amounts the code would take are a rule of thumb, not a requirement. Going is one way: there is no coming back for what was left behind.' },
 });

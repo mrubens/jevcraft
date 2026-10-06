@@ -10,7 +10,7 @@ const bot = (worn, items = []) => ({ inventory: { slots: Object.assign([], Objec
 test('nothing worn, a stone sword: the hits bare, with the pieces offered, and in full iron', () => {
   const says = endFightGearSays(bot([], ['stone_sword']), ['iron_chestplate']);
   assert.match(says, /Worn now, nothing: 0 armour points: the head 10, the wing 5, an enderman 7; with iron chestplate too, 6 armour points: the head 9\.5, the wing 4\.3, an enderman 6\.3; in full iron, 15 armour points: the head 6, the wing 2\.5, an enderman 3\.8\./);
-  assert.match(says, /the sword carried is stone sword\.$/);
+  assert.match(says, /the sword carried is stone sword\. The arena.s drills of 2026-10-06 on a fresh End with nothing worn/);
   assert.match(endFightGearSays(bot(['iron_helmet']), []), /Worn now, iron helmet: 2 armour points[^;]*; in full iron/);
 });
 

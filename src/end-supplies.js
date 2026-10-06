@@ -66,6 +66,13 @@ function kitItems(bot, goal, actions = {}, now = Date.now()) {
   const arrows = countOf(bot, 'arrow'), step = Math.min(WANTS.arrow, arrows + ARROW_STEP);
   out.push({ key: 'arrows', item: 'arrow', carried: arrows, wants: WANTS.arrow, short: arrows < WANTS.arrow, target: step,
     says: `Get more arrows first: ${arrows} carried, the code would take ${WANTS.arrow}. ${rehearsedSays()} Here arrows come only from skeletons, none to two each, at night or in caves (the bot never hurts chickens for feathers): chosen, it hunts skeletons until ${step} are carried or a quarter hour has gone, and this is asked again.` });
+  // Snowballs for the crystals where the arrows are few (note 1342): any
+  // projectile breaks one. The arena's drill of 2026-10-06 (01:59 to 02:03Z,
+  // a fresh End, no armour, a stone sword, one arrow and 48 snowballs) threw
+  // 7 and took 2 crystals 24 and 27 blocks over its feet.
+  const snow = countOf(bot, 'snowball'), SNOW = 32;
+  out.push({ key: 'snowballs', item: 'snowball', carried: snow, wants: SNOW, short: snow < SNOW && arrows < REHEARSED.enough.arrows, target: Math.min(SNOW, snow + 16),
+    says: `Dig snowballs up to ${SNOW} first (${snow} carried): one is dug from each snow layer with a shovel, on the snowy plains, taiga and slopes, sixteen to a stack. A thrown snowball or egg breaks an end crystal as an arrow does, thrown at half an arrow's speed: it reaches about 28 blocks up, so a crystal on one of the taller pillars is thrown at from a pillar of blocks part way up. In the arena's drill of 2026-10-06 (a fresh End, no armour, a stone sword, one arrow and 48 snowballs), 7 thrown took 2 crystals 24 and 27 blocks over the bot's feet.` });
   const blocks = countOf(bot, 'cobblestone');
   out.push({ key: 'blocks', item: 'cobblestone', carried: blocks, wants: WANTS.cobblestone, short: blocks < WANTS.cobblestone, target: WANTS.cobblestone,
     says: `Take cobblestone up to ${WANTS.cobblestone} first (${blocks} carried): the blocks laid in the End for a way off the entry platform, a pocket from endermen and a pillar's foot.` });
