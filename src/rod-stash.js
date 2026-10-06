@@ -59,7 +59,12 @@ const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 // 1365): 25598's five pearls lay 30 hours in a chest whose lid would not
 // open, the bot ninety blocks from it and one pearl short.
 const UNREACHABLE_MS = 6 * 3600000;
-const stashes = goal => (goal?.rodStashes || []).filter(s => !s.lostAt && !(s.unreachable && Date.now() - Date.parse(s.unreachable) < UNREACHABLE_MS));
+// A chest with eyes of ender in it is never written off (note 1366): it rests
+// and is tried again. 25598 (2026-10-06 15:07Z) wrote off its own chest of
+// eleven eyes after a walk timed out three blocks from it, banked seven
+// pearls beside it and went back into the Nether for blaze rods.
+const eyesIn = s => (s.contents?.ender_eye || 0) > 0;
+const stashes = goal => (goal?.rodStashes || []).filter(s => !s.lostAt && (eyesIn(s) || !(s.unreachable && Date.now() - Date.parse(s.unreachable) < UNREACHABLE_MS)));
 const withContents = s => KEPT.some(n => (s.contents?.[n] || 0) > 0);
 // What the chests hold in all, by item: counted as held (eye-need.js).
 function stashed(goal) {
@@ -502,7 +507,7 @@ async function collect(bot, task, goal, save, actions = {}) {
     // portal and back for it.
     if (entry.lostAt) bot.chat?.(`The chest at ${key} is gone, and ${listed(entry.contents)} with it.`);
     // A chest stood at whose things would not come out is not written off: it rests, and is tried again.
-    else if (entry.takeFails >= TAKE_TRIES && !/^Still in the chest/.test(String(err.message || ''))) { entry.unreachable = new Date().toISOString(); bot.chat?.(`I can't get back to the chest at ${key}; going on without ${listed(entry.contents)}.`); }
+    else if (entry.takeFails >= TAKE_TRIES && !eyesIn(entry) && !/^Still in the chest/.test(String(err.message || ''))) { entry.unreachable = new Date().toISOString(); bot.chat?.(`I can't get back to the chest at ${key}; going on without ${listed(entry.contents)}.`); }
     else setAside(goal, 'rod_stash_take', key, err, TAKE_REST_MS);
     save?.();
     return false;
