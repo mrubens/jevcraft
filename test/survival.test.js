@@ -5845,7 +5845,7 @@ test('a held stance no longer on offer scouts the run before it asks, as a new q
   survival.state.stance = { choice: 'creeper_dance', ids: [9], at: Date.now(), health: 16 };
   await survival.stanceStep(new Task('x'), {}, () => {}, [{ entity: { id: 9, name: 'creeper' }, distance: 7.1 }], false);
   assert.equal(scouted.length, 1, 'the run was looked for before the question');
-  assert.equal(trees[0].retreat.description, 'scouted');
+  assert.match(trees[0].retreat.description, /^scouted/);
 });
 
 // mid-231-r (note 538): a shaft pocket dug on a snowy slope at dusk, 0.7

@@ -6629,6 +6629,13 @@ class Survival {
           const says = { pillar: 'lived 3 of 3, both killed from the top, no damage taken', run_from: 'died 3 of 3, within about 12 seconds', seal: 'chosen after a run, died with it', fight: 'chosen from the pillar\'s top, lived' };
           for (const [k, w] of Object.entries(says)) if (options[k] && typeof options[k].description === 'string') options[k].description += ` In the arena's drill of this (2026-10-05: no armour, a stone sword, 6 health, a zombie 4 blocks off and a skeleton 10, six runs): this way ${w}.`;
         }
+        // Retreat with no armour on, across the arena's drills of the day (note
+        // 1358), said where no drill of the scene itself is: forced, it died 16
+        // of 18 (two zombies 6 of 6, a lone skeleton 6 of 6, a lone zombie 4 of
+        // 6); the stances chosen as priced in those scenes lived 17 of 18.
+        if (bare && options.retreat && typeof options.retreat.description === 'string' && !/In the arena's drill of this/.test(options.retreat.description)) {
+          options.retreat.description += " In the arena's drills of 2026-10-06 with no armour on (two zombies, a lone skeleton, a lone zombie), the retreat forced died 16 of 18 times; the stances chosen as priced there lived 17 of 18.";
+        }
       }
       if ((bot.health ?? 20) < 10) for (const [k, o] of Object.entries(options)) {
         const r = LOW_STANCE_RECORD[k];
