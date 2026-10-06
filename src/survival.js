@@ -6583,6 +6583,16 @@ class Survival {
         // most 4 damage. 25585 (2026-10-05 23:46 to 23:47Z) retreated from
         // one twenty times and died to it.
         const near16 = danger.filter(t => t.distance <= 16);
+        // Two zombies or more within 8, nothing that shoots (note 1348): the
+        // drill bare_zombies, a stone sword, 10 health, a zombie four off on
+        // each side: pillar chosen 6 of 6, lived 5; retreat forced, 6 of 6 died. Live, 2026-10-06 03:40 to
+        // 04:45Z, 25585 died to such pairs three times answering retreat,
+        // pillar and retreat.
+        const biters8 = near16.filter(t => t.distance <= 8 && /^(zombie|husk|zombie_villager|drowned)$/.test(t.entity?.name || ''));
+        if (bare && biters8.length >= 2 && !near16.some(t => /^(skeleton|stray|bogged|pillager)$/.test(t.entity?.name || ''))) {
+          const said = { pillar: 'chosen 6 of 6, lived 5', retreat: 'taken 6 times, died 6' };
+          for (const [k, w] of Object.entries(said)) if (options[k] && typeof options[k].description === 'string') options[k].description += ` In the arena's drill of this (2026-10-06: no armour, a stone sword, 10 health, a zombie four blocks off on each side, six runs): this way ${w}.`;
+        }
         // Two skeletons or more, nothing that bites near (note 1336): the
         // drill bare_skeletons, a stone sword, 8 health, two skeletons nine
         // and eight off from two sides: dig down chosen 8 of 8, died 8; the

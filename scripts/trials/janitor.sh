@@ -21,6 +21,13 @@ if [ "$free" -lt 12 ]; then
   find .clean-run*/recordings -type f -mmin +120 -delete 2>/dev/null
   echo "low disk: recordings older than 2h removed"
 fi
+# Checkpoint rings of worlds no server runs, past twelve hours (note 1348):
+# a ring is for starting a running trial's moment again; 600 ended ones held
+# 15 GB on 2026-10-06.
+running=$(for d in .clean-run .clean-run-*; do sed -n 's/^level-name=//p' "$d/server.properties" 2>/dev/null; done)
+for w in $(find .trial-checkpoints -maxdepth 1 -mindepth 1 -type d -mmin +720 -exec basename {} \; 2>/dev/null | grep -v '^deaths$'); do
+  echo "$running" | grep -qx "$w" || rm -rf ".trial-checkpoints/$w"
+done
 # Each trial server records about 8 MB a minute (2026-10-06): two hours of
 # recordings is some 12 GB, so under 6 GB free only the last hour is kept.
 if [ "$free" -lt 6 ]; then
