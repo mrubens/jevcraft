@@ -37,8 +37,27 @@ bot.once('spawn', async () => {
       await command(`execute in minecraft:overworld run fill ${X + 2} ${Y - 1} ${Z} ${X + 6} ${Y - 1} ${Z} cobblestone`);
       await command(`execute in minecraft:overworld run fill ${X + 6} ${Y - 1} ${Z - 1} ${X + 6} ${Y - 1} ${Z - 6} cobblestone`);
       await command(`execute in minecraft:overworld run fill ${X + 5} ${Y - 1} ${Z - 7} ${X + 7} ${Y - 1} ${Z - 7} cobblestone`);
+      // SPAN_PORTAL=1: 25591's own approach, rebuilt (2026-10-06 05:15Z): a span
+      // down x 29 from z 49 to 51, cells at (28, 52) and (29, 52), and the portal's
+      // frame on z 53 (obsidian x 27 to 30, its sheet x 28 and 29), walked to the
+      // portal cell within one, as enterPortal walks.
+      if (process.env.SPAN_PORTAL) {
+        await command(`execute in minecraft:overworld run fill ${X - 3} ${Y - 2} ${Z - 10} ${X + 6} ${Y + 5} ${Z + 6} air`);
+        const bx = X - 29, bz = Z - 49; // the map's (29, 53, 49) at the drill's (X, Y-1, Z)
+        const P = (x, y, z) => `${x + bx} ${y - 53 + Y - 1} ${z + bz}`;
+        await command(`execute in minecraft:overworld run fill ${P(29, 53, 46)} ${P(29, 53, 51)} cobblestone`);
+        await command(`execute in minecraft:overworld run fill ${P(28, 53, 52)} ${P(29, 53, 52)} cobblestone`);
+        await command(`execute in minecraft:overworld run fill ${P(27, 53, 53)} ${P(30, 53, 53)} obsidian`);
+        await command(`execute in minecraft:overworld run fill ${P(27, 54, 53)} ${P(27, 56, 53)} obsidian`);
+        await command(`execute in minecraft:overworld run fill ${P(30, 54, 53)} ${P(30, 56, 53)} obsidian`);
+        await command(`execute in minecraft:overworld run fill ${P(27, 57, 53)} ${P(30, 57, 53)} obsidian`);
+        await command(`execute in minecraft:overworld run fill ${P(28, 54, 53)} ${P(29, 56, 53)} nether_portal[axis=x]`);
+        process.env.SPAN_GOAL = P(28, 54, 53);
+        process.env.SPAN_START = P(29, 54, 46);
+      }
       await command(`effect give ${username} minecraft:resistance 5 255 true`);
-      await command(`execute in minecraft:overworld run tp ${username} ${X + 0.5} ${Y} ${Z + 0.5} -90 0`);
+      const start = (process.env.SPAN_START || `${X} ${Y} ${Z}`).split(' ').map(Number);
+      await command(`execute in minecraft:overworld run tp ${username} ${start[0] + 0.5} ${start[1]} ${start[2] + 0.5} 0 0`);
       await sleep(1500);
       await bot.waitForChunksToLoad();
       const task = new Task('span drill');
@@ -46,11 +65,12 @@ bot.once('spawn', async () => {
       const watch = setInterval(() => { lowest = Math.min(lowest, bot.entity.position.y); if (bot.entity.position.y < Y - 4) { fell = true; task.cancel(); } }, 50);
       const started = Date.now();
       let error = null;
-      try { await navigate(bot, task, new goals.GoalNear(X + 6, Y, Z - 7, 1), { timeoutMs: 20000 }); }
+      const g = (process.env.SPAN_GOAL || `${X + 6} ${Y} ${Z - 7}`).split(' ').map(Number);
+      try { await navigate(bot, task, new goals.GoalNear(g[0], g[1], g[2], 1), { timeoutMs: 20000 }); }
       catch (err) { error = String(err.message || err).slice(0, 120); }
       clearInterval(watch);
       const p = bot.entity.position;
-      const r = { run: n, fell, arrived: !fell && Math.hypot(p.x - (X + 6.5), p.z - (Z - 6.5)) <= 1.8, seconds: Math.round((Date.now() - started) / 100) / 10, end: [p.x, p.y, p.z].map(v => Math.round(v * 10) / 10), error };
+      const r = { run: n, fell, arrived: !fell && Math.hypot(p.x - (Number((process.env.SPAN_GOAL || `${X + 6} ${Y} ${Z - 7}`).split(' ')[0]) + 0.5), p.z - (Number((process.env.SPAN_GOAL || `${X + 6} ${Y} ${Z - 7}`).split(' ')[2]) + 0.5)) <= 1.8, seconds: Math.round((Date.now() - started) / 100) / 10, end: [p.x, p.y, p.z].map(v => Math.round(v * 10) / 10), error };
       out.push(r); console.log(JSON.stringify(r));
       if (fell) { await command(`effect give ${username} minecraft:slow_falling 30 0 true`); await sleep(500); }
     }

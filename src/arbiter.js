@@ -660,6 +660,10 @@ async function arbitrate(bot, claims, ctx = {}) {
     // What choosing the work over survival's answer does (note 840), said on it.
     if (tree.work && typeof tree.work.description?.does === 'string' && live.some(c => c.layer === 'survival' && c.action === 'escape_threat') && mobsNow.length)
       tree.work.description.does += ` Chosen over survival's answer to the mobs about, they are left be for ${KEEP_ON_MS / 1000} seconds as the encounter's keep_working leaves them: the work's own threat check passes them over unless one comes within three blocks, a creeper within its walk to its fuse, or a hit lands.${pack || ''}`;
+    // The End portal near with its eyes carried, said on the work (note 1353):
+    // 25593 (2026-10-06 03:40Z) gave its turns to a night pocket six blocks from
+    // its frames with all twelve eyes, the work's fill unsaid here.
+    if (tree.work && typeof tree.work.description?.does === 'string') tree.work.description.does += require('./end-portal').endPortalNearSays(bot, ctx.goal);
     let setAside = false;
     const askedAt = Date.now();
     // The alerts this question is out about (watchOnce leaves them be).
