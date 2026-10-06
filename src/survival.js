@@ -9806,7 +9806,7 @@ class Survival {
       if (ore?.lit) return true;
       if (ore?.seal) {
         this.report(goal, save, { action: 'night_mine_stop', mined: mine.mined, health: bot.health, food: bot.food });
-        delete this.state.nightMine; save();
+        delete this.state.nightMine; this.state.nightMineStopped = { at: Date.now() }; save();
         await this.sealHere(task, goal, save, []);
         return true;
       }
@@ -10563,7 +10563,7 @@ class Survival {
       const below = underRock(bot, refuge);
       const nightCost = night ? ` Until dawn is about ${minutesToDawn(bot)} real minutes of the run${waiting ? `, with ${waiting} waiting` : ''}.` : '';
       if (night && !watcher && !refused(this, 'survival:night_mine') && this.canNightMine(goal))
-        options.night_mine = { description: `Mine from the pocket through the night: toward ore in the rock, or down and along a branch. Rock around a tunnel is shelter too. ${rockHolds(bot, feetCell(bot), attemptsFor(this))}${nightCost}${nightMinePickSays(bot)}${outside}`, run: () => this.nightMine(task, goal, save) };
+        options.night_mine = { description: `Mine from the pocket through the night: toward ore in the rock, or down and along a branch. Rock around a tunnel is shelter too. ${rockHolds(bot, feetCell(bot), attemptsFor(this))}${nightCost}${nightMinePickSays(bot)}${outside}${(() => { const st = this.state.nightMineStopped; if (!st || Date.now() - st.at > 10 * 60000) return ''; return ` The night mine was stopped ${Math.max(1, Math.round((Date.now() - st.at) / 1000))} seconds ago, chosen to seal in and wait for dawn (note 1384).`; })()}`, run: () => this.nightMine(task, goal, save) };
       // Work that needs no walking: the ladder's next item made from what is
       // carried. Trial 30 sat out its second night in a pocket with 29 raw
       // iron, coal and a furnace in its pack, the armour the one thing left.

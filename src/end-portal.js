@@ -46,7 +46,11 @@ const NEAR_FLAT = 5, NEAR_DOWN = 2;
 async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000, entryMs = 12000, fillOnly = false } = {}) {
   const check = () => {
     task.check(); checkAir(bot); checkThreats(bot);
-    if (bot.health < 12 || bot.isAlive === false) throw blocked('End portal work interrupted by low health');
+    // No health floor (note 1384): the way to the portal was Jev's choice,
+    // said with the health; 25598 (2026-10-06 20:00:49Z) chose to take its
+    // eyes to the frame at 10 health, hunger 16 and nothing to eat, health
+    // that could not come back, and this stopped it at every step.
+    if (bot.isAlive === false || !(bot.health > 0)) throw blocked('End portal work interrupted: the bot is dead');
   };
   check();
   if (bot.game.gameMode !== 'survival') throw blocked('End portal entry requires Survival mode');
