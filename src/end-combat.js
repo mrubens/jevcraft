@@ -464,7 +464,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     state.observedCrystals = crystals.map(e => ({ id: e.id, position: { ...e.position } }));
     state.dragon = dragon && { id: dragon.id, position: { ...dragon.position }, health: beforeDragon, phase: metadata(bot, dragon, 'phase') };
     const tree = {}, safe = safeHere(), wet = safe && !safeEndPoint(bot, bot.entity.position);
-    const guardShot = () => { check(); if (!safeHere() || bot.health < 12) throw new Error('End firing position became unsafe'); };
+    const guardShot = () => { check(); if (!safeHere()) throw new Error('End firing position became unsafe'); };
     const shoot = async target => {
       guardShot();
       if (target === dragon && perched(bot, dragon)) throw new Error('The dragon perched before the shot');
@@ -538,7 +538,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       if (!swings) throw new Error('Perched dragon head moved out of reach');
     };
     const bow = bot.inventory.items().some(i => i.name === 'bow' && durable(bot.registry, i));
-    let noShot = !safe ? `not safe here (${unsafeBecause(bot, bot.entity.position).slice(0, 3).join(', ')})` : bot.health < 12 ? 'health under twelve' : !bow || !countOf(bot, 'arrow') ? 'no bow or arrows' : !dragon ? 'no dragon in view' : perched(bot, dragon) ? 'perched' : null;
+    let noShot = !safe ? `not safe here (${unsafeBecause(bot, bot.entity.position).slice(0, 3).join(', ')})` : !bow || !countOf(bot, 'arrow') ? 'no bow or arrows' : !dragon ? 'no dragon in view' : perched(bot, dragon) ? 'perched' : null;
     // A snowball or an egg breaks a crystal as an arrow does (note 1342):
     // thrown at 1.5 with more drop, it reaches about 28 blocks up. Offered
     // where no arrow is: 25593 (2026-10-06 01:49Z) chose the End with one
@@ -620,7 +620,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
           } };
       }
     }
-    if (safe && bot.health >= 12 && bow && countOf(bot, 'arrow') > 0) {
+    if (safe && bow && countOf(bot, 'arrow') > 0) {
       for (const target of crystals) if (!repeatedCrystalMiss(state, target, bot.entity.position) && aimAtEntity(bot, target)) tree[`crystal_${target.id}`] = {
         description: { action: 'Destroy an observed healing crystal with a clear bow trajectory, removing a source of dragon health regeneration', position: { ...target.position }, arrowsLeft: countOf(bot, 'arrow'), crystalsInView: crystals.length }, run: () => shoot(target),
       };
