@@ -402,7 +402,13 @@ function collectStage(bot, goal, now = Date.now(), { resting = false } = {}) {
 async function collect(bot, task, goal, save, actions = {}) {
   const stage = collectStage(bot, goal) || collectStage(bot, goal, Date.now(), { resting: true });
   if (!stage) return false;
-  const entry = stashes(goal).find(c => c.position.x === stage.at.x && c.position.y === stage.at.y && c.position.z === stage.at.z);
+  // Two entries for one chest (an old one emptied, a new one filled) are
+  // one chest: the entry with something in it is the one taken from (note
+  // 1361). 25594 (2026-10-06 07:10Z on) stood at its Nether chest holding two
+  // pearls, the empty entry matched first, nothing to take, the step
+  // returned, and the pass ran five times a second.
+  const same = c => c.position.x === stage.at.x && c.position.y === stage.at.y && c.position.z === stage.at.z;
+  const entry = stashes(goal).find(c => same(c) && withContents(c)) || stashes(goal).find(same);
   const key = at(entry.position), cell = V(entry.position);
   goal.step = { action: 'collect_rod_stash', at: P(cell), distance: stage.distance, items: { ...entry.contents } }; save?.();
   // A long walk for it in the Nether with pearls or eyes in the pack: asked
