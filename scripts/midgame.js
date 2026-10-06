@@ -128,6 +128,18 @@ function progressAt(identity = IDENTITY) {
     return ats.length ? Math.max(...ats) : null;
   } catch (_) { return null; }
 }
+// Eight or more eyes kept: a trial a few rods or pearls from its twelve
+// (25591, 2026-10-06 21:55Z, eleven eyes in its chests and one rod).
+const EYES_FOREVER = 8;
+function eyesHeld(identity = IDENTITY) {
+  try {
+    const g = JSON.parse(fs.readFileSync(path.join(STATE, `${identity}.json`), 'utf8')), goal = g.goal || g;
+    const chests = (goal.rodStashes || []).filter(c => !c.lostAt);
+    const kept = chests.reduce((n, c) => n + Number(c.contents?.ender_eye || 0), 0);
+    const lit = !!goal.endPortal?.litAt || !!goal.gameProgress?.milestones?.end_portal_lit || !!goal.gameProgress?.milestones?.end_entered;
+    return { kept, lit, forever: lit || kept >= EYES_FOREVER };
+  } catch (_) { return { kept: 0, lit: false, forever: false }; }
+}
 function keptNow(identity = IDENTITY) {
   try {
     const g = JSON.parse(fs.readFileSync(path.join(STATE, `${identity}.json`), 'utf8')), goal = g.goal || g;
@@ -202,7 +214,14 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
   // 2026-10-05), eleven eyes and its stronghold found that afternoon, was
   // two hours from its 48 counted from its start in 2026-10-03.
   const progress = progressAt(identity);
-  const limit = Math.max(endHours ? END_LIMIT_MS : limitFor(holds || kept), progress && progress > from ? progress - from + PAST_PROGRESS_MS : 0);
+  // With eight eyes or more kept in its chests, or its portal lit,
+  // a trial plays on with no hours counted (note 1387): it is the one the
+  // dragon waits on, and a fresh world is days from there. mid-242-dh-
+  // nether-2 (25598, 2026-10-06 21:38Z), twelve eyes in its chest and its
+  // End portal found, was ended at its 52 hours and a new world put on its
+  // port.
+  const eyes = eyesHeld(identity);
+  const limit = eyes.forever ? Infinity : Math.max(endHours ? END_LIMIT_MS : limitFor(holds || kept), progress && progress > from ? progress - from + PAST_PROGRESS_MS : 0);
   let to = Math.min(now, from + limit), a = read(to), spells = a ? spellsOf(a.frames) : [];
   for (let i = 0; a && spells.length && i < 4; i++) {
     const next = Math.min(now, from + limit + overlapMs(spells, from, to));
@@ -438,4 +457,4 @@ async function main() {
 }
 
 if (require.main === module) main().catch(err => { console.error(err.message); process.exit(1); });
-module.exports = { progressAt, limitFor, keptNow, reached, counts, verdict, cutReasons, CUT_MINUTES, MILESTONES };
+module.exports = { eyesHeld, progressAt, limitFor, keptNow, reached, counts, verdict, cutReasons, CUT_MINUTES, MILESTONES };
