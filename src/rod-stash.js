@@ -55,7 +55,11 @@ const empty = b => !!b && b.boundingBox === 'empty' && !/lava|water|fire/.test(b
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
 // The chests known, and what is in those not lost or emptied.
-const stashes = goal => (goal?.rodStashes || []).filter(s => !s.lostAt && !s.unreachable);
+// A chest written off as out of reach is tried again after six hours (note
+// 1365): 25598's five pearls lay 30 hours in a chest whose lid would not
+// open, the bot ninety blocks from it and one pearl short.
+const UNREACHABLE_MS = 6 * 3600000;
+const stashes = goal => (goal?.rodStashes || []).filter(s => !s.lostAt && !(s.unreachable && Date.now() - Date.parse(s.unreachable) < UNREACHABLE_MS));
 const withContents = s => KEPT.some(n => (s.contents?.[n] || 0) > 0);
 // What the chests hold in all, by item: counted as held (eye-need.js).
 function stashed(goal) {
@@ -461,6 +465,15 @@ async function collect(bot, task, goal, save, actions = {}) {
       }
     }
     if (!bot.blockAt(cell)) throw new Error(`The chest at ${key} is not loaded from here`);
+    if (entry.unreachable) { delete entry.unreachable; entry.takeFails = 0; save?.(); }
+    // A lid that will not open: the block over the chest dug out first (note
+    // 1365), as a player does; "That chest did not open. Its lid may be
+    // blocked" was 25598's six tries at its pearls.
+    const over = bot.blockAt(cell.offset(0, 1, 0));
+    if (over && over.boundingBox === 'block' && !/chest|barrel|shulker/.test(over.name)) {
+      try { await require('./work').dig(bot, task, over.position); console.log(`[stash] dug the ${over.name} over the chest at ${key}`); }
+      catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[stash] the ${over.name} over the chest at ${key} would not dig: ${String(err.message || err).slice(0, 100)}`); }
+    }
     const taken = await withStash(bot, task, entry, save, async window => {
       const done = [];
       for (const i of window.containerItems().filter(i => KEPT.includes(i.name))) {
