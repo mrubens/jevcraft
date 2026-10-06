@@ -418,7 +418,19 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     let failed = null;
     try { await move(bot, task, leg, { timeoutMs: LEG_MS, stallMs: 8000, sprint: true, passing: /nether/.test(String(bot.game?.dimension || '')) }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; failed = String(err.message || err).slice(0, 120); }
-    const after = flat(bot.entity.position, spot);
+    let after = flat(bot.entity.position, spot);
+    // A walk that got no nearer, the drops within a leg: dug and bridged
+    // straight at them as the tunnel home goes (bridging.js), the pickaxe and
+    // blocks carried (note 1363). 25592 (2026-10-06 08:56 to 08:58Z), its
+    // twelve eyes 75 blocks off across the Nether, stalled twice on its walk
+    // and left them, their five minutes running.
+    if (after > ARRIVE && before - after < 2 && before <= FAR) {
+      try {
+        const r = await require('./bridging').tunnelStraight(bot, task, spot, { maxSteps: 64, navigate: move, down: true });
+        console.log(`[corpse run] dug and bridged toward the drops: ${r?.arrived ? 'arrived' : `${Math.round(after - flat(bot.entity.position, spot))} blocks nearer`}`);
+      } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[corpse run] the dig toward the drops stopped: ${String(err.message || err).slice(0, 120)}`); }
+      after = flat(bot.entity.position, spot);
+    }
     if (after > ARRIVE) {
       // Whether the things are given up is Jev's (it closed here on a count
       // of three: 25594, 2026-10-04 06:11Z, 800 blocks from twelve eyes of
