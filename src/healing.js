@@ -236,6 +236,25 @@ function withNoHealSays(bot, goal, answers) {
   return answers;
 }
 
+// Deaths by the hunger the bot was at, Overworld bot-hours from the flight
+// record of 2026-10-05 18:00Z to 2026-10-06 18:45Z (note 1374), each death
+// credited to the frame of its last hurt, armour as worn then. Of 257
+// Overworld bot-hours 111 were under hunger eighteen, where health does not
+// come back, and 152 of the 172 deaths were there; at eighteen or more a bot
+// with nothing worn died less often than one in armour under fourteen.
+// Said beside "health does not come back" (which every question has had
+// since note 639), its toll was never: 25589 (2026-10-06 17:42Z) went on at
+// 4 health and hunger 13 for three minutes, mining and then running, and
+// was shot dead by a skeleton.
+const HUNGER_RECORD = Object.freeze({ from: '2026-10-05 18:00Z', to: '2026-10-06 18:45Z',
+  fed: { armoured: 0.12, bare: 0.16, hours: 145.7 }, mid: { armoured: 0.61, bare: 1.37, hours: 82.7 }, low: { armoured: 1.45, bare: 3.13, hours: 28.7 } });
+function hungerRecordSays(bot, hunger) {
+  if (!/overworld/.test(String(bot?.game?.dimension || 'overworld')) || hunger >= 18) return null;
+  const bare = ![5, 6, 7, 8].some(slot => bot.inventory?.slots?.[slot]);
+  const r = HUNGER_RECORD, row = hunger >= 14 ? r.mid : r.low;
+  return `in the Overworld (${r.from} to ${r.to}), deaths a bot-hour at hunger 18 or more ${r.fed.armoured} in armour and ${r.fed.bare} with nothing worn; at 14 to 17, ${r.mid.armoured} and ${r.mid.bare}; under 14, ${r.low.armoured} and ${r.low.bare}. At hunger ${hunger} with ${bare ? 'nothing worn' : 'armour on'}: ${row[bare ? 'bare' : 'armoured']} an hour, against ${r.fed[bare ? 'bare' : 'armoured']} fed to 18`;
+}
+
 // The standing fact: health and hunger, whether health comes back, the food
 // carried and the nearest known, the time to daylight, and what standing
 // still costs. Null where there is nothing to say (no body, Creative).
@@ -264,6 +283,7 @@ function healingSays(bot, goal) {
     health, hunger, healthComesBack: comesBack,
     ...(poisonSays ? { poison: poisonSays } : {}),
     foodCarried: carried.length ? carried.map(f => f.says) : 'nothing to eat',
+    ...(hungerRecordSays(bot, hunger) ? { hungerRecord: hungerRecordSays(bot, hunger) } : {}),
     ...(hunger < 18 && carried.length ? { eatingItAll: `brings hunger to ${eaten}${eaten >= 18 ? ', where health comes back' : ', still under eighteen'}` } : {}),
     nearestFood: (() => { const n = nearestFood(bot, goal); return n.length ? n : 'none known'; })(),
     ...(withoutFoodSays(bot, goal, { health, hunger, points }) || {}),
@@ -272,4 +292,4 @@ function healingSays(bot, goal) {
   };
 }
 
-module.exports = { healingSays, noHealSays, withNoHealSays, HEALTH_SAID, withoutFoodSays, overworldFoodSays, foodCarried, nearestFood, foodSources, daylightSays, MEAT_POINTS, RAW_MEAT_POINTS, preyFailed };
+module.exports = { HUNGER_RECORD, hungerRecordSays, healingSays, noHealSays, withNoHealSays, HEALTH_SAID, withoutFoodSays, overworldFoodSays, foodCarried, nearestFood, foodSources, daylightSays, MEAT_POINTS, RAW_MEAT_POINTS, preyFailed };
