@@ -13,3 +13,13 @@ test('nothing worn, a stone sword: the hits bare, with the pieces offered, and i
   assert.match(says, /the sword carried is stone sword\.$/);
   assert.match(endFightGearSays(bot(['iron_helmet']), []), /Worn now, iron helmet: 2 armour points[^;]*; in full iron/);
 });
+
+test('note 1341: leather pieces for the empty slots, by crafts alone, while the leather lasts', () => {
+  const { leatherPieces } = require('../src/mob-hunt');
+  const registry = require('minecraft-data')('26.1');
+  const items = [{ name: 'leather', count: 16 }, { name: 'crafting_table', count: 1 }].map(i => ({ ...i, type: registry.itemsByName[i.name].id, durabilityUsed: 0 }));
+  const b = { registry, game: { dimension: 'overworld' }, inventory: { slots: [], items: () => items } };
+  assert.deepEqual(leatherPieces(b, ['hand', 'head', 'torso', 'legs', 'feet']).map(p => p.item), ['leather_chestplate', 'leather_leggings']);
+  b.inventory.slots[6] = { name: 'iron_chestplate', count: 1 };
+  assert.deepEqual(leatherPieces(b, ['head', 'legs', 'feet']).map(p => p.item), ['leather_leggings', 'leather_helmet', 'leather_boots']);
+});

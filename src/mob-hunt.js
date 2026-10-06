@@ -255,6 +255,29 @@ function endFightGearSays(bot, offered = []) {
   const sword = ['netherite_sword', 'diamond_sword', 'iron_sword', 'stone_sword', 'golden_sword', 'wooden_sword'].find(n => countOf(bot, n));
   return ` The End is next: the dragon's head strikes for 10 and its wing for 5, an enderman for 7, before armour (Normal). Worn now, ${worn.length ? worn.map(words).join(', ') : 'nothing'}: ${hits(worn)}${offered.some(slotOf) ? `; with ${listed(offered.filter(slotOf).map(words))} too, ${hits(withOffered)}` : ''}; in full iron, ${hits(iron)}. The rehearsals of 2026-10-04 that killed the dragon wore iron armour and struck with a diamond sword; ${sword ? `the sword carried is ${words(sword)}` : 'no sword is carried'}.`;
 }
+// Leather for the armour slots with nothing in them, from the leather
+// carried by crafts alone (note 1341): the chestplate first, then the
+// leggings, helmet and boots while it lasts. 25593 (2026-10-06 01:08Z)
+// carried sixteen leather and a crafting table with nothing worn, and this
+// question offered only iron it could not make; the ladder's leather rung
+// (note 1310) is before the eyes and was not asked.
+const LEATHER = [['torso', 'leather_chestplate', 8], ['legs', 'leather_leggings', 7], ['head', 'leather_helmet', 5], ['feet', 'leather_boots', 4]];
+function leatherPieces(bot, missing) {
+  const slot = { head: 5, torso: 6, legs: 7, feet: 8 };
+  let leather = countOf(bot, 'leather');
+  const out = [];
+  for (const [destination, item, n] of LEATHER) {
+    if (!missing.includes(destination) || bot.inventory?.slots?.[slot[destination]] || countOf(bot, item) || leather < n) continue;
+    out.push({ destination, item }); leather -= n;
+  }
+  if (!out.length) return [];
+  try {
+    const inventory = {};
+    for (const i of bot.inventory.items()) inventory[i.name] = (inventory[i.name] || 0) + i.count;
+    const steps = require('./knowledge').planOutputs(bot.registry, out.map(p => ({ item: p.item, count: 1 })), inventory, { dimension: bot.game?.dimension, equipment: carriedEquipment(bot).map(i => i.name), reserveOutputs: false }).steps;
+    return steps.every(st => st.action === 'craft') ? out : [];
+  } catch (_) { return []; }
+}
 async function kitChoice(bot, task, goal, save, actions, missing, { client, mob, now = Date.now() } = {}) {
   // Held while in the same dimension with no piece newly missing: a piece
   // made is the choice carried out, not a new question.
@@ -271,6 +294,12 @@ async function kitChoice(bot, task, goal, save, actions, missing, { client, mob,
       fight_with_carried: { description: `Go on with what is carried: ${carriedFightSays(bot, mob)} Without ${listed(all)} for now; the pieces are left for half an hour, then offered again.` },
     };
     if (here.length) tree.make_kit_here = { description: `Make ${listed(here.map(p => words(p.item)))} here first${k.hereIron ? `: ${k.hereIron} iron ingots, ${carriedIron} carried` : ''}. It takes: ${k.hereSteps.map(s => `${words(s.action)} ${s.count || 1} ${words(s.item || s.block || s.entity)}`).join(', ')}.${away.length ? ` The rest (${listed(away.map(p => words(p.item)))}) cannot be made in the ${Dimension(dimension(bot))}.` : ''}` };
+    const leather = leatherPieces(bot, missing);
+    if (leather.length) {
+      const ce = require('./combat-estimate'), worn = [5, 6, 7, 8].map(i => bot.inventory?.slots?.[i]?.name).filter(Boolean);
+      const before = ce.armourOf(worn).points, after = ce.armourOf([...worn, ...leather.map(p => p.item)]).points;
+      tree.make_leather_here = { description: `Make ${listed(leather.map(p => words(p.item)))} here first from the ${countOf(bot, 'leather')} leather carried, by crafts alone, and wear them: armour points ${before} to ${after} (iron that comes later replaces them).${goal.preparingEnd ? endFightGearSays(bot, leather.map(p => p.item)) : ''}` };
+    }
     // Golden boots among the pieces in the Nether: what they are for, and
     // what going without has been (strategy.js RUNG_WHY and WITHOUT, the
     // record of note 773), with the piglins about now (note 900). On
@@ -340,6 +369,20 @@ async function kitChoice(bot, task, goal, save, actions, missing, { client, mob,
     goal.errand = { dimension: 'overworld', items: away.map(p => ({ item: p.item, count: countOf(bot, p.item) + 1 })), for: 'the combat kit', at: now };
     goal.step = { action: 'return_for_kit', pieces: away.map(p => p.item) }; save();
     await actions.returnOverworld(bot, task, goal, save);
+    return false;
+  }
+  if (pick === 'make_leather_here') {
+    const next = leatherPieces(bot, missing)[0];
+    // All made and worn: the rest is gone without, as chosen.
+    if (!next) {
+      for (const destination of missing) setAside(goal, 'rung', PIECE_RUNG[destination][0], 'Jev chose leather and to fight with what is carried', 1800000);
+      delete goal.combatKit; save();
+      return true;
+    }
+    goal.step = { action: 'prepare_combat_equipment', destination: next.destination, item: next.item }; save();
+    await actions.acquireStep(bot, task, next.item, countOf(bot, next.item) + 1, goal, save);
+    const made = bot.inventory.items().find(i => i.name === next.item);
+    if (made) { try { await bot.equip(made, next.destination); } catch (err) { task.check(); console.log(`[combat_kit] ${next.item} not worn: ${String(err.message || err).slice(0, 120)}`); } }
     return false;
   }
   const piece = here[0];
@@ -5222,4 +5265,4 @@ function claim(bot, goal = {}) {
     ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}), ...(cage ? { cage: true } : {}) } };
 }
 
-module.exports = { endFightGearSays, swordFromPack, huntLeft, slotMissSays, pearlsNow, roomForDrop, rodBlazesSays, goldForPiglins, openWallOption, keepClaim, noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };
+module.exports = { leatherPieces, endFightGearSays, swordFromPack, huntLeft, slotMissSays, pearlsNow, roomForDrop, rodBlazesSays, goldForPiglins, openWallOption, keepClaim, noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };

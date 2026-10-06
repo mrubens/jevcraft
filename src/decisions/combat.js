@@ -81,6 +81,7 @@ define({
   options: [
     { key: 'fight_with_carried', label: 'go on with what is carried', when: 'always; said with the weapon and armour carried and one fight\'s estimate against the mob hunted', level: 'root' },
     { key: 'make_kit_here', label: 'make the pieces that can be made here first', when: 'a missing piece can be made from sources in this dimension; said with the iron it takes and the steps', level: 'root' },
+    { key: 'make_leather_here', label: 'make leather pieces for the empty armour slots first', when: 'an armour slot empty and the leather carried makes a piece by crafts alone (note 1341); said with the armour points before and after, and the dragon\'s hits when the End is next', level: 'root' },
     { key: 'return_for_kit', label: 'go back to the Overworld for the pieces', when: 'outside the Overworld, a missing piece made only from Overworld ore; said with the iron, the ore and the trip to the portal', level: 'root' },
   ],
   instructions: {
