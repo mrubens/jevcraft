@@ -160,3 +160,12 @@ test('bow release rechecks the moving target and clear trajectory after the turn
     }
   }
 });
+
+test('note 1343: a throw through iron bars is not a clear line; an arrow\'s is judged as before', () => {
+  const { clearShot, bowSolution, THROWN } = require('../src/projectiles');
+  const { Vec3 } = require('vec3');
+  const origin = new Vec3(0.5, 65.5, 0.5), target = new Vec3(8.5, 70, 0.5);
+  const bars = { blockAt: p => ({ name: Math.floor(p.x) === 6 ? 'iron_bars' : 'air' }), world: { raycast: () => null }, entities: {}, entity: {}, registry: { entitiesByName: {} } };
+  assert.equal(clearShot(bars, origin, bowSolution(origin, target, undefined, THROWN), {}), false);
+  assert.equal(clearShot(bars, origin, bowSolution(origin, target), {}), true);
+});

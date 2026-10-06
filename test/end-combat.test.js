@@ -150,7 +150,9 @@ test('two confirmed missed crystal shots require a different firing position bef
   assert.equal(shots, 3); assert.equal(goal.endCombat.destroyedCrystals.length, 0);
 });
 
-test('repeated observation yields to an executable crystal revisit and renews only after actual movement', async () => {
+// Note 1343: watching stays offered beside the revisit after five idle
+// watches (said with pausesWithoutProgress); Jev chooses the move.
+test('repeated observation stays a choice beside an executable crystal revisit, which renews only after actual movement', async () => {
   const { bot, goal, task } = fixture();
   entity(bot, 20, 'ender_dragon', new Vec3(50, 65, 0), { phase: 6, health: 200 });
   goal.endCombat = { steps: 0, shots: [], destroyedCrystals: [], visits: {}, idleObservations: 4,
@@ -163,13 +165,14 @@ test('repeated observation yields to an executable crystal revisit and renews on
     assert.match(options['move_1,0'].action, /previously observed crystal/);
     assert(options['move_1,0'].targetDistance < options['move_1,0'].currentTargetDistance);
     assert.equal(options['move_1,0'].clearCrystalShot, undefined, 'Unknown is not a confirmed blocked shot');
-    return { answers: { branch_0: { choice: 'observe' } } };
+    if (choices > 1) assert.equal(options.observe.pausesWithoutProgress, 5);
+    return { answers: { branch_0: { choice: choices === 1 ? 'observe' : 'move_1,0' } } };
   } };
   const actions = { navigate: async () => { moves++; if (moves > 1) bot.entity.position = new Vec3(8.5, 64, .5); } };
   await fightEndStep(bot, task, goal, () => {}, actions, client);
   assert.equal(goal.endCombat.idleObservations, 5);
   await fightEndStep(bot, task, goal, () => {}, actions, client);
-  assert.equal(moves, 1); assert.equal(choices, 1);
+  assert.equal(moves, 1); assert.equal(choices, 2);
   assert.equal(goal.endCombat.idleObservations, 5, 'A no-op route must not renew waiting');
   await fightEndStep(bot, task, goal, () => {}, actions, client);
   assert.equal(moves, 2); assert.equal(goal.endCombat.idleObservations, 0);

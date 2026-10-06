@@ -1554,6 +1554,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `crystal_\d+` (pattern: names the crystal, by its entity id) | root | shoot this healing crystal | in view with a solved arrow path and not missed repeatedly |
 | `throw_\d+` (pattern: names the crystal, by its entity id) | root | throw a snowball or egg at this healing crystal | no bow with arrows, a snowball or egg carried, the crystal in view with a solved throw (note 1342) |
+| `pillar_throw_\d+` (pattern: names the crystal, by its entity id) | root | pillar up and throw at this healing crystal from the top | throwing, the crystal more than about 22 blocks up and within 14 out, and the blocks for the lift carried (note 1343); said with the fall a knock off the top would be |
 | `shoot_dragon` | root | shoot the flying dragon | a bow, arrows and a clear trajectory |
 | `bed_bomb` | root | blow a bed beside the perched dragon's head | the dragon perched, a bed carried, health fourteen or more, and a trench line within twelve blocks that a walk reaches |
 | `under_head` | root | run to the ground under the perched dragon's head and strike it with the sword for as long as it sits | the dragon perched, its head within forty blocks and out of the sword's reach, standable ground under it, a sword carried; said with how far the head is, how high over its ground, the void's edge and the endermen by the way |

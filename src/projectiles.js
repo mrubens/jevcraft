@@ -50,7 +50,14 @@ function clearShot(bot, origin, solution, target) {
   let previous = origin;
   for (let ticks = .5; ticks < solution.ticks + .5; ticks += .5) {
     const point = arrowPosition(origin, solution.velocity, Math.min(ticks, solution.ticks), solution.physics || ARROW);
-    if (!bot.blockAt(point)) return false;
+    const cell = bot.blockAt(point);
+    if (!cell) return false;
+    // A crystal's cage of iron bars stops a throw (note 1343): the arena's
+    // drill of 2026-10-06 (02:45 to 02:50Z) threw fifteen snowballs at a
+    // caged crystal, each line solved clear through the bars, and none
+    // reached it. Arrows are left as they were: the rehearsals of
+    // 2026-10-04 took all ten crystals by the bow, the caged among them.
+    if (cell.name === 'iron_bars' && solution.physics === THROWN) return false;
     const segment = point.minus(previous), length = segment.norm();
     if (length && bot.world.raycast(previous, segment.scaled(1 / length), length)) return false;
     // Do not shoot through a nearby player or an unrelated living mob.

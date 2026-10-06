@@ -40,18 +40,20 @@ bot.loadPlugin(compatibilityPlugin); bot.loadPlugin(pathfinder);
 const task = new Task('End drill'), client = new TypeSafe();
 const timer = setTimeout(() => task.cancel(), minutes * 60000);
 const started = Date.now();
-let goal, detach, deaths = 0, lowest = 20, finishing = false;
+let goal, detach, deaths = 0, lowest = 20, finishing = false, staged = false;
 const save = () => fs.writeFileSync(path.join(directory, 'goal.json'), JSON.stringify(goal, null, 2));
 const summary = result => ({ result, minutes: Math.round((Date.now() - started) / 6000) / 10, deaths, lowestHealth: Math.round(lowest * 10) / 10,
   crystalsDown: goal?.endCombat?.destroyedCrystals?.length || 0, dragon: goal?.endCombat?.dragon ?? null, shots: goal?.endCombat?.shots?.length || 0,
   arrowsLeft: countOf(bot, 'arrow'), kit: process.env.END_KIT || null, milestones: Object.keys(goal?.gameProgress?.milestones || {}) });
-bot.on('death', () => { deaths++; log({ death: true, position: bot.entity?.position }); task.cancel(); });
-bot.on('health', () => { lowest = Math.min(lowest, bot.health); });
+bot.on('death', () => { if (!staged) return; deaths++; log({ death: true, position: bot.entity?.position }); task.cancel(); });
+bot.on('health', () => { if (staged) lowest = Math.min(lowest, bot.health); });
 bot.on('error', err => log({ error: err.message }));
 bot.on('end', reason => { if (!finishing) { log({ result: 'FAIL', reason: `Disconnected: ${reason}` }); process.exit(1); } });
 bot.once('spawn', async () => {
   try {
     await bot.waitForChunksToLoad(); configureMovements(bot);
+    // Saved dead by the last drill: respawned first.
+    if (!(bot.health > 0)) { await sleep(3000); }
     for (const line of [`clear ${username}`, `effect clear ${username}`, `gamemode survival ${username}`, `experience set ${username} 0 levels`,
       ...kit.map(k => `give ${username} ${k.item} ${k.count}`), `execute in minecraft:the_end run tp ${username} 0.5 63 45.5`]) await command(line);
     fs.writeFileSync(path.join(directory, 'kit.json'), JSON.stringify(kit));
@@ -59,6 +61,7 @@ bot.once('spawn', async () => {
     await bot.waitForChunksToLoad();
     goal = { kind: 'win', request: 'Jev defeat the dragon and return alive', controlled: true };
     detach = watchGameProgress(bot, goal, save); save();
+    staged = true; lowest = bot.health;
     log({ phase: 'staged', inventory: inventory(bot), position: bot.entity.position });
     await prepareCombatGear(bot, task, goal, save, { acquireStep: async () => { throw new Error('nothing is made in the drill'); } }).catch(err => log({ gear: err.message }));
     await waitFor(task, () => Object.values(bot.entities).some(e => e.name === 'ender_dragon'), 60000);

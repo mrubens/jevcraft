@@ -7,6 +7,22 @@ const { dryStanding } = require('./mining-access');
 const { safeFromHostiles, hostileEntities } = require('./danger');
 const { checkAir, maintainVitals, chooseFood } = require('./vitals');
 const { aimAtEntity, shootBow, throwAt, THROWN, THROWABLE } = require('./projectiles');
+// The dragon's head through the armour worn (Normal: 10 before armour), and
+// what the arena's drill of a bare kit came to under it (note 1343).
+// Iron bars about a crystal: one of the two caged pillars (note 1343).
+function caged(bot, crystal) {
+  try { const c = crystal.position.floored(); for (let dx = -2; dx <= 2; dx++) for (let dy = -1; dy <= 3; dy++) for (let dz = -2; dz <= 2; dz++) if (bot.blockAt(c.offset(dx, dy, dz))?.name === 'iron_bars') return true; } catch (_) {}
+  return false;
+}
+function blocksCarried(bot) {
+  return bot.inventory.items().filter(i => /^(cobblestone|cobbled_deepslate|end_stone|netherrack|dirt|stone|blackstone|deepslate|andesite|diorite|granite|tuff|obsidian)$/.test(i.name)).reduce((n, i) => n + i.count, 0);
+}
+function headHit(bot) {
+  try { const ce = require('./combat-estimate'); const a = ce.armourOf([5, 6, 7, 8].map(i => bot.inventory?.slots?.[i]?.name).filter(Boolean)); return Math.round(ce.afterArmour(10, a) * 10) / 10; } catch (_) { return 10; }
+}
+function drillSays(bot) {
+  return [5, 6, 7, 8].some(i => bot.inventory?.slots?.[i]) ? '' : 'the arena\'s drill of 2026-10-06, nothing worn and a stone sword, ran under the perched head at 14.9 health and died there';
+}
 const { decide } = require('./decisions');
 
 // The dragon_fight question lives in decisions/combat.js (no fallback:
@@ -233,10 +249,11 @@ async function leaveHighGround(bot, task, goal, save, state) {
   return bot.entity.position.y <= startY - 3;
 }
 
-async function arenaRoutes(bot, task, goal, policy, focus) {
+async function arenaRoutes(bot, task, goal, policy, focus, { throwing = false } = {}) {
   const current = bot.entity.position, visits = goal.endCombat.visits ||= {}, buckets = new Map();
   const target = focus?.position || focus;
-  const desiredRange = focus?.name === 'end_crystal' ? Math.max(24, Math.min(56, (target.y - current.y) * 1.1)) : focus?.range || 0;
+  // A throw reaches about 28 blocks up, and less the farther out (note 1343): close in under the pillar.
+  const desiredRange = focus?.name === 'end_crystal' ? (throwing ? Math.max(4, Math.min(16, 26 - (target.y - current.y))) : Math.max(24, Math.min(56, (target.y - current.y) * 1.1))) : focus?.range || 0;
   const floors = bot.findBlocks({ matching: ['end_stone', 'obsidian', 'bedrock'].map(n => bot.registry.blocksByName[n].id),
     maxDistance: 64, count: 256, useExtraInfo: block => {
       const p = block.position.offset(.5, 1, .5);
@@ -264,7 +281,7 @@ async function arenaRoutes(bot, task, goal, policy, focus) {
     look.tried++; if (route.status !== 'success') look.failed[route.status] = (look.failed[route.status] || 0) + 1; else if (!route.path.every(policy.allowed)) look.failed.notAllowed = (look.failed.notAllowed || 0) + 1;
     if (route.status === 'success' && route.path.every(policy.allowed)) routes.push({ ...candidate, destination,
       clearCrystalShot: focus?.name === 'end_crystal' && !repeatedCrystalMiss(goal.endCombat, focus, p.offset(.5, 0, .5)) &&
-        !!aimAtEntity(bot, focus, new Vec3(0, 0, 0), p.offset(.5, 0, .5)),
+        !!aimAtEntity(bot, focus, new Vec3(0, 0, 0), p.offset(.5, 0, .5), throwing ? THROWN : undefined),
       targetDistance: target && p.offset(.5, 0, .5).distanceTo(target), desiredHorizontalRange: desiredRange });
     if (routes.length === 3) break;
   }
@@ -495,11 +512,39 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     // arrow and three eggs, and the arena's drill of that kit (01:53 to
     // 01:58Z) loosed its one arrow, took no crystal and only watched after.
     const throwable = THROWABLE.find(n => countOf(bot, n) > 0);
-    if (safe && throwable && !(bow && countOf(bot, 'arrow') > 0)) {
+    // Snowballs or eggs carried are shots at the crystals too (note 1343).
+    const throwing = !(bow && countOf(bot, 'arrow') > 0) && !!throwable;
+    if (safe && throwing) {
       const left = THROWABLE.reduce((n, k) => n + countOf(bot, k), 0);
       for (const target of crystals) if (!repeatedCrystalMiss(state, target, bot.entity.position) && aimAtEntity(bot, target, new Vec3(0, 0, 0), bot.entity.position, THROWN)) tree[`throw_${target.id}`] = {
         description: { action: `Throw a ${throwable.replaceAll('_', ' ')} at an observed healing crystal along a clear line: any projectile breaks one, removing a source of the dragon's healing`, position: { ...target.position }, thrownLeft: left, crystalsInView: crystals.length }, run: () => throwCrystal(target),
       };
+    }
+    // Too high to throw at from the ground (a throw reaches about 28 blocks
+    // up, less the farther out): up a pillar of the blocks carried until it
+    // is within about 22, then thrown at from its top (note 1343). The
+    // arena's drill of 2026-10-06 (02:29 to 02:45Z), full iron and 48
+    // snowballs, took none of the seven crystals left on the taller pillars
+    // from the ground. A knock off the top is the fall.
+    if (safe && throwing && actions.dig && !Object.keys(tree).some(k => k.startsWith('throw_'))) {
+      const here = bot.entity.position, carried = blocksCarried(bot);
+      for (const target of crystals.filter(c => !caged(bot, c))) {
+        const out = Math.hypot(target.position.x - here.x, target.position.z - here.z), up = target.position.y - here.y;
+        const lift = Math.ceil(up - 22);
+        if (out > 14 || lift < 1 || lift > 24 || lift > carried) continue;
+        tree[`pillar_throw_${target.id}`] = {
+          description: { action: `Pillar up ${lift} blocks here on the blocks carried and throw at the healing crystal from the top: it is ${Math.round(up)} blocks up and ${Math.round(out)} out, over a throw's reach from the ground`,
+            position: { ...target.position }, blocks: lift, blocksCarried: carried, fallFromTheTop: `a knock off the top is a fall of ${lift} blocks, about ${Math.max(0, lift - 3)} damage before armour${countOf(bot, 'water_bucket') ? ', a water bucket carried for the landing' : ''}`,
+            thrownLeft: THROWABLE.reduce((n, k) => n + countOf(bot, k), 0), health: bot.health },
+          run: async () => {
+            await require('./pillar-recovery').pillarUp(bot, task, Math.floor(bot.entity.position.y) + lift, { dig: actions.dig, maxBlocks: lift, threats: false });
+            for (let n = 0; n < 3 && live(bot, target); n++) {
+              check();
+              if (!aimAtEntity(bot, target, new Vec3(0, 0, 0), bot.entity.position, THROWN)) break;
+              await throwCrystal(target);
+            }
+          } };
+      }
     }
     if (safe && bot.health >= 12 && bow && countOf(bot, 'arrow') > 0) {
       for (const target of crystals) if (!repeatedCrystalMiss(state, target, bot.entity.position) && aimAtEntity(bot, target)) tree[`crystal_${target.id}`] = {
@@ -549,7 +594,8 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       if (ground && head.position.y - ground.y <= (actions.dig ? 6.4 : 4.5)) tree.under_head = {
         description: { action: 'Run to the ground under the perched dragon\'s head and strike it with the sword for as long as it sits: the sword reaches the dragon only here, its breath pools on the ground before its head, and it takes off within seconds',
           headBlocksOff: Math.round(head.position.distanceTo(bot.entity.position)), headBlocksOverItsGround: Math.round((head.position.y - ground.y) * 10) / 10, dragonHealth: beforeDragon, health: bot.health,
-          voidEdgeBlocks: voidEdge(bot, ground), endermenNearRoute: endermenNearRoute(bot, bot.entity.position, ground) },
+          voidEdgeBlocks: voidEdge(bot, ground), endermenNearRoute: endermenNearRoute(bot, bot.entity.position, ground), headHitThroughArmourWorn: headHit(bot),
+          ...(drillSays(bot) ? { drill: drillSays(bot) } : {}) },
         run: async () => {
           const reached = () => { const h = live(bot, dragon) && perchedHead(bot, dragon); return !h || canStrike(bot, h); };
           try { await actions.navigate(bot, task, new goals.GoalNear(Math.floor(ground.x), ground.y, Math.floor(ground.z), 1), { timeoutMs: 9000, stallMs: 2500, sprint: true, stopWhen: () => reached() || hostileEntities(bot, 4).some(e => live(bot, e)) }); }
@@ -613,23 +659,24 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     // a crystal is out of the sword's reach on its pillar, and a new place
     // to shoot one from is no use with nothing to shoot. The sword at the
     // perch is what is left, said with the crystals that still heal it.
-    const noArrows = arrowsLeft === 0;
+    const noArrows = arrowsLeft === 0 && !throwing;
     const standing = crystals.length + (remembered ? unresolved.length : 0);
     const fountain = ((!crystals.length && !remembered) || noArrows) && dragon && !head && arrowsLeft <= FEW_ARROWS
       ? { name: 'fountain', position: new Vec3(centre.x, bot.entity.position.y, centre.z), range: PERCH_RANGE, arrows: arrowsLeft, crystals: standing } : null;
-    const focus = (noArrows ? null : crystals[0] || (remembered && { name: 'unresolved_crystal_location', position: vector(remembered.position) })) ||
+    // Throwing, a caged crystal is not the one gone for: its bars stop a throw (note 1343).
+    const focus = (noArrows ? null : (throwing ? crystals.find(c => !caged(bot, c)) : crystals[0]) || (remembered && { name: 'unresolved_crystal_location', position: vector(remembered.position) })) ||
       head || fountain || dragon || (state.arenaCenter && vector(state.arenaCenter)) || (state.lastDragon && vector(state.lastDragon.position));
     // Reposition when arcs are blocked or the dragon is perched, and always
     // expose escape positions when healing or avoiding a breath cloud.
     // By the fountain already, the wait is there: no walk to another cell of its ring.
     const waitingThere = focus === fountain && fountain && Math.abs(byFountain - PERCH_RANGE) <= 3 && safe;
-    if ((!Object.keys(tree).some(key => key.startsWith('crystal_')) || bot.health < 16) && !waitingThere && !(tree.under_head || tree.strike_head)) for (const route of await arenaRoutes(bot, task, goal, policy, focus)) {
+    if ((!Object.keys(tree).some(key => key.startsWith('crystal_') || key.startsWith('throw_')) || bot.health < 16) && !waitingThere && !(tree.under_head || tree.strike_head)) for (const route of await arenaRoutes(bot, task, goal, policy, focus, { throwing })) {
       tree[`move_${route.key}`] = { description: { action: focus?.name === 'unresolved_crystal_location'
         ? 'Approach a previously observed crystal location to check whether the crystal remains. Loss of entity tracking did not establish destruction.'
         : !safe ? 'Escape the unsafe current position along this surveyed route'
         : focus?.name === 'ender_dragon_head' ? 'Approach the perched head to get within sword reach'
         : focus?.name === 'fountain' ? `Go to stand about ${PERCH_RANGE} blocks from the fountain the dragon perches on, and wait there for the sword at its head when it lands: ${focus.arrows} arrow${focus.arrows === 1 ? ' is' : 's are'} left, the sword reaches the dragon only at its perch, and at its perch arrows do nothing to it${focus.crystals ? `; ${focus.crystals} healing crystal${focus.crystals === 1 ? ' still stands' : 's still stand'} on ${focus.crystals === 1 ? 'its pillar' : 'their pillars'}, out of the sword's reach, and ${focus.crystals === 1 ? 'heals' : 'heal'} the dragon while it flies near` : ''}`
-        : focus?.name === 'end_crystal' ? 'Change firing position for an observed healing crystal'
+        : focus?.name === 'end_crystal' ? (throwing ? 'Go closer under an observed healing crystal, within a throw of it' : 'Change firing position for an observed healing crystal')
         : 'Reposition along this surveyed route to gain a future attack opportunity',
         position: { ...route.p }, visits: state.visits[route.key] || 0, target: focus?.name,
         clearCrystalShot: focus?.name === 'end_crystal' ? route.clearCrystalShot : undefined,
@@ -723,7 +770,12 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     // A pause can reveal a vulnerable phase, but it must not indefinitely
     // displace executable actions. Renew that allowance only after actual
     // movement, damage, crystal destruction or observed health recovery.
-    if (safe && dragon && ((state.idleObservations || 0) < 5 || !Object.keys(tree).length)) tree.observe = {
+    // Watching stays a choice beside the others (note 1343): taken away
+    // after five idle watches it left under_head the only way, and the
+    // arena's drill of a bare kit (2026-10-06 02:03Z) ran under the perched
+    // head at 14.9 health and died there. The watches without progress are
+    // said with it.
+    if (safe && dragon) tree.observe = {
       description: { action: 'Wait one second without attacking or moving',
         health: bot.health, canRegenerate: bot.health < 20 && bot.food >= 18,
         usefulAttackAvailableNow: !!tree.shoot_dragon || !!tree.strike_head || crystals.some(c => tree[`crystal_${c.id}`]),

@@ -21,3 +21,9 @@ if [ "$free" -lt 12 ]; then
   find .clean-run*/recordings -type f -mmin +120 -delete 2>/dev/null
   echo "low disk: recordings older than 2h removed"
 fi
+# Each trial server records about 8 MB a minute (2026-10-06): two hours of
+# recordings is some 12 GB, so under 6 GB free only the last hour is kept.
+if [ "$free" -lt 6 ]; then
+  find .clean-run*/recordings -type f -mmin +60 -delete 2>/dev/null
+  echo "very low disk: recordings older than 1h removed"
+fi
