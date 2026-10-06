@@ -1350,7 +1350,15 @@ async function upkeepOffers(bot, task, goal, save) {
     // (the crossing's reserve, the hunger met: note 771): chosen there, it
     // changed nothing (note 765: food_reserve 37 of 64 no-ops).
     const fe = require('./food-errand');
-    if (carried < KIT_FOOD_POINTS && t < DAY.DUSK && toDusk <= FOOD_BEFORE_DUSK_S && !goal.stockFood && !(fe.reserveOnly(bot, carried) && fe.crossingReserve(goal))) options.food_reserve = { description: `Find food before dusk: ${carried} food points carried, hunger ${bot.food}, dusk (when the bot stops work for the evening; the dark comes about two minutes after) in about ${toDusk} seconds; chosen, the food is looked for as survival's need when it next has the turn. Health comes back only while hunger is eighteen or more; a night's fights at lower hunger are fought without healing. ${require('./food-reserve').sayHere(bot, carried)}${foodReservePrice(bot, carried)}`,
+    // By day under hunger eighteen too, not only before dusk (note 1375): of
+    // the Overworld frames from 12:00 to 18:45Z on 2026-10-06, 96 in 100 at
+    // hunger under eighteen carried nothing to eat, and the deaths a
+    // bot-hour there ran five to twenty times those at eighteen or more
+    // (healing.js HUNGER_RECORD); this was offered in the three minutes
+    // before dusk alone, and taken once in four hours of upkeep.
+    const beforeDusk = toDusk <= FOOD_BEFORE_DUSK_S, hungry = (bot.food ?? 20) < 18;
+    let record = ''; try { const r = require('./healing').hungerRecordSays(bot, bot.food ?? 20); record = r ? ` The record ${r}.` : ''; } catch (_) { record = ''; }
+    if (carried < KIT_FOOD_POINTS && t < DAY.DUSK && (beforeDusk || hungry) && !goal.stockFood && !(fe.reserveOnly(bot, carried) && fe.crossingReserve(goal))) options.food_reserve = { description: `${beforeDusk ? `Find food before dusk: ${carried} food points carried, hunger ${bot.food}, dusk (when the bot stops work for the evening; the dark comes about two minutes after) in about ${toDusk} seconds` : `Find food now, by day: ${carried} food points carried, hunger ${bot.food}, dusk in about ${Math.round(toDusk / 60)} minutes`}; chosen, the food is looked for as survival's need when it next has the turn. Health comes back only while hunger is eighteen or more; ${beforeDusk ? 'a night\'s fights at lower hunger are fought without healing' : 'until then every hit taken stays taken'}.${record} ${require('./food-reserve').sayHere(bot, carried)}${foodReservePrice(bot, carried)}`,
       run: async () => { goal.stockFood = true; save(); } };
   }
   // A batch left cooking whose time is up, the bot away from its furnace:
