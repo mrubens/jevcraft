@@ -231,7 +231,7 @@ function cutReasons(world, playedMinutes, reachedAtMinute = {}, { casting = fals
 // every verdict on 25581, 25583 and 25584 failed on "loop: N× TypeSafe 402"
 // a minute or two in, and the overnight loop started a new world each time.
 const STRANDED_DOWN_SHARE = 0.1;
-function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY, kept = keptNow(identity), endHours = false, holds = null } = {}) {
+function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY, kept = keptNow(identity), endHours = false, holds = null, absentMs: extraMs = 0 } = {}) {
   const from = Date.parse(trial.startedAt);
   const read = to => analyse({ identity, from, to, ...(dir ? { dir } : {}) });
   // The window: the three hours played, run on by the Jev-down time in it.
@@ -247,7 +247,7 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
   // End portal found, was ended at its 52 hours and a new world put on its
   // port.
   const eyes = eyesHeld(identity, from);
-  const limit = eyes.forever ? Infinity : Math.max(endHours ? END_LIMIT_MS : limitFor(holds || kept), progress && progress > from ? progress - from + PAST_PROGRESS_MS : 0);
+  const limit = eyes.forever ? Infinity : extraMs + Math.max(endHours ? END_LIMIT_MS : limitFor(holds || kept), progress && progress > from ? progress - from + PAST_PROGRESS_MS : 0);
   let to = Math.min(now, from + limit), a = read(to), spells = a ? spellsOf(a.frames) : [];
   for (let i = 0; a && spells.length && i < 4; i++) {
     const next = Math.min(now, from + limit + overlapMs(spells, from, to));
@@ -276,11 +276,11 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
     const lastInv = [...latest.frames].reverse().find(f => f.snapshot?.inventory && typeof f.snapshot.inventory === 'object');
     const carried = lastInv ? counts(lastInv.snapshot.inventory) : { rods: 0, pearls: 0 };
     const held = { rods: (kept?.rods || 0) + carried.rods, pearls: (kept?.pearls || 0) + carried.pearls };
-    if (limitFor(held) > limit) return verdict(trial, { now, dir, identity, kept, holds: held });
+    if (limitFor(held) > limit) return verdict(trial, { now, dir, identity, kept, holds: held, absentMs: extraMs });
   }
   // The rods and the pearls reached in the pack (not only kept in chests):
   // the End's hours from there, read again over that window.
-  if (!endHours && limit < END_LIMIT_MS && 'blaze_rods' in at && 'ender_pearls' in at) return verdict(trial, { now, dir, identity, kept, holds, endHours: true });
+  if (!endHours && limit < END_LIMIT_MS && 'blaze_rods' in at && 'ender_pearls' in at) return verdict(trial, { now, dir, identity, kept, holds, endHours: true, absentMs: extraMs });
   const dragon = dragonAt(identity);
   if (dragon && dragon >= from && dragon <= to) at.dragon = dragon;
   const all = MILESTONES.every(k => k in at);
@@ -329,6 +329,15 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
   const downPlayedMs = Math.max(0, downMs - gone.reduce((n, g) => n + overlapMs(spells, g.from, g.to), 0));
   const playedMs = windowMs - absentMs - downPlayedMs;
   const playedBy = t => (t - from) - gone.reduce((n, g) => n + Math.max(0, Math.min(t, g.to) - g.from), 0) - overlapMs(spells, from, t);
+  // The hours are hours played (note 1396): time the bot was not running
+  // (a restart not taken up, a crash, the machine down) is added to the
+  // window once, not counted against it. mid-243-ma-end-3 (25597, 2026-10-07
+  // 14:22Z), seven rods and seven pearls kept and its End portal found, was
+  // ended at its 48 hours with 1,174 minutes of them the bot not running.
+  // Only time the bot came back from: one not running at the window's end
+  // is not given more.
+  const backFromMs = gone.filter(g => g.to < to - 120000).reduce((n, g) => n + (g.to - g.from), 0);
+  if (timedOut && !extraMs && backFromMs >= 60000) return verdict(trial, { now, dir, identity, kept, endHours, holds, absentMs: backFromMs });
   const unplayed = timedOut && absentMs >= 0.1 * (windowMs - downPlayedMs);
   const said = unplayed ? `after ${Math.round(playedMs / 60000)} minutes played of ${limit / 3600000} hours (the bot was not running for ${Math.round(absentMs / 60000)}; not a verdict on play)` : `after ${limit / 3600000} hours`;
   // Stranded (note 650): not a death and not a loop, and no more play in it:
