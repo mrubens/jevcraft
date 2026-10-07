@@ -288,6 +288,13 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
   // Jev's to weigh, once a death: what was about when the bot died there,
   // against what it would get back.
   const client = task.opportunityClient;
+  // Through the Nether (note 1393): the ladder's errand carries the bot
+  // there; the walk here is the last of it, once the shortcut has ended
+  // near the place.
+  if (run.choice === 'through_nether') {
+    if (goal.netherShortcut?.for === 'corpse_run') return false;
+    run.choice = 'go_back'; save();
+  }
   if (!run.choice) {
     const death = (goal.survival?.deaths || []).find(d => d.at === run.deathAt) || (goal.survival?.deaths || []).at(-1) || {};
     const about = (death.about || []).map(t => `a ${t.name.replaceAll('_', ' ')} ${t.distance} blocks off`).join(', ');
@@ -369,11 +376,36 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     const foodWant = Math.min(30, Math.round(far / 40));
     if (gatherFood && far >= 300 && foodCarried < foodWant) tree.food_first = { description: `Get food for the walk first, here: hunted, cooked or taken from a chest, toward ${foodWant} food points carried (${foodCarried} now), then set out for them; the drops do not age meanwhile. Twenty minutes at most on the food; then the walk with what there is.` };
     if (toDawn !== null && (night || minutes > until) && !run.loadedAt && /overworld/.test(run.dimension)) tree.wait_for_day = { description: `Set out for them at ${night ? 'dawn' : 'the next dawn'}, about ${toDawn} real minute${toDawn === 1 ? '' : 's'} off, with the day ahead for the walk${night ? '' : ` (the day left now, about ${until}, is shorter than the walk, about ${minutes})`}, and go on with other things until then: the drops do not age while the bot is not within 128 blocks of them. Asked again at dawn.` };
+    // Through the Nether, where the drop lies far off in the Overworld and a
+    // portal the bot knows stands within 600 blocks of it and another within
+    // 600 of the bot (note 1393): the nether shortcut's own way (out to the
+    // place, the errand into the Nether, a block there eight here). 25598
+    // (2026-10-07 06:41 and 07:00Z), its twelve eyes lying 8 blocks from its
+    // End portal 1,182 blocks off and its portals at home and by the
+    // stronghold, was offered only the walk, about 33 minutes, and chose to
+    // wait for dawn twice.
+    if (/overworld/.test(run.dimension) && /overworld/.test(String(bot.game?.dimension || '')) && far >= 400) {
+      const overs = (goal.portals || []).filter(q => q.dimension === 'overworld');
+      const mine = overs.map(q => ({ q, d: Math.round(flat(bot.entity.position, q)) })).sort((x, y) => x.d - y.d)[0];
+      const theirs = overs.map(q => ({ q, d: Math.round(flat(spot, q)) })).sort((x, y) => x.d - y.d)[0];
+      if (mine && theirs && mine.d <= 600 && theirs.d <= 600 && mine.q !== theirs.q) {
+        const inNether = Math.round(flat(mine.q, theirs.q) / 8);
+        tree.through_nether = { description: `Go back for them through the Nether: ${mine.d} blocks to the portal at (${mine.q.x}, ${mine.q.y}, ${mine.q.z}), about ${inNether} blocks across the Nether, and out by the portal at (${theirs.q.x}, ${theirs.q.y}, ${theirs.q.z}), ${theirs.d} blocks from them, in place of ${far} blocks over the ground. They last until the bot comes within 128 blocks, then five minutes; the Nether's mobs and lava are on the way.` };
+      }
+    }
     const decision = await require('./decisions').decide('corpse_run', { client, bot, task, goal, save, tree,
       state: { distance: far, secondsLeft: left, aboutAtDeath: death.about || [], wornAtDeath: death.worn || [], wornNow, night, ...(until !== null ? { [night ? 'minutesToDawn' : 'minutesToNight']: until } : {}), ...(run.stalled ? { walksThatGotNoNearer: run.stalled } : {}), ...(kept ? { inAChest: kept } : {}) } });
     if (decision.stale) return false;
     if (decision.path.at(-1) === 'food_first') { run.choice = 'go_back'; run.foodFirst = { at: Date.now(), want: foodWant }; save(); }
     else if (decision.path.at(-1) === 'wait_for_day') { run.waitUntil = Date.now() + toDawn * 60000; save(); return false; }
+    if (decision.path.at(-1) === 'through_nether') {
+      const ns = require('./nether-shortcut');
+      goal.netherShortcut = { chest: { x: Math.round(spot.x), y: Math.round(spot.y), z: Math.round(spot.z) }, phase: 'out', at: Date.now(), for: 'corpse_run' };
+      goal.errand = { dimension: 'nether', items: [], for: ns.ERRAND, at: Date.now() };
+      run.choice = 'through_nether'; save();
+      bot.chat?.(`Through the Nether for them: ${Math.round(far / 8)} blocks there in place of ${far} here.`);
+      return false;
+    }
     if (decision.path.at(-1) !== 'food_first') run.choice = decision.path.at(-1); save();
     if (run.choice === 'leave_them') { run.status = 'left'; tripCameToNothing(bot, goal, run, save); save(); return false; }
   }

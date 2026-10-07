@@ -48,6 +48,9 @@ function settle(bot, goal, save, { eyesCarried = 0, wanted = 12 } = {}) {
   if (!s || !/overworld/.test(String(bot.game?.dimension || ''))) return;
   const here = bot.entity.position, sh = stronghold(goal);
   const ours = goal.errand?.for === ERRAND;
+  // Out for a corpse run's drop (note 1393): arrived within reach, the way is
+  // done; the corpse run walks the rest.
+  if (s.for === 'corpse_run' && flat(here, s.chest) <= FAR) { delete goal.netherShortcut; if (ours) delete goal.errand; save?.(); return; }
   if (s.phase === 'out' && flat(here, s.chest) <= FAR) { s.phase = 'back'; if (ours) delete goal.errand; save?.(); }
   if (s.phase === 'back' && sh && flat(here, sh) <= FAR) { delete goal.netherShortcut; if (goal.errand?.for === ERRAND) delete goal.errand; save?.(); return; }
   // Back with nothing to carry yet (the chest not reached): no errand into the Nether.

@@ -510,3 +510,16 @@ test('a long walk with little food carried: getting food first is offered, and c
   assert.equal(gathered, 1, 'twenty minutes spent: no more');
   assert.equal(goal.corpseRun.foodFirst, undefined);
 });
+
+test('a corpse run through the Nether ends its shortcut on arrival near the drop, and the walk takes the rest (note 1393)', () => {
+  const ns = require('../src/nether-shortcut');
+  const goal = { netherShortcut: { chest: { x: 598, y: 15, z: 1534 }, phase: 'out', at: 1, for: 'corpse_run' }, errand: { dimension: 'nether', items: [], for: ns.ERRAND, at: 1 },
+    gameProgress: { milestones: { stronghold_located: { center: { x: 604, y: -37, z: 1540 } } } } };
+  const far = { game: { dimension: 'overworld' }, entity: { position: { x: -14, y: 70, z: 104 } } };
+  ns.settle(far, goal, () => {});
+  assert.equal(goal.netherShortcut.phase, 'out', 'far off: still out');
+  const near = { game: { dimension: 'overworld' }, entity: { position: { x: 482, y: 105, z: 1360 } } };
+  ns.settle(near, goal, () => {});
+  assert.equal(goal.netherShortcut, undefined);
+  assert.equal(goal.errand, undefined);
+});
