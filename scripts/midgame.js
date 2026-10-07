@@ -141,8 +141,19 @@ function eyesHeld(identity = IDENTITY) {
     let carried = 0;
     try {
       const dir = path.join(STATE, 'flight'), f = fs.readdirSync(dir).filter(n => n.startsWith(`${identity}-`) && n.endsWith('.jsonl')).map(n => path.join(dir, n)).sort((x, y) => fs.statSync(y).mtimeMs - fs.statSync(x).mtimeMs)[0];
-      if (f) { const size = fs.statSync(f).size, fd = fs.openSync(f, 'r'), len = Math.min(size, 400000), buf = Buffer.alloc(len); fs.readSync(fd, buf, 0, len, size - len); fs.closeSync(fd);
-        const inv = [...buf.toString('utf8').matchAll(/"inventory":\{[^}]*\}/g)].at(-1)?.[0] || ''; carried = Number((inv.match(/"ender_eye":(\d+)/) || [])[1] || 0); }
+      if (f) { const size = fs.statSync(f).size, fd = fs.openSync(f, 'r'), len = Math.min(size, 2000000), buf = Buffer.alloc(len); fs.readSync(fd, buf, 0, len, size - len); fs.closeSync(fd);
+        // The pack of the last observation frame, not the last "inventory"
+        // anywhere (note 1391): a decision's own small inventory object read
+        // as the pack ({"spruce_planks":1}) and 25598 (2026-10-07 05:50Z), its
+        // twelve eyes in its pack at its End portal, was ended a third time.
+        // Of the last 120 frames, the most: a full pack comes every ten seconds or so,
+        // trimmed ones between (25598 read 12, 0, 12 a second apart).
+        const lines = buf.toString('utf8').split('\n');
+        let seen = 0;
+        for (let i = lines.length - 1; i >= 0 && seen < 120; i--) {
+          if (!lines[i].includes('"kind":"observation"')) continue;
+          try { carried = Math.max(carried, Number(JSON.parse(lines[i]).snapshot?.inventory?.ender_eye || 0)); seen++; } catch (_) { /* a line cut at the tail's start */ }
+        } }
     } catch (_) { carried = 0; }
     const lying = goal.corpseRun?.status === 'open' ? Number(goal.corpseRun.items?.ender_eye || 0) : 0;
     const kept = chests.reduce((n, c) => n + Number(c.contents?.ender_eye || 0), 0) + carried + lying;
