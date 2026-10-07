@@ -31,7 +31,10 @@ fi
 # a ring is for starting a running trial's moment again; 600 ended ones held
 # 15 GB on 2026-10-06.
 running=$(for d in .clean-run .clean-run-*; do sed -n 's/^level-name=//p' "$d/server.properties" 2>/dev/null; done)
-for w in $(find .trial-checkpoints -maxdepth 1 -mindepth 1 -type d -mmin +720 -exec basename {} \; 2>/dev/null | grep -v '^deaths$'); do
+# Only the worlds' own rings (mid-*): the stage saves (stages/) and the deaths
+# are kept (note 1398: this took stages/ with it, and every stage start since
+# 2026-10-06 found "no snapshots").
+for w in $(find .trial-checkpoints -maxdepth 1 -mindepth 1 -type d -name 'mid-*' -mmin +720 -exec basename {} \; 2>/dev/null); do
   echo "$running" | grep -qx "$w" || rm -rf ".trial-checkpoints/$w"
 done
 # Each trial server records about 8 MB a minute (2026-10-06): two hours of

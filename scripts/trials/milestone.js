@@ -33,4 +33,21 @@ if (/nether/.test(String(last.dimension))) out.push('nether');
 // where it read a fortress, and a "fortress" stage was saved there
 // (mid-243-ma-172613, note 750d).
 if (frames.slice(-40).some(f => { const s = f.snapshot?.goal?.step || f.snapshot?.step; return s?.action === 'find_fortress' && (s.walking || s.patrolling || s.exploring); })) out.push('fortress');
+// At its stronghold with the eyes the portal wants (note 1398): the stage the
+// dragon is tried from many times a day. In the Overworld, the stronghold
+// located, and the eyes held (carried by the last frames that show the
+// pack, or in the bot's Overworld chests) at least the portal's empty frames
+// (twelve where none are counted); none of 2026-10-06's eight sets of eyes
+// reached a frame, each of them about a day of play to make again.
+try {
+  const g = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '.bot-state', `127_0_0_1-${port}-Jev.json`), 'utf8')), goal = g.goal || g;
+  const ms = goal.gameProgress?.milestones || {};
+  if (/overworld/.test(String(last.dimension)) && (ms.stronghold_located || goal.endPortal?.center) && !goal.endPortal?.litAt) {
+    const carried = Math.max(0, ...frames.slice(-120).map(f => Number(f.snapshot?.inventory?.ender_eye || 0)));
+    const kept = (goal.rodStashes || []).filter(c => !c.lostAt && c.dimension === 'overworld').reduce((n, c) => n + Number(c.contents?.ender_eye || 0), 0);
+    const frs = goal.endPortal?.frames || ms.stronghold_located?.frames || [];
+    const need = Number.isInteger(goal.endPortal?.neededEyes) ? goal.endPortal.neededEyes : frs.length ? frs.filter(f => !f.eye).length : 12;
+    if (need > 0 && carried + kept >= need) out.push('stronghold');
+  }
+} catch (_) { /* no state */ }
 process.stdout.write(out.join('\n'));

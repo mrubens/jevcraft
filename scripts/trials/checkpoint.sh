@@ -74,8 +74,10 @@ while :; do
     # A trial started at a stage is not a new start of it: it only repeats
     # the snapshot it came from (mid-227-r-nether-1 kept as nether again).
     for M in $(node "$ROOT/scripts/trials/milestone.js" "$PORT" 2>/dev/null); do
-      case "$WORLD" in *-nether-[0-9]*|*-fortress-[0-9]*) [ "$M" = nether ] && continue;; esac
-      case "$WORLD" in *-fortress-[0-9]*) continue;; esac
+      case "$WORLD" in *-nether-[0-9]*|*-fortress-[0-9]*|*-stronghold-[0-9]*) [ "$M" = nether ] && continue;; esac
+      case "$WORLD" in *-fortress-[0-9]*|*-stronghold-[0-9]*) [ "$M" = stronghold ] || continue;; esac
+      # A stronghold stage is not saved again from a world started at it.
+      case "$WORLD" in *-stronghold-[0-9]*) [ "$M" = stronghold ] && continue;; esac
       MARK="$BASE/$WORLD/milestone-$M"
       if [ ! -f "$MARK" ]; then
         STAGE="$BASE/stages/$M/$WORLD-$AT"; mkdir -p "$STAGE" && cp -R "$DEST"/* "$STAGE"/ && touch "$MARK" && echo "$(date -u +%H:%M:%S) $WORLD reached $M: kept $STAGE"
