@@ -1087,7 +1087,14 @@ function watchOnce(bot, { live = mode() === 'live', now = Date.now(), look = pro
   // came on from 28 blocks to 6 and shot it over, and mid-242-ae's work,
   // given the turn after a meal, was speared twice by a piglin come to its
   // reach, neither asked. Not over survival's own step: it answers them.
-  if (!p && holder && holder.layer !== 'survival' && holder.knew) {
+  // Not in the End (note 1401): the fight there answers the mobs, the
+  // dragon and its breath at every tick, and no survival layer runs to take
+  // the turn. The stronghold stage of 2026-10-07 (25595, 20:09:23 to
+  // 20:09:27Z), the first live trial in the End, stood shield up on the
+  // entry platform with a dragon fireball at it, 'Preempted by push' every
+  // ten milliseconds, and the breath killed it from 20 in four seconds.
+  const inEnd = /end/.test(String(bot.game?.dimension || ''));
+  if (!p && !inEnd && holder && holder.layer !== 'survival' && holder.knew) {
     const got = pressing(bot, look);
     const mob = got.reach ? (() => { try { return look.atReach(bot)[0]; } catch (_) { return null; } })() : null;
     if (got.reach && !holder.knew.reach && !(mob && slotKin(mob))) p = { by: 'reach', layer: 'survival', action: 'escape_threat', ...(mob?.entity?.id !== undefined ? { id: mob.entity.id } : {}),
