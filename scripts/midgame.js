@@ -131,7 +131,7 @@ function progressAt(identity = IDENTITY) {
 // Eight or more eyes kept: a trial a few rods or pearls from its twelve
 // (25591, 2026-10-06 21:55Z, eleven eyes in its chests and one rod).
 const EYES_FOREVER = 8;
-function eyesHeld(identity = IDENTITY) {
+function eyesHeld(identity = IDENTITY, from = 0) {
   try {
     const g = JSON.parse(fs.readFileSync(path.join(STATE, `${identity}.json`), 'utf8')), goal = g.goal || g;
     const chests = (goal.rodStashes || []).filter(c => !c.lostAt);
@@ -140,8 +140,13 @@ function eyesHeld(identity = IDENTITY) {
     // and in its pack by its portal, was ended again, its chest empty.
     let carried = 0;
     try {
-      const dir = path.join(STATE, 'flight'), f = fs.readdirSync(dir).filter(n => n.startsWith(`${identity}-`) && n.endsWith('.jsonl')).map(n => path.join(dir, n)).sort((x, y) => fs.statSync(y).mtimeMs - fs.statSync(x).mtimeMs)[0];
-      if (f) { const size = fs.statSync(f).size, fd = fs.openSync(f, 'r'), len = Math.min(size, 2000000), buf = Buffer.alloc(len); fs.readSync(fd, buf, 0, len, size - len); fs.closeSync(fd);
+      // The trial's own frames (note 1392): its files named from its start on,
+      // the newest five, the most any held. Read from the newest alone, a
+      // restored trial (25598, 2026-10-07 06:08Z) was read by the frames of
+      // the bot it replaced, no eyes, and ended a fourth time a minute in.
+      const dir = path.join(STATE, 'flight'), stamp = n => Date.parse(n.slice(identity.length + 1, -6).replace(/T(\d\d)-(\d\d)-(\d\d)-(\d+)Z$/, 'T$1:$2:$3.$4Z'));
+      const files = fs.readdirSync(dir).filter(n => n.startsWith(`${identity}-`) && n.endsWith('.jsonl') && !(stamp(n) < from)).map(n => path.join(dir, n)).sort((x, y) => fs.statSync(y).mtimeMs - fs.statSync(x).mtimeMs).slice(0, 5);
+      for (const f of files) { const size = fs.statSync(f).size, fd = fs.openSync(f, 'r'), len = Math.min(size, 2000000), buf = Buffer.alloc(len); fs.readSync(fd, buf, 0, len, size - len); fs.closeSync(fd);
         // The pack of the last observation frame, not the last "inventory"
         // anywhere (note 1391): a decision's own small inventory object read
         // as the pack ({"spruce_planks":1}) and 25598 (2026-10-07 05:50Z), its
@@ -241,7 +246,7 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
   // nether-2 (25598, 2026-10-06 21:38Z), twelve eyes in its chest and its
   // End portal found, was ended at its 52 hours and a new world put on its
   // port.
-  const eyes = eyesHeld(identity);
+  const eyes = eyesHeld(identity, from);
   const limit = eyes.forever ? Infinity : Math.max(endHours ? END_LIMIT_MS : limitFor(holds || kept), progress && progress > from ? progress - from + PAST_PROGRESS_MS : 0);
   let to = Math.min(now, from + limit), a = read(to), spells = a ? spellsOf(a.frames) : [];
   for (let i = 0; a && spells.length && i < 4; i++) {
