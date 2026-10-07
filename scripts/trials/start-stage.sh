@@ -9,12 +9,12 @@
 # only read. A save whose player stands on a span one or two blocks wide over
 # lava is not a start, and a save started STAGE_MAX_PER_HOUR (4) times in the
 # hour rests (note 641). STAGE_ANY=1 keeps the old pick, the save least started from.
-#   sh scripts/trials/start-stage.sh <port> <nether|fortress|stronghold>   (stronghold: at its stronghold with the eyes, note 1398)
+#   sh scripts/trials/start-stage.sh <port> <nether|fortress|stronghold|dragon>   (stronghold: at its stronghold with the eyes, note 1398; dragon: on entering the End, note 1402)
 #   sh scripts/trials/start-stage.sh --list [nether|fortress]   the saves with health, hunger, food points, source world, starts
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 if [ "$1" = "--list" ]; then shift; exec node "$ROOT/scripts/trials/stage-pick.js" --list "$@"; fi
 PORT=$1; STAGE=$2
-[ -n "$PORT" ] && [ -n "$STAGE" ] || { echo "usage: start-stage.sh <port> <nether|fortress|stronghold> | --list [stage]"; exit 1; }
+[ -n "$PORT" ] && [ -n "$STAGE" ] || { echo "usage: start-stage.sh <port> <nether|fortress|stronghold|dragon> | --list [stage]"; exit 1; }
 [ -d "$ROOT/.trial-checkpoints/stages/$STAGE" ] || { echo "no $STAGE snapshots yet"; exit 1; }
 # The port's arm (two-arm trials, scripts/lib/arms.js, note 666): a save the
 # other arm started and this one has not is taken first, and the start is

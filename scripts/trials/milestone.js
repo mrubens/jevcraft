@@ -27,6 +27,10 @@ const last = frames.filter(f => f.snapshot?.dimension).at(-1)?.snapshot;
 if (!last || last.health === 0) process.exit(0);
 const out = [];
 if (/nether/.test(String(last.dimension))) out.push('nether');
+// In the End, alive (note 1402): the dragon's fight started again from the
+// moment of entry, many times a day. The stronghold stage's first live End
+// entry (25595, 2026-10-07 20:08Z) died in the dragon's breath a minute in.
+if (/the_end/.test(String(last.dimension))) out.push('dragon');
 // On its floors (the map's floors are the fortress's own bricks), as
 // midgame.js marks it; a stalk of a mob is not a fortress: 25589 (mid-243-ma)
 // stalked a blaze 25 blocks off at 17:23:47Z by a bastion 16 blocks from
