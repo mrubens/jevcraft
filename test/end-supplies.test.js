@@ -2,7 +2,7 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const registry = require('prismarine-registry')('26.1');
 const { Task } = require('../src/skills');
-const { prepareEndSupplies } = require('../src/end-supplies');
+const { prepareEndSupplies, kitItems } = require('../src/end-supplies');
 function fixture() {
   const slots = [], items = ['iron_sword', 'iron_pickaxe', 'bow', 'arrow', 'cobblestone', 'cooked_beef', 'water_bucket', 'water_bucket', 'white_bed'].map(name => ({ name,
     count: ({ arrow: 64, cobblestone: 64, cooked_beef: 8, white_bed: 4 })[name] || 1, durabilityUsed: 0 }));
@@ -62,4 +62,13 @@ test('a counted top-up says what the rest would take at the pace so far (note 13
   task.opportunityClient = { systemOne: async ({ questions }) => { text = JSON.stringify(Object.values(questions)[0]); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'enter_now', confidence: 0.9 }])) }; } };
   await prepareEndSupplies(bot, task, goal, () => {}, { acquireStep: async () => {} });
   assert.match(text, /the arrows carried going from 0 to 3 meanwhile\. At that pace \(3 in about 24 minutes\), the 61 more to 64 would take about 8 hours\./);
+});
+
+test('the water option says what a bucket costs and what the live End fights without one came to (note 1406)', () => {
+  const { bot, items, goal } = fixture();
+  for (const i of items.filter(i => i.name === 'water_bucket')) i.name = 'raw_iron';
+  const water = kitItems(bot, goal).find(i => i.key === 'water');
+  assert.equal(water.short, true);
+  assert.match(water.says, /three iron ingots at a crafting table \(0 empty buckets, 0 iron ingots and 2 raw iron carried\)/);
+  assert.match(water.says, /thrown 56 blocks up as it took off and died of the fall/);
 });
