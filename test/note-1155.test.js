@@ -107,3 +107,11 @@ test('where the bot does not stand safe, waiting is still offered beside the run
   assert.ok(said?.under_head, Object.keys(said || {}).join(','));
   assert.ok(said.observe, Object.keys(said).join(','));
 });
+
+test('a move is said with how near its line passes the dragon (note 1407)', () => {
+  const { dragonNearRoute } = require('../src/end-combat');
+  // 25588 at 21:04:01Z: from (16.5, -8.5) to (-6, -10), the dragon perched at the fountain's middle.
+  assert.equal(dragonNearRoute({ position: new Vec3(0, 65, 0) }, new Vec3(16.5, 62, -8.5), new Vec3(-6, 63, -10)), 10);
+  assert.equal(dragonNearRoute({ position: new Vec3(0, 65, 0) }, new Vec3(16.5, 62, -8.5), new Vec3(31, 61, 6)), 19);
+  assert.equal(dragonNearRoute(null, new Vec3(0, 0, 0), new Vec3(1, 0, 1)), undefined);
+});

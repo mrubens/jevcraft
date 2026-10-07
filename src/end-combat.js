@@ -159,6 +159,20 @@ function endermenNearRoute(bot, from, to, width = 6) {
   }).length;
 }
 
+// How near the straight line of a move passes the dragon, across the
+// ground (note 1407): a perched dragon's body and wings hurt and throw what
+// comes close. The dragon stage of 2026-10-07 (25588, 21:04:01Z), waiting
+// sixteen blocks from the perch, took an escape to the far side of the
+// fountain, offered with the endermen near its line and not the dragon,
+// passed ten blocks from the perched dragon, was hit twice and thrown, and
+// died.
+function dragonNearRoute(dragon, from, to) {
+  if (!dragon?.position) return undefined;
+  const flat = v => new Vec3(v.x, 0, v.z), a = flat(from), d = flat(to).minus(a), len2 = d.dot(d) || 1, p = flat(dragon.position);
+  const t = Math.max(0, Math.min(1, p.minus(a).dot(d) / len2));
+  return Math.round(p.distanceTo(a.plus(d.scaled(t))));
+}
+
 // Why a point is not safe, for the record when nothing can be done.
 function unsafeBecause(bot, p, hazards = endHazards(bot)) {
   const out = [];
@@ -761,7 +775,8 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
         clearCrystalShot: focus?.name === 'end_crystal' ? route.clearCrystalShot : undefined,
         targetDistance: route.targetDistance, currentTargetDistance: focus?.position?.distanceTo(bot.entity.position),
         desiredHorizontalRange: route.desiredHorizontalRange,
-        voidEdgeBlocks: voidEdge(bot, vector(route.p)), endermenNearRoute: endermenNearRoute(bot, bot.entity.position, vector(route.p)), ...breathSays(bot, dragon, vector(route.p)) }, run: async () => {
+        voidEdgeBlocks: voidEdge(bot, vector(route.p)), endermenNearRoute: endermenNearRoute(bot, bot.entity.position, vector(route.p)),
+        ...(dragon ? { dragonBlocksFromRoute: dragonNearRoute(dragon, bot.entity.position, vector(route.p)), dragonPerched: perched(bot, dragon) } : {}), ...breathSays(bot, dragon, vector(route.p)) }, run: async () => {
         state.visits[route.key] = (state.visits[route.key] || 0) + 1; save();
         const initiallySafe = safeEndPoint(bot, bot.entity.position);
         // A walk stops for a mob at arm's length: the recorded rehearsal
@@ -980,4 +995,4 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
   }
 }
 
-module.exports = { enclosed, dropOffs, leaveHighGround, voidEdge, endermenNearRoute, metadata, perched, perchedHead, repeatedCrystalMiss, observeArena, endHazards, safeEndPoint, arenaMovement, arenaRoutes, fightEndStep };
+module.exports = { dragonNearRoute, enclosed, dropOffs, leaveHighGround, voidEdge, endermenNearRoute, metadata, perched, perchedHead, repeatedCrystalMiss, observeArena, endHazards, safeEndPoint, arenaMovement, arenaRoutes, fightEndStep };
