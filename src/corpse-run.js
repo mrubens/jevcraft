@@ -446,6 +446,31 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     }
     const here = bot.entity.position, turn = TURNS[(run.stuck || 0) % TURNS.length] * Math.PI / 180;
     const bearing = Math.atan2(spot.z - here.z, spot.x - here.x) + turn;
+    // Down to the drops' level outside the ground that ticks, then in level
+    // (note 1394): drops start their five minutes when the bot comes within
+    // 128 blocks, and a way down from over them is slower than that. 25598
+    // (2026-10-07 07:46:55 to 07:52Z) came within reach of its twelve eyes
+    // 77 blocks over them at y 15, beside its End portal, dug down a block
+    // in ten to forty seconds, and they were gone at y 25.
+    const dy = here.y - spot.y, edge = TICKING + 8, across = Math.hypot(here.x - spot.x, here.z - spot.z) || 1;
+    if (!run.loadedAt && dy > 12 && across > edge) {
+      const start = edge + dy + 16;
+      if (across <= start) {
+        const unit = { x: (here.x - spot.x) / across, z: (here.z - spot.z) / across };
+        const target = new Vec3(Math.round(spot.x + unit.x * edge), Math.round(spot.y + 1), Math.round(spot.z + unit.z * edge));
+        goal.step = { action: 'corpse_run', to: { ...run.position }, items: { ...run.items }, way: `down to their level (y ${Math.round(spot.y)}) before coming within ${TICKING} blocks` }; save();
+        try { await require('./bridging').tunnelStraight(bot, task, target, { maxSteps: 64, navigate: move, down: true }); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[corpse run] the way down stopped: ${String(err.message || err).slice(0, 160)}`); }
+        return true;
+      }
+      // A leg that would end inside the edge ends at the start of the way down.
+      if (across - LEG < start) {
+        const to = { x: here.x + (spot.x - here.x) / across * (across - start), z: here.z + (spot.z - here.z) / across * (across - start) };
+        try { await move(bot, task, new goals.GoalNearXZ(Math.round(to.x), Math.round(to.z), 4), { timeoutMs: LEG_MS, stallMs: 8000, sprint: true }); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+        return true;
+      }
+    }
     const leg = before > FAR ? new goals.GoalNearXZ(Math.round(here.x + Math.cos(bearing) * LEG), Math.round(here.z + Math.sin(bearing) * LEG), 4) : new goals.GoalNear(spot.x, spot.y, spot.z, 3);
     let failed = null;
     try { await move(bot, task, leg, { timeoutMs: LEG_MS, stallMs: 8000, sprint: true, passing: /nether/.test(String(bot.game?.dimension || '')) }); }

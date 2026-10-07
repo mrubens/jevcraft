@@ -523,3 +523,17 @@ test('a corpse run through the Nether ends its shortcut on arrival near the drop
   assert.equal(goal.netherShortcut, undefined);
   assert.equal(goal.errand, undefined);
 });
+
+test('drops far below: the way down to their level is dug outside the 128 blocks that tick, not from over them (note 1394)', async (t) => {
+  const bridging = require('../src/bridging');
+  const dug = [];
+  t.mock.method(bridging, 'tunnelStraight', async (b, task, target) => { dug.push(target); return { arrived: false }; });
+  const { bot, goal } = world({ at: new Vec3(400 - 200, 90, 0) });
+  goal.survival.deaths[0].position = { x: 400, y: 15, z: 0 };
+  const move = async () => { throw new Error('not walked: the way down first'); };
+  assert.equal(await corpseRunStep(bot, new Task('win'), goal, () => {}, { move }), true);
+  assert.equal(dug.length, 1);
+  assert.equal(dug[0].y, 16, 'to the drops\' level');
+  assert.equal(Math.round(400 - dug[0].x), 136, 'ending outside the ticking ground');
+  assert.equal(goal.corpseRun.loadedAt, undefined, 'their five minutes not begun');
+});
