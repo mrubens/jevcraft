@@ -127,6 +127,18 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
       try { await actions.tunnel(bot, task, goal, save, side, 'end_portal'); aside = null; break; }
       catch (err) { task.check(); if (!/set aside/.test(String(err.message || err))) throw err; aside = err; }
     }
+    // Every side's stair set aside, the ring near: straight at it, dug and
+    // bridged as the tunnel home and the corpse run go (bridging.js), down
+    // through the rock (note 1400). The stronghold stage of 2026-10-07
+    // (25595, 19:54Z), its eleven eyes carried, stood on the strip of rock
+    // 41 blocks from a ring under the open sea at y 32, its stair 'set
+    // aside (paced the same few cells)', and swam back and forth.
+    if (aside && flat <= 64) {
+      let r = null;
+      try { r = await require('./bridging').tunnelStraight(bot, task, beside, { maxSteps: 96, navigate: actions.navigate, down: true }); }
+      catch (err) { task.check(); if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; console.log(`[end portal] the straight dig toward the ring stopped: ${String(err.message || err).slice(0, 160)}`); }
+      if (r?.arrived || bot.entity.position.distanceTo(stood) >= 3) return;
+    }
     if (aside) throw aside;
     // The stair stopped at the room's own wall (its bricks and iron bars are
     // no stair's rock): within a dozen blocks of the ring and near its
