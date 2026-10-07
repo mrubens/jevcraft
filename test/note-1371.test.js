@@ -22,3 +22,10 @@ test('nothing banked and no portal found says nothing', () => {
   assert.strictEqual(anchors.headingSays(bot(0, 0), {}, 0), '');
   assert.strictEqual(anchors.nowSays(bot(0, 0), {}), null);
 });
+
+test('in the Overworld with the End makings in Nether chests, the portal to them is named on each heading (note 1397)', () => {
+  const g = { portals: [{ x: -23, y: 80, z: 90, dimension: 'overworld' }, { x: 4, y: 50, z: 13, dimension: 'nether' }],
+    rodStashes: [{ position: { x: -167, y: 80, z: 152 }, dimension: 'nether', contents: { blaze_rod: 5 } }, { position: { x: -93, y: 39, z: 35 }, dimension: 'nether', contents: { ender_pearl: 11 } }] };
+  const says = anchors.headingSays(bot(400, 300), g, 0);
+  assert.match(says, /farther \d+ to \d+ blocks from the portal at \(-23, 80, 90\), the way to the bot's Nether chests \(5 blaze rods, 11 ender pearls\)/);
+});

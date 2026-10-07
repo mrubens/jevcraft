@@ -19,6 +19,20 @@ function anchorsOf(bot, goal) {
       if (s.dimension !== dim || !rs.withContents(s)) continue;
       out.push({ what: `the chest with ${rs.listed(s.contents)} at (${s.position.x}, ${s.position.y}, ${s.position.z})`, at: s.position });
     }
+    // In the Overworld, the portal its Nether chests lie behind (note 1397):
+    // 25590 (2026-10-07 15:00 to 15:15Z), five rods and eleven pearls in its
+    // Nether chests, was walked from 201 to 657 blocks off its portal on food
+    // searches whose headings named none of it.
+    if (dim === 'overworld') {
+      const nether = rs.stashes(goal).filter(s => s.dimension === 'nether' && rs.withContents(s));
+      const here = bot.entity?.position;
+      const portal = here && (goal.portals || []).filter(q => q.dimension === 'overworld').sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z))[0];
+      if (nether.length && portal) {
+        const sum = k => nether.reduce((n, s) => n + Number(s.contents?.[k] || 0), 0);
+        const what = [['blaze_rod', 'blaze rod'], ['ender_pearl', 'ender pearl'], ['ender_eye', 'eye of ender']].filter(([k]) => sum(k)).map(([k, w]) => `${sum(k)} ${w}${sum(k) === 1 ? '' : 's'}`).join(', ');
+        out.push({ what: `the portal at (${portal.x}, ${portal.y}, ${portal.z}), the way to the bot's Nether chests (${what})`, at: portal });
+      }
+    }
     const c = goal?.endPortal?.center;
     if (dim === 'overworld' && c) out.push({ what: `the End portal at (${c.x}, ${c.y}, ${c.z})`, at: c });
   } catch (_) { /* nothing known */ }
