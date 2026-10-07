@@ -154,6 +154,24 @@ async function evadeOverTerrain(bot, task, goal, save, dragon, { allowed = () =>
       if (allowed(p) && dryStanding(bot, p) && !deepBeside(bot, p)) { candidates.push(p); break; }
     }
   }
+  // In the breath on a bridge or a ledge every cell has the void beside it,
+  // and none of the above is taken (note 1404): the nearest cells farther
+  // from the cloud, the void beside them or not, walked to and never run.
+  // The breath is not stood in as a charge is (note 1153): it lies there. The
+  // dragon stage of 2026-10-07 (25588, 20:25:19 to 20:25:27Z) stood on its
+  // one-wide bridge from the entry platform in the dragon's breath, "No
+  // surveyed walking escape" each step, and each touch of the breath
+  // knocked it half a block on, 20 to 8 and over the side into the void.
+  if (!candidates.length && dragon.name === 'area_effect_cloud') {
+    // Out of the cloud first (its own radius, without the margin), nearest first.
+    const here = hazardDistance(start, dragon), out = cloudRadius(bot, dragon) - 2, feet = start.floored(), edge = [];
+    for (let dx = -10; dx <= 10; dx++) for (let dz = -10; dz <= 10; dz++) for (const dy of [0, -1, 1]) {
+      const p = feet.offset(dx, dy, dz).offset(.5, 0, .5), d = Math.hypot(dx, dz), h = hazardDistance(p, dragon);
+      if (d < 2 || d > 10 || h < here + 2 || !allowed(p) || !dryStanding(bot, p)) continue;
+      edge.push({ p, d, inside: h <= out }); break;
+    }
+    candidates.push(...edge.sort((a, b) => a.inside - b.inside || a.d - b.d).slice(0, 4).map(e => e.p));
+  }
   const movement = bot.pathfinder.movements;
   const previous = { canDig: movement.canDig, allowSprinting: movement.allowSprinting, maxDropDown: movement.maxDropDown,
     allow1by1towers: movement.allow1by1towers, scafoldingBlocks: movement.scafoldingBlocks };

@@ -49,3 +49,17 @@ test('from the dragon\'s breath on the ground the dodge is straight out of it fi
   const dragon = { id: 20, name: 'ender_dragon', position: new Vec3(20.5, 66, 0.5), metadata: {} };
   assert.ok(Math.abs(dodgeRoutes(bot, dragon)[0].direction.z) > 0.99);
 });
+
+test('in the breath on a one-wide bridge over the void, the escape walks along the bridge out of the cloud (note 1404)', async () => {
+  const { bot } = platform(new Vec3(91.5, 49, 0.5));
+  // A bridge at y 48 along z 0.5 from x 80 to the platform; the cloud at the bot's feet.
+  const cloud = { id: 30, name: 'area_effect_cloud', position: new Vec3(91.5, 49, 0.5), metadata: {} };
+  bot.entities = { 30: cloud };
+  bot.blockAt = p => { const f = p.floored(); return f.y === 48 && f.z === 0 && f.x >= 80 && f.x <= 102 ? { name: 'cobblestone', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' }; };
+  let walked = null;
+  const goal = { endCombat: {} };
+  assert.equal(await evadeOverTerrain(bot, new Task('dodge'), goal, () => {}, cloud, { walk: async (b, t, dest) => { walked = dest; } }), true);
+  assert.equal(walked.z, 0);
+  assert.ok(Math.abs(walked.x - 91) > 3, `walked out of the cloud's radius of 3: ${walked.x}`);
+  assert.equal(goal.step.action, 'evade_dragon_over_terrain');
+});
