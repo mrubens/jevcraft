@@ -249,6 +249,15 @@ const stoppable = (over = {}) => {
 };
 const creeperNear = () => look({ mobs: [mob('creeper', arbiter.CREEPER_REACH - 0.5, 7)] });
 
+test('no reflex preempts in the End: its fight answers them at every tick (note 1403)', () => {
+  const { bot, stopped } = stoppable();
+  bot.game = { dimension: 'the_end' };
+  bot._arbiter = { holder: { layer: 'work', action: 'end_fight', since: 0, ids: [] } };
+  assert.equal(arbiter.watchOnce(bot, { live: true, look: look({ mobs: [mob('enderman', 1.6)] }), now: 1000, log: () => {} }), null);
+  assert.equal(arbiter.watchOnce(bot, { live: true, look: creeperNear(), now: 1000, log: () => {} }), null);
+  assert.deepEqual(stopped, []);
+});
+
 test('a preemption is sticky until the arbiter rules for real, with no clock', () => {
   const { bot, stopped } = stoppable();
   bot._arbiter = { holder: { layer: 'work', action: 'mine', since: 0, ids: [] } };

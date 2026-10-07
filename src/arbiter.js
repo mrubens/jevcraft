@@ -1038,10 +1038,17 @@ function watchOnce(bot, { live = mode() === 'live', now = Date.now(), look = pro
   // backing 2.4 blocks in all; the blast took 20 to 6.4 (note 752f).
   const slotKin = t => { const h = bot._huntingEntity; return !!h?.slot && h.until > now && h.name === t?.entity?.name; };
   const askedAbout = top && ALERTS.has(top.key) && state.askingAlerts?.has(top.key);
-  if (!askedAbout && outranks(bot, top, holder, now)) p = { by: top.key, layer: top.layer, action: top.action, facts: top.facts, why: `${top.action.replaceAll('_', ' ')} ${JSON.stringify(top.facts)}` };
+  // Not in the End (notes 1401, 1403): the fight there answers the mobs, the
+  // dragon and its breath at every tick, and no survival layer runs to take
+  // the turn a reflex would give it. The dragon stage of 2026-10-07 (25588,
+  // to 20:20:57Z) stood in the dragon's breath with 'Preempted by arm:
+  // escape threat' (an enderman 1.6 blocks off) every 25 milliseconds until
+  // the breath killed it.
+  const inEnd = /end/.test(String(bot.game?.dimension || ''));
+  if (!inEnd && !askedAbout && outranks(bot, top, holder, now)) p = { by: top.key, layer: top.layer, action: top.action, facts: top.facts, why: `${top.action.replaceAll('_', ' ')} ${JSON.stringify(top.facts)}` };
   // A newcomer: the ruling was made without it. The work's own threat check
   // (interruptCheck) is swapped out by nested steps and lost with them.
-  else if (holder?.layer === 'work' && holder.ids) {
+  else if (!inEnd && holder?.layer === 'work' && holder.ids) {
     let mobs = [];
     try { mobs = look.mobs(bot, STANCE_NEWCOMER) || []; } catch (_) { /* no world */ }
     // A build begun in a lull (spawner-clock.js, note 691) is finished: the
@@ -1087,13 +1094,10 @@ function watchOnce(bot, { live = mode() === 'live', now = Date.now(), look = pro
   // came on from 28 blocks to 6 and shot it over, and mid-242-ae's work,
   // given the turn after a meal, was speared twice by a piglin come to its
   // reach, neither asked. Not over survival's own step: it answers them.
-  // Not in the End (note 1401): the fight there answers the mobs, the
-  // dragon and its breath at every tick, and no survival layer runs to take
-  // the turn. The stronghold stage of 2026-10-07 (25595, 20:09:23 to
-  // 20:09:27Z), the first live trial in the End, stood shield up on the
-  // entry platform with a dragon fireball at it, 'Preempted by push' every
-  // ten milliseconds, and the breath killed it from 20 in four seconds.
-  const inEnd = /end/.test(String(bot.game?.dimension || ''));
+  // Nor in the End (note 1401): the stronghold stage of 2026-10-07 (25595,
+  // 20:09:23 to 20:09:27Z), the first live trial in the End, stood shield up
+  // on the entry platform with a dragon fireball at it, 'Preempted by push'
+  // every ten milliseconds, and the breath killed it from 20 in four seconds.
   if (!p && !inEnd && holder && holder.layer !== 'survival' && holder.knew) {
     const got = pressing(bot, look);
     const mob = got.reach ? (() => { try { return look.atReach(bot)[0]; } catch (_) { return null; } })() : null;
