@@ -47,7 +47,12 @@ try {
     const kept = (goal.rodStashes || []).filter(c => !c.lostAt && c.dimension === 'overworld').reduce((n, c) => n + Number(c.contents?.ender_eye || 0), 0);
     const frs = goal.endPortal?.frames || ms.stronghold_located?.frames || [];
     const need = Number.isInteger(goal.endPortal?.neededEyes) ? goal.endPortal.neededEyes : frs.length ? frs.filter(f => !f.eye).length : 12;
-    if (need > 0 && carried + kept >= need) out.push('stronghold');
+    // And there: within 600 blocks of the portal (the save is the dragon's
+    // part, not the walk to it). mid-243-ma-end-3 (25597, 2026-10-07 17:35Z)
+    // was saved with its eleven eyes in a chest 2,400 blocks off its portal.
+    const c = goal.endPortal?.center || ms.stronghold_located?.center, p = last.position;
+    const near = c && p && Math.hypot(p.x - c.x, p.z - c.z) <= 600;
+    if (need > 0 && near && carried + kept >= need) out.push('stronghold');
   }
 } catch (_) { /* no state */ }
 process.stdout.write(out.join('\n'));
