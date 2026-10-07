@@ -8609,6 +8609,30 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   const tree = {
     cross_now: { description: `Cross with what is carried now${short.length ? `, short of what the code would take in ${short.map(i => i.key).join(', ')}` : ''}${valuables ? `, and with the valuables carried (${valuables.what})` : ''}.${going}${leftSays}${hungerWeigh} ${items.filter(i => !i.rung).map(i => i.says).join(' ')}` },
   };
+  // What the crossing is for, where the bot's own chests there hold the
+  // End's makings (note 1395): the stay is theirs, not the whole hunt's.
+  // 25590 (mid-242-jg-fortress-12, 2026-10-06 18:38Z to 2026-10-07 13:38Z),
+  // five rods and twelve pearls in its Nether chests within 250 blocks of its
+  // portal, one rod and one pearl at home, twelve eyes in all, was asked to
+  // cross with '0 of 80 food points for the stay' (two hours of hunt) and went
+  // for food, and died in the Overworld twelve times in nineteen hours.
+  try {
+    const rs = require('./rod-stash');
+    const there = rs.stashes(goal).filter(c => c.dimension === 'nether' && rs.withContents(c));
+    const netherPortals = (goal.portals || []).filter(q => q.dimension === 'nether');
+    if (there.length && netherPortals.length) {
+      const sum = (list, k) => list.reduce((n, c) => n + Number(c.contents?.[k] || 0), 0);
+      const all = rs.stashes(goal).filter(c => rs.withContents(c));
+      const rods = sum(all, 'blaze_rod') + countOf(bot, 'blaze_rod') + Math.floor((sum(all, 'blaze_powder') + countOf(bot, 'blaze_powder')) / 2);
+      const pearls = sum(all, 'ender_pearl') + countOf(bot, 'ender_pearl');
+      const eyes = Math.min(pearls, rods * 2) + sum(all, 'ender_eye') + countOf(bot, 'ender_eye');
+      const from = netherPortals[0];
+      const far = Math.max(...there.map(c => Math.round(Math.hypot(c.position.x - from.x, c.position.z - from.z))));
+      const minutes = Math.max(5, Math.round(far * 2 * 1.6 / 38.5));
+      const food = Math.round(minutes / 60 * NETHER_HUNGER_AN_HOUR);
+      tree.cross_now.description += ` What waits there: ${there.length} chest${there.length === 1 ? '' : 's'} of the bot's own in the Nether, ${there.map(c => rs.listed(c.contents)).join('; ')}, the farthest ${far} blocks from its portal there; with what is kept here, ${rods} blaze rod${rods === 1 ? '' : 's'} and ${pearls} ender pearl${pearls === 1 ? '' : 's'} in all, about ${eyes} eyes of ender. Out to the chests and back is about ${minutes} minutes at the bot's walking pace with the detours, about ${food} hunger at the Nether's rate, not the whole stay's.`;
+    }
+  } catch (_) { /* nothing said */ }
   tree.cross_now.description += require('./entry-kit').goingWithout(entry);
   // The crossing chosen for the kit a death left on the far side (note 1233).
   { const cr = require('./corpse-run'), run = goal.corpseRun; if (goal.errand?.for === cr.KIT_ERRAND && run?.status === 'open' && run.dimension === 'nether') tree.cross_now.description += ` This crossing was chosen for the kit dropped at the death in the Nether, taken up there before anything else: ${Object.entries(run.items || {}).map(([n, c]) => `${c > 1 ? `${c} ` : ''}${n.replaceAll('_', ' ')}`).join(', ')}.`; }

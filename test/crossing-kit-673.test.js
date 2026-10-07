@@ -185,3 +185,14 @@ test('the crossing says the last one turned back for food, while the food is no 
   await crossingKitReady(hungry, new Task('win'), { kind: 'win' }, () => {}, client);
   assert.doesNotMatch(asked.cross_now, /turned back through the portal for food/);
 });
+
+test('the bot\'s own chests in the Nether with the End\'s makings: crossing says what waits there, how far, the eyes it all makes, and the food that trip takes (note 1395)', async () => {
+  const { crossingKitReady } = require('../src/work');
+  const bot = atPortal({ cobblestone: 10, golden_boots: 0, blaze_rod: 1, ender_pearl: 1 });
+  const goal = { kind: 'win', portals: [{ x: 4, y: 50, z: 13, dimension: 'nether' }],
+    rodStashes: [{ position: { x: -167, y: 80, z: 152 }, dimension: 'nether', contents: { blaze_rod: 5 } }, { position: { x: -93, y: 39, z: 35 }, dimension: 'nether', contents: { ender_pearl: 11 } }] };
+  let asked = null;
+  const client = { systemOne: async ({ questions }) => { asked = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'cross_now', confidence: 0.7 } } }; } };
+  assert.equal(await crossingKitReady(bot, new Task('win'), goal, () => {}, client), true);
+  assert.match(asked.cross_now, /What waits there: 2 chests of the bot's own in the Nether, 5 blaze rods; 11 ender pearls, the farthest 220 blocks from its portal there; with what is kept here, 6 blaze rods and 12 ender pearls in all, about 12 eyes of ender\. Out to the chests and back is about 18 minutes/);
+});
