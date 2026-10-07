@@ -57,6 +57,8 @@ test('the perched head out of reach: the run to the ground under it is offered, 
   assert.ok(said.under_head, Object.keys(said).join(','));
   assert.match(said.under_head.action, /Run to the ground under the perched dragon's head and strike it with the sword for as long as it sits/);
   assert.equal(said.under_head.headBlocksOff, 15);
+  assert.equal(said.under_head.perchedSeconds, 0);
+  assert.match(said.under_head.takeoff, /no water bucket is carried/);
   assert.ok(!Object.keys(said).some(k => k.startsWith('move_')), 'no routes surveyed while the head is the way');
   assert.deepEqual([went.x, went.y, went.z], [0, 64, 7]);
   assert.deepEqual(swings, [21, 21, 21], 'three swings at the head before it took off');
@@ -92,4 +94,16 @@ test('under the perched head and a block or two short of it, the bot goes up on 
   } finally { pr.pillarUp = pillarUp; }
   assert.deepEqual(lifted, { y: 66, most: 2 });
   assert.equal(swings.length, 2, 'struck from the blocks');
+});
+
+test('where the bot does not stand safe, waiting is still offered beside the run under the head (note 1405)', async () => {
+  const { bot, goal, task } = fixture(new Vec3(15.5, 64, 7.5), 20);
+  const dragon = bot.entities[20], phase = registry.entitiesByName.ender_dragon.metadataKeys.indexOf('phase');
+  dragon.position = new Vec3(0.5, 66, 0.5); dragon.metadata[phase] = 6;
+  // An endermite nine blocks off: the place is not safe, the strike is.
+  bot.entities[50] = { id: 50, name: 'endermite', type: 'hostile', isValid: true, position: new Vec3(24.5, 64, 7.5), metadata: {}, height: 2.9, width: 0.6 };
+  let said = null;
+  await fightEndStep(bot, task, goal, () => {}, { navigate: async () => {} }, { systemOne: async ({ questions }) => { said = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'observe' } } }; } });
+  assert.ok(said?.under_head, Object.keys(said || {}).join(','));
+  assert.ok(said.observe, Object.keys(said).join(','));
 });

@@ -638,6 +638,9 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       }
     }
     const head = dragon && perchedHead(bot, dragon);
+    // How long the dragon has sat (note 1405): it takes off after five
+    // seconds to most of a minute, and the run under it is said with that.
+    if (dragon && perched(bot, dragon)) state.perchedSince ||= Date.now(); else delete state.perchedSince;
     // For the sword at the perched head the place is judged by what is at
     // hand (note 1159): no mob within eight blocks, no breath or crystal
     // over it. The twenty blocks kept from a turned enderman are for a bow
@@ -669,6 +672,8 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
         description: { action: 'Run to the ground under the perched dragon\'s head and strike it with the sword for as long as it sits: the sword reaches the dragon only here, its breath pools on the ground before its head, and it takes off within seconds',
           headBlocksOff: Math.round(head.position.distanceTo(bot.entity.position)), headBlocksOverItsGround: Math.round((head.position.y - ground.y) * 10) / 10, dragonHealth: beforeDragon, health: bot.health,
           voidEdgeBlocks: voidEdge(bot, ground), endermenNearRoute: endermenNearRoute(bot, bot.entity.position, ground), headHitThroughArmourWorn: headHit(bot),
+          perchedSeconds: Math.round((Date.now() - state.perchedSince) / 1000), runSeconds: Math.round(ground.distanceTo(bot.entity.position) / 5.6 * 10) / 10,
+          takeoff: `it sits from about five seconds to most of a minute; as it takes off its body knocks what stands beside it high into the air, and ${countOf(bot, 'water_bucket') ? 'a water bucket is carried to land in' : 'no water bucket is carried to land in'}: the dragon stage of 2026-10-07 (25588) ran under it 18 seconds into a perch with none, arrived as it took off, was hit for 10 and thrown 56 blocks up, and died of the fall`,
           ...(drillSays(bot) ? { drill: drillSays(bot) } : {}) },
         run: async () => {
           const reached = () => { const h = live(bot, dragon) && perchedHead(bot, dragon); return !h || canStrike(bot, h); };
@@ -849,7 +854,11 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     // arena's drill of a bare kit (2026-10-06 02:03Z) ran under the perched
     // head at 14.9 health and died there. The watches without progress are
     // said with it.
-    if (safe && dragon) tree.observe = {
+    // Beside the run under the head it is a choice even where the bot does
+    // not stand safe (note 1405): with the run the only way offered, the
+    // dragon stage of 2026-10-07 (25588, 20:38:58Z) went under a dragon 18
+    // seconds into its perch and was thrown to its death as it took off.
+    if ((safe || tree.under_head) && dragon) tree.observe = {
       description: { action: 'Wait one second without attacking or moving',
         health: bot.health, canRegenerate: bot.health < 20 && bot.food >= 18,
         usefulAttackAvailableNow: !!tree.shoot_dragon || !!tree.strike_head || crystals.some(c => tree[`crystal_${c.id}`]),
