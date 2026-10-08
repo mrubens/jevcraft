@@ -284,9 +284,12 @@ async function findStronghold(bot, task, goal, save, actions, client) {
     }
   }
   const throwOne = search.spare?.pick === 'throw_one' && !estimate && countOf(bot, 'ender_eye') >= 1;
-  const noSpare = !throwOne && (countOf(bot, 'ender_eye') + require('./eye-bank').banked(goal) <= 12 || countOf(bot, 'ender_eye') < 1);
+  // Found before the eyes are all made, where Jev chose it (note 1411): the
+  // eyes carried are the search's, none kept back for frames not yet found.
+  const early = goal.earlyStronghold?.pick === 'locate_now' && countOf(bot, 'ender_eye') + require('./eye-bank').banked(goal) < 12;
+  const noSpare = early ? countOf(bot, 'ender_eye') < 1 : !throwOne && (countOf(bot, 'ender_eye') + require('./eye-bank').banked(goal) <= 12 || countOf(bot, 'ender_eye') < 1);
   if (throwAgain && noSpare) {
-    if (!estimate) throw blocked('Stronghold search needs another spare Eye of Ender; preserving twelve for the portal');
+    if (!estimate) throw blocked(early ? 'Stronghold search has no Eye of Ender left to throw' : 'Stronghold search needs another spare Eye of Ender; preserving twelve for the portal');
     if (toEstimate < 12) {
       goal.step = { action: 'search_at_estimate', target: { x: Math.round(estimate.x) + 0, z: Math.round(estimate.z) + 0 }, bearings: search.bearings.length, source: 'observed_eye_bearings', verifiedStronghold: false }; save();
       await actions.explore(bot, task, goal, save, 'end_portal_frame', { surfaceOnly: false });
@@ -322,7 +325,7 @@ async function findStronghold(bot, task, goal, save, actions, client) {
     // of 2026-10-04 (09:22 to 09:29Z), twelve in its chest and one carried,
     // was refused the throw at every pass, 'Need a spare Eye of Ender beyond
     // the 12 reserved', and stood seven minutes where it had put them.
-    const bearing = await throwEye(bot, task, { reserve: throwOne ? Math.max(0, countOf(bot, 'ender_eye') - 1) : Math.max(0, 12 - require('./eye-bank').banked(goal)) });
+    const bearing = await throwEye(bot, task, { reserve: early ? 0 : throwOne ? Math.max(0, countOf(bot, 'ender_eye') - 1) : Math.max(0, 12 - require('./eye-bank').banked(goal)) });
     search.throws++;
     search.bearings = [...search.bearings, bearing].slice(-32); search.pendingPickup = bearing;
     search.estimate = triangulate(search.bearings);

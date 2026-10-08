@@ -576,6 +576,32 @@ define({
   instructions: workInstructions('The bot has made its eyes of ender and thrown one; it holds eleven or twelve and the search wants one more bearing. Choose whether one of them is thrown or a spare is fetched first. Each option says its odds or its record.'),
 });
 
+// The stronghold found before the eyes are all made (src/game-progress.js gameStep, note 1411).
+define({
+  id: 'early_stronghold', area: 'resources', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'Some eyes of ender are made, not all the portal wants: find the stronghold now with them, or make the rest first?',
+  trigger: 'In the Overworld, the stronghold not located and its search not under way, two eyes or more held (carried or in the bot\'s chest) and fewer than the goal wants; asked again half an hour after a no, or when two more are made.',
+  source: 'src/game-progress.js (gameStep, nextGameStage), src/stronghold.js (findStronghold), src/eye-need.js',
+  options: [
+    { key: 'locate_now', label: 'find the stronghold now with the eyes held', when: 'always here; said with the record of eyes lost and how a portal found keeps them', level: 'root' },
+    { key: 'keep_making', label: 'make the rest first and find it with all of them', when: 'always here; said with how many are still to make', level: 'root' },
+  ],
+  instructions: workInstructions('The bot has made some of its eyes of ender. Choose whether to find the stronghold and its portal now, throwing the eyes held, or make the rest first. Each option says what it costs and its record.'),
+});
+
+// The eyes carried put into the portal's frames before all are made (src/game-progress.js gameStep, note 1411).
+define({
+  id: 'frame_eyes', area: 'resources', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'The End portal is found and unlit, and some eyes are carried, fewer than its empty frames: put them in its frames now, or keep them carried?',
+  trigger: 'In the Overworld, the stronghold located and its portal unlit, one eye or more carried and fewer than its frames want; asked when the eyes carried change, at most once in ten minutes.',
+  source: 'src/game-progress.js (gameStep, nextGameStage), src/end-portal.js (enterEnd, partial)',
+  options: [
+    { key: 'fill_now', label: 'go to the portal and put the eyes carried in its frames', when: 'always here; said with the distance and the record of eyes lost carried', level: 'root' },
+    { key: 'keep_carrying', label: 'keep them carried and go on making the rest', when: 'always here', level: 'root' },
+  ],
+  instructions: workInstructions('The bot has found its End portal and carries some eyes of ender, not enough to light it. Choose whether it goes to the portal now and puts them in the frames, where no death can take them, or keeps them and goes on. Each option says what it costs.'),
+});
+
 // The way to a far chest of the bot's through the Nether (src/nether-shortcut.js, note 1279).
 define({
   id: 'nether_shortcut', area: 'resources', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,

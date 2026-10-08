@@ -989,6 +989,9 @@ function nextGameStage(bot, goal, skip = new Set()) {
     if (where === 'overworld' && c && here && !ep?.litAt && Number.isInteger(need) && need > 0 && count(bot, 'ender_eye') >= need && Math.hypot(here.x - c.x, here.z - c.z) <= 300)
       return { phase: 'fill_end_portal', action: 'fill_end_portal' };
   }
+  // The stronghold found before the eyes are all made, and the eyes put in
+  // its frames as they come, where Jev chose them (early-stronghold.js, note 1411).
+  { const early = require('./early-stronghold').earlyStage(bot, goal); if (early) return early; }
   if (where === 'overworld' && supplies) { const gear = gearStage(bot, goal); if (gear && !(netherDone && /^(golden_boots|nether_)/.test(String(gear.phase)))) return gear; }
   if (where === 'end') return m.dragon_defeated ? { phase: 'return_alive', action: 'exit_end' } : { phase: 'defeat_dragon', action: 'fight_dragon' };
   // Survey throws deliberately spend eyes. Do not send Jev back to the Nether
@@ -1305,6 +1308,10 @@ async function gameStep(bot, task, goal, save, actions) {
       }
     }
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
+  // The stronghold before all the eyes, and the eyes into its frames as
+  // they come: Jev's (early-stronghold.js, note 1411).
+  try { if (await require('./early-stronghold').earlyChoices(bot, task, goal, save, actions?.client || task.opportunityClient)) stage = nextGameStage(bot, goal); }
+  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
   // Back for what the last death dropped, before anything else: close to
   // the respawn its drops have five minutes (corpse-run.js).
   // A walk back to drops lying by the End portal, the eyes in a chest of the

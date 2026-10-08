@@ -9092,6 +9092,8 @@ function gameHandlers(bot, decisionClient) {
         planFor: (b, item, count, g) => catalogPlan(b, item, count, planningInventory(b), g),
         enter_nether: (bot, task, goal, save) => netherStep(bot, task, goal, save, decisionClient || task.opportunityClient),
         fill_end_portal: (bot, task, goal, save) => enterEnd(bot, task, goal, save, endPortalActions(), { fillOnly: true }),
+        // Some of the frames, with the eyes carried, where Jev chose it (early-stronghold.js, note 1411).
+        fill_end_portal_some: (bot, task, goal, save) => enterEnd(bot, task, goal, save, endPortalActions(), { fillOnly: true, partial: true }),
         enter_end: (bot, task, goal, save) => enterEnd(bot, task, goal, save, endPortalActions()),
         fight_dragon: (bot, task, goal, save) => fightEndStep(bot, task, goal, save, { navigate, dig }, decisionClient),
         exit_end: (bot, task, goal, save) => exitEnd(bot, task, goal, save, { navigate }),

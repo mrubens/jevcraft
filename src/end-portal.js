@@ -43,7 +43,7 @@ const SURFACE_FIRST = 48, SURFACE_Y = 50, LEG = 48, UNDER_FAR = 96;
 const NEAR_FLAT = 5, NEAR_DOWN = 2;
 // `fillOnly`: the eyes put into the frames and the portal lit, and no step
 // into it (note 1284): the kit for the End is made up after, the eyes safe.
-async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000, entryMs = 12000, fillOnly = false } = {}) {
+async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000, entryMs = 12000, fillOnly = false, partial = false } = {}) {
   const check = () => {
     task.check(); checkAir(bot); checkThreats(bot);
     // No health floor (note 1384): the way to the portal was Jev's choice,
@@ -178,7 +178,8 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
   goal.endPortal = { ...goal.endPortal, ...portal, neededEyes: portal.frames.filter(f => !f.eye).length }; save();
   // Persist the real requirement so the progression controller can replenish
   // supplies through its ordinary Overworld/Nether dependency chain.
-  if (countOf(bot, 'ender_eye') < goal.endPortal.neededEyes) return;
+  // With `partial` (note 1411), the eyes carried go in as far as they go.
+  if (countOf(bot, 'ender_eye') < goal.endPortal.neededEyes && !(partial && countOf(bot, 'ender_eye') > 0)) return;
   const movement = bot.pathfinder.movements, policy = miningMovement(bot);
   const previous = { allowedPosition: movement.allowedPosition, scafoldingBlocks: movement.scafoldingBlocks, allow1by1towers: movement.allow1by1towers };
   const outside = p => Math.abs(Math.floor(p.x) - center.x) > 1 || Math.abs(Math.floor(p.z) - center.z) > 1;
@@ -258,7 +259,7 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
       const fresh = portalAt(bot, center), frame = bot.blockAt(position);
       if (!fresh || frame.getProperties().eye || !miningReach(bot, bot.entity.position, position)) throw blocked('End portal frame changed or is out of interaction reach');
       const before = countOf(bot, 'ender_eye'), item = bot.inventory.items().find(i => i.name === 'ender_eye');
-      if (!item || before < missing.length) throw blocked('End portal Eye supply changed before insertion');
+      if (!item || (!partial && before < missing.length)) throw blocked('End portal Eye supply changed before insertion');
       bot.pathfinder.setGoal(null); bot.clearControlStates(); await bot.equip(item, 'hand'); check();
       if (bot.heldItem?.name !== 'ender_eye') throw blocked('Eye of Ender was not equipped');
       goal.step = { action: 'insert_portal_eye', position: { ...position }, remainingFrames: missing.length }; save();
