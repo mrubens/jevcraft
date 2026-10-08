@@ -112,6 +112,11 @@ function corpseRun(bot, goal, now = Date.now()) {
     if (r.status === 'unreachable' && !r.loadedAt) { r.status = 'open'; delete r.choice; r.stalled = r.stalled || { walks: r.stuck || 3 }; r.stuck = 0; }
     if (r.status === 'left' && !r.loadedAt && r.more && !r.toldEyes && eyesLostBy(bot, goal, r)) { r.status = 'open'; delete r.choice; }
     if (r.status === 'left' && !r.loadedAt && r.told !== TOLD) { r.status = 'open'; delete r.choice; delete r.stalled; r.stuck = 0; }
+    // Eyes left only by an answer that listed them (note 1410): 25597
+    // (mid-243-ma-end-3, 2026-10-08) held its eleven eyes' run as left with
+    // 'leave_them', though every leave_them it answered (00:14 and 02:23Z)
+    // was asked of another death's iron, and it was not asked again.
+    if (r.status === 'left' && !r.loadedAt && r.items?.ender_eye && !(r.leftWith?.ender_eye >= r.items.ender_eye)) { r.status = 'open'; delete r.choice; delete r.stalled; r.stuck = 0; }
     if (r.status === 'open' && now - Date.parse(r.deathAt) > KEEP_MS) r.status = 'stale';
   };
   // The last death's run closed (or none made for it): the latest of the
@@ -135,7 +140,11 @@ function corpseRun(bot, goal, now = Date.now()) {
       break;
     }
     goal.corpseRunsEarlier = goal.corpseRunsEarlier.filter(r => r.status === 'open' || keep(r));
-    if (run === closed && closed && keep(closed) && !goal.corpseRunsEarlier.includes(closed) && closed.deathAt !== death.at) goal.corpseRunsEarlier.push(closed);
+    if (run === closed && closed && keep(closed) && !goal.corpseRunsEarlier.some(r => r.deathAt === closed.deathAt) && closed.deathAt !== death.at) goal.corpseRunsEarlier.push(closed);
+    // One entry a death, and none for the run in hand: a check by the
+    // object alone pushed the same run again after each save and load
+    // (25597 held four of its eyes' run).
+    goal.corpseRunsEarlier = goal.corpseRunsEarlier.filter((r, i, all) => r.deathAt !== run?.deathAt && all.findIndex(o => o.deathAt === r.deathAt) === i);
   }
   if (!run) return null;
   if (run.waitUntil > now) return null;
@@ -407,7 +416,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
       return false;
     }
     if (decision.path.at(-1) !== 'food_first') run.choice = decision.path.at(-1); save();
-    if (run.choice === 'leave_them') { run.status = 'left'; tripCameToNothing(bot, goal, run, save); save(); return false; }
+    if (run.choice === 'leave_them') { run.status = 'left'; run.leftWith = { ...run.items }; tripCameToNothing(bot, goal, run, save); save(); return false; }
   }
   // The food for the walk, where that was chosen: a pass of the gathering
   // at a time, until it is carried or twenty minutes are spent on it.

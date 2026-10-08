@@ -537,3 +537,25 @@ test('drops far below: the way down to their level is dug outside the 128 blocks
   assert.equal(Math.round(400 - dug[0].x), 136, 'ending outside the ticking ground');
   assert.equal(goal.corpseRun.loadedAt, undefined, 'their five minutes not begun');
 });
+
+test('eyes left by no answer that listed them are asked of again, and an earlier run is kept once a death (note 1410)', () => {
+  // 25597 (mid-243-ma-end-3, 2026-10-08 02:23Z): its eleven eyes' run held four times over as left, leave_them answered only of other deaths' iron.
+  const now = Date.now(), ago = m => new Date(now - m * 60000).toISOString();
+  const bot = { game: { dimension: 'overworld' }, entity: { position: new Vec3(-277, 121, -802) }, inventory: { items: () => [], slots: [] } };
+  const eyes = () => ({ deathAt: ago(240), position: { x: 1839, y: 62, z: -371 }, dimension: 'overworld', items: { ender_eye: 11, bow: 1 }, passes: 0, stuck: 0, status: 'left', told: 7, choice: 'leave_them' });
+  const last = ago(10);
+  const goal = { survival: { deaths: [{ at: last, position: { x: -661, y: 96, z: -683 }, dimension: 'overworld', worn: [] }], recovery: { at: last, status: 'done' } },
+    corpseRunFor: last, corpseRun: { deathAt: last, position: { x: -661, y: 96, z: -683 }, dimension: 'overworld', items: { iron_sword: 1 }, passes: 0, stuck: 0, status: 'left', told: 7, choice: 'leave_them', leftWith: { iron_sword: 1 } },
+    corpseRunsEarlier: [eyes(), eyes(), eyes(), eyes()] };
+  const run = corpseRun(bot, goal, now);
+  assert.equal(run?.items.ender_eye, 11);
+  assert.equal(run.status, 'open');
+  assert.equal(run.choice, undefined);
+  assert.equal(goal.corpseRunsEarlier.filter(r => r.items.ender_eye).length, 0, 'the eyes\' run is in hand, not also on the list');
+  // Left by an answer that listed them, they stay left.
+  const kept = { ...eyes(), leftWith: { ender_eye: 11, bow: 1 } };
+  const g2 = { survival: goal.survival, corpseRunFor: last, corpseRun: { deathAt: last, position: { x: -661, y: 96, z: -683 }, dimension: 'overworld', items: { iron_sword: 1 }, passes: 0, stuck: 0, status: 'left', told: 7, choice: 'leave_them', leftWith: { iron_sword: 1 } },
+    corpseRunsEarlier: [kept, { ...kept }] };
+  assert.equal(corpseRun(bot, g2, now), null);
+  assert.equal(g2.corpseRunsEarlier.length, 1);
+});
