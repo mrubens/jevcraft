@@ -12,6 +12,11 @@ const { eyeTarget } = require('./eye-need');
 const count = (bot, name) => (bot.inventory?.items() || []).filter(i => i.name === name).reduce((n, i) => n + i.count, 0);
 const overworld = bot => /overworld/.test(String(bot.game?.dimension || ''));
 const banked = goal => { try { return require('./eye-bank').banked(goal); } catch (_) { return 0; } };
+// The eyes the pearls and powder carried make (an eye is a pearl and a
+// powder, a rod two powder), beside those made (note 1412): the ladder makes
+// its eyes only once all the pearls are in, and 25590 (2026-10-08 04:21 to
+// 05:05Z), seven rods and ten pearls carried, was never asked.
+const makeable = bot => Math.min(count(bot, 'ender_pearl'), count(bot, 'blaze_powder') + 2 * count(bot, 'blaze_rod'));
 const EARLY_EYES = 2, ASK_AGAIN_MS = 30 * 60000, FRAME_ASK_MS = 10 * 60000, CHOICE_MS = 60 * 60000;
 const LOST_SAYS = 'Of the eight sets of eyes made in the trials on 2026-10-06, none reached a frame: each was carried or kept in a chest far from its portal, and lost at a death, in lava or to despawning. 25597 (2026-10-07 22:24Z) died to phantoms with eleven eyes, 2,100 blocks from where it came back to life. An eye put in a frame of the portal stays there through any death.';
 
@@ -28,14 +33,22 @@ function earlyStage(bot, goal, now = Date.now()) {
   const fresh = c => c && now - (c.at || 0) < CHOICE_MS;
   if (!m.stronghold_located) {
     const search = goal.strongholdSearch;
-    if (goal.earlyStronghold?.pick === 'locate_now' && fresh(goal.earlyStronghold) && (held >= 1 || (search?.estimate && (search.bearings || []).length >= 2)))
-      return { phase: 'find_stronghold', action: 'find_stronghold', early: true };
+    if (goal.earlyStronghold?.pick === 'locate_now' && fresh(goal.earlyStronghold)) {
+      // The eyes to throw made first from what is carried.
+      if (held < 2 && makeable(bot) > 0 && !(search?.estimate && (search.bearings || []).length >= 2))
+        return { phase: 'craft_eyes', action: 'acquire', item: 'ender_eye', count: held + makeable(bot), early: true };
+      if (held >= 1 || (search?.estimate && (search.bearings || []).length >= 2))
+        return { phase: 'find_stronghold', action: 'find_stronghold', early: true };
+    }
     return null;
   }
   const need = portalNeed(goal);
   if (goal.endPortal?.litAt || !Number.isInteger(need) || need <= 0) return null;
-  if (goal.framePlan?.pick === 'fill_now' && fresh(goal.framePlan) && held >= 1 && held < need)
-    return { phase: 'fill_end_portal', action: 'fill_end_portal_some', eyes: held, need };
+  if (goal.framePlan?.pick === 'fill_now' && fresh(goal.framePlan)) {
+    const make = Math.min(makeable(bot), Math.max(0, need - held));
+    if (make > 0) return { phase: 'craft_eyes', action: 'acquire', item: 'ender_eye', count: held + make, early: true };
+    if (held >= 1 && held < need) return { phase: 'fill_end_portal', action: 'fill_end_portal_some', eyes: held, need };
+  }
   return null;
 }
 
@@ -45,36 +58,36 @@ async function earlyChoices(bot, task, goal, save, client, now = Date.now()) {
   const m = goal.gameProgress?.milestones || {}, held = count(bot, 'ender_eye'), inChest = banked(goal);
   const decide = (id, tree, state) => require('./decisions').decide(id, { client, bot, task, goal, save, tree, state });
   if (!m.stronghold_located) {
-    const target = eyeTarget(goal), have = held + inChest, was = goal.earlyStronghold;
+    const target = eyeTarget(goal), make = makeable(bot), have = held + inChest + make, was = goal.earlyStronghold;
     const searching = (goal.strongholdSearch?.bearings || []).length > 0;
     const due = !was || (was.pick === 'keep_making' && (now - was.at >= ASK_AGAIN_MS || have >= (was.eyes || 0) + 2)) || (was.pick === 'locate_now' && now - was.at >= CHOICE_MS);
     if (searching || have < EARLY_EYES || have >= target || !due) return false;
     const p = bot.entity.position, fromMiddle = Math.round(Math.hypot(p.x, p.z));
     const tree = {
-      locate_now: { description: `Find the stronghold now with the ${held} eye${held === 1 ? '' : 's'} carried${inChest ? ` (and ${inChest} in the chest)` : ''}: each is thrown for a bearing, one in five breaks and four in five are picked up again, and two bearings far apart place it. The nearest strongholds stand in a ring 1,280 to 2,816 blocks from the world's middle; the bot is ${fromMiddle} blocks from it. Found, its portal shows how many of its frames come filled (about one in ten), and the eyes made after can go into its frames as they come, where no death can take them. ${LOST_SAYS} The rest are made after, with a trip or more between the portal and the Nether.` },
-      keep_making: { description: `Make the rest first: ${target - have} more of the ${target} the goal wants (${held} carried${inChest ? `, ${inChest} in the chest` : ''}), then find the stronghold with all of them and light the portal in one trip. Until then every eye is carried or in the chest.` },
+      locate_now: { description: `Find the stronghold now with the ${held} eye${held === 1 ? '' : 's'} carried${make ? ` and the ${make} the pearls and powder carried make, made first` : ''}${inChest ? ` (and ${inChest} in the chest)` : ''}: each is thrown for a bearing, one in five breaks and four in five are picked up again, and two bearings far apart place it. The nearest strongholds stand in a ring 1,280 to 2,816 blocks from the world's middle; the bot is ${fromMiddle} blocks from it. Found, its portal shows how many of its frames come filled (about one in ten), and the eyes made after can go into its frames as they come, where no death can take them. ${LOST_SAYS} The rest are made after, with a trip or more between the portal and the Nether.` },
+      keep_making: { description: `Make the rest first: ${target - have} more of the ${target} the goal wants (${held} made and carried${make ? `, ${make} to make from what is carried` : ''}${inChest ? `, ${inChest} in the chest` : ''}), then find the stronghold with all of them and light the portal in one trip. Until then every eye is carried or in the chest.` },
     };
-    const decision = await decide('early_stronghold', tree, { eyesHeld: held, eyesInChest: inChest, eyesWanted: target, blocksFromWorldMiddle: fromMiddle });
+    const decision = await decide('early_stronghold', tree, { eyesHeld: held, eyesToMake: make, eyesInChest: inChest, eyesWanted: target, blocksFromWorldMiddle: fromMiddle });
     if (decision.stale) return false;
     const pick = decision.path.at(-1);
     goal.earlyStronghold = { pick, at: now, eyes: have }; save();
     if (pick === 'locate_now') bot.chat?.(`The stronghold first, with ${held} eye${held === 1 ? '' : 's'}.`);
     return true;
   }
-  const need = portalNeed(goal), ep = goal.endPortal;
-  if (ep?.litAt || !Number.isInteger(need) || held < 1 || held >= need) return false;
+  const need = portalNeed(goal), ep = goal.endPortal, make = makeable(bot), have = held + make;
+  if (ep?.litAt || !Number.isInteger(need) || have < 1 || have >= need) return false;
   const was = goal.framePlan;
-  if (was && (was.eyes === held || now - was.at < FRAME_ASK_MS) && !(was.pick === 'fill_now' && now - was.at >= CHOICE_MS)) return false;
+  if (was && (was.eyes === have || now - was.at < FRAME_ASK_MS) && !(was.pick === 'fill_now' && now - was.at >= CHOICE_MS)) return false;
   const c = ep?.center || m.stronghold_located?.center, p = bot.entity.position;
   const far = c ? Math.round(Math.hypot(p.x - c.x, p.z - c.z)) : null;
   const tree = {
-    fill_now: { description: `Go to the End portal${far !== null ? `, ${far} blocks off,` : ''} and put the ${held} eye${held === 1 ? '' : 's'} carried in its frames: ${need} are empty, ${need - held} would be left to fill. ${LOST_SAYS}` },
-    keep_carrying: { description: `Keep the ${held} eye${held === 1 ? '' : 's'} carried and go on making the rest (${need - held} more${inChest ? `; ${inChest} in the chest` : ''}); a death drops what is carried where it happens.` },
+    fill_now: { description: `Go to the End portal${far !== null ? `, ${far} blocks off,` : ''} and put the ${have} eye${have === 1 ? '' : 's'} ${make ? `carried and made first from the pearls and powder carried (${held} made now)` : 'carried'} in its frames: ${need} are empty, ${need - have} would be left to fill. ${LOST_SAYS}` },
+    keep_carrying: { description: `Keep the ${have === held ? `${held} eye${held === 1 ? '' : 's'}` : `${held} eye${held === 1 ? '' : 's'} and the makings of ${make}`} carried and go on making the rest (${need - have} more${inChest ? `; ${inChest} in the chest` : ''}); a death drops what is carried where it happens.` },
   };
-  const decision = await decide('frame_eyes', tree, { eyesCarried: held, framesEmpty: need, blocksToPortal: far });
+  const decision = await decide('frame_eyes', tree, { eyesCarried: held, eyesToMake: make, framesEmpty: need, blocksToPortal: far });
   if (decision.stale) return false;
-  goal.framePlan = { pick: decision.path.at(-1), at: now, eyes: held }; save();
+  goal.framePlan = { pick: decision.path.at(-1), at: now, eyes: have }; save();
   return true;
 }
 
-module.exports = { EARLY_EYES, LOST_SAYS, earlyStage, earlyChoices, portalNeed };
+module.exports = { makeable, EARLY_EYES, LOST_SAYS, earlyStage, earlyChoices, portalNeed };
