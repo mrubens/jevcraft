@@ -120,7 +120,7 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
         try {
           if (await require('./boats').boatTravelStep(bot, task, goal, save, new Vec3(center.x + .5, now.y, center.z + .5), { acquireStep: actions.acquireStep })) return;
           const heading = (Math.round(Math.atan2(center.z + .5 - now.z, center.x + .5 - now.x) / (Math.PI / 4)) + 8) % 8;
-          if (await require('./exploration').swimAcross(bot, task, goal, save, heading)) return;
+          if (await require('./exploration').swimAcross(bot, task, goal, save, heading)) { bot._heading = { x: center.x, z: center.z, at: Date.now() }; return; }
         } catch (err) { task.check(); if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; console.log(`[end portal] the water toward the ring: ${String(err.message || err).slice(0, 160)}`); }
       }
       // A leg that gained nothing, this far off, is not the stair's turn:

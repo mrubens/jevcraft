@@ -513,7 +513,17 @@ function watchHazards(bot) {
   });
 }
 
-async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false, shore = false, besideLava, edgeTaken, onFoot = false, passing = false } = {}) {
+// The heading is kept as of the walk's end, not its start (note 1409): the
+// shore rule (work.js crossingWater) lets a crossing go on for twenty
+// seconds after it, and a walk of forty-five seconds over water had left it
+// stale. The stronghold stage of 2026-10-07 (25595, 23:06Z to 02:23Z), its
+// End kit chosen, walked a leg toward its ring under the sea, and after
+// every leg the work's rule swam it back to the shore, three hours on it.
+async function navigate(bot, task, goal, options = {}) {
+  try { return await navigateOnce(bot, task, goal, options); }
+  finally { if (!options.shore && bot._heading && bot._heading.x === goal?.x && bot._heading.z === goal?.z) bot._heading.at = Date.now(); }
+}
+async function navigateOnce(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false, shore = false, besideLava, edgeTaken, onFoot = false, passing = false } = {}) {
   task.check();
   watchHazards(bot);
   const look = passing && bot._goal && bot.pathfinder?.movements ? passingLook(bot, task) : null;
