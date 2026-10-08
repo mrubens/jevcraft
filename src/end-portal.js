@@ -109,6 +109,20 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
       try { await actions.navigate(bot, task, leg, { timeoutMs: 45000, stallMs: 8000 }); }
       catch (err) { task.check(); if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
       if (bot.entity.position.distanceTo(from) >= 8) return;
+      // Water across the way (note 1408): the boat, Jev's to choose with the
+      // swim it saves, else the swim along the bearing, as the stronghold's
+      // walk goes (note 1122). The stronghold stage of 2026-10-07 (25595,
+      // 22:25 to 23:06Z), its End kit chosen, 210 blocks from a ring under
+      // the sea, walked a leg into the water and back to the shore for 41
+      // minutes, its legs gaining nothing.
+      if (flat > UNDER_FAR) {
+        const now = bot.entity.position;
+        try {
+          if (await require('./boats').boatTravelStep(bot, task, goal, save, new Vec3(center.x + .5, now.y, center.z + .5), { acquireStep: actions.acquireStep })) return;
+          const heading = (Math.round(Math.atan2(center.z + .5 - now.z, center.x + .5 - now.x) / (Math.PI / 4)) + 8) % 8;
+          if (await require('./exploration').swimAcross(bot, task, goal, save, heading)) return;
+        } catch (err) { task.check(); if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; console.log(`[end portal] the water toward the ring: ${String(err.message || err).slice(0, 160)}`); }
+      }
       // A leg that gained nothing, this far off, is not the stair's turn:
       // dug from here it runs level through the rock the whole way (note
       // 1168). The next pass walks again, and a walk that goes nowhere is

@@ -119,3 +119,17 @@ test('the stair to the ring\'s east side set aside, the next side\'s is dug; wit
   await assert.rejects(enterEnd(all.bot, new Task('enter'), all.goal, () => {}, { navigate: async () => {}, tunnel: async () => { n++; throw new Error('The staircase is set aside'); } }), /set aside/);
   assert.equal(n, 4);
 });
+
+test('far off with a leg that gains nothing, the water toward the ring is crossed by the boat Jev may choose, else swum along the bearing (note 1408)', async () => {
+  const boats = require('../src/boats'), exploration = require('../src/exploration');
+  const was = { boat: boats.boatTravelStep, swim: exploration.swimAcross };
+  try {
+    const calls = [];
+    boats.boatTravelStep = async (b, t, g, s, destination) => { calls.push(['boat', Math.round(destination.x), Math.round(destination.z)]); return false; };
+    exploration.swimAcross = async (b, t, g, s, heading) => { calls.push(['swim', heading]); return true; };
+    const { bot, goal } = far();
+    await enterEnd(bot, new Task('enter'), goal, () => {}, { navigate: async () => calls.push('walk'), tunnel: async () => calls.push('tunnel') });
+    // From (778, 1660) the ring at (604, 1540) is 145 degrees round from east: heading 5 of the eight.
+    assert.deepEqual(calls, ['walk', ['boat', 605, 1541], ['swim', 5]]);
+  } finally { boats.boatTravelStep = was.boat; exploration.swimAcross = was.swim; }
+});
