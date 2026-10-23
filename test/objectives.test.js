@@ -145,3 +145,19 @@ test('a saved goal holding a value that loops back on itself is saved without it
     assert.equal(read.step.to.x, 1);
   } finally { console.error = original; fs.rmSync(dir, { recursive: true }); }
 });
+
+test('a status change written at once while an ordinary write is under way leaves the goal whole and newest', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'goal-store-'));
+  const file = path.join(dir, 'goal.json');
+  try {
+    const store = new GoalStore(file);
+    const big = { version: 1, status: 'running', request: 'build a cabin', notes: 'x'.repeat(3_000_000) };
+    store.save({ ...big });                   // the first save goes to disk at once
+    store.pending = { ...big, step: 'later' };
+    const writing = store.flush();            // an ordinary write, off the loop
+    store.save({ ...big, status: 'done' });   // a status change: written at once, while the other is under way
+    await writing;
+    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).status, 'done', 'the older write did not take the newer one\'s place');
+    assert.deepEqual(fs.readdirSync(dir).filter(f => f.endsWith('.tmp')), [], 'no temporary file is left');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

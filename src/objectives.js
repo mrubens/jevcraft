@@ -229,12 +229,21 @@ class GoalStore {
     if (this.writing) return this.writing.then(() => this.flush());
     this.pending = null; this.lastWriteAt = Date.now();
     const text = this.serialize(goal);
+    // Each write has its own temporary file, and an older write never takes the place of a newer
+    // one. A status change (flushSync) while this write was still under way shared the one ".tmp"
+    // with it: the sync write truncated and renamed it, this write went on into the same file, and
+    // the goal on disk became the new goal with the old one's tail after it. A 3.3 MB goal broke
+    // so ("Unexpected non-whitespace character after JSON") and every start after it failed in
+    // GoalStore.read; with less overlap, the older write renamed last and the status change was lost.
+    const seq = this.seq = (this.seq || 0) + 1, tmp = `${this.file}.${process.pid}-${seq}.tmp`;
     this.writing = (async () => {
       try {
         await fs.promises.mkdir(path.dirname(this.file), { recursive: true });
-        await fs.promises.writeFile(`${this.file}.tmp`, text);
-        await fs.promises.rename(`${this.file}.tmp`, this.file);
-      } catch (err) { console.error(`[bug] the goal was not saved: ${err.message}`); }
+        await fs.promises.writeFile(tmp, text);
+        // Checked and renamed with nothing awaited between: no write can come in between.
+        if ((this.placed || 0) > seq) fs.rmSync(tmp, { force: true });
+        else { fs.renameSync(tmp, this.file); this.placed = seq; }
+      } catch (err) { fs.rmSync(tmp, { force: true }); console.error(`[bug] the goal was not saved: ${err.message}`); }
       finally { this.writing = null; }
     })();
     return this.writing;
@@ -243,9 +252,10 @@ class GoalStore {
     if (this.timer) { clearTimeout(this.timer); this.timer = null; }
     const goal = this.pending; if (!goal) return;
     this.pending = null; this.lastWriteAt = Date.now();
+    const seq = this.seq = (this.seq || 0) + 1, tmp = `${this.file}.${process.pid}-${seq}.tmp`;   // as flush()
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    fs.writeFileSync(`${this.file}.tmp`, this.serialize(goal));
-    fs.renameSync(`${this.file}.tmp`, this.file);
+    fs.writeFileSync(tmp, this.serialize(goal));
+    fs.renameSync(tmp, this.file); this.placed = seq;
   }
   serialize(goal) {
     // A value that loops back on itself is dropped and said, not thrown: a
