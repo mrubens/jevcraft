@@ -45,3 +45,26 @@ test('with a pearl on offer the emeralds cannot yet pay for, they are saved: no 
   const options = tradeOptions(b, goal, [{ uuid: 'c' }, { uuid: 'f' }]);
   assert.deepEqual(options.map(o => `${o.kind}:${o.input.name}`), ['sell:stick']);
 });
+
+// In a process of its own: the test runner counts any unhandled rejection as a failure, and an
+// unhandled rejection is what this is about. mineflayer's openVillager is played by a stand-in
+// that does what it does: an async packet handler awaits the window, which times out.
+test('a villager window that never opens is an error to the trade step, not the end of the process', () => {
+  const script = `
+    const { EventEmitter } = require('node:events');
+    const { openVillager } = require('./src/trading');
+    const client = new EventEmitter();
+    const bot = { _client: client, openVillager() {
+      const window = new Promise((_, reject) => setTimeout(() => reject(new Error('Event windowOpen did not fire within timeout of 30ms')), 30));
+      client.on('trade_list', async function gotTrades() { await window; });
+      return (async () => { await window; })();
+    } };
+    setTimeout(() => client.emit('trade_list', {}), 5);   // the offers come while the window is awaited
+    openVillager(bot, {}).catch(e => console.log('caught', e.message.slice(0, 16)));
+    setTimeout(() => { client.emit('trade_list', {}); console.log('listeners', client.listenerCount('trade_list')); }, 80);`;
+  const run = require('node:child_process').spawnSync(process.execPath, ['-e', script], { cwd: require('node:path').join(__dirname, '..'), encoding: 'utf8',
+    env: Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('NODE_TEST'))) });
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /caught Event windowOpen/);
+  assert.match(run.stdout, /listeners 0/, 'the handler left listening is taken off');
+});

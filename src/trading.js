@@ -62,13 +62,40 @@ function describe(bot, villager, trade, index, opts) {
   return { villager: idOf(villager), index, input, input2, output, feasible: affordable && open && !!(buy || sell), kind: buy ? 'buy' : sell ? 'sell' : null, why: buy || sell };
 }
 
+// mineflayer's openVillager reads the offers with an async packet handler that awaits the
+// window. When the window does not open within its twenty seconds, that wait rejects with
+// nobody to catch it, and Node ends the process ("Event windowOpen did not fire within timeout
+// of 20000ms", thrown from readOffers in a trade step: twice in an hour for one bot at a busy
+// village). The rejection carries the very error openVillager throws here, so it is marked and
+// passed over, and the handler mineflayer left listening is taken off.
+const OPEN_FAILURES = new WeakSet();
+const TRADE_LIST_PACKETS = ['trade_list', 'minecraft:trader_list', 'MC|TrList'];
+let openGuard = false;
+async function openVillager(bot, villager) {
+  if (!openGuard) {
+    openGuard = true;
+    process.on('unhandledRejection', reason => {
+      if (reason && typeof reason === 'object' && OPEN_FAILURES.has(reason)) return console.error(`[trading] ${reason.message} (passed over)`);
+      throw reason;   // anything else ends the process, as Node does by default
+    });
+  }
+  const client = bot._client;
+  const before = client?.listeners ? TRADE_LIST_PACKETS.map(name => new Set(client.listeners(name))) : null;
+  try { return await bot.openVillager(villager); }
+  catch (err) {
+    if (err && typeof err === 'object') OPEN_FAILURES.add(err);
+    if (before) TRADE_LIST_PACKETS.forEach((name, i) => { for (const l of client.listeners(name)) if (!before[i].has(l)) client.removeListener(name, l); });
+    throw err;
+  }
+}
+
 async function readOffers(bot, task, goal, save, villager, { navigate }) {
   const state = goal.trading ||= { offers: {}, trades: [] };
   const known = state.offers[idOf(villager)];
   if (known && Date.now() - known.at < OFFERS_MS) return known;
   const p = villager.position.floored();
   if (villager.position.distanceTo(bot.entity.position) > 3) await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 2), { timeoutMs: 20000, stallMs: 5000 });
-  const window = await bot.openVillager(villager);
+  const window = await openVillager(bot, villager);
   try {
     const data = villagerData(bot, villager);
     state.offers[idOf(villager)] = { at: Date.now(), profession: String(data?.profession ?? data?.villagerProfession ?? '').replace(/^minecraft:/, '') || undefined,
@@ -104,7 +131,7 @@ async function makeTrade(bot, task, goal, save, option, { navigate }) {
   const v = option.entity, p = v.position.floored();
   if (v.position.distanceTo(bot.entity.position) > 3) await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 2), { timeoutMs: 20000, stallMs: 5000 });
   const before = countOf(bot, option.output.name);
-  const window = await bot.openVillager(v);
+  const window = await openVillager(bot, v);
   try { await bot.trade(window, option.index, 1); }
   finally {
     try { if (bot._syncWindow) await bot._syncWindow(window); } catch (_) { /* best effort */ }
@@ -174,4 +201,4 @@ async function tradeStep(bot, task, goal, save, { navigate, decide, client, pear
   return made;
 }
 
-module.exports = { KEEP, EMERALD_BANK, wantOf, spare, describe, tradeOptions, tradeWorthwhile, tradeStep, villagersNear, readOffers, makeTrade };
+module.exports = { KEEP, EMERALD_BANK, wantOf, spare, describe, tradeOptions, tradeWorthwhile, tradeStep, villagersNear, readOffers, makeTrade, openVillager };
