@@ -291,4 +291,4 @@ function lastFailedWalk(bot, { now = Date.now(), within = 2 * 60000, here = null
   return failedWalks(bot, now).filter(w => w.goal && now - w.at < within && ROUTE_FAILED.has(w.kind) && fromOf(w) && dist(fromOf(w), h) <= FROM).at(-1) || null;
 }
 
-module.exports = { read, towardFailures, hereFailures, wayFailed, WAY_FAILED, WINDOW_MS, TARGET_NEAR, HERE, FROM, TIMES, PACING, KINDS, FAILED, ROUTE_FAILED, KIND_SAYS, kindOf, kindOfWhy, noteWalk, failedWalks, pacingSays, lastFailedWalk, straightSays };
+module.exports = { failedWalks, read, towardFailures, hereFailures, wayFailed, WAY_FAILED, WINDOW_MS, TARGET_NEAR, HERE, FROM, TIMES, PACING, KINDS, FAILED, ROUTE_FAILED, KIND_SAYS, kindOf, kindOfWhy, noteWalk, failedWalks, pacingSays, lastFailedWalk, straightSays };

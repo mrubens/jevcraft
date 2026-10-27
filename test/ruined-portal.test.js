@@ -1110,7 +1110,7 @@ test('the food rung says where food lies against the frame begun, and offers foo
   let offered;
   const client = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'go_without', confidence: 0.6 } } }; } };
   assert.equal(await kitFoodStep(bot, new Task('win'), goal, () => {}, { wants: 80 }, client), false);
-  assert.match(offered.top_up_food, /With no home chest or plot of food to go to, the food known \(nearest first; the search does not walk to what is out of view first\): 3 cow seen just now, \d+ blocks \w+ \(30, 40\), 28 blocks from the frame: about \d+ (seconds|minutes) in all/);
+  assert.match(offered.top_up_food, /With no home chest or plot of food to go to, the food known \(nearest first; the search does not walk to what is out of view first\): 3 cow seen just now, \d+ blocks \w+(?:, \d+ blocks (?:up|down))? \(30, (?:-?\d+, )?40\), 28 blocks from the frame: about \d+ (seconds|minutes) in all/);
   assert.match(offered.top_up_food, /Meanwhile the frame at \(8, 64, 23\), 4 of ten cast \(6 blocks from done\), 201 blocks from here, is left where it stands: nothing keeps the search near it/);
   assert.match(offered.top_up_food_near, /^Gather food at the known food whose trip on to the frame is shortest, then back to the cast: 3 cow seen just now/);
   // Counted raw, as the kills leave it (note 594): three cows about six a cow.
@@ -1123,7 +1123,7 @@ test('the food rung says where food lies against the frame begun, and offers foo
   // still offered, back here (note 594).
   delete goal.portalFrame; delete goal.kitFood; require('../src/progress').attemptsFor(goal).clear('rung', 'nether_food');
   assert.equal(await kitFoodStep(bot, new Task('win'), goal, () => {}, { wants: 80 }, client), false);
-  assert.match(offered.top_up_food_near, /^Gather food at the known food nearest by the trip there and back, then come back here: 3 cow seen just now, \d+ blocks \w+ \(30, 40\): about \d+ (seconds|minutes) in all \(the walk there about \d+ seconds, about 45 seconds for 3 cows, and back here about \d+ seconds\)/);
+  assert.match(offered.top_up_food_near, /^Gather food at the known food nearest by the trip there and back, then come back here: 3 cow seen just now, \d+ blocks \w+(?:, \d+ blocks (?:up|down))? \(30, (?:-?\d+, )?40\): about \d+ (seconds|minutes) in all \(the walk there about \d+ seconds, about 45 seconds for 3 cows, and back here about \d+ seconds\)/);
   assert.doesNotMatch(offered.top_up_food_near, /frame/);
 });
 

@@ -509,7 +509,7 @@ test('on the surface the wool hunt names the nearest flock known and how long th
   const bot = { entity: { position: new Vec3(0, 70, 0) }, game: { dimension: 'overworld' }, entities: {}, inventory: { items: () => [] }, time: { timeOfDay: 3000 } };
   const goal = { sightings: { sheep: [{ x: 100, y: 68, z: 0, count: 3, at: Date.now() - 2 * 60000, dimension: 'overworld' }] } };
   const d = rungOption({ phase: 'bed', action: 'gather_wool', count: 3 }, true, bot, goal).description;
-  assert.match(d, /Nearest sheep known: 3 sheep seen 2 minutes ago, 100 blocks east \(100, 0\) \(about 25 seconds at a walk\)\./);
+  assert.match(d, /Nearest sheep known: 3 sheep seen 2 minutes ago, 100 blocks east \(100, (?:-?\d+, )?0\) \(about 25 seconds at a walk\)\./);
   assert.doesNotMatch(d, /under open sky|It is night/);
   assert.match(d, /Wool hunts begun at or above y 40, as this one is: 20 in 2026-09-28's 62 fresh worlds, 1 ended in a death, 3\.6 minutes each on average; begun below it: 29, 5 ended in a death, 8\.4 minutes\./);
   const view = { ...bot, entities: { 1: { id: 1, name: 'sheep', isValid: true, position: new Vec3(12, 70, 0) } } };

@@ -100,7 +100,7 @@ function biomeView(bot, { reach = 128, step = 32, now = Date.now() } = {}) {
     const name = biomeName(bot, bot.blockAt(here.offset(dx, 0, dz)));
     if (!name) continue;
     const d = Math.round(Math.hypot(dx, dz));
-    if (!nearest.has(name) || d < nearest.get(name).distance) nearest.set(name, { biome: name, distance: d, direction: d ? COMPASS[((Math.round(Math.atan2(dz, dx) / (Math.PI / 4)) % 8) + 8) % 8] : 'here', x: here.x + dx, z: here.z + dz });
+    if (!nearest.has(name) || d < nearest.get(name).distance) nearest.set(name, { biome: name, x: here.x + dx, z: here.z + dz, distance: d, direction: d ? COMPASS[((Math.round(Math.atan2(dz, dx) / (Math.PI / 4)) % 8) + 8) % 8] : 'here', x: here.x + dx, z: here.z + dz });
   }
   const current = biomeName(bot, bot.blockAt(here));
   // What each holds, from the game's tables (biomes.js).
@@ -245,7 +245,7 @@ function biomeTrips(bot, { min = 24, limit = 4 } = {}) {
   // forest to the west", climbed to open sky for it and said "In the warped
   // forest now" half a minute on, in the Overworld.
   return view.biomesNearby.filter(b => b.distance >= min && !/^(dripstone_caves|lush_caves|deep_dark)$/.test(b.biome) && !OTHER_WORLDS.test(b.biome)).slice(0, limit)
-    .map(b => ({ ...b, says: `the ${b.biome.replaceAll('_', ' ')} ${b.distance} blocks ${b.direction}${b.has ? ` (${b.has})` : ''}` }));
+    .map(b => { let h = ''; try { const H = require('./height-says'), y = Number.isFinite(b.x) ? H.groundAt(bot, b.x, b.z) : null; h = y == null ? '' : H.heightSays(bot, { y }); } catch (_) { h = ''; } return { ...b, says: `the ${b.biome.replaceAll('_', ' ')} ${b.distance} blocks ${b.direction}${h}${b.has ? ` (${b.has})` : ''}` }; });
 }
 
 const DETECTORS = [

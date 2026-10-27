@@ -79,7 +79,7 @@ test('a wild wolf is noted in the sightings and a tamed one, or a pup, is not', 
   noteSightings(b, goal, 1e12);
   assert.equal(goal.sightings.wolf.length, 1);
   assert.equal(goal.sightings.wolf[0].count, 1, 'the one wild adult');
-  assert.equal(sighted(b, goal, 'wolf', 1e12 + 120000)[0].says, '1 wolf seen 2 minutes ago, 40 blocks east (40, 0)');
+  assert.match(sighted(b, goal, 'wolf', 1e12 + 120000)[0].says, /^1 wolf seen 2 minutes ago, 40 blocks east \(40, -?\d+, 0\)$/);
 });
 
 test('a wolf seen within 64 blocks and out of view is a trip; farther, set aside, or with no bone it is not', () => {
@@ -100,7 +100,7 @@ test('the wolf option says where it is, the odds the bones give, what a wolf doe
   const goal = { sightings: { wolf: [{ x: 0, y: 64, z: -48, count: 1, at: Date.now() - 3 * 60000, dimension: 'overworld' }] } };
   const b = bot({}, [{ name: 'bone', count: 1 }]);
   const said = wolves.tameSays(b, goal, { walk: d => ` About ${Math.round(d)} blocks.` });
-  assert.match(said, /Tame the wolf seen 3 minutes ago, 48 blocks north \(0, -48\), out of view now: walked to, and forgotten if it is not there, with the 1 bone carried/);
+  assert.match(said, /Tame the wolf seen 3 minutes ago, 48 blocks north \(0, (?:-?\d+, )?-48\), out of view now: walked to, and forgotten if it is not there, with the 1 bone carried/);
   assert.match(said, /one bone takes in 33 of tries \(three bones, 70; skeletons drop bones\)/);
   assert.match(said, /fights whatever attacks the bot or whatever the bot strikes, goes for skeletons on its own, and does not attack a creeper/);
   assert.match(said, /Zombies \(8\), creepers \(5\), skeletons \(3\) and spiders \(2\) were 18 of the 23 deaths before the Nether in 2026-09-28's 62 fresh worlds/);

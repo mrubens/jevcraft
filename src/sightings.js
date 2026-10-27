@@ -51,7 +51,7 @@ function sighted(bot, goal, kind, now = Date.now()) {
     const direction = distance ? COMPASS[((Math.round(Math.atan2(dz, dx) / (Math.PI / 4)) % 8) + 8) % 8] : 'here';
     const minutes = Math.round((now - s.at) / 60000);
     return { x: s.x, y: s.y, z: s.z, count: s.count, distance, direction, minutesAgo: minutes,
-      says: `${s.count} ${kind} seen ${minutes ? `${minutes} minute${minutes === 1 ? '' : 's'} ago` : 'just now'}, ${distance} blocks ${direction} (${s.x}, ${s.z})` };
+      says: `${s.count} ${kind} seen ${minutes ? `${minutes} minute${minutes === 1 ? '' : 's'} ago` : 'just now'}, ${distance} blocks ${direction}${require('./height-says').heightSays(bot, s)} (${s.x}, ${s.y ?? '?'}, ${s.z})${require('./height-says').wayFailedSays(bot, s)}` };
   }).sort((a, b) => a.distance - b.distance);
 }
 

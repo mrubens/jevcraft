@@ -34,7 +34,7 @@ test('a walk to a hoglin that finds no way is said as that, the place rests, and
   assert.equal(went, false);
   const last = goal.netherFood.hunts.at(-1);
   assert.equal(last.walk, 'failed');
-  assert.match(last.why, /^the walk to where 1 hoglin seen just now, 43 blocks south \(-168, 90\) found no way there: No path to the goal! \(partial\)$/);
+  assert.match(last.why, /^the walk to where 1 hoglin seen just now, 43 blocks south, 28 blocks up \(-168, 103, 90\) found no way there: No path to the goal! \(partial\)$/);
   assert.doesNotMatch(last.why, /none was within thirty-two blocks/);
   // Seen again from afar at the next look, the place rests: not offered, and said.
   goal.sightings.hoglin = [sighting(-168, 103, 90)];
@@ -44,7 +44,7 @@ test('a walk to a hoglin that finds no way is said as that, the place rests, and
   const routes = nf.foodRoutes(bot, new Task('work'), goal, () => {}, { actions: { navigate } });
   assert.equal(routes.routes.hoglin_pillar, undefined);
   assert.equal(routes.routes.hoglin_walk, undefined);
-  assert(routes.notOffered.some(s => /^a hoglin: 1 hoglin seen just now, 43 blocks south \(-168, 90\), but the walk there found no way \d+ seconds ago \(No path to the goal! \(partial\)\); that place rests five minutes from then$/.test(s)), routes.notOffered.join(' | '));
+  assert(routes.notOffered.some(s => /^a hoglin: 1 hoglin seen just now, 43 blocks south, 28 blocks up \(-168, 103, 90\), but the walk there found no way \d+ seconds ago \(No path to the goal! \(partial\)\); that place rests five minutes from then$/.test(s)), routes.notOffered.join(' | '));
   // A hoglin seen elsewhere is not offered from where the walk found no way
   // (note 775: from about here no walk to one seen is offered for five
   // minutes), said as that.
