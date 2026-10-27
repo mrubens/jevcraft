@@ -6206,13 +6206,17 @@ function judgeRuin(bot, k, here) {
   } catch (_) { /* the ruin's blocks unreadable */ }
   return l.fitSeen || null;
 }
-function ruinSays(k, { obsidian, diamonds, diamondPickaxe }) {
+function ruinSays(k, { obsidian, diamonds, diamondPickaxe, cast = null }) {
   const seen = Number.isFinite(k.landmark.obsidian) ? k.landmark.obsidian : null;
   const fit = k.landmark.fitSeen;
   if (fit && !fit.none) {
     const says = require('./ruined-portal').fitSays({ ...fit, fill: { length: fit.fill }, digs: { length: fit.digs } }, { obsidian });
     const short = Math.max(0, fit.fill - obsidian);
-    const make = short ? ` The ${short} short are made by pouring water on lava and mined with a diamond pickaxe (${diamondPickaxe ? 'one carried' : `none carried; three diamonds make one, ${diamonds} carried`}), unless the ruin's chest holds them.` : '';
+    // The short cast in their slots as a frame of its own is (note 2318): lava then water poured into each, no diamond
+    // pickaxe. It had said they were 'made by pouring water on lava and mined with a diamond pickaxe (none carried)',
+    // and full-11 (2026-10-27 19:38Z) took a fresh cast 120 blocks off over a ruin 128 off with 8 of 10 standing.
+    const lavaSays = cast?.lava ? `, the nearest lava known ${cast.lava.distance} blocks from the ruin` : ', no lava known near it yet';
+    const make = short ? ` The ${short} short are cast in their slots, as a frame of its own is: a bucket of lava poured into each and water over it, ${short} lava trip${short === 1 ? '' : 's'}${lavaSays}; buckets carried: ${cast?.buckets ?? 0} empty, ${cast?.lavaBuckets ?? 0} of lava, ${cast?.waterBuckets ?? 0} of water${diamondPickaxe ? '; or mined from lava with the diamond pickaxe carried' : ''}. Its chest may hold some.` : '';
     const pick = fit.diamondDigs?.length ? (diamondPickaxe ? ' A diamond pickaxe is carried.' : ` Without a diamond pickaxe (${diamonds} of the three diamonds carried) this frame cannot be finished.`) : '';
     return `Finish the ruined portal ${k.distance} blocks away and light it (${seen ?? 'some'} obsidian about it): ${says}.${make}${pick} Its chest often holds obsidian, flint and steel or a fire charge. About ${Math.round(k.distance / 4.3)} seconds' walk.`;
   }
@@ -6496,7 +6500,11 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
     const fit = fitRuin(bot, r, { diamondPickaxe });
     const mark = (goal.landmarks || []).find(l => l.kind === 'ruined_portal' && l.x === method.at.x && l.z === method.at.z);
     if (!fit) { if (mark) mark.noFrame = true; PP.planFailed(goal, `the ruined portal at (${method.at.x}, ${method.at.z}) will not take a frame`); delete goal.portalMethod; save(); return false; }
-    goal.portalFrame = adopt(fit); save();
+    goal.portalFrame = adopt(fit);
+    // Short of obsidian for its empty slots, they are cast (note 2318): the cast's own machinery, as a frame begun is
+    // finished by casting (frame.cast, castTemp).
+    if (fit.fill.length > countOf(bot, 'obsidian')) Object.assign(goal.portalFrame, { cast: true, castTemp: [] });
+    save();
     return true;
   }
   const ruins = knownLandmarks(bot, goal, 'ruined_portal', 512).filter(k => !k.landmark.noFrame).slice(0, 3);
@@ -6603,7 +6611,7 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   const { restingSays } = require('./tunneling');
   ruins.forEach(k => {
     const rest = restingSays(goal, new Vec3(k.landmark.x, k.landmark.y ?? here.y, k.landmark.z), here);
-    tree[ruinKey(goal, k)] = { target: { x: k.landmark.x, y: k.landmark.y ?? Math.round(here.y), z: k.landmark.z }, description: (judgeRuin(bot, k, here), ruinSays(k, { obsidian, diamonds, diamondPickaxe })) + (rest ? ` Where the walk gives out, ${rest}.` : '') + PP.failuresSays(goal, { key: ruinKey(goal, k) }) };
+    tree[ruinKey(goal, k)] = { target: { x: k.landmark.x, y: k.landmark.y ?? Math.round(here.y), z: k.landmark.z }, description: (judgeRuin(bot, k, here), ruinSays(k, { obsidian, diamonds, diamondPickaxe, cast: { buckets: countOf(bot, 'bucket'), lavaBuckets: countOf(bot, 'lava_bucket'), waterBuckets: countOf(bot, 'water_bucket'), lava: (() => { try { return nearestLava(bot, goal, sources, { x: k.landmark.x, y: k.landmark.y ?? here.y, z: k.landmark.z }); } catch (_) { return null; } })() } })) + (rest ? ` Where the walk gives out, ${rest}.` : '') + PP.failuresSays(goal, { key: ruinKey(goal, k) }) };
   });
   // The lava held over a cave its staircase stopped at: down into it, the
   // route held going on from its floor (note 490).
@@ -9845,7 +9853,7 @@ function workClaim(goal, bot = null) {
 // nothing said whether that was the frame's first bucket or its ninth.
 function castProgressSays(step, goal, bot) {
   const frame = goal?.portalFrame;
-  if (step.action !== 'cast_portal' || !frame || frame.ruin || !bot) return '';
+  if (step.action !== 'cast_portal' || !frame || (frame.ruin && !frame.cast) || !bot) return '';
   const cast = frame.blocks.filter(p => bot.blockAt?.(pos(p))?.name === 'obsidian').length;
   const carried = [];
   const lava = countOf(bot, 'lava_bucket'), water = countOf(bot, 'water_bucket');

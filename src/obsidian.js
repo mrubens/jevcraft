@@ -256,7 +256,8 @@ async function makeObsidian(bot, task, step, goal, save, actions) {
 // where it stands; none otherwise.
 function castTo(bot, goal) {
   const frame = goal?.portalFrame;
-  if (!frame?.cast || frame.ruin || !frame.origin || /nether|end/.test(String(bot.game?.dimension || ''))) return null;
+  // A ruin's frame whose empty slots are cast takes its lava as a cast frame does (note 2318).
+  if (!frame?.cast || !frame.origin || /nether|end/.test(String(bot.game?.dimension || ''))) return null;
   return at(frame.origin);
 }
 // The seconds of a carry: the walk to the lava and on to where it goes, at
