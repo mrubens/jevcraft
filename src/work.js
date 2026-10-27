@@ -3999,7 +3999,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
           furnace.close();
           bot.chat?.(`Leaving the ${needed - taken} ${what} to cook, about ${Math.max(1, Math.round(cooking() / 1000))} seconds; working nearby meanwhile and coming back for them.`);
           let worked = true;
-          bot._cookHold = { until, item: step.item };
+          bot._cookHold = { until, item: step.item, leftAt };
           try {
             worked = await holdForRest(bot, task, goal, save, { client: task.opportunityClient, survival: null, reason: `smelt:${step.item}`, until, why: `${needed - taken} ${what} cooking in the furnace at (${block.position.x}, ${block.position.y}, ${block.position.z}), taken out when done`, idle: false });
           } finally { goal.step = step0; delete bot._cookHold; save(); }
@@ -8550,8 +8550,14 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
     const what = reason.replace(/^\w+:/, '').replace(/^rung:/, '').replaceAll('_', ' ');
     const secs = Math.max(1, Math.round((until - now) / 1000));
     const job = (() => { try { return require('./job-in-hand').jobInHand({ step: goal.step, here: bot.entity?.position, batch: goal.smelting || null }).short; } catch (_) { return null; } })();
-    tree.wait_it_out = { description: `Wait here for the ${what}'s rest to end, about ${secs} second${secs === 1 ? '' : 's'} (at ${new Date(until).toISOString().slice(11, 19)}Z)${holding.why ? `, set for: ${String(holding.why).slice(0, 160)}` : ''}${job ? `; ${job}` : ''}. Standing still spends no hunger; nothing is asked meanwhile but a threat that shows, and the work is taken up when the rest ends. The ${secs} seconds are the run's own time all the same, ${Object.keys(tree).length} other way${Object.keys(tree).length === 1 ? '' : 's'} on offer here to spend them on, each back for the batch when it is done. ${WAIT_IT_OUT_RECORD.says}`,
-      waits: require('./waits').timer(`the ${what}'s rest to end`, until - now), run: async () => { waitedOut = true; } };
+    // The batch Jev chose to leave, said so, and the run's own standing at furnaces (note 2315): full-11 (25588,
+    // 2026-10-27 18:54 to 19:32Z) chose leave_cooking 16 times and, asked again on the hold, waited the batch out 5 of
+    // them; 15% of its first 37 minutes went to waiting. The user: 'fix the cooking wait'.
+    const cookLeft = /^smelt:/.test(String(reason)) && bot._cookHold?.leftAt ? Math.max(1, Math.round((now - bot._cookHold.leftAt) / 1000)) : null;
+    const cw = goal.cookWaits || { n: 0, ms: 0 };
+    const cookWaitSays = /^smelt:/.test(String(reason)) ? `${cookLeft ? `Leaving this batch to work meanwhile was chosen ${cookLeft} second${cookLeft === 1 ? '' : 's'} ago. ` : ''}This run has stood out ${cw.n} batch${cw.n === 1 ? '' : 'es'} at a furnace so far, ${Math.round(cw.ms / 6000) / 10} minutes in all. ` : '';
+    tree.wait_it_out = { description: `Wait here for the ${what}'s rest to end, about ${secs} second${secs === 1 ? '' : 's'} (at ${new Date(until).toISOString().slice(11, 19)}Z)${holding.why ? `, set for: ${String(holding.why).slice(0, 160)}` : ''}${job ? `; ${job}` : ''}. Nothing is asked meanwhile but a threat that shows, and the work is taken up when the rest ends. The ${secs} seconds are the run's own time all the same, ${Object.keys(tree).length} other way${Object.keys(tree).length === 1 ? '' : 's'} on offer here to spend them on, each back for the batch when it is done. ${cookWaitSays}${WAIT_IT_OUT_RECORD.says}`,
+      waits: require('./waits').timer(`the ${what}'s rest to end`, until - now), run: async () => { waitedOut = true; if (/^smelt:/.test(String(reason))) { goal.cookWaits = { n: cw.n + 1, ms: cw.ms + Math.max(0, until - Date.now()) }; save?.(); } } };
   }
   // The wait alone on offer is nothing on offer: taken unasked it is not
   // Jev's choice, and the hold says 'waiting for' as before (note 2146).
