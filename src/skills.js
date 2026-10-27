@@ -526,7 +526,7 @@ async function navigate(bot, task, goal, options = {}) {
 // `quiet`: crouched the whole way, digging and laying nothing, no sprint
 // (note 2036): a crouched step makes no vibration for a sculk sensor or
 // shrieker to hear, in the deep dark's cities.
-async function navigateOnce(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false, shore = false, besideLava, edgeTaken, onFoot = false, passing = false, quiet = false } = {}) {
+async function navigateOnce(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false, shore = false, besideLava, edgeTaken, onFoot = false, passing = false, quiet = false, hostilesOk = false } = {}) {
   if (quiet) { onFoot = true; sprint = false; passing = false; }
   task.check();
   watchHazards(bot);
@@ -561,7 +561,7 @@ async function navigateOnce(bot, task, goal, { timeoutMs = 90000, stallMs = 1500
   if (!quiet && bot.controlState?.sneak) { console.log(`[walks] the sneak key was held at the walk's start at ${bot.entity?.position?.floored?.() || '?'}: let go (step ${bot._goal?.step?.action || '-'})`); try { bot.setControlState('sneak', false); } catch (_) { /* no controls */ } }
   try {
     if (quiet) { try { bot.setControlState('sneak', true); } catch (_) { /* no controls in a test */ } }
-    const result = await walkTo(bot, task, goal, { timeoutMs, stallMs, stopWhen, sprint, besideLava, edgeTaken, onFoot, walk, from }).finally(() => { if (quiet) { try { bot.setControlState('sneak', false); } catch (_) { /* none */ } } });
+    const result = await walkTo(bot, task, goal, { timeoutMs, stallMs, stopWhen, sprint, besideLava, edgeTaken, onFoot, walk, from, hostilesOk }).finally(() => { if (quiet) { try { bot.setControlState('sneak', false); } catch (_) { /* none */ } } });
     ended('arrived');
     return result;
   } catch (err) {
@@ -571,7 +571,7 @@ async function navigateOnce(bot, task, goal, { timeoutMs = 90000, stallMs = 1500
   }
 }
 // The walk itself (navigate records its end).
-async function walkTo(bot, task, goal, { timeoutMs, stallMs, stopWhen, sprint, besideLava, edgeTaken, onFoot, walk, from }) {
+async function walkTo(bot, task, goal, { timeoutMs, stallMs, stopWhen, sprint, besideLava, edgeTaken, onFoot, walk, from, hostilesOk = false }) {
   if (require('./flight').canFly(bot)) return require('./flight').flyNavigate(bot, task, goal, { timeoutMs, stallMs, stopWhen });
   // A stopped trip can leave our empty boat underfoot. Clear only that owned
   // boat before player physics attempts to walk through its solid hull.
@@ -586,6 +586,10 @@ async function walkTo(bot, task, goal, { timeoutMs, stallMs, stopWhen, sprint, b
   const movements = bot.pathfinder?.movements, sprinting = sprint && (bot.food ?? 20) > SPRINT_FOOD && !!movements;
   const walked = sprinting ? movements.allowSprinting : undefined;
   if (sprinting) movements.allowSprinting = true;
+  // The walk back to the bot's own drops (note 2288): cells near a hostile are not left out of the path, as they lie
+  // where it died, beside what killed it; going is Jev's choice, priced, and a hit still hands over to the survival layer.
+  const hostilesWere = hostilesOk && movements ? movements.hostilesOk : undefined;
+  if (hostilesOk && movements) movements.hostilesOk = true;
   // The cells a walk has chosen to take beside lava in the Nether, by name
   // (movement.js besideLavaRefused, note 516); none otherwise.
   const optOut = besideLava && movements, lavaOptOut = optOut ? movements.besideLava : undefined;
@@ -660,6 +664,7 @@ async function walkTo(bot, task, goal, { timeoutMs, stallMs, stopWhen, sprint, b
     }
   } finally {
     if (sprinting) movements.allowSprinting = walked;
+    if (hostilesOk && movements) movements.hostilesOk = hostilesWere;
     if (optOut) movements.besideLava = lavaOptOut;
     if (edgeOptOut) movements.edgeTaken = edgeWas;
     if (foot) Object.assign(movements, foot);

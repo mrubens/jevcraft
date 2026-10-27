@@ -105,14 +105,14 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
   if (!waitForSpawnMs && !nearbyDrops(bot, item, origin, radius, { hostilesOk }).length) return false;
   const deadline = Date.now() + timeoutMs, spawnDeadline = Date.now() + waitForSpawnMs;
   const movement = bot.pathfinder.movements, policy = miningMovement(bot), start = bot.entity.position.clone();
-  const previous = { allow1by1towers: movement.allow1by1towers, scafoldingBlocks: movement.scafoldingBlocks, allowSprinting: movement.allowSprinting,
+  const previous = { allow1by1towers: movement.allow1by1towers, scafoldingBlocks: movement.scafoldingBlocks, allowSprinting: movement.allowSprinting, hostilesOk: movement.hostilesOk,
     allowParkour: movement.allowParkour, maxDropDown: movement.maxDropDown };
   const allowed = point => {
     const p = new Vec3(point.x, point.y, point.z);
     return p.distanceTo(start) <= radius + 1 && p.y >= start.y - 8 && policy.allowed(point) &&
       !damagingTerrain.has(bot.blockAt(supportCell(p))?.name) && (hostilesOk || safeFromHostiles(bot, p));
   };
-  Object.assign(movement, { allow1by1towers: false, scafoldingBlocks: [], allowParkour: false, ...(hostilesOk ? { allowSprinting: true } : {}),
+  Object.assign(movement, { allow1by1towers: false, scafoldingBlocks: [], allowParkour: false, ...(hostilesOk ? { allowSprinting: true, hostilesOk: true } : {}),
     maxDropDown: Math.min(previous.maxDropDown ?? 2, 2), allowedPosition: allowed });
   const attempted = new Set();
   // Why a pickup spot was passed over, counted for the line said when nothing was taken (note 2285).

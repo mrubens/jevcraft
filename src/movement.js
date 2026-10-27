@@ -199,7 +199,7 @@ class SurvivalMovements extends Movements {
       (!this.allowedPosition || this.allowedPosition(next)) &&
       // Water the walk kept going back into, kept out for ten minutes as Jev chose (water-trap.js, note 2177).
       !require('./water-trap').refused(this.bot, next) &&
-      safeFromHostiles(this.bot, new Vec3(next.x + 0.5, next.y, next.z + 0.5), this._hostileObservation.entities, this._hostileObservation.sight));
+      (this.hostilesOk || safeFromHostiles(this.bot, new Vec3(next.x + 0.5, next.y, next.z + 0.5), this._hostileObservation.entities, this._hostileObservation.sight)));
     // A cell with lava beside it costs more than open ground: a path along
     // the lava sea's edge is a step's drift from it, and mid-92-o, walking a
     // soul sand shore on a fortress leg, went a block and a half into the

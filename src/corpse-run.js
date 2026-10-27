@@ -363,7 +363,7 @@ function recordSays(bot, goal, now = Date.now()) {
   // The fleet's line says what its source can see (note 2183): it was read from the server logs, which see deaths and
   // chat, not pickups, so 'the kit back whole 0 times' was never a measurement; said that way it read as 'the walk never
   // works', and today's six runs left their drops 23 times in 25 (full iron 44 blocks off with 281 seconds on it among them).
-  return `${own} On the ${F.runs} full runs of ${F.from} to ${F.to}: ${F.deaths} deaths and ${F.setOut} walks back set out; ${F.diedOnWay} of the walks ended in a death on the way (about ${F.diedMinutes} minutes out, about ${F.diedBlocks} blocks off) and ${F.nothing} found nothing where the bot died (${F.nothingQuick} of them within three minutes of the death); how many of the other ${F.setOut - F.diedOnWay - F.nothing} got the kit back that record does not say (it was read from the server logs, which do not see a pickup). The arena drill of 2026-10-26 (a death in iron, the respawn 40 blocks off) saw every drop and picked up every one. The game: an item lying within ${TICKING} blocks of a player is gone five minutes after it fell there (farther off it waits); zombies and skeletons may pick up armour and weapons they walk over (about 55 in 100 of them where the ground has been played in for many hours, none where it is new), and the one that killed the bot stands where it died.`;
+  return `${own} On the ${F.runs} full runs of ${F.from} to ${F.to}: ${F.deaths} deaths and ${F.setOut} walks back set out; ${F.diedOnWay} of the walks ended in a death on the way (about ${F.diedMinutes} minutes out, about ${F.diedBlocks} blocks off) and ${F.nothing} found nothing where the bot died (${F.nothingQuick} of them within three minutes of the death); how many of the other ${F.setOut - F.diedOnWay - F.nothing} got the kit back that record does not say (it was read from the server logs, which do not see a pickup). These walks were made with a fault since mended: until 2026-10-27 14:00Z the walk and the pickup left out every cell and every drop with a hostile near it, and the drops lie where the bot died, beside what killed it, so a walk stopped short of them and no pickup there took anything. With it mended (notes 2287, 2288) the arena drill of 2026-10-27 (a death in iron with a zombie two blocks off, the respawn 40 blocks away) walked back to the spot in 3 runs of 3 and picked up all 19 of the 19 things dropped each time; the old way reached the spot in none of 3 and got 1 to 11 of them. The game: an item lying within ${TICKING} blocks of a player is gone five minutes after it fell there (farther off it waits); zombies and skeletons may pick up armour and weapons they walk over (about 55 in 100 of them where the ground has been played in for many hours, none where it is new), and the one that killed the bot stands where it died.`;
 }
 // The walks back for these same drops that ended in a death (note 2113):
 // where, to what, with what about and what worn, said on every way. full-6
@@ -651,14 +651,14 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
       // A leg that would end inside the edge ends at the start of the way down.
       if (across - LEG < start) {
         const to = { x: here.x + (spot.x - here.x) / across * (across - start), z: here.z + (spot.z - here.z) / across * (across - start) };
-        try { await move(bot, task, new goals.GoalNearXZ(Math.round(to.x), Math.round(to.z), 4), { timeoutMs: LEG_MS, stallMs: 8000, sprint: true }); }
+        try { await move(bot, task, new goals.GoalNearXZ(Math.round(to.x), Math.round(to.z), 4), { timeoutMs: LEG_MS, stallMs: 8000, sprint: true, hostilesOk: true }); }
         catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
         return true;
       }
     }
     const leg = before > FAR ? new goals.GoalNearXZ(Math.round(here.x + Math.cos(bearing) * LEG), Math.round(here.z + Math.sin(bearing) * LEG), 4) : new goals.GoalNear(spot.x, spot.y, spot.z, 3);
     let failed = null;
-    try { await move(bot, task, leg, { timeoutMs: LEG_MS, stallMs: 8000, sprint: true, passing: /nether/.test(String(bot.game?.dimension || '')) }); }
+    try { await move(bot, task, leg, { timeoutMs: LEG_MS, stallMs: 8000, sprint: true, hostilesOk: true, passing: /nether/.test(String(bot.game?.dimension || '')) }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; failed = String(err.message || err).slice(0, 120); }
     let after = flat(bot.entity.position, spot);
     // A walk that got no nearer, the drops within a leg: dug and bridged
