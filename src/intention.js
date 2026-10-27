@@ -54,7 +54,7 @@ const TIMED = {
   // The portal plan's routes (note 782), the same stand.
   portal_plan: /^(build_new|(?:here|beside|new_site)_(?:pool_\d+|deep|sight)|into_cave|clear_blocker|other_stand|ruin_\d+)$/,
   surface_trip: /^(climb|mine_first|dig_site)$/,
-  stillness_detour: /^(return_for_food|restock_food|explore|cross_toward|floor_toward|pillar_up|blocks_then_pillar|fetch_stems|mine_nearby|night_mine|cook_food|stock_wood|pearls_\w+)$/,
+  stillness_detour: /^(return_for_food|restock_food|explore|cross_toward|floor_toward|pillar_up|blocks_then_pillar|fetch_stems|mine_nearby|hunt_in_view|night_mine|cook_food|stock_wood|pearls_\w+)$/,
   rung_progress: /^(fetch_stems|cross_toward|floor_toward|pillar_up|blocks_then_pillar|restock_food|return_for_food|pearls_\w+)$/,
   // Upkeep's fetch too (note 703): 25589 chose it at 00:05:38Z, a wither
   // skeleton's preemption cut it a tenth of a second in, and the work came

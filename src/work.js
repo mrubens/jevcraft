@@ -8342,6 +8342,21 @@ async function detourWork(bot, task, goal, save, { survival = null, bounded = ta
       return ` It drops ${drops.replaceAll('_', ' ')} (${countOf(bot, drops)} carried)${kin > 1 ? `; ${kin} such blocks within 16 blocks` : ''}.${rung ? ` The work stalled is the ${String(rung).replaceAll('_', ' ')}${goldRung && /gold/.test(drops) ? `, which is made of gold: four gold ingots for boots, a raw gold smelted to each` : ''}.` : ''}`;
     } catch (_) { return ''; }
   })();
+  // An animal for food in view, hunted meanwhile (note 2316): full-11 (25588, 2026-10-27 19:35Z), its step the Nether's
+  // food (20 of 80 points), left its pork cooking and was offered only the ore nearby or the wait; it waited, a pig in
+  // view. The user: 'It has 30 seconds and another pig nearby and it's not going for it'.
+  try {
+    const here = bot.entity.position, foraging = require('./foraging');
+    const prey = Object.values(bot.entities || {}).filter(e => e?.position && e.isValid !== false && e.position.distanceTo(here) <= 32 && foraging.preyFood(bot, e))
+      .sort((a, b) => a.position.distanceTo(here) - b.position.distanceTo(here));
+    if (prey.length) {
+      const p0 = prey[0], d0 = Math.round(p0.position.distanceTo(here)), dy = Math.round(p0.position.y - here.y);
+      const supply = (() => { try { return foodSupply(bot); } catch (_) { return null; } })();
+      const forStep = goal.step?.action === 'hunt_food_for_nether' && Number.isFinite(goal.step.required) ? ` The step is the Nether's food, ${supply ?? goal.step.foodPoints} of ${goal.step.required} points carried.` : Number.isFinite(supply) ? ` ${supply} food points carried.` : '';
+      add('hunt_in_view', `Hunt the ${p0.name.replaceAll('_', ' ')} ${d0} blocks off${Math.abs(dy) >= 3 ? `, ${Math.abs(dy)} blocks ${dy > 0 ? 'up' : 'down'}` : ''}${prey.length > 1 ? ` (${prey.length} animals for food within 32 blocks)` : ''}: its meat, killed with what is held.${forStep}`,
+        () => huntInView(bot, bounded, goal, save));
+    }
+  } catch (_) { /* no animals read */ }
   if (ore) add('mine_nearby', `Dig the ${ore.name.replaceAll('_', ' ')} ${Math.round(ore.p.distanceTo(bot.entity.position))} blocks away.${oreBeside}${oreFor}`,
     () => dig(bot, bounded, ore.p, {}));
   // A walk to see what is there is an Overworld thing by day; in the Nether
