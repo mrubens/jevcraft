@@ -296,14 +296,16 @@ function lullsSay() {
 }
 const pctN = (k, n) => `${Math.round(100 * k / n)}%`;
 const countRow = ([n, died, rod, rods, lost]) => `${n} fights, ${pctN(died, n)} died, ${pctN(rod, n)} brought a rod, ${Math.round(rods / n * 10) / 10} rods a fight and ${died ? `${Math.round(rods / died * 10) / 10} rods for each death` : 'no death'}, ${lost} health lost on average`;
-// The bot's stay within sixteen of a live cage, in seconds (a gap of a minute
-// begins a new stay), for the clock said beside the counts.
+// The bot's stay within sixteen of a live cage, in seconds, for the clock said
+// beside the counts: a gap of ten minutes begins a new stay (note 2283; it was a
+// minute, and full-8 at 12:34:09Z, 2026-10-27, its 28th minute about that cage
+// with 47 blazes within sixteen, was told 0 seconds after a step away).
 function stayWithin(bot, cage, now = Date.now()) {
   if (!bot) return 0;
   const key = cage ? `${cage.x},${cage.y},${cage.z}` : null;
   const st = bot._spawnerStay;
-  if (!key) { if (st && now - st.last > 60000) delete bot._spawnerStay; return st ? Math.round((now - st.since) / 1000) : 0; }
-  if (!st || st.key !== key || now - st.last > 60000) bot._spawnerStay = { key, since: now, last: now };
+  if (!key) { if (st && now - st.last > 600000) delete bot._spawnerStay; return st ? Math.round((now - st.since) / 1000) : 0; }
+  if (!st || st.key !== key || now - st.last > 600000) bot._spawnerStay = { key, since: now, last: now };
   else st.last = now;
   return Math.round((now - bot._spawnerStay.since) / 1000);
 }
@@ -322,12 +324,24 @@ function entryFacts(bot, { about = null, cage = null, now = Date.now() } = {}) {
   const live = !!cage && !!here && cage.offset(0.5, 0.5, 0.5).distanceTo(here) <= 16;
   const away = live ? Math.round(cage.offset(0.5, 0.5, 0.5).distanceTo(here) * 10) / 10 : null;
   const stay = live ? stayWithin(bot, cage, now) : (stayWithin(bot, null, now), 0);
+  // How the count within sixteen has gone this stay (note 2283): the cage's six-cap counts only its own box, so the
+  // blazes about it keep growing while the bot stays (note 2282); full-8 went 2, 8, 25, 33, 47, 54 in 25 minutes.
+  let trend = '';
+  if (live && here) {
+    const key = `${cage.x},${cage.y},${cage.z}`;
+    const log = (bot._spawnerCounts ||= {})[key] ||= [];
+    if (!log.length || now - log[log.length - 1].at >= 20000) { log.push({ at: now, n: within16 }); if (log.length > 120) log.splice(0, log.length - 120); }
+    const since = bot._spawnerStay?.since ?? now;
+    const first = log.find(x => x.at >= since - 1000);
+    const back = log.filter(x => x.at <= now - 300000).pop();
+    if (first && now - first.at >= 60000) trend = ` Within sixteen of it: ${within16} now, ${first.n} when this stay began ${Math.round((now - first.at) / 60000)} minute${Math.round((now - first.at) / 60000) === 1 ? '' : 's'} ago${back && back !== first ? `, ${back.n} five minutes ago` : ''}.`;
+  }
   const c = COUNTS, k = c.clock, at = c.atSpawner, no = c.noSpawner;
   const rows = live
     ? ` At a live spawner, by the most blazes within sixteen at once in the fight (${c.from} to ${c.to}, ${c.fights} fights with blazes): three or fewer, ${countRow(at['three or fewer'])}; four, ${countRow(at.four)}; five or six, ${countRow(at['five or six'])}; seven or more, ${countRow(at['seven or more'])}. With no spawner within sixteen: none or one, ${countRow(no['none or one'])}; two or three, ${countRow(no['two or three'])}; four or more, ${countRow(no['four or more'])}.`
       + ` Of the fights at a spawner with four or more about, by the nearest the bot came to the cage: within 8 blocks ${countRow(c.byNearest['within 8 blocks'])}; 9 to 12 blocks ${countRow(c.byNearest['9 to 12 blocks'])}; 13 to 16 blocks ${countRow(c.byNearest['13 to 16 blocks'])}.`
       + ` The clock: of the ${k.began} fights at a spawner that began with one to three blazes in sight, ${k.reached} reached four or more within sixteen, a median ${k.toFour.median} seconds after the start (nine in ten within ${k.toFour.p90}); the first rod came a median ${k.firstRod.median} seconds in (${k.firstRod.n} fights with four or more); a death at four or more came a median ${k.death.median} seconds in (a quarter within ${k.death.p25}, three quarters within ${k.death.p75}). These are the fights the bot played, chosen in states these rows do not hold alike: a row by count is what a fight that got that many came to, not what entering with that many would do.`
-    : ` The spawner's rule (the server jar): while a player is within sixteen blocks of a live blaze spawner it tries up to four blazes every ten to forty seconds until six are about, and none beyond sixteen. In the fights of ${c.from} to ${c.to} at a live spawner, three or fewer at most, ${countRow(at['three or fewer'])}; four or more about (${at.four[0] + at['five or six'][0] + at['seven or more'][0]} fights), ${pctN(at.four[1] + at['five or six'][1] + at['seven or more'][1], at.four[0] + at['five or six'][0] + at['seven or more'][0])} died and ${pctN(at.four[2] + at['five or six'][2] + at['seven or more'][2], at.four[0] + at['five or six'][0] + at['seven or more'][0])} brought a rod; with no spawner within sixteen: none or one, ${countRow(no['none or one'])}; two or three, ${countRow(no['two or three'])}.`;
+    : ` The spawner's rule (the server jar): while a player is within sixteen blocks of a live blaze spawner it tries up to four blazes every ten to forty seconds while fewer than six are inside the four blocks round its cage, those that fly out of that box freeing their places, and none while no player is within sixteen. In the fights of ${c.from} to ${c.to} at a live spawner, three or fewer at most, ${countRow(at['three or fewer'])}; four or more about (${at.four[0] + at['five or six'][0] + at['seven or more'][0]} fights), ${pctN(at.four[1] + at['five or six'][1] + at['seven or more'][1], at.four[0] + at['five or six'][0] + at['seven or more'][0])} died and ${pctN(at.four[2] + at['five or six'][2] + at['seven or more'][2], at.four[0] + at['five or six'][0] + at['seven or more'][0])} brought a rod; with no spawner within sixteen: none or one, ${countRow(no['none or one'])}; two or three, ${countRow(no['two or three'])}.`;
   // What can shoot from a distance, honestly: none is made in the Nether.
   const inv = (bot?.inventory?.items?.() || []), have = n => inv.filter(i => i.name === n).reduce((k, i) => k + i.count, 0);
   const arrows = have('arrow'), bow = have('bow') > 0, snow = have('snowball');
@@ -335,7 +349,7 @@ function entryFacts(bot, { about = null, cage = null, now = Date.now() } = {}) {
   const other = ' Another spawner, in this fortress or another, is the same rule: its first try is up to four blazes, ten to forty seconds after the bot is within sixteen of it.';
   const seesSays = sees == null ? '' : `, ${sees} of them with a line to the cell the bot stands in`;
   const now_ = `Blazes in sight now: ${blazes.length}${here ? `; ${within16} within sixteen blocks, in sight or not` : ''}${seesSays}.${live ? ` A live spawner is ${away} blocks off; the bot has been within sixteen of it ${stay} seconds${stay >= k.toFour.median ? `, past the median ${k.toFour.median} seconds at which a fight there had four or more about` : ''}.` : ''}`;
-  return { blazesInSightNow: blazes.length, within16, withALineToTheCell: sees, spawnerBlocksAway: away, secondsWithinSixteen: stay, says: `${now_}${rows}${other}${ranged}` };
+  return { blazesInSightNow: blazes.length, within16, withALineToTheCell: sees, spawnerBlocksAway: away, secondsWithinSixteen: stay, says: `${now_}${trend}${rows}${other}${ranged}` };
 }
 
 // How the rods came and how the deaths did, in one paragraph of counts (note

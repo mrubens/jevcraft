@@ -97,18 +97,18 @@ test('behind a wall a blaze without a line to the cell is not counted as seeing 
   assert.equal(f.withALineToTheCell, 0, 'a wall three high at z 6 between them and the bot at z 9.5');
   assert.equal(f.spawnerBlocksAway, null);
   assert.match(f.says, /^Blazes in sight now: 2; 2 within sixteen blocks, in sight or not, 0 of them with a line/);
-  assert.match(f.says, /^.*The spawner's rule \(the server jar\): while a player is within sixteen blocks of a live blaze spawner it tries up to four blazes every ten to forty seconds until six are about, and none beyond sixteen\./);
+  assert.match(f.says, /^.*The spawner's rule \(the server jar\): while a player is within sixteen blocks of a live blaze spawner it tries up to four blazes every ten to forty seconds while fewer than six are inside the four blocks round its cage, those that fly out of that box freeing their places, and none while no player is within sixteen\./);
   assert.match(f.says, /four or more about \(104 fights\), 20% died and 18% brought a rod/);
 });
 
-test('the stay within sixteen of a cage is counted from the first asking, and a gap of a minute begins another', () => {
+test('the stay within sixteen of a cage is counted from the first asking, and a gap of ten minutes begins another (note 2283)', () => {
   const bot = floorWorld(), cage = new Vec3(0, 64, 0), t0 = 1_000_000;
   assert.equal(record.stayWithin(bot, cage, t0), 0);
   assert.equal(record.stayWithin(bot, cage, t0 + 40000), 40);
   const f = record.entryFacts(bot, { cage, now: t0 + 41000 });
   assert.equal(f.secondsWithinSixteen, 41);
   assert.match(f.says, /within sixteen of it 41 seconds, past the median 40 seconds at which a fight there had four or more about/);
-  assert.equal(record.stayWithin(bot, cage, t0 + 41000 + 61000), 0, 'a minute unseen and it is a new stay');
+  assert.equal(record.stayWithin(bot, cage, t0 + 41000 + 601000), 0, 'ten minutes unseen and it is a new stay');
 });
 
 // A way out past 34 blocks of the cage: a fake route survey.
