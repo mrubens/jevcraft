@@ -3023,11 +3023,25 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
       // 2026-10-27 16:4x to 17:2xZ) failed 56 mines of iron it saw through 10 to 50 blocks of stone, 'No reachable
       // dry standing position' each, set each aside and turned to the next; the user watching: 'mining any blocks in
       // the way make a ton of sense'.
-      if (!mined && /^No reachable dry standing position/.test(e.message) && /_ore$/.test(step.block || '') && !isSetAside(goal, 'reach', p)) {
+      // The same ore tried again from where the last try began: the tunnel got nowhere, so it is set aside as before.
+      const again = goal.tunnelOre && goal.tunnelOre.x === p.x && goal.tunnelOre.y === p.y && goal.tunnelOre.z === p.z && goal.tunnelOre.from &&
+        bot.entity.position.distanceTo(new Vec3(goal.tunnelOre.from.x, goal.tunnelOre.from.y, goal.tunnelOre.from.z)) < 1.5;
+      if (!mined && /^No reachable dry standing position/.test(e.message) && /_ore$/.test(step.block || '') && !isSetAside(goal, 'reach', p) && !again) {
         access?.restore(); access = undefined;
         console.log(`[mine] no stand beside the ${wasBlock} at ${p}, ${Math.round(bot.entity.position.distanceTo(p))} blocks off: tunnelling to it`);
-        goal.tunnelOre = { x: p.x, y: p.y, z: p.z }; save();
-        await tunnelOrSetAside(bot, task, goal, save, p, step.block, p);
+        goal.tunnelOre = { x: p.x, y: p.y, z: p.z, from: { x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z } }; save();
+        // A tunnel that cannot start from here sets the ore aside as before (note 2305): full-10 (2026-10-27 17:31 to
+        // 17:34Z), in a pocket of a ruined portal's netherrack with lava beside it, met 'No route from here' on the first
+        // stair a block away, and the mine step and the tunnel turned eleven times in 33 seconds on the same ore.
+        const from = bot.entity.position.clone();
+        try { await tunnelOrSetAside(bot, task, goal, save, p, step.block, p); }
+        catch (err) {
+          task.check();
+          if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+          goal.lastMiningError = `${e.message}; the tunnel toward it: ${err.message}`;
+          if (bot.entity.position.distanceTo(from) < 1.5) { delete goal.tunnelOre; setAside(goal, 'reach', p, goal.lastMiningError, 120000); save(); missed++; continue; }
+          throw err;
+        }
         return;
       }
     } finally {
