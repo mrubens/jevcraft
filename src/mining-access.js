@@ -69,6 +69,23 @@ function miningMovement(bot) {
   return { allowed, restore: () => Object.assign(movement, previous) };
 }
 
+// Whether a dry stand for mining p can be walked to now, without digging or swimming: the approach's own route check,
+// run without the walk (note 2291). -> true/false
+async function dryRouteNow(bot, task, p, { budgetMs = 400 } = {}) {
+  if (dryStanding(bot, bot.entity.position) && miningReach(bot, bot.entity.position, p)) return true;
+  const movement = bot.pathfinder?.movements;
+  if (!movement) return false;
+  const policy = miningMovement(bot), deadline = Date.now() + budgetMs;
+  try {
+    for (const target of dryMiningPositions(bot, p).slice(0, 3)) {
+      if (Date.now() >= deadline) break;
+      task.check();
+      const route = await surveyRoute(bot, task, movement, new goals.GoalBlock(target.x, target.y, target.z), Math.max(50, Math.min(200, deadline - Date.now())));
+      if (route.status === 'success' && (route.path || []).every(policy.allowed)) return true;
+    }
+  } finally { policy.restore(); }
+  return false;
+}
 async function approachDryMining(bot, task, p, { navigate, dig }) {
   if (dryStanding(bot, bot.entity.position) && miningReach(bot, bot.entity.position, p) && bot.canDigBlock(bot.blockAt(p))) return;
   const movement = bot.pathfinder.movements, policy = miningMovement(bot);
@@ -188,4 +205,4 @@ async function reachableLocalMine(bot, task, candidates) {
   }
 }
 
-module.exports = { dryStanding, miningReach, dryMiningPositions, foliageMiningCandidate, approachDryMining, miningMovement, reachableLocalMine };
+module.exports = { dryRouteNow, dryStanding, miningReach, dryMiningPositions, foliageMiningCandidate, approachDryMining, miningMovement, reachableLocalMine };

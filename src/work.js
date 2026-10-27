@@ -2902,6 +2902,23 @@ function oreToTunnel(found, feet, depth, count = Infinity) {
 }
 async function mineAtSource(bot, task, step, goal, save, selected) {
   let candidates = selected ? [selected] : await miningCandidates(bot, task, step, goal);
+  // Those with a dry stand walked to now first, nearest first; then those a passage reaches; under water last (note
+  // 2291). full-9 (2026-10-27 15:4xZ), on the surface for flint, chose the gravel of a river bed at y 61 and a cave's at
+  // y 45, walked into the river under a tree, and timed out three walks there ('No reachable dry standing position',
+  // 'navigation timed out'); the user watching: 'he's just walking around in water trapped under a tree'.
+  let tierOf = () => 1;
+  if (!selected && candidates.length > 1) {
+    try {
+      const { dryRouteNow } = require('./mining-access');
+      const here = bot.entity.position, deadline = Date.now() + 2500;
+      const wetOver = p => /water/.test(bot.blockAt(p.offset(0, 1, 0))?.name || '');
+      const near = candidates.slice().sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
+      const now = [];
+      for (const p of near.slice(0, 8)) { if (Date.now() >= deadline) break; if (!wetOver(p) && await dryRouteNow(bot, task, p)) now.push(p); }
+      const rest = near.filter(p => !now.includes(p));
+      tierOf = p => now.some(q => q.equals(p)) ? 0 : wetOver(p) ? 2 : 1;
+    } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  }
   // The depth is Jev's (mining_depth, note 2121): with ore in view well above the ore's own depth and a good many
   // wanted, the nearest in view or down to the depth, said with this run's ore per hour by depth and the game's
   // placement. The nearest in view was the rule: the fresh runs mined iron at the surface at 31 to 71 an hour and at
@@ -2955,7 +2972,7 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
   // bot off to re-plan and walk after every ore. An ore is worked until the
   // step is met, or to a stack for ore, as long as the next block is close.
   const here0 = bot.entity.position.clone();
-  candidates.sort((a, b) => a.distanceTo(here0) - b.distanceTo(here0));
+  candidates.sort((a, b) => tierOf(a) - tierOf(b) || a.distanceTo(here0) - b.distanceTo(here0));
   const ore = /_ore$/.test(step.block || '') || step.block === 'ancient_debris';
   const startCount = countOf(bot, step.drops);
   const satisfied = () => ore ? countOf(bot, step.drops) >= Math.max(startCount + (step.count || 1), 32) || countOf(bot, step.drops) >= 32 : countOf(bot, step.drops) >= startCount + (step.count || 1);
