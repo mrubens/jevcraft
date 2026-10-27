@@ -446,6 +446,20 @@ define({
   instructions: workInstructions('The bot just dug a block and water or lava has run into the gap. Choose whether to plug it with a carried block or carry on digging.'),
 });
 
+// An open way to a dig's target, against digging a new one (note 2299).
+define({
+  id: 'open_way', area: 'resources', parent: null, kind: 'mining', primitive: 'choice', stakes: 'low', tree: true,
+  question: 'A way already open (a tunnel, stairs or a cave) reaches near the target: walk it, or dig a new way?',
+  trigger: 'Before a dig toward water, lava or ore, when a route with nothing dug reaches within three blocks of the target; asked once a target.',
+  source: 'src/tunneling.js (resourceTunnelStep)',
+  ungated: 'either way reaches the target; asked once a target',
+  options: [
+    { key: 'walk_open', label: 'walk the way already open', when: 'a route with nothing dug reaches near the target', level: 'root' },
+    { key: 'dig_new', label: 'dig a new way straight at it', when: 'always', level: 'root' },
+  ],
+  instructions: workInstructions('A tunnel, stairs or cave already open reaches near the place the bot is digging toward. Choose whether to walk that way or dig a new one.'),
+});
+
 // Where to look for sheep, for a bed.
 define({
   overworldOnly: true,

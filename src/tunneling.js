@@ -810,6 +810,41 @@ async function resourceTunnelStep(bot, task, goal, save, target, resource, actio
       save(); throw err;
     } finally { Object.assign(movement, previous); }
   }
+  // A way already open to the target, offered against the new dig, once a target (note 2299). The bot dug fresh
+  // staircases and tunnels toward water and lava past its own: the user, watching full-9 (2026-10-27 16:1xZ): 'can it
+  // reuse an existing path', 'offer the existing path as an option. I think it would save time?'
+  const tkey = `${Math.round(target.x)},${Math.round(target.y)},${Math.round(target.z)}`;
+  const client = task?.opportunityClient || null;
+  if (client && site.openWay?.key !== tkey && bot.pathfinder?.movements) {
+    site.openWay = { key: tkey, at: Date.now() }; save();
+    const movement = bot.pathfinder.movements;
+    const previous = { canDig: movement.canDig, allow1by1towers: movement.allow1by1towers, scafoldingBlocks: movement.scafoldingBlocks };
+    let route = null;
+    Object.assign(movement, { canDig: false, allow1by1towers: false, scafoldingBlocks: [] });
+    try { route = await surveyRoute(bot, task, movement, new goals.GoalNear(target.x, target.y, target.z, 3), 1000); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; route = null; }
+    finally { Object.assign(movement, previous); }
+    if (route?.status === 'success' && (route.path || []).length) {
+      const steps = route.path.length, walkSecs = Math.max(2, Math.round(steps / 4.3));
+      let dig = null; try { dig = require('./obsidian').wayCosts(bot.entity.position.floored(), new Vec3(target.x, target.y, target.z), null); } catch (_) { dig = null; }
+      const secs = n => n < 90 ? `about ${Math.max(5, Math.round(n / 5) * 5)} seconds` : `about ${Math.round(n / 60)} minutes`;
+      const what = String(resource).replaceAll('_', ' ');
+      const tree = {
+        walk_open: { description: `Walk the way already open to the ${what} at (${tkey.replaceAll(',', ', ')}): ${steps} steps along tunnels, stairs or caves, ${secs(walkSecs)} at a walk, nothing dug, no pickaxe worn.` },
+        dig_new: { description: `Dig a new way straight at it${dig ? `: ${dig.across} across${dig.dy ? `, ${Math.abs(dig.dy)} ${dig.dy > 0 ? 'up' : 'down'}` : ''}, ${secs(dig.there)} and about ${dig.digs} blocks dug` : ''}.` },
+      };
+      try {
+        const decision = await require('./decisions').decide('open_way', { client, bot, task, goal, save, tree, state: { target: { x: target.x, y: target.y, z: target.z }, resource } });
+        if (!decision.stale && decision.path.at(-1) === 'walk_open') {
+          goal.step = { action: 'walk_open_way', resource, target: { x: target.x, y: target.y, z: target.z }, steps }; save();
+          Object.assign(movement, { canDig: false, allow1by1towers: false, scafoldingBlocks: [] });
+          try { await actions.navigate(bot, task, new goals.GoalNear(target.x, target.y, target.z, 3), { timeoutMs: Math.max(30000, walkSecs * 3000), stallMs: 6000 }); }
+          finally { Object.assign(movement, previous); }
+          return;
+        }
+      } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    }
+  }
   await tunnelStep(bot, task, goal, save, target, actions);
 }
 
