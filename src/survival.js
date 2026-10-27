@@ -10941,7 +10941,13 @@ class Survival {
     const { SCAFFOLD } = require('./pillar-recovery');
     const item = bot.inventory.items().find(i => SCAFFOLD.includes(i.name));
     if (!item) return false;
-    await bot.equip(item, 'hand'); task.check();
+    // The equip given 600 ms, not waited on for as long as it takes (note 2321): full-11 (25588, 2026-10-27
+    // 20:55:49 to 55Z), 9 seconds after a 'Timed out waiting for world/inventory update', took pillar_out in a pool one
+    // deep at 20 health and pressed no key for 5.5 seconds, 20 to none; the escape had not begun. The keys that lift
+    // the body to the lava's top go on whether or not the block is in hand yet, and the block goes in once it is.
+    const equipped = await Promise.race([bot.equip(item, 'hand').then(() => true, () => false), sleep(600).then(() => false)]);
+    task.check();
+    if (!equipped) console.log(`[lava-escape] the ${item.name.replaceAll('_', ' ')} was not in hand after 600 ms: rising to the lava's top meanwhile`);
     const landed = () => bot.blockAt(fill.cell)?.boundingBox === 'block';
     const clear = () => bot.entity.position.y >= fill.cell.y + 1.02;
     const place = bot._placeBlockWithOptions ? () => bot._placeBlockWithOptions(fill.ref, fill.face, { swingArm: 'right', forceLook: true }) : () => bot.placeBlock(fill.ref, fill.face);
@@ -10952,6 +10958,7 @@ class Survival {
       await move(bot, task, { label: 'out_of_lava', keys: ['forward', 'jump'], sneak: false, why: 'in lava: pressed against the block beside, the push out of the lava lifts the body over the cell a block goes into', look: wall,
         maxMs: Math.max(100, until - Date.now()), tick: 25, until: clear });
       if (!clear()) break;
+      if (!SCAFFOLD.includes(bot.heldItem?.name)) { const again = bot.inventory.items().find(i => SCAFFOLD.includes(i.name)); if (again) await Promise.race([bot.equip(again, 'hand').catch(() => {}), sleep(300)]); }
       try { await place(); } catch (err) { task.check(); }
     }
     for (let i = 0; i < 20 && landed() && !bot.entity.onGround; i++) { task.check(); await sleep(25); }
