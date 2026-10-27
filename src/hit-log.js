@@ -65,6 +65,11 @@ function install(bot) {
     last = hp;
   };
   bot.on('health', bot._hitLogHealth);
+  // A night slept through ends what came before it (note 2314): the game lets the bot sleep only with no monster
+  // near, and the hits of the fight before bed are a night old on waking. full-11 (25588, 2026-10-27 19:24:27Z), up
+  // at dawn, was told two seconds later to wall in against 'whatever landed the 7 hits in the last 30 seconds', all of
+  // them before it lay down; the user: 'But Jev slept. Seemed he was still at war after that'.
+  bot.on('wake', () => { bot._wokeAt = Date.now(); });
   // Every shot seen coming at the bot (shot-reflex.js's 'shot' event),
   // landed or not: a shooter "in sight" with none coming for a minute has
   // no line in truth (held-off.js stoodOff, note 752i).
@@ -76,8 +81,9 @@ function noteDrop(bot, from, to, now = Date.now()) {
   const p = bot.entity?.position;
   bot._dropLog = [...(bot._dropLog || []).filter(d => now - d.at < KEEP_MS), { at: now, from, to, shield: state === 'up', ...(state === 'rising' ? { rising: true } : {}), ...(p ? { pos: { x: p.x, y: p.y, z: p.z } } : {}) }];
 }
+const sinceWake = (bot, at) => !(bot?._wokeAt > at);
 function drops(bot, { now = Date.now(), ms = RECENT_MS } = {}) {
-  return (bot?._dropLog || []).filter(d => now - d.at <= ms);
+  return (bot?._dropLog || []).filter(d => now - d.at <= ms && sinceWake(bot, d.at));
 }
 
 // The falls of health while the body stood within `near` of `at` (note 939):
@@ -86,7 +92,7 @@ function dropsAt(bot, at, { now = Date.now(), ms = RECENT_MS, near = 1.5 } = {})
   return drops(bot, { now, ms }).filter(d => d.pos && Math.hypot(d.pos.x - (at.x + 0.5), d.pos.z - (at.z + 0.5)) <= near && Math.abs(d.pos.y - at.y) <= 1.5);
 }
 function recent(bot, { now = Date.now(), ms = RECENT_MS } = {}) {
-  return (bot?._hitLog || []).filter(h => now - h.at <= ms);
+  return (bot?._hitLog || []).filter(h => now - h.at <= ms && sinceWake(bot, h.at));
 }
 
 // The mobs that hit the bot lately, most hits first, each with where it is

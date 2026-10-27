@@ -952,7 +952,10 @@ async function searchForSheep(bot, task, goal, save, actions) {
   // between x 188 and 215, "No sheep here" eight times, before taking seen_0,
   // "the sheep I saw 158 blocks north-east", on offer all along below them.
   const flockIds = K.ids(goal, 'sheep_flock', flocks, { near: 24 });
-  for (const [i, s] of flocks.entries()) { const key = `seen_${flockIds[i]}`; ways[key] = { flock: s }; tree[key] = { description: `Walk back to where ${s.says}; sheep wander, but not far. The one place sheep are known to be.${walk(s.distance)}${belowSays}`, target: { x: Math.round(s.x), y: Math.round(s.y ?? y), z: Math.round(s.z) } }; }
+  // Each flock said as one of how many (note 2314): full-11 (25588, 2026-10-27 19:24:41Z) read 'The one place sheep are
+  // known to be' on three flocks 68 to 118 blocks off and took a plateau where none were seen; the shears and what
+  // shearing gives go in the state (shearing.js shearSays), the user: 'and the shears thing'.
+  for (const [i, s] of flocks.entries()) { const key = `seen_${flockIds[i]}`; ways[key] = { flock: s }; tree[key] = { description: `Walk back to where ${s.says}; sheep wander, but not far. ${flocks.length === 1 ? 'The one place sheep are known to be.' : `One of ${flocks.length} places sheep were seen.`}${walk(s.distance)}${belowSays}`, target: { x: Math.round(s.x), y: Math.round(s.y ?? y), z: Math.round(s.z) } }; }
   // Where sheep do not spawn, said so on the walk there (note 771): 25588
   // (mid-231-ab, 2026-10-01 ~01:20Z) answered about 30 sheep searches among
   // snowy biomes whose own words said "rabbits and polar bears spawn", far
@@ -1011,7 +1014,7 @@ async function searchForSheep(bot, task, goal, save, actions) {
   let pick = null;
   try {
     const decision = await require('./decisions').decide('sheep_search', { client, bot, task, goal, save, tree,
-      state: { biome: view?.biome, biomeHas: view?.biomeHas, biomesNearby: nearby.map(({ x, z, says, ...b }) => b), sheepSeenEarlier: flocks.map(({ says, ...s }) => s), searchingMinutes: minutes, woolCarried: woolCarried(bot).total, woolOfOneColour: woolCarried(bot).count, stringCarried: string,
+      state: { biome: view?.biome, biomeHas: view?.biomeHas, biomesNearby: nearby.map(({ x, z, says, ...b }) => b), sheepSeenEarlier: flocks.map(({ says, ...s }) => s), ...((() => { try { return { shearing: require('./shearing').shearSays(bot, goal) }; } catch (_) { return {}; } })()), searchingMinutes: minutes, woolCarried: woolCarried(bot).total, woolOfOneColour: woolCarried(bot).count, stringCarried: string,
         timeOfDay: tod, ...(underground ? { underground: true, climbToSurface: climb != null ? `about ${climb} blocks up, roughly ${climbMinutes(climb)} minutes` : 'how far up is not known' } : {}), ...(underwater ? { underwater: true, oxygen: bot.oxygenLevel } : {}),
         ...(bot.game?.gameMode === 'survival' ? { riskNow: require('./risk').riskNow(bot) } : {}),
         // The bed's own record (note 763's kit record): what the trials that
