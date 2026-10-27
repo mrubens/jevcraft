@@ -435,7 +435,7 @@ function noteLavaStand(bot, goal, lava) {
 // dug before, routed without digging; true when the bot got there.
 async function walkKnownStairs(bot, task, goal, save, lava, navigate) {
   const dim = String(bot.game?.dimension || 'overworld'), here = bot.entity.position;
-  const stands = (goal.lavaStands || []).filter(s => s.dimension === dim && Math.hypot(s.lava.x - lava.x, s.lava.y - lava.y, s.lava.z - lava.z) <= SAME_LAVA && here.distanceTo(new Vec3(s.x, s.y, s.z)) > 4 && !(s.failedAt > Date.now() - 300000))
+  const stands = (goal.lavaStands || []).filter(s => s.dimension === dim && Math.hypot(s.lava.x - lava.x, s.lava.y - lava.y, s.lava.z - lava.z) <= SAME_LAVA && here.distanceTo(new Vec3(s.x, s.y, s.z)) > 4 && !s.walkedAt && !(s.failedAt > Date.now() - 300000))
     .sort((a, b) => b.at - a.at);
   const s = stands[0];
   if (!s || !navigate) return false;
@@ -447,6 +447,11 @@ async function walkKnownStairs(bot, task, goal, save, lava, navigate) {
     if (route.status !== 'success') { s.failedAt = Date.now(); save(); return false; }
     goal.step = { ...goal.step, phase: 'known_stairs', to: { x: s.x, y: s.y, z: s.z } }; save();
     bot.chat?.(`Back down the stairs dug before to the lava at (${s.lava.x}, ${s.lava.y}, ${s.lava.z}).`);
+    // Walked to once: a fill there makes a fresh stand (noteLavaStand), and a stand walked to with no fill since is not
+    // walked to again (note 2307). full-10 (25586, 2026-10-27 17:50 to 17:52Z) kept two stands six blocks apart at the
+    // ruined portal's lava, filled from neither, and walked between them every two seconds for two minutes; the user
+    // watching: 'Jev is just walking back and forth now'.
+    s.walkedAt = Date.now(); save();
     await navigate(bot, task, new goals.GoalNear(s.x, s.y, s.z, 1), { timeoutMs: 180000, stallMs: 12000 });
     return true;
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; s.failedAt = Date.now(); save(); return false; }
