@@ -111,6 +111,9 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
   Object.assign(movement, { allow1by1towers: false, scafoldingBlocks: [], allowParkour: false,
     maxDropDown: Math.min(previous.maxDropDown ?? 2, 2), allowedPosition: allowed });
   const attempted = new Set();
+  // Why a pickup spot was passed over, counted for the line said when nothing was taken (note 2285).
+  const why = { hostile: 0, bounds: 0, route: 0, moved: 0, walked: 0 };
+  const allowedWhy = point => { const p = new Vec3(point.x, point.y, point.z); if (!(p.distanceTo(start) <= radius + 1 && p.y >= start.y - 8 && policy.allowed(point) && !damagingTerrain.has(bot.blockAt(supportCell(p))?.name))) return 'bounds'; if (!safeFromHostiles(bot, p)) return 'hostile'; return null; };
   let seen = false, passageTried = false;
   try {
     while (Date.now() < deadline && !gained()) {
@@ -123,13 +126,16 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
           task.check();
           if (Date.now() >= deadline || gained()) break;
           const attempt = `${key(bot, drop)}:${point}`;
-          if (attempted.has(attempt) || !allowed(point)) continue;
+          if (attempted.has(attempt)) continue;
+          if (!allowed(point)) { why[allowedWhy(point) || 'bounds']++; continue; }
           attempted.add(attempt);
           const target = new PickupGoal(point), observed = drop.position.clone();
           const changed = () => bot.entities[drop.id] !== drop || drop.isValid === false || drop.position.distanceTo(observed) > .65;
           const route = await surveyRoute(bot, task, movement, target, Math.min(250, deadline - Date.now()));
-          if (changed() || route.status !== 'success' || (route.path || []).length > 32 ||
-              !(route.path || []).every(p => allowed(p) && !p.toBreak?.length && !p.toPlace?.some(p => !p.useOne))) continue;
+          if (changed()) { why.moved++; continue; }
+          if (route.status !== 'success' || (route.path || []).length > 32 ||
+              !(route.path || []).every(p => allowed(p) && !p.toBreak?.length && !p.toPlace?.some(p => !p.useOne))) { why.route++; continue; }
+          why.walked++;
           onTarget({ item, position: { ...drop.position.floored() } });
           try {
             await move(bot, task, target, { timeoutMs: Math.min(4000, deadline - Date.now()), stallMs: 1500,
@@ -191,6 +197,11 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
       }
     }
     if (!gained()) {
+      const lyingNow = nearbyDrops(bot, item, origin, radius);
+      if (lyingNow.length) {
+        const nearest = Math.min(...lyingNow.map(d => d.position.distanceTo(bot.entity.position)));
+        console.log(`[drops] ${item.replaceAll('_', ' ')} not taken: ${lyingNow.length} lying within ${radius} of the search's origin, the nearest ${Math.round(nearest * 10) / 10} from the bot; spots passed over: ${why.hostile} by a hostile about, ${why.bounds} out of bounds or on damaging ground, ${why.route} with no short clear route, ${why.moved} the drop moving; ${why.walked} walked to without the pickup`);
+      }
       let failed = failures.get(bot);
       if (!failed) failures.set(bot, failed = new Map());
       for (const drop of nearbyDrops(bot, item, origin, radius)) failed.set(key(bot, drop), Date.now() + 30000);
