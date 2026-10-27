@@ -34,8 +34,28 @@ function woollySheep(bot, goal, reach = REACH) {
 const canShear = bot => countOf(bot, 'shears') > 0 || countOf(bot, 'iron_ingot') >= SHEARS_IRON;
 // A side trip's worth: shears carried, a woolly sheep near, and less wool
 // than five beds need.
-const shearReady = (bot, goal) => countOf(bot, 'shears') > 0 && woolTotal(bot) < WOOL_STOCK && woollySheep(bot, goal, 24).length > 0 &&
+// Shears carried or the iron for a pair (note 2290: with iron and no shears it was never offered, and on full-5 and
+// full-6 it was offered 495 times and never chosen, said only as the sheep in view and the wool carried).
+const shearReady = (bot, goal) => canShear(bot) && woolTotal(bot) < WOOL_STOCK && woollySheep(bot, goal, 24).length > 0 &&
   /overworld/.test(String(bot.game?.dimension || 'overworld'));
+// The live sheep the bot knows of (note 2290, the user 2026-10-27: 'Maybe the shears should say how many alive sheep
+// Jev knows about'): in view now, and those remembered from sightings within 256 blocks, by flock.
+function sheepKnownSays(bot, goal) {
+  const here = bot.entity.position, inView = Object.values(bot.entities || {}).filter(e => e.name === 'sheep' && e.isValid !== false && e.position && !baby(bot, e));
+  const woolly = inView.filter(e => !sheared(bot, e)).length;
+  const dim = String(bot.game?.dimension || 'overworld').replace(/^minecraft:/, '');
+  const flocks = (goal?.sightings?.sheep || []).filter(f => String(f.dimension || 'overworld').includes(dim.includes('overworld') ? 'overworld' : dim) && Number.isFinite(f.x))
+    .map(f => ({ n: f.count || 1, d: Math.round(Math.hypot(f.x - here.x, f.z - here.z)) })).filter(f => f.d <= 256 && f.d > 24).sort((a, b) => a.d - b.d);
+  const remembered = flocks.reduce((k, f) => k + f.n, 0);
+  return `${inView.length} sheep in view (${woolly} with wool)${remembered ? `, and ${remembered} more remembered in ${flocks.length} flock${flocks.length === 1 ? '' : 's'} within 256 blocks, the nearest ${flocks[0].n} at ${flocks[0].d} blocks` : ''}`;
+}
+// What shearing gives against killing, and what the beds want (note 2290).
+function shearSays(bot, goal) {
+  const beds = bot.inventory.items().filter(i => /_bed$/.test(i.name)).reduce((n, i) => n + i.count, 0), wool = woolTotal(bot);
+  const shears = countOf(bot, 'shears') > 0 ? 'shears carried' : `no shears carried: a pair is ${SHEARS_IRON} iron ingots at a crafting table (${countOf(bot, 'iron_ingot')} carried), and they shear about 238 sheep`;
+  return `${sheepKnownSays(bot, goal)}; ${shears}. A sheep sheared gives one to three wool, about two, and lives to grow it back in a few minutes; killed it gives one, and is gone. A bed is three wool and three planks: ${beds} bed${beds === 1 ? '' : 's'} and ${wool} wool carried now, against one to sleep in and four the End's fight blows up at the dragon.`;
+}
+
 
 // Shear sheep until `want` wool is carried or none woolly is near.
 async function shearSheep(bot, task, goal, save, { navigate, acquireStep, want = WOOL_STOCK, collect = collectNearbyDrops } = {}) {
@@ -75,4 +95,4 @@ async function shearSheep(bot, task, goal, save, { navigate, acquireStep, want =
   return woolTotal(bot) > start;
 }
 
-module.exports = { WOOL_STOCK, woollySheep, sheared, canShear, shearReady, shearSheep, woolTotal };
+module.exports = { sheepKnownSays, shearSays, WOOL_STOCK, woollySheep, sheared, canShear, shearReady, shearSheep, woolTotal };

@@ -7999,7 +7999,7 @@ function sideTrips(bot, goal, client) {
     says: "I'll fetch my things from the chest I left", walkBlocks: Math.round(cached.distance), run: (b, t, g, sv) => require('./field-cache').emptyCache(b, t, g, sv, homeActions(), cached.cache) };
   // Wool for beds: one to sleep in and four for the dragon (shearing.js).
   const shearing = require('./shearing');
-  if (shearing.shearReady(bot, goal)) trips.shear_sheep = { description: `Shear the sheep in view (${shearing.woollySheep(bot, goal, 24).length} with wool, ${shearing.woolTotal(bot)} wool carried): three wool a bed, beds to sleep in and to blow up in the End, and the sheep grow it back.`,
+  if (shearing.shearReady(bot, goal)) trips.shear_sheep = { description: `Shear the sheep in view${countOf(bot, 'shears') > 0 ? '' : ', making the shears first'}: ${shearing.shearSays(bot, goal)}`,
     says: "I'll shear these sheep", run: (b, t, g, sv) => shearing.shearSheep(b, t, g, sv, { navigate, acquireStep }) };
   // The table itself, as soon as there is something to spend it on: made
   // only in the last preparations before the End, it was never made at all
