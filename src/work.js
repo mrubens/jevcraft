@@ -2721,7 +2721,7 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
         }) || null;
     } catch (_) { oreFirst = null; }
     const spare = cost.state.pickaxeUsesLeft - cost.digs;
-    if (oreFirst && spare > 0) tree.mine_first = { description: `Dig the ${words(oreFirst.name)} ${Math.round(oreFirst.p.distanceTo(bot.entity.position))} blocks off first, then climb: the pickaxes have ${cost.state.pickaxeUsesLeft} uses and the climb's way (${words(cost.way)}) digs about ${cost.digs}, so ${spare} are spare for ore down here; asked again after it.${budgetOf() ? ` ${budget.says}` : ''}` };
+    if (oreFirst && spare > 0) tree.mine_first = { description: `Dig the ${words(oreFirst.name)} ${Math.round(oreFirst.p.distanceTo(bot.entity.position))} blocks off first, then climb.${oreUseSays(bot, oreFirst.name)} Its cost: the pickaxes have ${cost.state.pickaxeUsesLeft} uses and the climb's way (${words(cost.way)}) digs about ${cost.digs}, so ${spare} are spare for ore down here; asked again after it.${budgetOf() ? ` ${budget.says}` : ''}` };
     else oreFirst = null;
   }
   // A portal site is a room dug out of the rock as well as ground up top:
@@ -6168,6 +6168,27 @@ const diamondPickaxeCarried = bot => bot.inventory.items().some(i => /^(diamond|
 // 749), not its place in the list of ruins remembered.
 const ruinKey = (goal, k) => `ruin_${require('./decisions/keys').id(goal, 'ruin', k.landmark, { near: 8 })}`;
 const ruinOf = (key, ruins, goal) => ruins.find(k => ruinKey(goal, k) === key) || null;
+// What an ore is for, said where it is offered (note 2312): its drop, how many are carried, and what the run makes of
+// it. full-11 (25588, 2026-10-27 19:14Z), at y -5 with an iron pickaxe and a lava pool just noted, was offered 'Dig
+// the deepslate diamond ore 6 blocks off first, then climb' with the pickaxe uses alone, and climbed 83 blocks for a
+// log; the gold beside full-10's stall was offered the same way (note 2311). The user: 'Yeah' to saying what it is for.
+function oreUseSays(bot, name) {
+  try {
+    const drops = /_ore$/.test(String(name)) ? MINEABLE[name]?.drops : null;
+    if (!drops) return '';
+    const carried = countOf(bot, drops);
+    let kin = 0; try { kin = find(bot, [name], 16, 32).length; } catch (_) { kin = 0; }
+    const near = kin > 1 ? `; ${kin} such blocks within 16 blocks` : '';
+    const has = re => bot.inventory.items().some(i => re.test(i.name));
+    const use = drops === 'diamond' ? ` Three diamonds make a diamond pickaxe${has(/^(diamond|netherite)_pickaxe$/) ? ' (one is carried)' : ', none carried'}: the only pickaxe that mines obsidian, so a portal frame can be mined from a lava pool's crust or a ruin rather than cast a bucket at a time, and it digs faster and lasts 1,561 uses; two more make a sword.`
+      : drops === 'raw_gold' ? ` Four gold ingots, a raw gold smelted to each, make golden boots${has(/^golden_(boots|helmet|chestplate|leggings)$/) ? ' (a gold piece is carried)' : ', none carried'}: a piglin leaves a player wearing gold alone in the Nether.`
+      : drops === 'raw_iron' ? ' Iron makes the armour (twenty-four ingots for all four pieces), a bucket (three), shears (two) and iron pickaxes (three).'
+      : drops === 'coal' ? ' Coal is the fuel for smelting and cooking, eight items a piece, and makes torches.'
+      : drops === 'lapis_lazuli' ? ' Lapis is what enchanting spends, one to three a go.'
+      : '';
+    return ` It drops ${drops.replaceAll('_', ' ')} (${carried} carried)${near}.${use}`;
+  } catch (_) { return ''; }
+}
 // A ruined portal as an option, with what finishing it takes. The missing
 // blocks are obsidian too, said as such: mid-218-a chose a ruin with three
 // of ten standing, told they were "placed like any block", and spent its
@@ -10194,4 +10215,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { ruinSays, buildSays, mineAtSource, nightMineLeftSays, NIGHT_MINES_LEFT, cookTimeSays, rawCostSays, FOOD_POINTS_A_MINUTE, noteClimb, climbsLatelySays, bedFromPockets, portalToJudge, capLavaBeside, portalPickaxeFirst, endPortalActions, miningCandidates, portalSurfaceFirst, nightUpSays, oreToTunnel, gatherRests, gatherResting, relightPortalAt, stairPickaxeWanted, pickaxeForStair, siteHoldEnds, exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
+module.exports = { oreUseSays, ruinSays, buildSays, mineAtSource, nightMineLeftSays, NIGHT_MINES_LEFT, cookTimeSays, rawCostSays, FOOD_POINTS_A_MINUTE, noteClimb, climbsLatelySays, bedFromPockets, portalToJudge, capLavaBeside, portalPickaxeFirst, endPortalActions, miningCandidates, portalSurfaceFirst, nightUpSays, oreToTunnel, gatherRests, gatherResting, relightPortalAt, stairPickaxeWanted, pickaxeForStair, siteHoldEnds, exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
