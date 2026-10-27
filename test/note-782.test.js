@@ -29,7 +29,7 @@ test('a route is priced end to end: buckets made first only where they shorten i
   const raw = PP.priceCast({ trip: 240, cast: 10, toFetch: 10, carriers: 1, ingots: 0, raw: 9 });
   assert.equal(raw.makeSeconds, 15 + 9 * 10);
   // No bucket and no iron: not priced, and said so.
-  assert.match(PP.priceSays(PP.priceCast({ trip: 60, cast: 10, toFetch: 10, carriers: 0 })), /^Not priced: no bucket is carried and no iron to make one/);
+  assert.match(PP.priceSays(PP.priceCast({ trip: 60, cast: 10, toFetch: 10, carriers: 0 })), /no bucket is carried and no iron to make one \(three ingots\), so the iron is mined and smelted first/);
 });
 
 test('the plan is asked again only when a named fact changes, each said', () => {

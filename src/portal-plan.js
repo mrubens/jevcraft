@@ -116,7 +116,11 @@ function priceCast({ reach = 0, trip = 0, cast = 10, toFetch = 10, carriers = 0,
 }
 // A route's price in words: the parts and all of it.
 function priceSays(p, { tripWhat = 'a trip for lava' } = {}) {
-  if (p.seconds === null) return 'Not priced: no bucket is carried and no iron to make one (three ingots).';
+  // The part that can be priced, said with no bucket too (note 2297): full-9 (25587, 2026-10-27 15:46Z) read 'Not
+  // priced' on both ways down to the deep lava, 141 blocks off and 120 down, beside a surface search with no minutes
+  // either, and took the staircase down (beside_deep 0.52). The user: 'it might be worth biasing jev toward finding lava
+  // closer to the surface', and 'I don't like the hardcoded rules': the minutes, not a preference.
+  if (p.seconds === null) return `${p.reach ? `Getting there ${mins(p.reach)}; then ` : ''}no bucket is carried and no iron to make one (three ingots), so the iron is mined and smelted first, and the ${p.trips || 10} lava trips priced after that.`;
   const parts = [];
   if (p.reach) parts.push(`getting there ${mins(p.reach)}`);
   if (p.make) parts.push(`${p.make} more bucket${p.make === 1 ? '' : 's'} made first, ${mins(p.makeSeconds)}`);
