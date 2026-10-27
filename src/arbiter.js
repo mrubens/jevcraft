@@ -422,6 +422,15 @@ function stoppedSays(bot, state, layer, now = Date.now()) {
 // given the turn at 4 health beside "a piglin 9.8 blocks off" (in sight, no
 // gold worn), and a ghast 60 blocks off, past the sixteen then said, ended
 // it eighteen seconds later (note 607).
+// The bed against the night (note 2317): carried, or placed and how far, a night slept in it passing in seconds.
+function bedNightSays(f) {
+  const b = f?.bed;
+  if (!b || f.underground) return '';
+  const night = ' A night slept through passes in seconds, where one awake is the minutes to dawn';
+  if (b.carried) return `${night}: a bed is carried, set down here at bedtime.`;
+  if (b.placed) return `${night}: no bed is carried; the bed slept in is at (${b.placed.at.x}, ${b.placed.at.y}, ${b.placed.at.z}), ${b.placed.blocks} blocks off${Math.abs(b.placed.up) >= 4 ? `, ${Math.abs(b.placed.up)} blocks ${b.placed.up > 0 ? 'up' : 'down'}` : ''}, about ${Math.max(5, Math.round(b.placed.blocks / 4.3 / 5) * 5)} seconds at a walk where the way is open.`;
+  return `${night}: no bed is carried and none is placed.`;
+}
 function mobWouldSays(t, { noWay = false, bot = null } = {}) {
   const ce = require('./combat-estimate'), name = t.entity.name;
   // An angry one of a group (anger.js): hunting the bot, not "no way".
@@ -619,7 +628,7 @@ function claimSays(c) {
     // for the night" at y 7 in a geode while pocket_next said nightfall
     // changes nothing there. Said by what it is, the reason first (the
     // threat, the surface's night, health), or that none holds.
-    case 'secure_shelter': return `${f.underground ? 'A sealed pocket under the rock' : 'Shelter for the night'}${f.sealFor ? ` (${f.sealFor})` : ''}: ${f.nightMine ? `the night mine from the pocket, chosen ${f.nightMine.minutes} minute${f.nightMine.minutes === 1 ? '' : 's'} ago (${f.nightMine.mined} mined), goes on under the rock; a shelter is asked for once it ends` : f.wayChosen ? `the way chosen ${f.wayChosen.secondsAgo} seconds ago (${String(f.wayChosen.method).replaceAll('_', ' ')}) goes on; should it fail, it rests and the way is asked again` : notAsked(f) || 'the way (a room, a pocket here, a shaft, the bed) is asked next'}.${f.underground ? ` Underground here the night up top changes nothing: mobs spawn in the dark by day as by night${f.sleepDebt ? '; it is claimed for the sleep owed (no bed slept in for two game days and more), not for a mob named, and a pocket does not pay that: only a bed does' : ''}.` : ''}${hp}${heals}`;
+    case 'secure_shelter': return `${f.underground ? 'A sealed pocket under the rock' : 'Shelter for the night'}${f.sealFor ? ` (${f.sealFor})` : ''}: ${f.nightMine ? `the night mine from the pocket, chosen ${f.nightMine.minutes} minute${f.nightMine.minutes === 1 ? '' : 's'} ago (${f.nightMine.mined} mined), goes on under the rock; a shelter is asked for once it ends` : f.wayChosen ? `the way chosen ${f.wayChosen.secondsAgo} seconds ago (${String(f.wayChosen.method).replaceAll('_', ' ')}) goes on; should it fail, it rests and the way is asked again` : notAsked(f) || 'the way (a room, a pocket here, a shaft, the bed) is asked next'}.${bedNightSays(f)}${f.underground ? ` Underground here the night up top changes nothing: mobs spawn in the dark by day as by night${f.sleepDebt ? '; it is claimed for the sleep owed (no bed slept in for two game days and more), not for a mob named, and a pocket does not pay that: only a bed does' : ''}.` : ''}${hp}${heals}`;
     // Said with the last resort carried and, when health does not come back,
     // the sealed wait for daylight among the ways asked next (note 515).
     // Said with the hunger against what health needs, what the food carried

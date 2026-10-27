@@ -13019,6 +13019,18 @@ function netherKeepOn(bot, goal) {
 }
 
 const STOPPED_WORK_MS = 10000;
+// The bed the night could be slept in, said on the shelter claim (note 2317): carried, or the one slept in and how far
+// it is. full-11 (25588, 2026-10-27 19:36Z), no bed carried and its bed 135 blocks back, was told 'the way (a room,
+// a pocket here, a shaft, the bed) is asked next' beside the work, and worked on through the night; the user: 'Why is
+// Jev hunting at night instead of sleeping', then 'the fix sounds good'.
+function bedFacts(bot) {
+  try {
+    const carried = bot.inventory.items().some(i => /_bed$/.test(i.name));
+    const foot = bot._survivalState?.spawnBed?.foot, here = bot.entity.position;
+    const placed = foot && /overworld/.test(String(bot.game?.dimension || 'overworld')) ? { at: { x: foot.x, y: foot.y, z: foot.z }, blocks: Math.round(Math.hypot(foot.x - here.x, foot.z - here.z)), up: Math.round(foot.y - here.y) } : null;
+    return { bed: { carried, ...(placed ? { placed } : {}) } };
+  } catch (_) { return {}; }
+}
 function claim(bot, goal = {}, survival = null) {
   if (!bot?.entity?.position || bot.game?.gameMode === 'creative') return null;
   const state = survival?.state || goal.survival || {};
@@ -13268,7 +13280,7 @@ function claim(bot, goal = {}, survival = null) {
   // come back is at six or under.
   const offWorldTrip = needsFood && offWorld ? (() => { try { return require('./game-progress').portalTrip(bot, goal); } catch (_) { return null; } })() : null;
   const made = make(needsShelter ? (plan === 'home' ? 'go_home_for_night' : 'secure_shelter') : 'obtain_food', (needsShelter && !quietNight) || bot.food <= 6 || (needsFood && noHeal && hp <= 6) ? 'pressing' : 'routine',
-    { ...(needsShelter ? { night: true, underground, ...(plan ? { plan } : {}), ...way, ...(underground && debt ? { sleepDebt: true } : {}), ...mining, sealFor: sealFor.says } : {}), ...(needsFood ? { foodCarried: supply, foodWanted: desiredFood, ...(last.points ? { lastResortCarried: last.points } : {}), ...foodCost(bot, goal, state, supply, hungry, now), ...(offWorldTrip ? { portalTrip: offWorldTrip } : {}) } : {}),
+    { ...(needsShelter ? { night: true, underground, ...(plan ? { plan } : {}), ...way, ...(underground && debt ? { sleepDebt: true } : {}), ...mining, sealFor: sealFor.says, ...bedFacts(bot) } : {}), ...(needsFood ? { foodCarried: supply, foodWanted: desiredFood, ...(last.points ? { lastResortCarried: last.points } : {}), ...foodCost(bot, goal, state, supply, hungry, now), ...(offWorldTrip ? { portalTrip: offWorldTrip } : {}) } : {}),
       ...(wait ? { waitSealedMinutes: wait.minutes, ...(wait.day ? { waitSealedDayNow: true } : {}) } : {}) });
   // The claim for food: the plan held said on it, with the hunger's drain
   // to its next line; and Jev's answer to it at turn_priority (the turn to
