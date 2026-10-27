@@ -12511,6 +12511,16 @@ class Survival {
       : `${underground ? 'Prepare and enter a sealed shelter here under the rock.' : 'Prepare and enter a sealed shelter before hostile mobs spawn at night.'} Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved. ${(() => { const off = this.nightMineOff(); return off ? `In the shelter it can only wait: ${off}.` : 'In the shelter it can mine or wait.'; })()}${underground ? (sealWhy.none ? BELOW_NIGHT_SURFACE : ` ${BELOW_NIGHT}${BELOW_NIGHT_SURFACE}`) : ''} Health ${Math.round(bot.health * 10) / 10} of 20, ${kitSaysNow}.${nowAbout}${threatFightSays}`) + shelterWaySays + comingNow + creeperRaceSays + (this.placeAbout(goal)?.says || '') + (bedReady ? ` A bed is in reach: sleeping in it (possible from ${SLEEP_FROM}) passes the night in seconds, and a shelter spends the night awake.` : ''),
       run: async () => { this.state.nightPlan = { plan: 'shelter', until: Date.now() + 120000 }; require('./seal-reason').noteSeal(this.state, sealWhy, { how: 'secure_shelter', health: bot.health }); await this.refugeStep(task, goal, save); } };
     if (failedSays) for (const k of ['continue_request', 'secure_shelter']) if (tree[k]) tree[k].description += failedSays;
+    // The bed carried, said on the night's two ways (note 2292): sleeping is offered only from inside the pocket, so the
+    // choice at nightfall read as walk on or wall in. full-9 (25587, 2026-10-27 15:44Z) carried a white bed, was asked
+    // continue_request against secure_shelter, answered none_good 0.47, took continue_request at 0.28, and walked on in
+    // the night 141 blocks toward lava; the user watching: 'Why won't jev sleep now. Did he not make a bed?'
+    { const bedsCarried = bot.inventory.items().filter(i => /_bed$/.test(i.name)).reduce((n, i) => n + i.count, 0);
+      if (bedsCarried && needsShelter && /overworld/.test(String(bot.game?.dimension || 'overworld'))) {
+        const awake = Math.max(1, minutesToDawn(bot));
+        if (tree.secure_shelter) tree.secure_shelter.description += ` A bed is carried: from the pocket it is put down and slept in, the night over in seconds instead of about ${awake} real minutes, and the bed is where the bot comes back to life after a death (it is picked up again in the morning).`;
+        if (tree.continue_request) tree.continue_request.description += ` The bed carried is not used: the night goes on about ${awake} real minutes among its mobs, and the bot has no bed to come back to life at.`;
+      } }
     // The night priced from the record by place (night-record.js, note 789):
     // what keeping on with the work here at night has cost against the day,
     // to dawn at the night's rate, beside what the seals here came to and
