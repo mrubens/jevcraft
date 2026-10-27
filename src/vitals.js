@@ -103,7 +103,7 @@ async function digWithAirGuard(bot, task, block) {
     }
     catch (err) { interrupted ||= err; bot.stopDigging(); }
   }, 100);
-  try { await bot.dig(block); }
+  try { await require('./skills').digWithTool(bot, block); }
   catch (err) { throw interrupted || err; }
   finally { clearInterval(watcher); }
   if (interrupted) throw interrupted;
@@ -294,7 +294,7 @@ async function surfaceForAir(bot, task, onAction = () => {}, { keepOff = null } 
         if (!(digSeconds(bot, block) < 0.5)) for (let i = 0; i < 12 && !bot.entity.onGround; i++) { task.check(); await sleep(50); }
         try { await require('./skills').equipBestTool(bot, block); } catch (_) { /* the hand, then */ }
         await bot.lookAt(cell.offset(0.5, 0.5, 0.5), true);
-        try { await bot.dig(block, true); } catch (err) { if (err.name === 'Cancelled') throw err; }
+        try { await require('./skills').digWithTool(bot, block, true); } catch (err) { if (err.name === 'Cancelled') throw err; }
         task.check();
         last = mark();
       }
@@ -383,7 +383,7 @@ async function straightUp(bot, task, { maxMs = 8000 } = {}) {
         bot.clearControlStates();
         try { await require('./skills').equipBestTool(bot, above); } catch (_) { /* the hand, then */ }
         await bot.lookAt(above.position.offset(0.5, 0.5, 0.5), true);
-        try { await bot.dig(above, true); } catch (_) { await sleep(100); }
+        try { await require('./skills').digWithTool(bot, above, true); } catch (_) { await sleep(100); }
         continue;
       }
       await require('./motion').move(bot, task, { label: 'swim_up', keys: ['jump'], sneak: false, why: 'no swimming route: straight up to air',
@@ -444,12 +444,12 @@ async function outOfPowderSnow(bot, task, onAction = () => {}) {
       const b = bot.blockAt(c);
       if (b?.name !== POWDER) continue;
       await bot.lookAt(c.offset(0.5, 0.5, 0.5), true);
-      try { await bot.dig(b, true); } catch (err) { if (err.name === 'Cancelled') throw err; }
+      try { await require('./skills').digWithTool(bot, b, true); } catch (err) { if (err.name === 'Cancelled') throw err; }
     }
   }
   // Also what the bot stands in now, feet and head.
   const feet = bot.entity.position.floored();
-  for (const c of [feet, feet.offset(0, 1, 0)]) { const b = bot.blockAt(c); if (b?.name === POWDER) { try { await bot.dig(b, true); } catch (err) { if (err.name === 'Cancelled') throw err; } } }
+  for (const c of [feet, feet.offset(0, 1, 0)]) { const b = bot.blockAt(c); if (b?.name === POWDER) { try { await require('./skills').digWithTool(bot, b, true); } catch (err) { if (err.name === 'Cancelled') throw err; } } }
   const end = route.at(-1);
   const { goals } = require('mineflayer-pathfinder');
   try { await bot.pathfinder.goto(new goals.GoalBlock(end.x, end.y, end.z)); } catch (err) { if (err.name === 'Cancelled') throw err; }
@@ -1356,7 +1356,7 @@ function fireWays(bot, task, onAction = () => {}) {
         onAction({ action: 'out_of_fire', way: 'put_out_flames', flames: flames.length, health: bot.health });
         bot._punchedFlames = { at: Date.now() };
         bot.pathfinder?.setGoal?.(null); bot.clearControlStates?.();
-        for (const b of flamesAbout(bot)) { try { await bot.dig(b, true); } catch (err) { if (err.name === 'Cancelled') throw err; } task?.check?.(); }
+        for (const b of flamesAbout(bot)) { try { await require('./skills').digWithTool(bot, b, true); } catch (err) { if (err.name === 'Cancelled') throw err; } task?.check?.(); }
         // Out, the hurt from before the punch says nothing of the cell now (inFire).
         if (!flamesAbout(bot).length) bot._fireLeftAt = Date.now();
         return !inFire(bot);
@@ -1531,7 +1531,7 @@ function headWays(bot, task, onAction = () => {}) {
           const b = bot.blockAt(x);
           if (b?.boundingBox !== 'block') continue;
           try { await require('./skills').equipBestTool(bot, b); } catch (_) { /* the hand, then */ }
-          try { await bot.dig(b, true); } catch (err) { if (err.name === 'Cancelled') throw err; }
+          try { await require('./skills').digWithTool(bot, b, true); } catch (err) { if (err.name === 'Cancelled') throw err; }
         }
         const only = { get cancelled() { return task.cancelled; }, label: task.label, check() { if (task.cancelled) throw new (require('./skills').Cancelled)(task.label); } };
         try { await require('./motion').move(bot, only, { label: 'out_from_under', keys: ['forward'], sneak: false, why: 'stepping into the cell dug beside, out from under a block over the head',
@@ -1712,7 +1712,7 @@ async function maintainVitals(bot, task, onAction = () => {}, { client = null, g
       onAction({ action: 'dig_out_of_block', block: block.name, at: { x: eye.x, y: eye.y, z: eye.z } });
       require('./turn').takeTurn(bot, 'vitals', 'dig_out_of_block', block.name);
       try { await require('./skills').equipBestTool(bot, block); } catch (_) { /* the hand, then */ }
-      try { await bot.dig(block, true); } catch (err) { if (err.name === 'Cancelled') throw err; }
+      try { await require('./skills').digWithTool(bot, block, true); } catch (err) { if (err.name === 'Cancelled') throw err; }
       await sleep(150);
     } else if (digging && falling()) { waited++; await sleep(100); }
     else break;

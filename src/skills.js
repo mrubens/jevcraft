@@ -1034,6 +1034,16 @@ async function emptyHand(bot) {
   for (let i = 0; i < 9; i++) if (wearsNothing(slots[start + i]) && select(i)) return 'other slot';
   return 'kept';
 }
+// A dig the body's safety makes (out of water, out of a hole, a shelter's cell): the right tool first when nothing
+// hostile is within four blocks, the sword kept up when something is (note 2293; the user watching full-9, 2026-10-27:
+// 'He seems to be digging dirt with a sword', two of a sword's uses a block and no faster than a hand).
+async function digWithTool(bot, block, forceLook) {
+  try {
+    const near = require('./danger').hostileEntities(bot, 4) || [];
+    if (!near.length && block) await equipBestTool(bot, block);
+  } catch (_) { /* dug with what is held */ }
+  return bot.dig(block, forceLook);
+}
 async function equipBestTool(bot, block) {
   const best = cheapestTool(bot, block);
   if (best && (!bot.heldItem || bot.heldItem.type !== best.type || bot.heldItem.slot !== best.slot)) {
@@ -1113,7 +1123,7 @@ function closeStrayWindow(bot) {
   return String(w.type || 'a window').replace(/^minecraft:/, '').replace(/_/g, ' ');
 }
 
-module.exports = { emptyHand, SCOOPED_COST, noteStallSpot, stallsToward, repeatStallSays, WalksFailing, REPEAT_TIMES, badSteps, noteHazard, hazardSpots, HAZARD_COST, STALL_SPOT_COST, openWindow, opensOnClick, closeStrayWindow, wholeGoal, goalGuardPlugin, digGuardPlugin, pickaxeDurability,
+module.exports = { digWithTool, emptyHand, SCOOPED_COST, noteStallSpot, stallsToward, repeatStallSays, WalksFailing, REPEAT_TIMES, badSteps, noteHazard, hazardSpots, HAZARD_COST, STALL_SPOT_COST, openWindow, opensOnClick, closeStrayWindow, wholeGoal, goalGuardPlugin, digGuardPlugin, pickaxeDurability,
   Task,
   Cancelled,
   navigate,

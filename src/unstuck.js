@@ -1173,7 +1173,7 @@ async function perform(bot, task, m, { dig }) {
       if (!over) throw new Error('The column over the head is not loaded');
       if (over.boundingBox === 'block') {
         try { await require('./skills').equipBestTool(bot, over); } catch (_) { /* the hand */ }
-        await bot.dig(over, true);
+        await require('./skills').digWithTool(bot, over, true);
         continue;
       }
       // The water over the opened cell, or in it, pours down: waited for.

@@ -134,7 +134,7 @@ async function digCell(bot, task, p) {
   const block = bot.blockAt(p);
   if (passable(block)) return;
   await equipBestTool(bot, block); task.check();
-  await bot.dig(block, true);
+  await require('./skills').digWithTool(bot, block, true);
 }
 
 async function stepTo(bot, task, cell) {
