@@ -17,12 +17,12 @@ const key = (bot, entity) => `${bot.game?.dimension}:${entity.uuid || entity.id}
 
 // Entity IDs are connection-local. Retry a blocked stack after it moves, or
 // after a short cooldown; neither persist stale IDs nor let one stack monopolize work.
-function nearbyDrops(bot, item, origin, radius) {
+function nearbyDrops(bot, item, origin, radius, { hostilesOk = false } = {}) {
   const failed = failures.get(bot);
   if (failed) for (const [id, until] of failed) if (until <= Date.now()) failed.delete(id);
   return Object.values(bot.entities || {}).filter(e => e.isValid !== false && e.position &&
     e.getDroppedItem?.()?.name === item && e.position.distanceTo(origin) <= radius &&
-    !failed?.has(key(bot, e)) && safeFromHostiles(bot, e.position))
+    !failed?.has(key(bot, e)) && (hostilesOk || safeFromHostiles(bot, e.position)))
     .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position)).slice(0, 8);
 }
 
@@ -94,31 +94,35 @@ class PickupGoal extends goals.GoalBlock {
 }
 
 async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item), origin = bot.entity.position.clone(),
-  radius = 16, timeoutMs = 6500, waitForSpawnMs = 0, onTarget = () => {}, move = navigate, allowExcavation = false } = {}) {
+  radius = 16, timeoutMs = 6500, waitForSpawnMs = 0, onTarget = () => {}, move = navigate, allowExcavation = false,
+  // The bot's own drops after a death (note 2287): they lie where it died, beside what killed it, and with hostiles
+  // about filtering every drop and pickup spot out no walk back of 27 on the fresh runs got anything. Going there is
+  // Jev's choice, priced; the survival layer still takes over at a hit. The approach is sprinted.
+  hostilesOk = false } = {}) {
   task.check(); checkAir(bot);
   const gained = () => countOf(bot, item) > before;
   if (gained()) return true;
-  if (!waitForSpawnMs && !nearbyDrops(bot, item, origin, radius).length) return false;
+  if (!waitForSpawnMs && !nearbyDrops(bot, item, origin, radius, { hostilesOk }).length) return false;
   const deadline = Date.now() + timeoutMs, spawnDeadline = Date.now() + waitForSpawnMs;
   const movement = bot.pathfinder.movements, policy = miningMovement(bot), start = bot.entity.position.clone();
-  const previous = { allow1by1towers: movement.allow1by1towers, scafoldingBlocks: movement.scafoldingBlocks,
+  const previous = { allow1by1towers: movement.allow1by1towers, scafoldingBlocks: movement.scafoldingBlocks, allowSprinting: movement.allowSprinting,
     allowParkour: movement.allowParkour, maxDropDown: movement.maxDropDown };
   const allowed = point => {
     const p = new Vec3(point.x, point.y, point.z);
     return p.distanceTo(start) <= radius + 1 && p.y >= start.y - 8 && policy.allowed(point) &&
-      !damagingTerrain.has(bot.blockAt(supportCell(p))?.name) && safeFromHostiles(bot, p);
+      !damagingTerrain.has(bot.blockAt(supportCell(p))?.name) && (hostilesOk || safeFromHostiles(bot, p));
   };
-  Object.assign(movement, { allow1by1towers: false, scafoldingBlocks: [], allowParkour: false,
+  Object.assign(movement, { allow1by1towers: false, scafoldingBlocks: [], allowParkour: false, ...(hostilesOk ? { allowSprinting: true } : {}),
     maxDropDown: Math.min(previous.maxDropDown ?? 2, 2), allowedPosition: allowed });
   const attempted = new Set();
   // Why a pickup spot was passed over, counted for the line said when nothing was taken (note 2285).
   const why = { hostile: 0, bounds: 0, route: 0, moved: 0, walked: 0 };
-  const allowedWhy = point => { const p = new Vec3(point.x, point.y, point.z); if (!(p.distanceTo(start) <= radius + 1 && p.y >= start.y - 8 && policy.allowed(point) && !damagingTerrain.has(bot.blockAt(supportCell(p))?.name))) return 'bounds'; if (!safeFromHostiles(bot, p)) return 'hostile'; return null; };
+  const allowedWhy = point => { const p = new Vec3(point.x, point.y, point.z); if (!(p.distanceTo(start) <= radius + 1 && p.y >= start.y - 8 && policy.allowed(point) && !damagingTerrain.has(bot.blockAt(supportCell(p))?.name))) return 'bounds'; if (!hostilesOk && !safeFromHostiles(bot, p)) return 'hostile'; return null; };
   let seen = false, passageTried = false;
   try {
     while (Date.now() < deadline && !gained()) {
       task.check(); checkAir(bot);
-      const drops = nearbyDrops(bot, item, origin, radius);
+      const drops = nearbyDrops(bot, item, origin, radius, { hostilesOk });
       seen ||= drops.length > 0;
       if (!drops.length && (seen || Date.now() >= spawnDeadline)) break;
       for (const drop of drops) {
@@ -178,7 +182,7 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
     // straight at it. Pickup is proximity, not a path. Four raw iron lay a
     // block from the bot while the router turned every spot down.
     if (!gained() && typeof bot.setControlState === 'function') {
-      for (const drop of nearbyDrops(bot, item, origin, radius).filter(d => d.position.distanceTo(bot.entity.position) <= 3.5).slice(0, 3)) {
+      for (const drop of nearbyDrops(bot, item, origin, radius, { hostilesOk }).filter(d => d.position.distanceTo(bot.entity.position) <= 3.5).slice(0, 3)) {
         task.check(); checkAir(bot);
         const hot = hotOnTheWay(bot, drop.position);
         if (hot) { console.log(`[drops] the straight walk at the ${item.replaceAll('_', ' ')} would stand on the ${hot.name.replaceAll('_', ' ')} at (${hot.x}, ${hot.y}, ${hot.z}); not walked`); continue; }
@@ -197,14 +201,14 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
       }
     }
     if (!gained()) {
-      const lyingNow = nearbyDrops(bot, item, origin, radius);
+      const lyingNow = nearbyDrops(bot, item, origin, radius, { hostilesOk });
       if (lyingNow.length) {
         const nearest = Math.min(...lyingNow.map(d => d.position.distanceTo(bot.entity.position)));
         console.log(`[drops] ${item.replaceAll('_', ' ')} not taken: ${lyingNow.length} lying within ${radius} of the search's origin, the nearest ${Math.round(nearest * 10) / 10} from the bot; spots passed over: ${why.hostile} by a hostile about, ${why.bounds} out of bounds or on damaging ground, ${why.route} with no short clear route, ${why.moved} the drop moving; ${why.walked} walked to without the pickup`);
       }
       let failed = failures.get(bot);
       if (!failed) failures.set(bot, failed = new Map());
-      for (const drop of nearbyDrops(bot, item, origin, radius)) failed.set(key(bot, drop), Date.now() + 30000);
+      for (const drop of nearbyDrops(bot, item, origin, radius, { hostilesOk })) failed.set(key(bot, drop), Date.now() + 30000);
       while (failed.size > 64) failed.delete(failed.keys().next().value);
     }
     return gained();
@@ -214,4 +218,4 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
   }
 }
 
-module.exports = { collectNearbyDrops, pickupPositions, hotOnTheWay, edgeOnTheWay };
+module.exports = { nearbyDrops, collectNearbyDrops, pickupPositions, hotOnTheWay, edgeOnTheWay };

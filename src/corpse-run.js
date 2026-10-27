@@ -717,7 +717,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
       // Searched where the stack was seen to land as the bot died (note 2117), else at the death cell.
       const seenAt = (run.drops || []).find(d => d.name === name);
       const origin = seenAt ? new Vec3(seenAt.x, seenAt.y, seenAt.z) : spot;
-      try { await collect(bot, task, name, { origin, radius: 12, timeoutMs: 12000, allowExcavation: true }); }
+      try { await collect(bot, task, name, { origin, radius: 12, timeoutMs: 12000, allowExcavation: true, hostilesOk: true }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
       const gained = countOf(bot, name) - had;
       if (gained <= 0) break;
