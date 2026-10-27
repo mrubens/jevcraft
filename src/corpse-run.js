@@ -428,7 +428,10 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     try {
       const kinds = [...new Map((death.about || []).map(t => [t.name, t])).values()].slice(0, 4);
       if (kinds.length) {
-        const holds = n => (run.mobsAtDeath || []).find(m => m.name === n && m.holds?.length)?.holds?.[0] || (n === 'drowned' && /impaled/.test(String(death.cause || '')) ? 'trident' : null);
+        // A death by impaling is a trident's whatever a drowned in sight then held (note 2284): full-6 (25596, 2026-10-27
+        // 13:04Z) died 'impaled by Drowned' with a drowned holding a fishing rod 10 blocks off, was told 'a drowned's about
+        // 3 (7 end the bot)', went back at 0.77, and was slain by a drowned there 23 minutes later.
+        const holds = n => (n === 'drowned' && /impaled/.test(String(death.cause || '')) ? 'trident' : null) || (run.mobsAtDeath || []).find(m => m.name === n && m.holds?.length)?.holds?.[0] || null;
         const est = require('./combat-estimate').fightEstimate({ threats: kinds.map(t => ({ name: t.name, distance: t.distance, visible: true, ...(holds(t.name) ? { held: holds(t.name), ...(/trident|bow|crossbow/.test(holds(t.name)) ? { shoots: true } : {}) } : {}) })), armour: [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean), health: 20 }).mobs;
         const each = est.filter(m => m.hitsBot > 0).map(m => `a ${m.name.replaceAll('_', ' ')}'s about ${m.hitsBot} (${Math.ceil((bot.health ?? 20) / m.hitsBot)} end the bot from ${Math.round(bot.health ?? 20)} health)`);
         if (each.length) aboutHits = ` As worn now, a hit from each kind that was about it: ${each.join('; ')}.`;
