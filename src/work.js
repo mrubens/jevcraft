@@ -6173,11 +6173,32 @@ const ruinOf = (key, ruins, goal) => ruins.find(k => ruinKey(goal, k) === key) |
 // of ten standing, told they were "placed like any block", and spent its
 // three hours making the seven from lava with a diamond pickaxe it had to
 // make first (2026-09-26).
+// The frame a ruin takes, as last judged where its blocks were loaded (note 2308): kept on the landmark so it is said
+// from far off too. The ruin had been said by the obsidian seen about it alone, '0 of the frame's ten are missing'
+// from 18 seen, where the best frame through them stood on far fewer.
+function judgeRuin(bot, k, here) {
+  const l = k.landmark, c = new Vec3(l.x, l.y ?? Math.floor(here.y), l.z);
+  try {
+    if (!bot.blockAt(c)) return l.fitSeen || null;
+    const fit = require('./ruined-portal').fitRuin(bot, c, { diamondPickaxe: true });
+    l.fitSeen = fit ? { size: fit.size, slots: fit.slots, have: fit.have, fill: fit.fill.length, digs: fit.digs.length, diamondDigs: fit.diamondDigs, at: Date.now() } : { none: true, at: Date.now() };
+  } catch (_) { /* the ruin's blocks unreadable */ }
+  return l.fitSeen || null;
+}
 function ruinSays(k, { obsidian, diamonds, diamondPickaxe }) {
   const seen = Number.isFinite(k.landmark.obsidian) ? k.landmark.obsidian : null;
-  const missing = seen === null ? null : Math.max(0, 10 - seen);
+  const fit = k.landmark.fitSeen;
+  if (fit && !fit.none) {
+    const says = require('./ruined-portal').fitSays({ ...fit, fill: { length: fit.fill }, digs: { length: fit.digs } }, { obsidian });
+    const short = Math.max(0, fit.fill - obsidian);
+    const make = short ? ` The ${short} short are made by pouring water on lava and mined with a diamond pickaxe (${diamondPickaxe ? 'one carried' : `none carried; three diamonds make one, ${diamonds} carried`}), unless the ruin's chest holds them.` : '';
+    const pick = fit.diamondDigs?.length ? (diamondPickaxe ? ' A diamond pickaxe is carried.' : ` Without a diamond pickaxe (${diamonds} of the three diamonds carried) this frame cannot be finished.`) : '';
+    return `Finish the ruined portal ${k.distance} blocks away and light it (${seen ?? 'some'} obsidian about it): ${says}.${make}${pick} Its chest often holds obsidian, flint and steel or a fire charge. About ${Math.round(k.distance / 4.3)} seconds' walk.`;
+  }
+  // Not judged yet: the obsidian seen about it is not a frame's count, and more than ten seen is said as that.
+  const missing = seen === null || seen >= 10 ? null : Math.max(0, 10 - seen);
   const short = missing === null ? null : Math.max(0, missing - obsidian);
-  const need = missing === null ? `the missing blocks are obsidian (${obsidian} carried)`
+  const need = missing === null ? `${seen >= 10 ? 'how many of them stand in one frame is judged when its blocks are in view; ' : ''}the missing blocks are obsidian (${obsidian} carried)`
     : `${missing} of the frame's ten are missing and are obsidian, placed like any block: ${obsidian} carried${short ? `, ${short} short; those are made by pouring water on lava and mined with a diamond pickaxe (${diamondPickaxe ? 'one carried' : `none carried; three diamonds make one, ${diamonds} carried`}), unless the ruin's chest holds them` : ', enough'}`;
   return `Finish the ruined portal ${k.distance} blocks away and light it: its frame is part standing (${seen ?? 'some'} obsidian seen there when it was found); ${need}. Crying obsidian or obsidian where the frame or its inside must be clear needs a diamond pickaxe to take out. Its chest often holds obsidian, flint and steel or a fire charge. About ${Math.round(k.distance / 4.3)} seconds' walk.`;
 }
@@ -6189,13 +6210,20 @@ function ruinSays(k, { obsidian, diamonds, diamondPickaxe }) {
 // fetches a bucket a block. mid-244-v stood at its lava with three diamonds,
 // its frame 122 blocks up, and was offered this with no trip or time said;
 // it took 0.03 against the cast's hundred minutes of bucket trips (note 470).
-function buildSays({ obsidian, diamonds, diamondPickaxe, need = 10, trip = null, atLava = false, frameBegun = false, castTrips = null }) {
+function buildSays({ obsidian, diamonds, diamondPickaxe, need = 10, trip = null, atLava = false, frameBegun = false, castTrips = null, quarry = null, belowToDiamonds = null }) {
   const where = frameBegun ? 'the frame' : 'a frame here';
   const oneWay = trip && Math.round(trip.distance / 4.3) + trip.climb;
   const making = duration(Math.max(60, need * 10));
   const carry = !trip || !need ? '' : trip.distance <= 16 ? ` The nearest known lava is ${trip.distance} blocks from ${where}: the obsidian is made beside it, about ${making} for the ${need} wanted, and put in the frame with no trip.`
     : ` Made at the nearest known lava, ${trip.distance} blocks from ${where}, the ${need} obsidian wanted are about ${making} of pouring and mining there, all carried to the frame at once: ${atLava ? `the bot is beside that lava now, so one way to ${where}, about ${duration(oneWay)}${trip.climb ? ` with a staircase of about ${duration(trip.climb)}` : ''}` : `one trip, ${fetchSays(trip)}`}.${castTrips ? ` The cast fetches a bucket a block: ${castTrips} trip${castTrips === 1 ? '' : 's'} of the same, about ${tripsCost(trip, castTrips)}.` : ''}`;
-  return `Build a portal frame of its own: ten obsidian (${obsidian} carried), lit with flint and steel. Obsidian is where water has met a lava source, at a lava pool or poured there, and is mined with a diamond pickaxe only (${diamondPickaxe ? 'one carried' : `none carried: three diamonds make one, ${diamonds} carried, and diamond ore is mined with an iron pickaxe or better`}), about ten seconds a block.${carry}`;
+  // The diamond route's other source and its first leg (note 2308): a ruin's standing obsidian is mined there with
+  // the diamond pickaxe (obsidian.js takes a ruin before any pool once one is carried), and the diamonds lie deep.
+  // full-10 (2026-10-27 17:54Z), a ruin of 18 obsidian 27 blocks off, chose a cast at the lava 134 blocks down, in
+  // the diamonds' own layer, never told the ruin could be quarried; the user: 'does Jev have any option to try to
+  // find diamond for a pickaxe to get the obsidian from the ruined frame?'
+  const quarrySays = quarry && quarry.obsidian > 0 ? ` With a diamond pickaxe, the ruined portal ${quarry.distance} blocks off is a quarry too: ${quarry.obsidian} obsidian stand there, mined where they stand at about ten seconds a block and carried, no lava or water needed.` : '';
+  const deepSays = !diamondPickaxe && Number.isFinite(belowToDiamonds) && belowToDiamonds > 0 ? ` The diamonds lie from y 16 down, most at about y -58: ${belowToDiamonds} blocks below here.` : '';
+  return `Build a portal frame of its own: ten obsidian (${obsidian} carried), lit with flint and steel. Obsidian is where water has met a lava source, at a lava pool or poured there, and is mined with a diamond pickaxe only (${diamondPickaxe ? 'one carried' : `none carried: three diamonds make one, ${diamonds} carried, and diamond ore is mined with an iron pickaxe or better`}), about ten seconds a block.${carry}${quarrySays}${deepSays}`;
 }
 // What every way is weighed with, said with each of them alike: only the
 // cast was told where the lava was, and only the ruins how far they lay.
@@ -6526,13 +6554,16 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   // A frame of its own from obsidian: the diamond route, as the steps it is
   // (note 470), with the trip to the nearest lava where the obsidian is made.
   const trip = fetchTrip(frameAt, frame ? nearestLava(bot, goal, sources, frameAt) || lava : lava, null);
-  tree.build_new = { description: buildSays({ obsidian, diamonds, diamondPickaxe, need: Math.max(0, 10 - placed - obsidian), trip, atLava: !!lava && lava.distance <= 16, frameBegun: !!frame, castTrips: castTrips({ obsidian, standing: placed, buckets: countOf(bot, 'bucket'), lavaBuckets: countOf(bot, 'lava_bucket') }).trips }) + PP.failuresSays(goal, { key: 'build_new' }) };
+  const quarryRuin = ruins.filter(k => (k.landmark.obsidian || 0) > 0).sort((a, b) => a.distance - b.distance)[0];
+  const quarry = quarryRuin ? { distance: quarryRuin.distance, obsidian: quarryRuin.landmark.obsidian } : null;
+  const belowToDiamonds = /overworld/.test(String(bot.game?.dimension || 'overworld')) ? Math.round(here.y - (-58)) : null;
+  tree.build_new = { description: buildSays({ obsidian, diamonds, diamondPickaxe, quarry, belowToDiamonds, need: Math.max(0, 10 - placed - obsidian), trip, atLava: !!lava && lava.distance <= 16, frameBegun: !!frame, castTrips: castTrips({ obsidian, standing: placed, buckets: countOf(bot, 'bucket'), lavaBuckets: countOf(bot, 'lava_bucket') }).trips }) + PP.failuresSays(goal, { key: 'build_new' }) };
   // Where the walk to a ruin gives out, the staircase toward it: said
   // while it rests (tunneling.js restingSays, note 500).
   const { restingSays } = require('./tunneling');
   ruins.forEach(k => {
     const rest = restingSays(goal, new Vec3(k.landmark.x, k.landmark.y ?? here.y, k.landmark.z), here);
-    tree[ruinKey(goal, k)] = { target: { x: k.landmark.x, y: k.landmark.y ?? Math.round(here.y), z: k.landmark.z }, description: ruinSays(k, { obsidian, diamonds, diamondPickaxe }) + (rest ? ` Where the walk gives out, ${rest}.` : '') + PP.failuresSays(goal, { key: ruinKey(goal, k) }) };
+    tree[ruinKey(goal, k)] = { target: { x: k.landmark.x, y: k.landmark.y ?? Math.round(here.y), z: k.landmark.z }, description: (judgeRuin(bot, k, here), ruinSays(k, { obsidian, diamonds, diamondPickaxe })) + (rest ? ` Where the walk gives out, ${rest}.` : '') + PP.failuresSays(goal, { key: ruinKey(goal, k) }) };
   });
   // The lava held over a cave its staircase stopped at: down into it, the
   // route held going on from its floor (note 490).
@@ -7171,7 +7202,7 @@ function siteBody(bot, frame, goal, err) {
 }
 async function buildPortalFrame(bot, task, goal, save, frame) {
   const { frameCells, across } = require('./ruined-portal');
-  const axis = frame.axis || 'x', cells = frameCells(frame.origin, axis);
+  const axis = frame.axis || 'x', cells = frameCells(frame.origin, axis, frame.size || null);
   const missing = frame.blocks.filter(p => bot.blockAt(pos(p))?.name !== 'obsidian');
   // What stands, as last seen: said from hundreds of blocks off, where the
   // frame's cells are not loaded (crossingKitReady, note 527).
@@ -10129,4 +10160,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { mineAtSource, nightMineLeftSays, NIGHT_MINES_LEFT, cookTimeSays, rawCostSays, FOOD_POINTS_A_MINUTE, noteClimb, climbsLatelySays, bedFromPockets, portalToJudge, capLavaBeside, portalPickaxeFirst, endPortalActions, miningCandidates, portalSurfaceFirst, nightUpSays, oreToTunnel, gatherRests, gatherResting, relightPortalAt, stairPickaxeWanted, pickaxeForStair, siteHoldEnds, exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
+module.exports = { ruinSays, buildSays, mineAtSource, nightMineLeftSays, NIGHT_MINES_LEFT, cookTimeSays, rawCostSays, FOOD_POINTS_A_MINUTE, noteClimb, climbsLatelySays, bedFromPockets, portalToJudge, capLavaBeside, portalPickaxeFirst, endPortalActions, miningCandidates, portalSurfaceFirst, nightUpSays, oreToTunnel, gatherRests, gatherResting, relightPortalAt, stairPickaxeWanted, pickaxeForStair, siteHoldEnds, exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
