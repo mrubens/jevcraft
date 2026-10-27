@@ -47,3 +47,10 @@ test('the ruin option says the judged frame; the build route says the ruin as a 
   assert.match(b, /the ruined portal 27 blocks off is a quarry too: 18 obsidian stand there/);
   assert.match(b, /most at about y -58: 128 blocks below here/);
 });
+
+test('obsidian already standing about the frame is said on the build route (note 2309)', () => {
+  const { buildSays } = require('../src/work');
+  const b = buildSays({ obsidian: 0, diamonds: 10, diamondPickaxe: true, need: 4, frameBegun: true, lying: { count: 9, nearest: 6 } });
+  assert.match(b, /9 obsidian already stand within 16 blocks of the frame, not in it \(the nearest 6 blocks off\): mined with the diamond pickaxe carried at about ten seconds a block, no pouring/);
+  assert.doesNotMatch(buildSays({ obsidian: 0, diamonds: 0, diamondPickaxe: false, need: 10 }), /already stand/);
+});

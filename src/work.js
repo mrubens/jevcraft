@@ -6210,7 +6210,7 @@ function ruinSays(k, { obsidian, diamonds, diamondPickaxe }) {
 // fetches a bucket a block. mid-244-v stood at its lava with three diamonds,
 // its frame 122 blocks up, and was offered this with no trip or time said;
 // it took 0.03 against the cast's hundred minutes of bucket trips (note 470).
-function buildSays({ obsidian, diamonds, diamondPickaxe, need = 10, trip = null, atLava = false, frameBegun = false, castTrips = null, quarry = null, belowToDiamonds = null }) {
+function buildSays({ obsidian, diamonds, diamondPickaxe, need = 10, trip = null, atLava = false, frameBegun = false, castTrips = null, quarry = null, belowToDiamonds = null, lying = null }) {
   const where = frameBegun ? 'the frame' : 'a frame here';
   const oneWay = trip && Math.round(trip.distance / 4.3) + trip.climb;
   const making = duration(Math.max(60, need * 10));
@@ -6222,8 +6222,9 @@ function buildSays({ obsidian, diamonds, diamondPickaxe, need = 10, trip = null,
   // the diamonds' own layer, never told the ruin could be quarried; the user: 'does Jev have any option to try to
   // find diamond for a pickaxe to get the obsidian from the ruined frame?'
   const quarrySays = quarry && quarry.obsidian > 0 ? ` With a diamond pickaxe, the ruined portal ${quarry.distance} blocks off is a quarry too: ${quarry.obsidian} obsidian stand there, mined where they stand at about ten seconds a block and carried, no lava or water needed.` : '';
+  const lyingSays = lying?.count ? ` ${lying.count} obsidian already stand within 16 blocks of ${where}, not in it (the nearest ${lying.nearest} blocks off): ${diamondPickaxe ? 'mined with the diamond pickaxe carried at about ten seconds a block, no pouring' : 'mined only with a diamond pickaxe'}.` : '';
   const deepSays = !diamondPickaxe && Number.isFinite(belowToDiamonds) && belowToDiamonds > 0 ? ` The diamonds lie from y 16 down, most at about y -58: ${belowToDiamonds} blocks below here.` : '';
-  return `Build a portal frame of its own: ten obsidian (${obsidian} carried), lit with flint and steel. Obsidian is where water has met a lava source, at a lava pool or poured there, and is mined with a diamond pickaxe only (${diamondPickaxe ? 'one carried' : `none carried: three diamonds make one, ${diamonds} carried, and diamond ore is mined with an iron pickaxe or better`}), about ten seconds a block.${carry}${quarrySays}${deepSays}`;
+  return `Build a portal frame of its own: ten obsidian (${obsidian} carried), lit with flint and steel. Obsidian is where water has met a lava source, at a lava pool or poured there, and is mined with a diamond pickaxe only (${diamondPickaxe ? 'one carried' : `none carried: three diamonds make one, ${diamonds} carried, and diamond ore is mined with an iron pickaxe or better`}), about ten seconds a block.${carry}${lyingSays}${quarrySays}${deepSays}`;
 }
 // What every way is weighed with, said with each of them alike: only the
 // cast was told where the lava was, and only the ruins how far they lay.
@@ -6557,7 +6558,20 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   const quarryRuin = ruins.filter(k => (k.landmark.obsidian || 0) > 0).sort((a, b) => a.distance - b.distance)[0];
   const quarry = quarryRuin ? { distance: quarryRuin.distance, obsidian: quarryRuin.landmark.obsidian } : null;
   const belowToDiamonds = /overworld/.test(String(bot.game?.dimension || 'overworld')) ? Math.round(here.y - (-58)) : null;
-  tree.build_new = { description: buildSays({ obsidian, diamonds, diamondPickaxe, quarry, belowToDiamonds, need: Math.max(0, 10 - placed - obsidian), trip, atLava: !!lava && lava.distance <= 16, frameBegun: !!frame, castTrips: castTrips({ obsidian, standing: placed, buckets: countOf(bot, 'bucket'), lavaBuckets: countOf(bot, 'lava_bucket') }).trips }) + PP.failuresSays(goal, { key: 'build_new' }) };
+  // Obsidian already standing about the frame, not in it (note 2309): the crust a pour over lava leaves, or a lake's.
+  // full-10 (25586, 2026-10-27 18:3xZ), its frame at (130, -54, 300) six of ten cast and a diamond pickaxe carried,
+  // was told 'the obsidian is made beside it'; the user, spectating: 'There's obsidian all over the floor near the
+  // lava pool near the portal'.
+  const lying = (() => {
+    try {
+      const id = bot.registry.blocksByName.obsidian?.id;
+      if (id === undefined || typeof bot.findBlocks !== 'function') return null;
+      const inFrame = new Set((frame?.blocks || []).map(p => `${p.x},${p.y},${p.z}`));
+      const found = bot.findBlocks({ matching: id, maxDistance: 16, count: 64, point: frameAt }).filter(p => !inFrame.has(`${p.x},${p.y},${p.z}`));
+      return found.length ? { count: found.length, nearest: Math.round(Math.min(...found.map(p => p.distanceTo(frameAt)))) } : null;
+    } catch (_) { return null; }
+  })();
+  tree.build_new = { description: buildSays({ obsidian, diamonds, diamondPickaxe, quarry, belowToDiamonds, lying, need: Math.max(0, 10 - placed - obsidian), trip, atLava: !!lava && lava.distance <= 16, frameBegun: !!frame, castTrips: castTrips({ obsidian, standing: placed, buckets: countOf(bot, 'bucket'), lavaBuckets: countOf(bot, 'lava_bucket') }).trips }) + PP.failuresSays(goal, { key: 'build_new' }) };
   // Where the walk to a ruin gives out, the staircase toward it: said
   // while it rests (tunneling.js restingSays, note 500).
   const { restingSays } = require('./tunneling');
