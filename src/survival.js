@@ -13018,6 +13018,7 @@ function netherKeepOn(bot, goal) {
   try { return require('./progress').isSetAside(goal || {}, 'nether_return', 'food') && !require('./last-hit').lastHit(bot); } catch (_) { return false; }
 }
 
+const STOPPED_WORK_MS = 10000;
 function claim(bot, goal = {}, survival = null) {
   if (!bot?.entity?.position || bot.game?.gameMode === 'creative') return null;
   const state = survival?.state || goal.survival || {};
@@ -13068,6 +13069,16 @@ function claim(bot, goal = {}, survival = null) {
   // within two.
   const atArm = require('./danger').atReach(bot, threats(bot, 8));
   if (atArm.length) return make('escape_threat', 'pressing', { atArm: atArm.slice(0, 3).map(t => ({ ...mob(t), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), canReach: 'at its reach of the bot now' })), ...edgeFact, ...pocket });
+  // The work's turns stopped at once by its own threat check, again and again, with nothing claimed for the mob that
+  // stops them (note 2313): the mob is survival's, and Jev is asked how to answer it. full-11 (25588, 2026-10-27
+  // 19:15Z), climbing out at y -3, was given the work alone six times in a second, each stopped at 'Threat nearby:
+  // creeper at 7 blocks', the creeper's alert gone past its line; over the day's runs 333 such spells of five or more
+  // stops, 80 minutes in 235 bot-hours. The user: 'it seems stuck', then 'fix the threat spin'.
+  const stoppedWork = bot._arbiter?.stopped;
+  if (stoppedWork && stoppedWork.layer === 'work' && stoppedWork.count >= 2 && now - stoppedWork.at < STOPPED_WORK_MS && /^Threat nearby/.test(stoppedWork.why || '')) {
+    let t = null; try { t = require('./danger').immediateThreat(bot); } catch (_) { t = null; }
+    if (t && !t.projectile && t.entity) return make('escape_threat', 'pressing', { workStopped: `the work's last ${stoppedWork.count} turns, in ${Math.max(1, Math.round((now - stoppedWork.first) / 1000))} seconds, were each stopped at once by its threat check: ${stoppedWork.why}`, threats: [mob(t)] });
+  }
   const refuge = survival?.currentShelter?.();
   // Not in water with open sky over it (openSkyOver, note 753c).
   const underground = underRock(bot, refuge);
