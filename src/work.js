@@ -7753,6 +7753,8 @@ function idleOptions(bot, goal) {
   Object.assign(options, require('./bed-kit').bedKitChores(bot, goal));
   // What lies in view, Jev's to take or leave (loot-nearby.js, note 2296).
   { let loot = null; try { loot = require('./loot-nearby').lootOption(bot); } catch (_) { loot = null; } if (loot) options.pick_up_drops = loot; }
+  // A ruined portal or a village known on the way, each a trip of its own (found-places.js, note 2302).
+  try { Object.assign(options, require('./found-places').foundOptions(bot, goal, { lootActions: lootActions() })); } catch (_) { /* not offered */ }
   // Exploring: the nearest unexplored area around home, and what is there.
   // Villages and ruined portals are worth knowing before they are needed.
   if (bot.game?.dimension === 'overworld' || /overworld/.test(String(bot.game?.dimension || ''))) {
