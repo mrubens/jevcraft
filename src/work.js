@@ -6384,7 +6384,12 @@ function routeSays(bot, goal, r, { frame, placed, frameAt, here, diamondPickaxe,
   const record = v.kind === 'pool' ? lavaRecord(goal, v.l, here) : '';
   const failed = PP.failuresSays(goal, { lava: v.kind === 'deep' ? { deep: true } : { x: at.x, y: at.y, z: at.z } });
   const leaving = r.site === 'new_site' ? newSiteSays : '';
-  return `${site}; cast from ${lava}. Buckets: ${bucketsSay}. Water: ${water}. ${PP.priceSays(p, { tripWhat: r.site === 'beside' ? 'a scoop and a few blocks\' walk' : 'there and back' })}${measured} Pickaxe: ${digs}. Risk: ${risk}.${record}${failed || (record ? '' : ' No failures known for this route.')}${PP.planRecordSays(r.site, v.kind)}${leaving}`;
+  // The water the deep layer has none of (note 2298): the obsidian is lava met by water, and at y -54 no water lies
+  // about; full-9 (25587, 2026-10-27 16:14Z), at the deep lava with an empty bucket, climbed back up for water ('dig to
+  // water'), the user watching: 'Why is the Jev I'm watching going back up?', then 'add the water fact to the deep
+  // options'.
+  const deepWater = v.kind === 'deep' ? (countOf(bot, 'water_bucket') ? ' The deep layer has no water of its own: the one water bucket carried down does every block (poured on a source, then taken back up).' : ' The deep layer has no water of its own: one water bucket, carried down, does every block (poured on a source, then taken back up); with none carried, a trip up to water and back down comes first, the length of the climb.') : '';
+  return `${site}; cast from ${lava}. Buckets: ${bucketsSay}. Water: ${water}.${deepWater} ${PP.priceSays(p, { tripWhat: r.site === 'beside' ? 'a scoop and a few blocks\' walk' : 'there and back' })}${measured} Pickaxe: ${digs}. Risk: ${risk}.${record}${failed || (record ? '' : ' No failures known for this route.')}${PP.planRecordSays(r.site, v.kind)}${leaving}`;
 }
 
 const POOL_LOOKS = 4;

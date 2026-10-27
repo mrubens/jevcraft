@@ -317,7 +317,7 @@ test('the portal plan is asked with no ruin known: every route priced end to end
   assert.equal(goal.portalMethod.key, 'here_deep');
   assert.deepEqual(goal.portalMethod.lava, { way: 'deep' });
   assert(offered.build_new && offered.here_deep && offered.beside_deep, 'the routes offered: no lava known but the lava layer');
-  assert.match(offered.here_deep, /^A frame cast near where the bot stands; cast from the lava layer below .* by a staircase dug down to y -56 and each trip back up it\. Buckets: 2 carried\. Water: one water bucket carried\. Priced end to end, about \d+ minutes: getting there .*; \d+ trips with 2 buckets, there and back about \d+ minutes each; casting the blocks about 2 minutes \(12 seconds a block at the record's pace\)\./);
+  assert.match(offered.here_deep, /^A frame cast near where the bot stands; cast from the lava layer below .* by a staircase dug down to y -56 and each trip back up it\. Buckets: 2 carried\. Water: one water bucket carried\. The deep layer has no water of its own: the one water bucket carried down does every block \(poured on a source, then taken back up\)\. Priced end to end, about \d+ minutes: getting there .*; \d+ trips with 2 buckets, there and back about \d+ minutes each; casting the blocks about 2 minutes \(12 seconds a block at the record's pace\)\./);
   assert.match(offered.beside_deep, /^A frame cast beside the lava, within a few blocks of it\. The portal is then down there/);
   assert.match(offered.here_deep, /Pickaxe: about \d+ blocks dug with the pickaxe\. Risk: the staircase ends at the lava layer, where lava lakes lie open\./);
   assert.match(state.knownForEveryRoute, /2 empty buckets, 1 of water and 0 of lava, 0 iron ingots/);
