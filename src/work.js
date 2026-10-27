@@ -7745,6 +7745,8 @@ function idleOptions(bot, goal) {
   Object.assign(options, homeChores(bot, goal));
   // The chest beside the bed slept in, where no home's stands (note 2029).
   Object.assign(options, require('./bed-kit').bedKitChores(bot, goal));
+  // What lies in view, Jev's to take or leave (loot-nearby.js, note 2296).
+  { let loot = null; try { loot = require('./loot-nearby').lootOption(bot); } catch (_) { loot = null; } if (loot) options.pick_up_drops = loot; }
   // Exploring: the nearest unexplored area around home, and what is there.
   // Villages and ruined portals are worth knowing before they are needed.
   if (bot.game?.dimension === 'overworld' || /overworld/.test(String(bot.game?.dimension || ''))) {
