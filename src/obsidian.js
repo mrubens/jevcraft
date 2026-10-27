@@ -32,6 +32,11 @@ const at = p => new Vec3(p.x, p.y, p.z);
 
 // Lava sources with open air above them: the surface of a pool, where the
 // flow from the shore can reach.
+// Looked for across the ground the game keeps loaded about the bot (note 2300): at 48 blocks full-9 (25587, 2026-10-27
+// 15:46Z) knew no lava but the deep layer's 141 blocks off and 120 down, and staircased to it, while the user, watching
+// from the same place, saw lava 'much closer to the surface'. The plan looks across the simulation distance, ten chunks
+// (work.js lavaSources, distance 160); the fetch's own look stays at 48, so a pool known far off is walked to, not
+// tunnelled at through 100 blocks of rock (test note-753d).
 function poolSurface(bot, { distance = 48, count = 256 } = {}) {
   const id = bot.registry.blocksByName.lava?.id;
   if (id === undefined) return [];

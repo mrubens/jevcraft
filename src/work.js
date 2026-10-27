@@ -6748,7 +6748,8 @@ function nearestLava(bot, goal, sources = lavaSources(bot), from = null) {
 // still take (obsidian.js scoopable).
 function lavaSources(bot) {
   const { poolSurface, scoopable } = require('./obsidian');
-  const surface = poolSurface(bot);
+  // The plan's lava, across the ground the game keeps loaded (note 2300).
+  const surface = poolSurface(bot, { distance: 160 });
   return { surface, scoopable: scoopable(bot, surface) };
 }
 // The lava chosen to cast beside, seen with no source left about it that a
@@ -6757,7 +6758,7 @@ function lavaSources(bot) {
 // said that lava was seven blocks off and "a trip for lava is a few
 // seconds" while every bucket came from a pool forty blocks off and
 // eighteen up, about four minutes a trip (note 553). Not known while its
-// block is unloaded or beyond where the sources are looked for (48 blocks,
+// block is unloaded or beyond where the sources are looked for (160 blocks for the plan,
 // poolSurface), less the pool's own reach.
 const GONE_WITHIN = 8;
 function lavaGone(bot, near, sources = lavaSources(bot)) {
