@@ -1208,7 +1208,8 @@ async function huntObserved(bot, task, goal, save, actions, client) {
         const base = all || one;
         if (!liveCage || target.name !== 'blaze' || !base?.fightHere) return null;
         const cageAt = cage.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position);
-        const present = 1 + others.filter(t => t.entity.name === 'blaze').length;
+        const { inCageBox } = require('./blaze-stand');
+        const present = [target, ...others.map(t => t.entity)].filter(e => e?.name === 'blaze' && inCageBox(cage, e.position)).length;
         let seconds = base.fightHere.seconds, n = 0, est = null;
         for (let i = 0; i < 3; i++) {
           n = Math.round(require('./blaze-stand').spawnerNewcomers(present, seconds));
@@ -1507,7 +1508,7 @@ function huntSays(bot, target, { handler, distance, mob, one, all, others, spawn
   const price = !mob || handler.passive ? '' : all
     ? ` With ${mobsSaid(others)} reaching the bot here too and fighting with it: about ${all.fightHere.seconds} seconds and ${all.fightHere.damageTaken} damage from ${Math.round(bot.health * 10) / 10} health${all.fightHere.healthAfter <= 0 ? ' (more than the bot has)' : `, ${all.fightHere.healthAfter} after`}; this one alone would be about ${one.fightHere.seconds} seconds and ${one.fightHere.damageTaken}.${spawnerSays}`
     : ` About ${one.fightHere.seconds} seconds and ${one.fightHere.damageTaken} damage from ${Math.round(bot.health * 10) / 10} health, ${one.fightHere.healthAfter} after; it lands about ${mob.hitsBot} a hit through what is worn.${spawnerSays || ''}`;
-  const withNewcomers = !newcomers ? '' : ` With the ${newcomers.n} more the spawner puts in over the seconds the fight then takes (one about every six, up to six about; the trials' record at a cage like this one: two within sixteen blocks at first sight, five by twenty or thirty seconds, six to eight by a minute), counted at the cage ${newcomers.cageAt} blocks off: about ${newcomers.fight.seconds} seconds and ${newcomers.fight.damageTaken} damage from ${Math.round(bot.health * 10) / 10} health${newcomers.fight.healthAfter <= 0 ? ' (more than the bot has)' : `, ${newcomers.fight.healthAfter} after`}.`;
+  const withNewcomers = !newcomers ? '' : ` With the ${newcomers.n} more the spawner puts in over the seconds the fight then takes (one about every six while fewer than six are inside the four blocks round the cage, those that fly out freeing their places; the trials' record at a cage like this one: two within sixteen blocks at first sight, five by twenty or thirty seconds, six to eight by a minute), counted at the cage ${newcomers.cageAt} blocks off: about ${newcomers.fight.seconds} seconds and ${newcomers.fight.damageTaken} damage from ${Math.round(bot.health * 10) / 10} health${newcomers.fight.healthAfter <= 0 ? ' (more than the bot has)' : `, ${newcomers.fight.healthAfter} after`}.`;
   const note = mob?.note ? ` It ${mob.note}.` : '';
   const beside = [lavaNear ? ' Lava is within two blocks of it: a knockback there lands in it.' : '', dropNear ? ' A drop is within three blocks of it.' : '',
     hitters.length ? ` ${hitters.length} ${[...new Set(hitters.map(e => e.name.replaceAll('_', ' ')))].join(' and ')} within six blocks of it: ${[...new Set(hitters.map(e => UNPROVOKED[e.name].note))].join('; ')}.` : '',

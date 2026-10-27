@@ -361,18 +361,25 @@ function standCost(bot, danger, { setup = 0, at = null, open = null, atOnce = In
 //   fights go (swingEvery), the shield down meanwhile, every other one
 //   shooting as if it were down;
 // - a live spawner within sixteen makes up to four more every ten to forty
-//   seconds, about one every six, up to six about.
+//   seconds, about one every six, while fewer than six blazes are inside the
+//   box four blocks round the cage (the game's rule, BaseSpawner: the six are
+//   counted only there; those that fly out free their places), note 2282.
 const SHIELD_LEAK = 1 / 30, SHIELD_COVER = 60;
 const SPAWN_SECONDS = 25 / 4, SPAWN_CAP = 6;
-// How many more a live spawner puts in over `seconds`, beyond the `present`
-// already about (about one every six seconds, up to six about). Measured on
+// How many more a live spawner puts in over `seconds`, beyond the `inBox`
+// already inside the four blocks round its cage (about one every six seconds;
+// the six-cap counts only that box, note 2282: full-8, 2026-10-27 12:11 to
+// 12:36Z, stood 5 to 8.5 off a cage told 'up to six about' while those within
+// sixteen grew 2, 8, 25, 33, 47, 54, and died there). Measured on
 // the trials of 2026-09-28 at the cage at (-108, 77, 155), twelve of the
 // day's deaths in its rooms: two within sixteen blocks at first sight (the
 // median), five by twenty or thirty seconds, six to eight by a minute; every
 // price of a fight there counted the two (note 631).
-function spawnerNewcomers(present, seconds) {
-  return Math.max(0, Math.min(SPAWN_CAP - present, (seconds || 0) / SPAWN_SECONDS));
+function spawnerNewcomers(inBox, seconds) {
+  return Math.max(0, Math.min(SPAWN_CAP - inBox, (seconds || 0) / SPAWN_SECONDS));
 }
+// The blazes inside the box four blocks round the cage, the only ones the spawner's cap counts.
+const inCageBox = (cage, p) => !!cage && !!p && Math.abs(p.x - (cage.x + 0.5)) <= 4.5 && Math.abs(p.y - (cage.y + 0.5)) <= 4.5 && Math.abs(p.z - (cage.z + 0.5)) <= 4.5;
 const bearing = (from, to) => Math.atan2(to.z - from.z, to.x - from.x) * 180 / Math.PI;
 const angleOff = (a, b) => { const d = Math.abs(((a - b) % 360 + 540) % 360 - 180); return d; };
 // Which blazes a shield faced at their middle covers: the middle of the arc
@@ -489,7 +496,7 @@ function closeInCost(bot, danger, { shield = shieldCarried(bot), horizon = CLOSE
     const add = r.proofHits * covered + r.hits * (s - covered) + ce.burnBetween(landings, t, t + s, burning, proof);
     if (damage + add >= hp) deathAt = round(t + (hp - damage) / Math.max(0.01, add / s));
     damage += add; t += s;
-    if (spawning) extra = Math.min(Math.max(0, SPAWN_CAP - alive.length), extra + s / SPAWN_SECONDS);
+    if (spawning) extra = Math.min(Math.max(0, SPAWN_CAP - alive.filter(b => inCageBox(spawner, b.at)).length), extra + s / SPAWN_SECONDS);
     phases.push({ what, seconds: round(s), perSecond: round(add / s) });
   };
   const order = () => alive.filter(b => b.reach).sort((a, b) => a.at.distanceTo(from) - b.at.distanceTo(from));
@@ -576,7 +583,7 @@ function closeInSays(c, hp, { breaking = false } = {}) {
   parts.push(` Each blaze in reach takes about ${c.swings} swings of the sword, about ${c.strikeSeconds} seconds${c.shield === false ? '' : ' with the shield down'}, while ${c.blazes === 1 ? 'it shoots' : 'every one that sees the bot shoots'}${c.shield === false ? '' : ' as if it were down'}${c.striking > 0 ? ` (about ${c.striking} damage a second from those in sight now, the burning with it)` : ''}; a fireball that lands is about ${c.fireHit} through the armour worn and five seconds alight at a health a second, and a blaze within two blocks swings for about ${c.meleeHit} once a second instead.`);
   if (breaking && c.atCage?.nearest != null) parts.push(` At the cell by the cage ${c.atCage.within5 ? `${c.atCage.within5} of them ${c.atCage.within5 === 1 ? 'is' : 'are'} within five blocks, the nearest ${c.atCage.nearest} off${c.atCage.within2 ? `, ${c.atCage.within2} within two, swinging` : ''}` : `the nearest is ${c.atCage.nearest} off`}: the digging is done with the shield down, each shooting meanwhile from where it is to there; after it no more come.`);
   else if (breaking) parts.push(' The digging is done with the shield down, the others shooting meanwhile; after it no more come.');
-  else if (c.spawning) parts.push(' The spawner within sixteen blocks puts in about one more every six seconds (four every ten to forty), up to six about, and those are fought too.');
+  else if (c.spawning) parts.push(' The spawner within sixteen blocks puts in about one more every six seconds (four every ten to forty) while fewer than six are inside the four blocks round its cage; those that fly out of that box free their places, so the blazes about it keep growing while the bot stays within sixteen (the game\'s rule), and those are fought too.');
   // Fire resistance on the body (note 656), counted in the sum.
   if (c.fireproofFor > 0) parts.push(` Fire resistance is on the body, about ${Math.round(c.fireproofFor)} seconds left: until it ends a fireball that lands does nothing (no hurt, no push, no fire), and only the swing of a blaze within two blocks hurts; ${c.fireproofFor >= c.seconds ? 'it outlasts this run' : `the rest of the run after it is counted as without it`}.`);
   const reach = c.reachable < c.blazes ? ` (${c.reachable} of the ${c.blazes} over ground the sword reaches from; the rest shoot on throughout)` : '';
@@ -2423,4 +2430,4 @@ function chargeRecord(hp, others) {
   return { charges, died, says: ` In the flight records, of ${charges} charges of the nearest blaze chosen at ${low ? 'under 12 health' : '12 health or more'} with ${many ? 'three or more' : 'two or fewer'} other blazes about, ${died} ended in the bot's death within 30 seconds.` };
 }
 
-module.exports = { deathsHereSays, chargeRecord, biterInReach, riseOrAwait, reachWalk, REACH_MEMO_MS, sortieFloor, eatInHold, fourNearSays, FOUR_NEAR, walkTakes, behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze, blazeReach, pushedOnly, REACH_STEPS, riseSite, riseOrAwait };
+module.exports = { inCageBox, deathsHereSays, chargeRecord, biterInReach, riseOrAwait, reachWalk, REACH_MEMO_MS, sortieFloor, eatInHold, fourNearSays, FOUR_NEAR, walkTakes, behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze, blazeReach, pushedOnly, REACH_STEPS, riseSite, riseOrAwait };
