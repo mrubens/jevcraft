@@ -8306,7 +8306,22 @@ async function detourWork(bot, task, goal, save, { survival = null, bounded = ta
   const oreBeside = ore ? `${Math.abs(oreDy) >= 2 ? ` It is ${Math.abs(oreDy)} blocks ${oreDy > 0 ? 'up' : 'down'}.` : ''}${SIDES.some(([x, y, z]) => /^(air|cave_air)$/.test(bot.blockAt(ore.p.offset(x, y, z))?.name || '')) ? ' It is in the wall of an open space: reaching it opens onto whatever is in there.' : ''}${SIDES.some(([x, y, z]) => /water/.test(bot.blockAt(ore.p.offset(x, y, z))?.name || '')) ? ' Water is beside it.' : ''}` : '';
   const sky = bot.blockAt(bot.entity.position.floored())?.skyLight;
   const walkRisk = dark ? ' It is dusk or night: mobs spawn on open ground along the way.' : Number.isFinite(sky) && sky < 8 ? ' Underground: mobs spawn wherever it is dark along the way.' : '';
-  if (ore) add('mine_nearby', `Dig the ${ore.name.replaceAll('_', ' ')} ${Math.round(ore.p.distanceTo(bot.entity.position))} blocks away.${oreBeside}`,
+  // What the ore is, said against the work stalled (note 2311): full-10 (25586, 2026-10-27 18:35Z), stalled on the
+  // golden boots' planks at y -50, was offered 'Dig the deepslate gold ore 5 blocks away' beside a long text for
+  // setting the boots aside, chose the setting aside and went into the Nether with no gold worn; the user: 'Just
+  // seems dumb after all this work to go into the nether without gold'.
+  const oreFor = (() => {
+    if (!ore) return '';
+    try {
+      const drops = MINEABLE[ore.name]?.drops;
+      if (!drops) return '';
+      const kin = find(bot, [ore.name], 16, 32).length;
+      const rung = goal.rungTime?.phase || goal.gameProgress?.phase;
+      const goldRung = rung === 'golden_boots';
+      return ` It drops ${drops.replaceAll('_', ' ')} (${countOf(bot, drops)} carried)${kin > 1 ? `; ${kin} such blocks within 16 blocks` : ''}.${rung ? ` The work stalled is the ${String(rung).replaceAll('_', ' ')}${goldRung && /gold/.test(drops) ? `, which is made of gold: four gold ingots for boots, a raw gold smelted to each` : ''}.` : ''}`;
+    } catch (_) { return ''; }
+  })();
+  if (ore) add('mine_nearby', `Dig the ${ore.name.replaceAll('_', ' ')} ${Math.round(ore.p.distanceTo(bot.entity.position))} blocks away.${oreBeside}${oreFor}`,
     () => dig(bot, bounded, ore.p, {}));
   // A walk to see what is there is an Overworld thing by day; in the Nether
   // twenty-four blocks in a straight line is a walk to the lava sea.
