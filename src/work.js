@@ -6222,7 +6222,7 @@ function buildSays({ obsidian, diamonds, diamondPickaxe, need = 10, trip = null,
   // the diamonds' own layer, never told the ruin could be quarried; the user: 'does Jev have any option to try to
   // find diamond for a pickaxe to get the obsidian from the ruined frame?'
   const quarrySays = quarry && quarry.obsidian > 0 ? ` With a diamond pickaxe, the ruined portal ${quarry.distance} blocks off is a quarry too: ${quarry.obsidian} obsidian stand there, mined where they stand at about ten seconds a block and carried, no lava or water needed.` : '';
-  const lyingSays = lying?.count ? ` ${lying.count} obsidian already stand within 16 blocks of ${where}, not in it (the nearest ${lying.nearest} blocks off): ${diamondPickaxe ? 'mined with the diamond pickaxe carried at about ten seconds a block, no pouring' : 'mined only with a diamond pickaxe'}.` : '';
+  const lyingSays = lying?.count ? ` ${lying.count} obsidian already stand within the loaded 160 blocks of ${where}, not in it (${lying.wanted?.length > 1 ? `the nearest ${lying.wanted.length}, as many as are wanted, ${lying.wanted.join(', ')} blocks off` : `the nearest ${lying.nearest} blocks off`}): ${diamondPickaxe ? 'mined with the diamond pickaxe carried at about ten seconds a block, no pouring' : 'mined only with a diamond pickaxe'}.` : '';
   const deepSays = !diamondPickaxe && Number.isFinite(belowToDiamonds) && belowToDiamonds > 0 ? ` The diamonds lie from y 16 down, most at about y -58: ${belowToDiamonds} blocks below here.` : '';
   return `Build a portal frame of its own: ten obsidian (${obsidian} carried), lit with flint and steel. Obsidian is where water has met a lava source, at a lava pool or poured there, and is mined with a diamond pickaxe only (${diamondPickaxe ? 'one carried' : `none carried: three diamonds make one, ${diamonds} carried, and diamond ore is mined with an iron pickaxe or better`}), about ten seconds a block.${carry}${lyingSays}${quarrySays}${deepSays}`;
 }
@@ -6567,8 +6567,13 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
       const id = bot.registry.blocksByName.obsidian?.id;
       if (id === undefined || typeof bot.findBlocks !== 'function') return null;
       const inFrame = new Set((frame?.blocks || []).map(p => `${p.x},${p.y},${p.z}`));
-      const found = bot.findBlocks({ matching: id, maxDistance: 16, count: 64, point: frameAt }).filter(p => !inFrame.has(`${p.x},${p.y},${p.z}`));
-      return found.length ? { count: found.length, nearest: Math.round(Math.min(...found.map(p => p.distanceTo(frameAt)))) } : null;
+      // Across the ground the game keeps loaded, 160 blocks (the simulation distance), not a radius of the code's
+      // choosing (note 2310, the user: 'Why only 16 blocks?'): the count and the nearest the frame wants, each by its
+      // distance, Jev's to weigh.
+      const found = bot.findBlocks({ matching: id, maxDistance: 160, count: 256, point: frameAt }).filter(p => !inFrame.has(`${p.x},${p.y},${p.z}`));
+      const want = Math.max(1, 10 - placed - obsidian);
+      const near = found.map(p => Math.round(p.distanceTo(frameAt))).sort((a, b) => a - b);
+      return found.length ? { count: found.length, nearest: near[0], wanted: near.slice(0, want) } : null;
     } catch (_) { return null; }
   })();
   tree.build_new = { description: buildSays({ obsidian, diamonds, diamondPickaxe, quarry, belowToDiamonds, lying, need: Math.max(0, 10 - placed - obsidian), trip, atLava: !!lava && lava.distance <= 16, frameBegun: !!frame, castTrips: castTrips({ obsidian, standing: placed, buckets: countOf(bot, 'bucket'), lavaBuckets: countOf(bot, 'lava_bucket') }).trips }) + PP.failuresSays(goal, { key: 'build_new' }) };

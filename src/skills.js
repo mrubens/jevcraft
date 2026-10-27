@@ -529,7 +529,9 @@ async function navigate(bot, task, goal, options = {}) {
 async function navigateOnce(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false, shore = false, besideLava, edgeTaken, onFoot = false, passing, quiet = false, hostilesOk = false } = {}) {
   // Every Overworld walk looks in passing unless its caller says not (note 2289): a walk that is part of a stance, a
   // walk back for drops, or a quiet or on-foot walk does not; the look is throttled and takes only what is in reach.
-  if (passing === undefined) passing = /overworld/.test(String(bot.game?.dimension || '')) && !bot._stance && !hostilesOk && !onFoot && !bot._inPassing;
+  // The Nether's walks too (note 2310): its gold ore is what the look was made for, and full-10 (2026-10-27 18:40Z) went
+  // in with no gold worn and walked past nether gold ore, piglins on it within two minutes.
+  if (passing === undefined) passing = /overworld|nether/.test(String(bot.game?.dimension || '')) && !bot._stance && !hostilesOk && !onFoot && !bot._inPassing;
   if (quiet) { onFoot = true; sprint = false; passing = false; }
   task.check();
   watchHazards(bot);

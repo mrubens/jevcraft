@@ -200,8 +200,10 @@ const DIAMOND_ORES = ['diamond_ore', 'deepslate_diamond_ore'];
 // picking up iron to have shears, spare armor and hardware, etc if it's right on the path'); coal while the fuel is
 // short; gold and diamonds always too (the user: 'Yeah and diamond and gold too probably?'). full-9's walks passed iron and coal within reach because only a few walks looked and iron only while under 32.
 const passingKinds = (bot, goal = null) => [...Object.keys(GOLD_WORTH), ...(countOf(bot, 'diamond') < 64 ? DIAMOND_ORES : []),
-  'iron_ore', 'deepslate_iron_ore', ...(fuelCarried(bot) < FUEL_UNITS_WANTED ? ['coal_ore', 'deepslate_coal_ore'] : []), ...(lapisShort(bot) ? ['lapis_ore', 'deepslate_lapis_ore'] : [])];
-const passingWanted = (bot, c, goal = null) => GOLD_WORTH[c.block] ? true : c.resource === 'raw_iron' ? true : ['diamond', 'coal', 'lapis_lazuli'].includes(c.resource) && neededByRule(bot, c, goal);
+  'iron_ore', 'deepslate_iron_ore', 'gold_ore', 'deepslate_gold_ore', ...(fuelCarried(bot) < FUEL_UNITS_WANTED ? ['coal_ore', 'deepslate_coal_ore'] : []), ...(lapisShort(bot) ? ['lapis_ore', 'deepslate_lapis_ore'] : [])];
+// The Overworld's gold ore too (note 2310): it was never among the kinds, and full-10 (2026-10-27) set its golden boots
+// aside for want of gold and went into the Nether with none worn; the user: 'doesn't seem interested in nearby gold'.
+const passingWanted = (bot, c, goal = null) => GOLD_WORTH[c.block] ? true : c.resource === 'raw_iron' || c.resource === 'raw_gold' ? true : ['diamond', 'coal', 'lapis_lazuli'].includes(c.resource) && neededByRule(bot, c, goal);
 const FACES = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
 const lavaBeside = (bot, p) => FACES.some(([x, y, z]) => /lava/.test(bot.blockAt(p.offset(x, y, z))?.name || ''));
 const goldCarried = bot => countOf(bot, 'gold_ingot') + countOf(bot, 'gold_nugget') / 9 + countOf(bot, 'gold_block') * 9;

@@ -50,7 +50,7 @@ test('the ruin option says the judged frame; the build route says the ruin as a 
 
 test('obsidian already standing about the frame is said on the build route (note 2309)', () => {
   const { buildSays } = require('../src/work');
-  const b = buildSays({ obsidian: 0, diamonds: 10, diamondPickaxe: true, need: 4, frameBegun: true, lying: { count: 9, nearest: 6 } });
-  assert.match(b, /9 obsidian already stand within 16 blocks of the frame, not in it \(the nearest 6 blocks off\): mined with the diamond pickaxe carried at about ten seconds a block, no pouring/);
+  const b = buildSays({ obsidian: 0, diamonds: 10, diamondPickaxe: true, need: 4, frameBegun: true, lying: { count: 9, nearest: 6, wanted: [6, 7, 7, 40] } });
+  assert.match(b, /9 obsidian already stand within the loaded 160 blocks of the frame, not in it \(the nearest 4, as many as are wanted, 6, 7, 7, 40 blocks off\): mined with the diamond pickaxe carried at about ten seconds a block, no pouring/);
   assert.doesNotMatch(buildSays({ obsidian: 0, diamonds: 0, diamondPickaxe: false, need: 10 }), /already stand/);
 });
