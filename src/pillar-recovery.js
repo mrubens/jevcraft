@@ -326,7 +326,7 @@ async function pillarUp(bot, task, targetY, { dig, maxBlocks = 40, threats = tru
       await new Promise(resolve => setTimeout(resolve, 60 + attempt * 60));
       // The column's base kept with the record (note 1610): the lowest block laid, so that its own end stone above it is told from the island's without reading the sides.
       lastJump = `the jump reached ${Math.round((peak - start) * 100) / 100} over the start, the body at ${Math.round((bot.entity.position.y - start) * 100) / 100} at the place`;
-      try { lastPlaceError = null; await place(); placed++; const prev = bot._pillarUp; bot._pillarUp = { x: feet.x, z: feet.z, until: Date.now() + 600000, base: prev && prev.x === feet.x && prev.z === feet.z && prev.base != null && prev.until > Date.now() ? Math.min(prev.base, feet.y) : feet.y }; }
+      try { lastPlaceError = null; await place(); placed++; try { await require('./opportunistic-mining').mineWithinReach(bot, task); } catch (e2) { if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(e2.name)) throw e2; } const prev = bot._pillarUp; bot._pillarUp = { x: feet.x, z: feet.z, until: Date.now() + 600000, base: prev && prev.x === feet.x && prev.z === feet.z && prev.base != null && prev.until > Date.now() ? Math.min(prev.base, feet.y) : feet.y }; }
       catch (err) { task.check(); lastPlaceError = String(err.message || err).slice(0, 80); }
       for (let i = 0; i < 20 && !bot.entity.onGround; i++) { task.check(); await new Promise(resolve => setTimeout(resolve, 25)); }
       if (bot.entity.position.floored().y > start) break;

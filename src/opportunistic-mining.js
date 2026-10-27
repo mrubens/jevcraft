@@ -257,6 +257,35 @@ function passingSays(bot, c) {
   const perPearl = blocks <= 1 ? '' : ` At this rate a pearl is ${blocks} such blocks, about ${Math.round(blocks * seconds / 60) || 1} minute${Math.round(blocks * seconds / 60) > 1 ? 's' : ''} of detours like this one.`;
   return `${what}. ${round(c.distance)} blocks from the walk, ${c.routeSteps} walking steps; a detour of about ${seconds} s there and back with the dig, then the same walk goes on.${perPearl}${low}`;
 }
+// Ore a climb passes, taken from where the body stands (note 2295, the user 2026-10-27: 'do the ore pickup during
+// climbs too'; full-9 pillared up past iron at 15:5xZ). A pillar's top or a staircase's step is no place to walk off
+// from, so only what is in the arm's reach and in sight is dug, nothing walked to: the kinds the walks take in passing
+// (passingKinds), no lava against the block, never the block under the feet or the column's cells. -> blocks dug
+async function mineWithinReach(bot, task, { now = Date.now() } = {}) {
+  if (!bot?.entity?.position || !bot.inventory?.items || now - (bot._climbLookAt || 0) < 800) return 0;
+  bot._climbLookAt = now;
+  const ids = passingKinds(bot, bot._goal).map(n => bot.registry?.blocksByName?.[n]?.id).filter(id => id !== undefined);
+  if (!ids.length) return 0;
+  const eye = bot.entity.position.offset(0, 1.62, 0), feet = bot.entity.position.floored();
+  const found = (bot.findBlocks?.({ matching: ids, maxDistance: 5, count: 8 }) || []).filter(p => {
+    const c = p.offset(0.5, 0.5, 0.5);
+    if (c.distanceTo(eye) > 4.3) return false;
+    if (p.x === feet.x && p.z === feet.z) return false;
+    if (FACES.some(([x, y, z]) => /lava/.test(bot.blockAt(p.offset(x, y, z))?.name || ''))) return false;
+    try { const hit = bot.world?.raycast?.(eye, c.minus(eye).normalize(), c.distanceTo(eye) + 0.5); if (hit && !(hit.position.x === p.x && hit.position.y === p.y && hit.position.z === p.z)) return false; } catch (_) { return false; }
+    const b = bot.blockAt(p);
+    return !!b && bot.canDigBlock?.(b) !== false && (!b.harvestTools || Object.keys(b.harvestTools).some(id => bot.inventory.items().some(i => String(i.type) === id)));
+  });
+  let dug = 0;
+  for (const p of found.slice(0, 4)) {
+    task?.check?.();
+    const b = bot.blockAt(p);
+    if (!b || !ids.includes(b.type)) continue;
+    try { await require('./skills').digWithTool(bot, b, true); dug++; console.log(`[climb ore] ${b.name.replaceAll('_', ' ')} at (${p.x}, ${p.y}, ${p.z}) dug from where the climb stands`); }
+    catch (err) { if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
+  }
+  return dug;
+}
 // The look's detour. `client` null: the rule only.
 async function mineInPassing(bot, task, goal, save, { navigate, dig }, client = null) {
   if (!navigate || !dig || !goal || goal.kind === 'find' || !bot.inventory?.items || !bot.pathfinder?.movements) return false;
@@ -316,5 +345,5 @@ async function mineGoldInPassing(bot, task, goal, save, { navigate, dig }) {
   return mineInPassing(bot, task, goal, save, { navigate, dig }, null);
 }
 
-module.exports = { shortOfPearls, goldInPassing, mineGoldInPassing, mineInPassing, passingCandidates, passingSays, valuableInPassing: goldInPassing, mineValuableInPassing: mineGoldInPassing,
+module.exports = { mineWithinReach, shortOfPearls, goldInPassing, mineGoldInPassing, mineInPassing, passingCandidates, passingSays, valuableInPassing: goldInPassing, mineValuableInPassing: mineGoldInPassing,
   PASSING_RADIUS, PASSING_REACH, GOLD_WORTH, VITALS, piglinsWithin, LIMITS, opportunityCandidates, opportunisticMining, fuelCarried, FUEL_UNITS_WANTED };

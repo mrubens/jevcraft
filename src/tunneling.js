@@ -521,6 +521,8 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, place 
   if (isSetAside(goal, 'staircase_from', landingKey(from, target))) throw staircaseStillResting(goal, save, target, 'staircase_from', landingKey(from, target));
   goal.tunnel ||= { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {} };
   const tunnel = goal.tunnel;
+  // Ore in the walls the stairs pass, dug from the step (note 2295).
+  try { await require('./opportunistic-mining').mineWithinReach(bot, task); } catch (err) { if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
   // Where a way down began at the surface, remembered: the way back up is
   // the stairs already dug (surface.js returnToSurface). mid-207-k spent
   // forty-four of its minutes climbing, each time digging a new staircase
