@@ -52,7 +52,7 @@ async function fillBucket(bot, task, position, { fluid = 'water', timeoutMs = 25
 }
 const fillWaterBucket = (bot, task, position, options = {}) => fillBucket(bot, task, position, { ...options, fluid: 'water' });
 
-async function collectWater(bot, task, goal, save, { navigate, explore }) {
+async function collectWater(bot, task, goal, save, { navigate, explore, digTo = null }) {
   task.check(); checkAir(bot); checkThreats(bot);
   // The base's pond first: it is a known source within reach, and a search
   // for any water walked the bot a hundred blocks from its bed at dusk.
@@ -124,6 +124,17 @@ async function collectWater(bot, task, goal, save, { navigate, explore }) {
       if (goal.search?.water) goal.search.water.attempts = 0;
       goal.step = { action: 'fill_bucket', position: { ...p }, item: 'water_bucket', confirmed: true, wade: true }; save(); return;
     } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  }
+  // Water in view that no walk reaches: dug to (note 2320), as the dig to water is, not a search of the surface from
+  // inside the rock. full-11 (25588, 2026-10-27 20:36 to 20:47Z), in a pocket of a mountain at y 75 with water 8 below
+  // and its frame beside it, met 'No route' on every wade and dry stand and an explore that went nowhere, and ran the
+  // fetch several times a second for ten minutes; the user: '11 is taking forever'.
+  if (sources.length && digTo) {
+    const near = sources.slice().sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0];
+    goal.step = { action: 'fill_bucket', position: { x: near.x, y: near.y, z: near.z }, item: 'water_bucket', dig: true }; save();
+    console.log(`[water] no walk reaches the water at ${near}, ${Math.round(near.distanceTo(bot.entity.position))} blocks off: digging to it`);
+    await digTo(near);
+    return;
   }
   await explore(bot, task, goal, save, 'water', { surfaceOnly: true });
 }

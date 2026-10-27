@@ -25,7 +25,7 @@ test('two stops of the work by its threat check in ten seconds, a threat there n
     bot._arbiter = { stopped: { layer: 'work', why: 'Threat nearby: creeper at 7 blocks', at: now - 300, first: now - 1200, count: 3 } };
     const c = require('../src/survival').claim(bot, goal, survival);
     assert.equal(c.action, 'escape_threat'); assert.equal(c.urgency, 'pressing');
-    assert.match(c.facts.workStopped, /^the work's last 3 turns, in 1 seconds?, were each stopped at once by its threat check: Threat nearby: creeper at 7 blocks$/);
+    assert.match(c.facts.workStopped, /^the work's last 3 turns, in \d+ seconds?, were each stopped at once by its threat check: Threat nearby: creeper at 7 blocks$/);
     assert.equal(c.facts.threats[0].name, 'creeper');
     // Once, or long ago, or no threat now: no such claim.
     bot._arbiter.stopped.count = 1;

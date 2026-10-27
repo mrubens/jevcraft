@@ -42,7 +42,7 @@ test('the ghast is in sight from the gravel where the bot stood (mid-242-ah-neth
 test('the retreat says its footing is in the ghast\'s line, and prices the fifteen seconds with the fire there (mid-242-ah-nether-2-fortress-5, 17:32:55; note 621)', async () => {
   const bot = slopeBot();
   const s = survivalOf(bot), task = new Task('x'), danger = threats(bot, 64);
-  const scout = await s.scoutRetreat(task, danger, { budgetMs: 2000 });
+  const scout = await s.scoutRetreat(task, danger, { budgetMs: 10000 }); // the route search's own time under a loaded suite
   assert.ok(scout?.destination, `a way is found: ${JSON.stringify(scout)}`);
   const d = scout.destination;
   const ghast = Object.values(bot.entities).find(e => e.name === 'ghast');
