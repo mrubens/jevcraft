@@ -141,7 +141,19 @@ function deathCost(bot, goal = {}, survival = goal.survival || {}) {
       .map(([phase, clock]) => [words(phase), Math.round(clock.activeMs / 60000)])),
     realSecondsToWalkBack: spawn ? Math.round(spawn.distanceTo(here) / 4.3) : null,
     stashChestBlocks: stash ? Math.round(vec(stash).distanceTo(here)) : null,
-    note: 'Everything carried drops where the bot dies and vanishes five minutes later; the walk back from the respawn point is the only way to get it again.',
+    // The game's clock on drops (note 2286): an item ages only while a player is within the simulation distance
+    // (about 176 blocks here) of it; one in an area no player is near, or in another dimension, waits there.
+    note: 'Everything carried drops where the bot dies. A dropped item vanishes after five minutes of the game ticking it, and the game ticks it only while a player is within about 176 blocks: drops in an area the bot is far from, or in another dimension, wait until it comes back within that range. The walk back is the only way to get them again.',
+    // Said plainly where a death would lose no item (note 2286, the user 2026-10-27: 'the bot needs to know that
+    // there's basically nothing to lose from another quick death'): the cost is then the walk back alone.
+    ...(() => {
+      const worth = worn.length || gear.length || Object.keys(valuables).length || items.some(i => /^(ender_eye|ender_pearl|blaze_rod|blaze_powder)$/.test(i.name));
+      if (worth) return {};
+      const walk = spawn ? Math.round(spawn.distanceTo(here) / 4.3) : null;
+      const run = goal.corpseRun && goal.corpseRun.status === 'open' ? goal.corpseRun : null;
+      const runSays = run ? (run.loadedAt ? ` The drops of the death before lie where it happened, and the game is ticking them now: what is left of their five minutes runs on whether or not the bot dies again, and a death here sends it back to ${bed ? 'the bed' : 'the world spawn'} to walk to them again.` : ' The drops of the death before lie where it happened, out of the game\'s range, not ageing: a death now leaves them as they are.') : '';
+      return { nothingToLose: `Nothing of worth is carried or worn now: a death here drops no items. It costs only the walk back from ${bed ? 'the bed slept in last' : 'the world spawn'}${walk != null ? `, about ${walk} seconds at a walk` : ''}, and the levels.${runSays}` };
+    })(),
   };
 }
 

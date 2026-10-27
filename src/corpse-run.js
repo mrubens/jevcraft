@@ -560,7 +560,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     }
     const seen = dropsSeenSays(run).trim(), record = recordSays(bot, goal).trim();
     const decision = await require('./decisions').decide('corpse_run', { client, bot, task, goal, save, tree,
-      state: { distance: far, secondsLeft: left, aboutAtDeath: death.about || [], wornAtDeath: death.worn || [], wornNow, night, ...(until !== null ? { [night ? 'minutesToDawn' : 'minutesToNight']: until } : {}), ...(run.stalled ? { walksThatGotNoNearer: run.stalled } : {}), ...(kept ? { inAChest: kept } : {}), ...(seen ? { dropsSeen: seen } : {}), ...(quick ? { quickDeaths: quick.trim() } : {}), ...(tried ? { walksBackThatDied: tried.trim() } : {}), walkBackRecord: record } });
+      state: { distance: far, secondsLeft: left, aboutAtDeath: death.about || [], wornAtDeath: death.worn || [], wornNow, night, ...(until !== null ? { [night ? 'minutesToDawn' : 'minutesToNight']: until } : {}), ...(run.stalled ? { walksThatGotNoNearer: run.stalled } : {}), ...(kept ? { inAChest: kept } : {}), ...(seen ? { dropsSeen: seen } : {}), ...(quick ? { quickDeaths: quick.trim() } : {}), ...(tried ? { walksBackThatDied: tried.trim() } : {}), walkBackRecord: record, ...(() => { try { const n = require('./risk').deathCost(bot, goal).nothingToLose; return n ? { nothingToLose: n } : {}; } catch (_) { return {}; } })() } });
     if (decision.stale) return false;
     if (decision.path.at(-1) === 'kit_first' && bedKit) {
       try { await bedKit.run(bot, task, goal, save, kitActions); }
