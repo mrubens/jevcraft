@@ -784,6 +784,34 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
   if (!immediateThreat(bot)) for (const [key, side] of Object.entries(sides)) {
     if (side?.anyTime && !options[key] && !isSetAside(goal, 'strategy_side', key)) options[key] = { description: side.description, says: side.says, run: side.run, side: true, trip: true };
   }
+  // The Nether's food against going now (note 2294): what fetching it costs from where the bot stands, and what the food
+  // carried buys in the Nether. full-9 (25587, 2026-10-27 15:52Z), on its staircase down to the deep lava for its
+  // portal at night, read 'food carried for the Nether stay, 30 of 80 points' with no word of the climb back up, the
+  // night or the way back down, took rung_nether_food at 0.54 against nether_first's 0.04, and pillared to the surface
+  // into the night's mobs; the user watching: 'It's nighttime and there are mobs everywhere, and he has enough stuff
+  // to go to the nether'.
+  try {
+    const foodKey = ['rung_nether_food', 'stage_nether_food'].find(k => options[k]);
+    if (foodKey || options.nether_first) {
+      const points = Math.round(require('./foraging').foodSupply(bot));
+      const minutes = Math.round(points / 40 * 60);
+      if (options.nether_first && typeof options.nether_first.description === 'string') options.nether_first.description += ` The ${points} food points carried are about ${minutes} minutes of the Nether at about 40 hunger an hour, health coming back while hunger is eighteen or more; a hoglin (the crimson forests) is food there, two to four porkchops of eight points each cooked, and the portal is the way back for more.`;
+      if (foodKey && typeof options[foodKey].description === 'string') {
+        const here = bot.entity?.position?.floored?.();
+        let sky = null;
+        if (here) for (let y = here.y + 1; y <= Math.min(319, here.y + 200); y++) { const b = bot.blockAt?.(here.offset(0, y - here.y, 0)); if (!b) break; if (b.boundingBox === 'block') sky = null; else if (sky === null) sky = y; }
+        const below = here && sky !== null && sky - here.y > 4 ? sky - here.y : 0;
+        const night = typeof bot.time?.timeOfDay === 'number' && bot.time.timeOfDay >= 12542 && bot.time.timeOfDay <= 23460;
+        const L = require('./levels');
+        const climb = below ? Math.round(below * 2 * (L.LEVEL_RECORD?.upSecondsABlock || 2) / 60) : 0;
+        const parts = [];
+        if (below) parts.push(`the bot is about ${below} blocks under the open sky: the food is up there, about ${climb} minutes up and back down at the bot's climbing pace`);
+        if (night) parts.push('it is night, the mobs of the surface out until dawn');
+        parts.push('food can as well be got after the portal is lit, from the Overworld side of it, or in the Nether from hoglins');
+        options[foodKey].description += ` Got now: ${parts.join('; ')}.`;
+      }
+    }
+  } catch (_) { /* said without it */ }
   // A rung set aside is not taken back unasked, even alone: the question
   // goes out with it said (note 694).
   return Object.keys(options).length > 1 || Object.values(options).some(o => o.takeBack && o.stage) ? options : null;
