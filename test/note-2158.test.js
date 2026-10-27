@@ -24,8 +24,8 @@ test('a pickaxe carried, or logs for one, is said as the mine the night can be',
   assert.match(pickaxeSays([{ name: 'crafting_table', count: 1 }, { name: 'oak_planks', count: 3 }, { name: 'stick', count: 2 }]), /a wooden pickaxe can be made/);
 });
 
-test('nothing is said by night, off the Overworld, or without a clock', () => {
-  assert.equal(nightAheadSays(botWith([], 12000), goal), null);
+test('nothing is said off the Overworld or without a clock; by night, the dawn (note 2306)', () => {
+  assert.match(nightAheadSays(botWith([], 12000), goal), /^Night now: dawn in about 9\.2 real minutes\./);
   assert.equal(nightAheadSays(botWith([], 2000, 'the_nether'), goal), null);
   assert.equal(nightAheadSays({ time: {}, game: { dimension: 'overworld' }, inventory: { items: () => [] } }, goal), null);
 });

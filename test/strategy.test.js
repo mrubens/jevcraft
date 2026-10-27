@@ -475,7 +475,7 @@ test('the bed is weighed with what a night costs without one', () => {
   // Nights were 62 of mid-211-o's 180 minutes and the most of mid-230-o's (2026-09-27).
   const { RUNG_WHY, WITHOUT } = require('../src/strategy');
   assert.match(RUNG_WHY.bed, /eight and a half real minutes .* an hour of play has three nights/);
-  assert.match(WITHOUT.bed, /eight and a half to eleven real minutes a night and three nights to an hour of play/);
+  assert.match(WITHOUT.bed, /at the surface .*eight and a half to eleven real minutes a night \(one underground is mined through\) and three nights to an hour of play/);
 });
 
 test('a wool search left off long ago is not said as one going on for hours', () => {

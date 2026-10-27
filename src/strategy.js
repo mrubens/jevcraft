@@ -47,7 +47,7 @@ const RUNG_WHY = {
   // What a night costs without one, said where the bed is weighed: nights
   // were sixty-two of mid-211-o's hundred and eighty minutes and the most of
   // mid-230-o's (notes 428, 449; the Fable advice).
-  bed: 'a night slept passes in seconds, where one spent awake is about eight and a half real minutes from bedtime (eleven from dusk) sealed in or night-mining, and a Minecraft day is twenty real minutes, so an hour of play has three nights; it also sets the spawn point; three wool from sheep (a sheep killed drops one; sheared with shears, two iron ingots, it gives one to three and lives to regrow) or crafted from spiders\' string (four string a wool), or a bed from a village',
+  bed: 'a night slept passes in seconds, where one spent awake at the surface is about eight and a half real minutes from bedtime (eleven from dusk) sealed in or fighting, while one underground is mined through as a day is (the night ahead and the depth of the bot are in the state), and a Minecraft day is twenty real minutes, so an hour of play has three nights; it also sets the spawn point; three wool from sheep (a sheep killed drops one; sheared with shears, two iron ingots, it gives one to three and lives to regrow) or crafted from spiders\' string (four string a wool), or a bed from a village',
   iron_pickaxe: 'mines the iron for armour and the diamonds past it',
   iron_armour: 'a helmet, chestplate, leggings and boots, twenty-four ingots in all; worn, they take about half off a mob\'s hit and an eighth off a creeper\'s blast',
   copper_armour: 'a helmet, chestplate, leggings and boots of copper, twenty-four copper ingots (copper ore is common in caves near the surface, two to five raw copper a block); worn, ten armour points: a zombie\'s hit of three comes down to two, an arrow of four to under three, until the iron armour replaces it',
@@ -91,7 +91,7 @@ const RUNG_WHY = {
 const WITHOUT = {
   stone_pickaxe: 'no stone, coal or iron can be mined',
   stone_sword: 'every fight is with bare hands',
-  bed: 'each night is spent awake, walled in or fighting, about eight and a half to eleven real minutes a night and three nights to an hour of play, and a death respawns at the world spawn',
+  bed: 'each night at the surface is spent awake, walled in or fighting, about eight and a half to eleven real minutes a night (one underground is mined through) and three nights to an hour of play, and a death respawns at the world spawn',
   iron_pickaxe: 'no diamond, gold or redstone can be mined',
   shield: 'every arrow and every creeper blast lands in full',
   iron_armour: 'every hit lands on what is worn now',
