@@ -270,7 +270,7 @@ test('a Nether walk stops for gold within four blocks while pearls are short, an
   assert.equal(goldInPassing(bot, {}, now += 1000), false, 'not with a piglin to see it');
   bot.entities = {};
   stock([{ name: 'iron_pickaxe', type: registry.itemsByName.iron_pickaxe.id, count: 1, durabilityUsed: 0 }, { name: 'ender_pearl', type: registry.itemsByName.ender_pearl.id, count: 16 }]);
-  assert.equal(goldInPassing(bot, {}, now += 1000), false, 'with the pearls in hand the gold is left');
+  assert.equal(goldInPassing(bot, {}, now += 1000), true, 'with the pearls in hand the gold is still taken (note 2289: gold always on the path)');
   stock([{ name: 'iron_pickaxe', type: registry.itemsByName.iron_pickaxe.id, count: 1, durabilityUsed: 0 }]);
 
   // The walk itself looks (skills.js navigate `passing`, note 653): the
@@ -298,7 +298,7 @@ test('a diamond beside the tunnel is dug by rule, never walked past for want of 
   assert.deepEqual(dug, [`${ore}`]);
 });
 
-test('iron ore is taken by rule while iron is short, and left once the pockets hold enough', () => {
+test('iron ore on the path is taken by rule whatever is carried (note 2289)', () => {
   const { opportunityCandidates } = require('../src/opportunistic-mining');
   const { bot, ore, stock } = oreWorld();
   const Block = require('prismarine-block')(registry);
@@ -309,5 +309,5 @@ test('iron ore is taken by rule while iron is short, and left once the pockets h
   const find = bot.findBlocks; bot.findBlocks = o => o.useExtraInfo ? find(o) : [ore];
   assert.equal(valuableInPassing(bot, {}, Date.now() + 5000), true, 'short of iron: a walk stops for it');
   stock([{ name: 'iron_pickaxe', type: registry.itemsByName.iron_pickaxe.id, count: 1, durabilityUsed: 0 }, { name: 'raw_iron', type: registry.itemsByName.raw_iron.id, count: 40 }]);
-  assert.equal(valuableInPassing(bot, {}, Date.now() + 10000), false, 'forty carried: walked past');
+  assert.equal(valuableInPassing(bot, {}, Date.now() + 10000), true, 'forty carried: still taken on the path (note 2289)');
 });

@@ -34,7 +34,7 @@ test('gold within four blocks is the rule; past four, gilded blackstone, and gol
   assert.equal(mining.goldInPassing(bot, {}, 3e12, { client: true }), true, 'with Jev: asked');
   bot.health = 20;
   bot.inventory.items = () => [pick, { name: 'ender_pearl', count: 16 }];
-  assert.deepEqual(tiers(), {}, 'sixteen pearls: gold is walked past');
+  assert.deepEqual(tiers(), { [at(2, 70, 1)]: 'rule', [at(6, 70, 2)]: 'offer', [at(-2, 70, 1)]: 'offer' }, 'sixteen pearls: gold on the path is still taken (note 2289)');
 });
 
 test('no gold against lava, and none the bot would stand on', () => {

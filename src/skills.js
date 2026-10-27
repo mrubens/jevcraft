@@ -526,12 +526,15 @@ async function navigate(bot, task, goal, options = {}) {
 // `quiet`: crouched the whole way, digging and laying nothing, no sprint
 // (note 2036): a crouched step makes no vibration for a sculk sensor or
 // shrieker to hear, in the deep dark's cities.
-async function navigateOnce(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false, shore = false, besideLava, edgeTaken, onFoot = false, passing = false, quiet = false, hostilesOk = false } = {}) {
+async function navigateOnce(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false, shore = false, besideLava, edgeTaken, onFoot = false, passing, quiet = false, hostilesOk = false } = {}) {
+  // Every Overworld walk looks in passing unless its caller says not (note 2289): a walk that is part of a stance, a
+  // walk back for drops, or a quiet or on-foot walk does not; the look is throttled and takes only what is in reach.
+  if (passing === undefined) passing = /overworld/.test(String(bot.game?.dimension || '')) && !bot._stance && !hostilesOk && !onFoot && !bot._inPassing;
   if (quiet) { onFoot = true; sprint = false; passing = false; }
   task.check();
   watchHazards(bot);
   const look = passing && bot._goal && bot.pathfinder?.movements ? passingLook(bot, task) : null;
-  if (look) return look.walk(timeoutMs, timeout => navigate(bot, task, goal, { timeoutMs: timeout, stallMs, stopWhen: () => stopWhen?.() || look.due(), sprint, shore, besideLava, edgeTaken, onFoot }), stopWhen);
+  if (look) return look.walk(timeoutMs, timeout => navigate(bot, task, goal, { timeoutMs: timeout, stallMs, stopWhen: () => stopWhen?.() || look.due(), sprint, shore, besideLava, edgeTaken, onFoot, passing: false, hostilesOk }), stopWhen);
   // Where the bot is going, kept for the shore rule (shore.js): out of the
   // water on the side it was heading for, not back where it went in.
   if (!shore && Number.isFinite(goal?.x) && Number.isFinite(goal?.z)) bot._heading = { x: goal.x, z: goal.z, at: Date.now() };
@@ -695,7 +698,9 @@ function passingLook(bot, task) {
         const result = await run(Math.max(1, deadline - Date.now()));
         if (!stopped || callerStop?.() || detours >= PASSING_DETOURS) return result;
         const began = Date.now();
-        await mining.mineInPassing(bot, task, goal, save, { navigate, dig: require('./work').dig }, client);
+        // The detour's own walks do not look again (note 2289: with every walk looking, the look recursed).
+        bot._inPassing = true;
+        try { await mining.mineInPassing(bot, task, goal, save, { navigate, dig: require('./work').dig }, client); } finally { bot._inPassing = false; }
         task.check();
         deadline += Date.now() - began;
       }
