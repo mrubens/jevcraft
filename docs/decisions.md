@@ -884,6 +884,9 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `lure_cows` | root | lead loose cows into the home pen | by day in the Overworld, and the pen has fewer than two cows and cows are in view |
 | `fetch_cows` | root | walk to cows seen earlier and lead two back to the pen | by day in the Overworld, and the pen has fewer than two cows, none in view, wheat carried, and cows remembered within 160 blocks |
 | `stock_stash` | root | put spares in the stash chest | by day in the Overworld, and the stash chest is within reach and spares are carried |
+| `pick_up_drops` | root | pick up what is lying in view | by day in the Overworld, and items lie within sixteen blocks; said with what, how far, the seconds and any hostile about (note 2296) |
+| `visit_ruined_portal` | root | go to a ruined portal known and open its chest | by day in the Overworld, and an unlooted ruined portal within 384 blocks at about this level; said with the walk, its height and the needs it covers (note 2302) |
+| `visit_village` | root | go to a village known and open its chests | by day in the Overworld, and an unlooted village within 384 blocks; said with the walk, its height, beds and hay, and the needs it covers (note 2302) |
 | `kit_by_bed` | root | put a chest beside the bed slept in and leave the spare kit and armour in it | by day in the Overworld, and no home base chest by the bed slept in, within 16 blocks of it, spares or spare armour carried and wood for a chest (note 2029) |
 | `stock_bed_kit` | root | put spares in the chest beside the bed slept in | by day in the Overworld, and that chest stands, within 16 blocks, spares or spare armour carried (note 2029) |
 | `spare_armour_by_bed` | root | make a spare armour piece and leave it in the chest beside the bed slept in | by day in the Overworld, and that chest stands within 16 blocks, the iron ingots for a piece it lacks carried (note 2034) |
@@ -1640,6 +1643,9 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `lure_cows` | root | lead loose cows into the home pen | the pen has fewer than two cows and cows are in view |
 | `fetch_cows` | root | walk to cows seen earlier and lead two back to the pen | the pen has fewer than two cows, none in view, wheat carried, and cows remembered within 160 blocks |
 | `stock_stash` | root | put spares in the stash chest | the stash chest is within reach and spares are carried |
+| `pick_up_drops` | root | pick up what is lying in view | items lie within sixteen blocks; said with what, how far, the seconds and any hostile about (note 2296) |
+| `visit_ruined_portal` | root | go to a ruined portal known and open its chest | an unlooted ruined portal within 384 blocks at about this level; said with the walk, its height and the needs it covers (note 2302) |
+| `visit_village` | root | go to a village known and open its chests | an unlooted village within 384 blocks; said with the walk, its height, beds and hay, and the needs it covers (note 2302) |
 | `kit_by_bed` | root | put a chest beside the bed slept in and leave the spare kit and armour in it | no home base chest by the bed slept in, within 16 blocks of it, spares or spare armour carried and wood for a chest (note 2029) |
 | `stock_bed_kit` | root | put spares in the chest beside the bed slept in | that chest stands, within 16 blocks, spares or spare armour carried (note 2029) |
 | `spare_armour_by_bed` | root | make a spare armour piece and leave it in the chest beside the bed slept in | that chest stands within 16 blocks, the iron ingots for a piece it lacks carried (note 2034) |
@@ -1723,6 +1729,9 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `lure_cows` | root | lead loose cows into the home pen | by day in the Overworld, and the pen has fewer than two cows and cows are in view |
 | `fetch_cows` | root | walk to cows seen earlier and lead two back to the pen | by day in the Overworld, and the pen has fewer than two cows, none in view, wheat carried, and cows remembered within 160 blocks |
 | `stock_stash` | root | put spares in the stash chest | by day in the Overworld, and the stash chest is within reach and spares are carried |
+| `pick_up_drops` | root | pick up what is lying in view | by day in the Overworld, and items lie within sixteen blocks; said with what, how far, the seconds and any hostile about (note 2296) |
+| `visit_ruined_portal` | root | go to a ruined portal known and open its chest | by day in the Overworld, and an unlooted ruined portal within 384 blocks at about this level; said with the walk, its height and the needs it covers (note 2302) |
+| `visit_village` | root | go to a village known and open its chests | by day in the Overworld, and an unlooted village within 384 blocks; said with the walk, its height, beds and hay, and the needs it covers (note 2302) |
 | `kit_by_bed` | root | put a chest beside the bed slept in and leave the spare kit and armour in it | by day in the Overworld, and no home base chest by the bed slept in, within 16 blocks of it, spares or spare armour carried and wood for a chest (note 2029) |
 | `stock_bed_kit` | root | put spares in the chest beside the bed slept in | by day in the Overworld, and that chest stands, within 16 blocks, spares or spare armour carried (note 2029) |
 | `spare_armour_by_bed` | root | make a spare armour piece and leave it in the chest beside the bed slept in | by day in the Overworld, and that chest stands within 16 blocks, the iron ingots for a piece it lacks carried (note 2034) |

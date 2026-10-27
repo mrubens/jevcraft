@@ -8438,7 +8438,7 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
     const what = reason.replace(/^\w+:/, '').replace(/^rung:/, '').replaceAll('_', ' ');
     const secs = Math.max(1, Math.round((until - now) / 1000));
     const job = (() => { try { return require('./job-in-hand').jobInHand({ step: goal.step, here: bot.entity?.position, batch: goal.smelting || null }).short; } catch (_) { return null; } })();
-    tree.wait_it_out = { description: `Wait here for the ${what}'s rest to end, about ${secs} second${secs === 1 ? '' : 's'} (at ${new Date(until).toISOString().slice(11, 19)}Z)${holding.why ? `, set for: ${String(holding.why).slice(0, 160)}` : ''}${job ? `; ${job}` : ''}. Standing still spends no hunger; nothing is asked meanwhile but a threat that shows, and the work is taken up when the rest ends. ${WAIT_IT_OUT_RECORD.says}`,
+    tree.wait_it_out = { description: `Wait here for the ${what}'s rest to end, about ${secs} second${secs === 1 ? '' : 's'} (at ${new Date(until).toISOString().slice(11, 19)}Z)${holding.why ? `, set for: ${String(holding.why).slice(0, 160)}` : ''}${job ? `; ${job}` : ''}. Standing still spends no hunger; nothing is asked meanwhile but a threat that shows, and the work is taken up when the rest ends. The ${secs} seconds are the run's own time all the same, ${Object.keys(tree).length} other way${Object.keys(tree).length === 1 ? '' : 's'} on offer here to spend them on, each back for the batch when it is done. ${WAIT_IT_OUT_RECORD.says}`,
       waits: require('./waits').timer(`the ${what}'s rest to end`, until - now), run: async () => { waitedOut = true; } };
   }
   // The wait alone on offer is nothing on offer: taken unasked it is not
@@ -8630,7 +8630,7 @@ async function holdForRest(bot, task, goal, save, { client, survival, onStep = (
       try { const r = await breakStillness(bot, task, goal, save, { client, survival, onStep, reason, now: started, until, holding: { minutes, why, idle }, above }); waited = r === 'wait'; worked = !!r && !waited; none = !r; }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
       if (waited) {
-        if (!waitSaid) { waitSaid = true; const says = restWaitSays(reason, until, why); console.log(`[wait] Jev chose the wait: ${says}`); goal.step = { action: 'detour', choice: 'wait_it_out', from: reason, waitingFor: says }; save(); onStep(goal); }
+        if (!waitSaid) { waitSaid = true; const says = restWaitSays(reason, until, why).replace('; nothing else is on offer from here meanwhile', ', chosen over the other ways on offer'); console.log(`[wait] Jev chose the wait: ${says}`); goal.step = { action: 'detour', choice: 'wait_it_out', from: reason, waitingFor: says }; save(); onStep(goal); }
         for (const end = until; Date.now() < end;) { await sleep(Math.min(250, end - Date.now())); task.check(); }
         continue;
       }
