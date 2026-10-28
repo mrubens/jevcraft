@@ -375,6 +375,10 @@ function watchStalls(bot, goalOf) {
 // only if five seconds pass without a rescue.
 function airWatch(bot, now = Date.now()) {
   if ((bot.oxygenLevel ?? 20) > 10) return;
+  // Only with the head under water (note 2414): the air read is the last the server sent, and after a death it stays at
+  // what it was until it changes. full-23 (25592, 2026-10-28 18:48:43Z) drowned, came back to life on grass, and this
+  // watch stopped its work every five seconds for 'air 0', its head in the open.
+  try { if (bot.entity?.position && typeof bot.blockAt === 'function' && !require('./vitals').headSubmerged(bot)) { bot.oxygenLevel = 20; return; } } catch (_) { /* unread: as before */ }
   const recent = bot._survivalGoal?.survivalAction;
   if (recent?.action === 'surface' && now - Date.parse(recent.at || 0) < 8000) return;
   // The End's own air rescue is a rescue (note 2216): airInTheEnd marks itself on the bot while it digs and swims, and this

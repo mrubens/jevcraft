@@ -911,3 +911,13 @@ test('the stall asked three times in ten seconds, each over at once: the fourth 
   try { await breakStillness(quick, { check() {} }, { survival: {} }, () => {}, { reason: 'step:birch_log' }).catch(() => {}); } finally { console.log = log; }
   assert.doesNotMatch(lines2.join('\n'), /the stall was asked/);
 });
+
+test('with the head in the open the air read is stale and nothing is stopped (note 2414)', () => {
+  const { Vec3 } = require('vec3');
+  const { airWatch } = require('../src/stillness');
+  const bot = { oxygenLevel: 0, entity: { position: new Vec3(0.5, 64, 0.5), eyeHeight: 1.62 }, blockAt: p => ({ name: p.y < 64 ? 'grass_block' : 'air', position: p }),
+    pathfinder: { setGoal: () => assert.fail('stopped on dry land') }, clearControlStates() {} };
+  airWatch(bot);
+  assert.equal(bot._airAbort, undefined);
+  assert.equal(bot.oxygenLevel, 20, 'the stale read put back to full');
+});
