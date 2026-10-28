@@ -1257,7 +1257,11 @@ async function upkeepOffers(bot, task, goal, save) {
   // seconds a block that dropped nothing (note 655).
   const pick = pickaxeNeeded(bot) ? require('./mob-hunt').pickaxeFirst(bot) : null;
   const makeable = pick && !pick.carried && !pick.none && pick.item ? pick : null;
-  if (makeable && reserveWeather(bot)) options.make_pickaxe = { description: `${makePickaxeSays(bot, makeable)}${craftRoomSays(bot)}`, run: () => makePickaxe(bot, task, goal, save, makeable.item) };
+  // Made by night too (note 2368): a few seconds at a table where the bot stands, not a trip, so the night's shelter
+  // does not hold it back as it holds the gathering. full-19 (25591, 2026-10-28 11:16 to 11:28Z), its iron pickaxe
+  // broken on a staircase toward its drops, dug by hand a block every 53 seconds for twelve minutes with 4 sticks, 2
+  // crafting tables and 234 cobblestone carried; upkeep offered iron_piece and carry_on, no pickaxe.
+  if (makeable && bot.game?.gameMode !== 'creative' && !bot.entity?.isInWater) options.make_pickaxe = { description: `${makePickaxeSays(bot, makeable)}${craftRoomSays(bot)}`, run: () => makePickaxe(bot, task, goal, save, makeable.item) };
   // Wood in the Nether is its forests' stems: the planks' worth wanted for
   // the pickaxe to make now and a spare after it, against what is carried,
   // the nearest stems known and the way there. 25583 stood with thirty
