@@ -5376,6 +5376,12 @@ class Survival {
     // A biter's blow at the record's rate for the carry-on: 1 of 39 taken drew a hit within fifteen seconds (2026-10-14 to 20, note 1971).
     const keepBlow = mobs.some(m => bites(m) && !m.shoots && arrives(m) < 15) ? (oneHit || 0) / 39 : 0;
     const keepDamage = Math.round((keepShots + keepBlow) * 10) / 10;
+    // The kit the bot died with, lying within reach here (note 2395): taken up while the mobs are about, armour and
+    // arms first and worn at once. full-20 (25588, 2026-10-28 11:52 to 11:56Z) walked back an hour after its death
+    // among blazes, came to its drops with the blazes still there, and every turn for four minutes went to close_in,
+    // charge_nearest, leave_and_heal and corner_ambush; the drops aged out with none taken up.
+    const kit = this.kitHereOption(task, goal, save, { mobs, oneHit });
+    if (kit) options.grab_kit = kit;
     if (!coming.some(t => t.distance <= 3 && !calmAtReach.includes(t))) options.keep_working = { expects: { damage: keepDamage, seconds: 15, oneHit }, description: `Carry on with the work${(w => w ? ` (${atCage ? w : w.replaceAll('_', ' ')})` : '')(workLabel)} and leave these mobs be for fifteen seconds${coming.length ? ` (nearest that can get to the bot ${Math.round(coming[0].distance)} blocks)` : ''}.${calmAtReach.length ? ` The enderman ${Math.round(calmAtReach[0].distance * 10) / 10} blocks off is calm: it hits nothing until it is struck or looked in the eye, and the gaze is kept off every enderman's head while the work goes on.` : ''}${this.workProgress(goal)}${reachSays} The work stops at once if one comes within three blocks or lands a hit. Suits mobs that are far, slow, cannot reach the bot, or are not coming this way.${creeperCount ? (() => {
       // When the work would stop, against when the creeper lights: the
       // work stops at three blocks, which is where the fuse starts (the
@@ -8237,6 +8243,43 @@ class Survival {
 
   // The reason a seal would be made here now, and none said as that
   // (seal-reason.js, note 755). `toward`: those coming at the bot.
+  // What the death dropped, lying within eight blocks, as an encounter option: walked to and taken up with the
+  // mobs about (hostilesOk, as the walk back), armour and arms first, then by worth (corpse-run.js byRank); priced as
+  // standing open to them for the seconds it takes, the shield down. Null with nothing of it lying near.
+  kitHereOption(task, goal, save, { mobs, oneHit }) {
+    const bot = this.bot, run = goal?.corpseRun, here = bot.entity?.position;
+    if (!run || run.status !== 'open' || !here) return null;
+    const dimNow = String(bot.game?.dimension || 'overworld').replace(/^minecraft:/, '').replace(/^the_/, '');
+    if (dimNow !== run.dimension) return null;
+    const wanted = new Set(Object.keys(run.items || {}));
+    const near = Object.values(bot.entities || {}).map(e => { let it = null; try { it = e?.isValid !== false && e.position ? e.getDroppedItem?.() : null; } catch (_) { it = null; } return it && wanted.has(it.name) && e.position.distanceTo(here) <= 8 ? { e, name: it.name, count: it.count, d: e.position.distanceTo(here) } : null; }).filter(Boolean);
+    if (!near.length) return null;
+    const ARMS = /^(\w+_(helmet|chestplate|leggings|boots)|shield|\w+_sword)$/;
+    const { byRank, wearRecovered } = require('./corpse-run');
+    const order = [...near.filter(n => ARMS.test(n.name)), ...byRank(near.filter(n => !ARMS.test(n.name)))];
+    const names = [...new Set(order.map(n => n.name))];
+    const far = Math.max(...near.map(n => n.d));
+    const seconds = Math.min(15, Math.round((far / 4.3 + near.length * 0.4 + 0.5) * 10) / 10);
+    const cost = stanceCost({ mobs, setup: seconds, seconds, health: bot.health });
+    const listed = names.slice(0, 8).map(n => n.replaceAll('_', ' ')).join(', ') + (names.length > 8 ? `, and ${names.length - 8} more kinds` : '');
+    const arms = order.filter(n => ARMS.test(n.name)).map(n => n.name.replaceAll('_', ' '));
+    return { expects: { damage: cost.damage, seconds, oneHit },
+      description: `Take up the kit dropped at the death, lying within ${Math.ceil(far)} blocks: ${listed}; ${arms.length ? `the ${arms.join(', ')} first, the armour worn as it is taken up, ` : ''}walked to past the mobs here, the hands busy and the shield down, about ${seconds} seconds.${costSays(cost, bot.health, mobs, { over: 'while it is taken up' })} Left lying, it lasts five minutes from when the bot came near it again.`,
+      run: async () => {
+        this.report(goal, save, { action: 'grab_kit', target: 'drops', threats: [], health: bot.health, stance: true });
+        const { collectNearbyDrops } = require('./drop-collection');
+        const until = Date.now() + Math.max(4000, seconds * 1500);
+        for (const name of names) {
+          if (Date.now() >= until) break;
+          try { await collectNearbyDrops(bot, task, name, { origin: bot.entity.position.clone(), radius: 9, timeoutMs: Math.max(1500, until - Date.now()), hostilesOk: true }); }
+          catch (err) { task.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err; }
+          if (ARMS.test(name)) await wearRecovered(bot);
+        }
+        await wearRecovered(bot);
+        return true;
+      } };
+  }
+
   sealWhy(toward = []) {
     const bot = this.bot;
     const underground = underRock(bot, this.currentShelter?.());
