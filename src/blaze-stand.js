@@ -1993,8 +1993,18 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
           bitesSays = ` At arm's length now: ${b.mobs.map(k => `the ${words(k.name)} ${k.distance} blocks off, about ${k.blow} a blow`).join(', ')}; they follow and bite on the way, about ${bites} over its ${round(secs)} seconds, and the blazes' sight is not theirs.`;
         }
       } catch (_) { bites = 0; }
+      // The walkers about, out of the blazes' count: the cell is out of the blazes' sight, not out of a walker's reach
+      // (note 2380). full-19 (25591, 2026-10-28 14:20:54Z) took leave_and_heal at 13.2 with a wither skeleton 9.8 blocks
+      // off; the cell hid it from the 3 blazes, and the skeleton walked to it: 13.2 to none in three seconds.
+      let walkersSays = '';
+      try {
+        const ce = require('./combat-estimate'), at = site.cell || site.at || site.stand || null;
+        const sitePos = at && Number.isFinite(at.x) ? new Vec3(at.x + 0.5, at.y, at.z + 0.5) : bot.entity.position;
+        const walkers = require('./danger').threats(bot, 16).filter(t => t.entity && t.entity.name !== 'blaze' && t.entity.name !== 'ghast' && !t.projectile && ce.MOBS?.[t.entity.name]);
+        if (walkers.length) walkersSays = ` Walkers about, which the blazes' line does not hide the cell from: ${walkers.slice(0, 3).map(t => { const sp = ce.blocksPerSecond(t.entity.name) || 2; const d = t.entity.position.distanceTo(sitePos); return `the ${words(t.entity.name)} ${round(t.distance)} blocks off, at the cell in about ${round(d / sp)} seconds at its own pace if it comes, about ${ce.MOBS[t.entity.name].hit} a blow before armour`; }).join('; ')}.`;
+      } catch (_) { walkersSays = ''; }
       options.leave_and_heal = { kind: 'heal', site, expects: { damage: round(setup.damage + bites + Math.max(0, burning - Math.max(setup.wall, proof))), seconds: round(setup.wall + heal), oneHit: fireHit, heals: healable ? round(20 - after) : 0 },
-        description: `Go out of their sight${healable ? ' to heal and come back' : ' (no health comes back at this hunger)'}: ${where}${what} ${stays}${bitesSays}` + m.says };
+        description: `Go out of their sight${healable ? ' to heal and come back' : ' (no health comes back at this hunger)'}: ${where}${what} ${stays}${bitesSays}${walkersSays}` + m.says };
     }
   }
 
