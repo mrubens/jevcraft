@@ -210,6 +210,13 @@ function corpseRun(bot, goal, now = Date.now()) {
 
 const listed = items => Object.entries(items).map(([name, n]) => `${n > 1 ? `${n} ` : ''}${name.replace(/_/g, ' ')}`).join(', ');
 
+// The walk back open here with its drops' five minutes running: they age while the bot is near (note 2396).
+function ageingHere(bot, goal, now = Date.now()) {
+  let run = null; try { run = corpseRun(bot, goal, now); } catch (_) { return null; }
+  if (!run || run.status !== 'open' || !run.loadedAt || run.choice === 'leave_them') return null;
+  return now - Date.parse(run.loadedAt) < DESPAWN_MS ? run : null;
+}
+
 async function wearRecovered(bot) {
   for (const item of bot.inventory.items()) {
     const slot = ARMOUR[item.name.split('_').pop()];
@@ -811,4 +818,4 @@ function dropsWaitSays(bot, goal, now = Date.now()) {
   if (off > TICKING) return ` Given the turn, the work asks first about going back for what the last death dropped, ${off} blocks off: ${what}. Drops age only while their ground is loaded, so they keep until the bot comes near.`;
   return '';
 }
-module.exports = { wearRecovered, armsFirstWant, dropsSeenSays, byRank, recordSays, FLEET_RECORD, TICKING, triedDeathsSays, dropsWaitSays, quickDeathsSays, TOLD, tripCameToNothing, KIT_ERRAND, kitTrip, corpseRun, corpseRunStep, worth, madeAgain, ironRemakeSays, IRON_MINUTES, underWay };
+module.exports = { ageingHere, wearRecovered, armsFirstWant, dropsSeenSays, byRank, recordSays, FLEET_RECORD, TICKING, triedDeathsSays, dropsWaitSays, quickDeathsSays, TOLD, tripCameToNothing, KIT_ERRAND, kitTrip, corpseRun, corpseRunStep, worth, madeAgain, ironRemakeSays, IRON_MINUTES, underWay };

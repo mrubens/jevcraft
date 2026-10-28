@@ -10200,6 +10200,13 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       // check was the threats alone, and only digs and walks looked at the
       // air (note 680).
       task.interruptCheck = bot.game.gameMode === 'creative' || endTask ? undefined : () => { checkAir(bot); checkThreats(bot); };
+      // Back for the drops first while their five minutes run (note 2396): full-23 (25592, 2026-10-28 15:48:25Z) came
+      // back to life 55 blocks from its kit, the clock running from the death, and took wood and food first; the walk
+      // back began 85 seconds in. Whether to go is still Jev's (corpse_run).
+      if (!endTask && goal.kind === 'win' && require('./corpse-run').ageingHere(bot, goal)) {
+        const ran = await inCatch(task, goal, () => gameHandlers(bot, decisionClient).corpse_run(bot, task, goal, save));
+        if (ran) { goal.stalls = 0; save(); onStep(goal); continue; }
+      }
       if (!endTask && await upkeepStep(bot, task, goal, save, decisionClient, onStep)) { goal.stalls = 0; save(); onStep(goal); continue; }
       bot._goal = goal; bot._goalSave = save;
       if (!endTask && await sculkStep(bot, task, goal, save, decisionClient, onStep)) { goal.stalls = 0; save(); onStep(goal); continue; }
