@@ -5024,7 +5024,11 @@ class Survival {
     const plan = pocketPlan(bot, feet, pocketFor);
     const race = pocketRace(bot, pocketFor, plan);
     // Underground the dawn changes nothing: no mob there burns in it.
-    const nightLong = shelterNeeded(bot) && surfaceObserver(bot)(bot.entity.position) ? ` At night the mobs outside do not lose interest: about ${minutesToDawn(bot)} real minutes to dawn.` : '';
+    // In the Nether no dawn comes and its mobs do not burn or tire (note 2340): a seal there waits for them to wander
+    // off, and at full health and food heals nothing. The live critic's report of 2026-10-28 04:58Z: full-13 (25587)
+    // sealed against magma cubes four times at 20 health and 20 food, walking back to its kit 477 blocks off.
+    const netherSays = /nether/.test(String(bot.game?.dimension || '')) ? ` In the Nether no day comes and its mobs do not burn: they leave only as they wander${(bot.health ?? 20) >= 20 && (bot.food ?? 20) >= 18 ? ', and at full health and food a wait here heals nothing' : ''}.` : '';
+    const nightLong = (shelterNeeded(bot) && surfaceObserver(bot)(bot.entity.position) ? ` At night the mobs outside do not lose interest: about ${minutesToDawn(bot)} real minutes to dawn.` : '') + netherSays;
     // The blocks against what the crowd deals while they go down: mid-92-e
     // and mid-83-d chose pockets of twenty to thirty-four blocks with a
     // zombie at arm's length and four shooters about, and neither was shut.

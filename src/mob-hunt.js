@@ -120,6 +120,11 @@ async function goldForPiglins(bot, task, goal, save, actions = {}, { crossing = 
   if (isSetAside(goal, 'gold_for_piglins', 'nether')) return false;
   // Boots carried are put on by wearBestArmour (golden boots first on the feet in the Nether): nothing to make.
   if (countOf(bot, 'golden_boots')) return false;
+  // Not while the walk back is to drops that hold a gold piece (note 2340): those boots are the gold, and the two took
+  // turns. The live critic's report of 2026-10-28 04:58Z: full-13 (25587) chose go_back at 04:39:13Z for its kit 477
+  // blocks off, its golden boots among it, and 'golden boots first' took the turn back three times in twenty minutes,
+  // twenty-six blocks gained.
+  { const run = goal?.corpseRun; if (run?.status === 'open' && run.choice === 'go_back' && Object.keys(run.items || {}).some(n => GOLD_PIECES.includes(n))) return false; }
   {
     const inventory = {};
     for (const i of bot.inventory.items()) inventory[i.name] = (inventory[i.name] || 0) + i.count;
