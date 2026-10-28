@@ -176,7 +176,11 @@ async function fetchStemsOffer(bot, task, goal) {
   // farther off, a crossing away. full-14 (25588, 2026-10-28 08:27 to 08:34Z), no pickaxe, answered without at 08:27
   // for patches it could not cross to, then stood with warped stems 3 blocks off hand-digging netherrack, offered only
   // a 248-block trip to the portal or carry_on.
-  if (isSetAside(goal, 'fetch_stems', 'nether') && !(place && place.at.distanceTo(here) <= 8)) return null;
+  // Widened to 32 blocks, said with the earlier answer (note 2363): full-16 (25591, 2026-10-28 09:16 to 09:38Z) stood
+  // 20 minutes under its fortress with no pickaxe, crimson stems 19 to 30 blocks off, the fetch resting from 'go on
+  // without', and took a 1147-block trip to the portal, then the forest 159 off, hand-digging netherrack for nothing.
+  const restedFor = isSetAside(goal, 'fetch_stems', 'nether');
+  if (restedFor && !(place && place.at.distanceTo(here) <= 32)) return null;
   if (!stranded && !(place && place.at.distanceTo(here) <= NEAR)) return null;
   // Said without the route survey at once, and with it by `describe` (half a
   // second of the pathfinder), for a question about to be asked.
@@ -199,7 +203,9 @@ async function fetchStemsOffer(bot, task, goal) {
       : ' No pickaxe is carried.';
     const later = LATER;
     const makes = wanted.picked ? '' : ' The pickaxe is made as soon as the wood for it is carried.';
-    return `Fetch ${plural(wanted.stems, 'stem')} of the Nether's forests now. ${lead}${pick} ${wanted.says}${where ? ` ${where}` : ''} ${capital(stemSeconds(bot))}.${makes}${triesSays(goal, here)}${later}`;
+    let earlier = '';
+    if (restedFor) { try { const e = require('./progress').attemptsFor(goal).entries['fetch_stems:nether']; if (e) earlier = ` Going on without the stems was chosen ${Math.max(1, Math.round((Date.now() - e.at) / 60000))} minute${Math.round((Date.now() - e.at) / 60000) === 1 ? '' : 's'} ago (${String(e.why || '').slice(0, 80)}); offered again with stems within 32 blocks.`; } catch (_) { earlier = ''; } }
+    return `Fetch ${plural(wanted.stems, 'stem')} of the Nether's forests now. ${lead}${pick} ${wanted.says}${where ? ` ${where}` : ''} ${capital(stemSeconds(bot))}.${makes}${triesSays(goal, here)}${earlier}${later}`;
   };
   return { wanted, place, stranded, description: say(place, ''),
     describe: async () => {
