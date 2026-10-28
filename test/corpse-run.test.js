@@ -377,9 +377,9 @@ test('a death in the Nether, back to life in the Overworld: straight back for th
   assert.match(asked[0], /lie in the Nether where the bot died, 100 blocks from the portal on that side; the portal on this side is 50 blocks off/);
   assert.match(asked[0], /The bot was slain by Zombified Piglin there; when it died, a zombified piglin 1 blocks off was about/);
   assert.match(asked[0], /no sword or axe and no armour/);
-  assert.match(asked[0], /a median 37/);
+  assert.match(asked[0], /a median 206 \(about three and a half hours\)/);
   assert.match(asked[0], /No pickaxe and 0 building blocks are carried/);
-  assert.match(asked[0], /eleven such trips were taken as the bot stood: two came back with any of the kit/);
+  assert.match(asked[0], /9 deaths in the Nether were answered by going straight back: they were in the Nether again 27 to 342 minutes later, a median 71/);
   assert.match(asked[0], /No food is carried, and none was in the pack that dropped: in the Nether health comes back only at hunger eighteen or more/);
   assert.deepEqual({ dimension: goal.errand.dimension, items: goal.errand.items, for: goal.errand.for }, { dimension: 'nether', items: [], for: 'the kit dropped at the death there' });
   assert.equal(goal.corpseRun.choice, 'go_back', 'not asked again on the far side');
@@ -403,6 +403,12 @@ test('the kit made again first is the other answer: no trip, the drops left for 
   assert.equal(goal.errand, undefined);
   assert.equal(goal.corpseRun.trip.pick, 'kit_first');
   assert.equal(goal.corpseRun.status, 'open');
+  // Held half an hour, then asked again (note 2393).
+  assert.equal(await corpseRunStep(bot, task, goal, () => {}, {}), false);
+  assert.equal(asked.length, 1, 'held');
+  goal.corpseRun.trip.at -= 31 * 60000;
+  assert.equal(await corpseRunStep(bot, task, goal, () => {}, {}), false);
+  assert.equal(asked.length, 2, 'asked again after half an hour');
 });
 
 test('by night the kit trip says the hour and offers the dawn, and is asked again then; in a kit already it is not asked (note 1236)', async () => {

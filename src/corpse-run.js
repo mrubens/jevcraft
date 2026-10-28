@@ -251,7 +251,14 @@ function dropsSeenSays(run) {
 // to go straight back for it is Jev's, asked once a death (note 1233).
 // -> true when the trip was chosen (the errand set).
 const KIT_ERRAND = 'the kit dropped at the death there';
-const TRIP_RECORD = 'on 2026-10-03 the 4 deaths in the Nether with nothing in the home chest were back in the Nether 22 to 52 minutes later, a median 37, the kit mined and smelted again';
+const KIT_FIRST_HOLD_MS = 30 * 60000;
+// Measured again on the full runs of 2026-10-27 and 10-28 (each Nether
+// death's corpse record against the flight frames' next Nether entry, note
+// 2393): the 8 answered kit_first were back in the Nether 61 to 294 minutes
+// later, a median 206, and none got its drops back; the 10-03 figure of 37
+// was told to full-21 and full-22 (2026-10-28 15:5xZ), who chose kit_first
+// with a diamond pickaxe, full iron and rods lying in the Nether.
+const TRIP_RECORD = 'on the full runs of 2026-10-27 and 10-28, the 8 deaths in the Nether answered this way were back in the Nether 61 to 294 minutes later, a median 206 (about three and a half hours), the kit mined and smelted again, and none of them got its drops back after';
 // The trip come to nothing, the bot in the Nether in next to no armour: out
 // again for a kit, not on with the hunt as it stands (note 1251). Of the
 // eleven trips of 2026-10-04 (15:45 to 19:00Z) nine brought nothing back,
@@ -269,11 +276,15 @@ function tripCameToNothing(bot, goal, run, save, now = Date.now()) {
   return true;
 }
 // What is carried to dig or bridge with, said on the trip.
-const TRIPS = 'On 2026-10-04 (15:45 to 19:00Z) eleven such trips were taken as the bot stood: two came back with any of the kit; four were given up at the drops for want of a way to them; three found nothing left, two of those deaths in lava or fire; and five were followed by a death within half an hour, four of them to piglins with no gold on.';
+const TRIPS = 'On the full runs of 2026-10-27 and 10-28 (note 2393), 9 deaths in the Nether were answered by going straight back: they were in the Nether again 27 to 342 minutes later, a median 71, and none came back with the kit: 7 never reached the drops, 1 found nothing there and 1 reached them after they had aged out.';
 async function kitTrip(bot, task, goal, save, now = Date.now()) {
   const run = goal.corpseRun;
   // Put off to dawn, it is asked again then, by day.
   if (run?.trip?.pick === 'go_at_dawn' && now >= run.trip.until) delete run.trip;
+  // Kit first holds half an hour, then is asked again with what the kit
+  // made since stands at: asked once a death, it was never weighed again
+  // while the remaking ran its three hours (note 2393).
+  if (run?.trip?.pick === 'kit_first' && now - run.trip.at >= KIT_FIRST_HOLD_MS) delete run.trip;
   if (!run || run.status !== 'open' || run.trip || run.loadedAt || run.dimension !== 'nether' || dim(bot.game?.dimension) !== 'overworld' || !bot.entity?.position) return false;
   if (!Object.keys(run.items || {}).length || now - Date.parse(run.deathAt) > KEEP_MS) return false;
   const here = bot.entity.position, spot = run.position;
