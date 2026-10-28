@@ -4059,8 +4059,13 @@ async function smelt(bot, task, step, goal, save = () => {}) {
       const metal = /^(\w+)_ingot$/.exec(step.item || '')?.[1];
       const madeOfIt = n => !!metal && typeof n === 'string' && n.startsWith(`${metal}_`) && n !== step.from;
       const ownWork = !inHand || inHand.action === 'smelt' || [inHand.item, inHand.from].some(n => n && (n === step.item || n === step.from || madeOfIt(n)));
-      const leave = pending && goal && !ownWork ? {
-        work: `the ${String(inHand.action).replace(/_/g, ' ')}${inHand.item ? ` (${String(inHand.item).replace(/_/g, ' ')})` : ''}`,
+      // Food cooking is the run's work held, not the run's work (note 2430): the phase the run is on is what leaving it goes
+      // on with. full-28 (25589, 2026-10-28 21:0xZ), in the Nether with 1 of 7 rods and 6 more wanted, stood by a furnace for
+      // 5 porkchop and then 6 chicken, told 'nothing else is on offer from here meanwhile', none good 0.51.
+      const phase = goal?.gameProgress?.phase;
+      const foodBatch = /^cooked_/.test(String(step.item || '')) && phase;
+      const leave = pending && goal && (!ownWork || foodBatch) ? {
+        work: !ownWork ? `the ${String(inHand.action).replace(/_/g, ' ')}${inHand.item ? ` (${String(inHand.item).replace(/_/g, ' ')})` : ''}` : `the run's work, ${String(phase).replaceAll('_', ' ')}`,
         carried: `${countOf(bot, step.item)} ${String(step.item).replace(/_/g, ' ')}${countOf(bot, step.item) === 1 ? '' : 's'} carried now, besides the batch.`,
       } : null;
       // The digs of the walks so far this batch, in pickaxe uses: said when
