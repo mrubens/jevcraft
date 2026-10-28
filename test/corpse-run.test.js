@@ -576,3 +576,15 @@ test('leaving iron behind says the minutes of play to make it again, at the fres
     " The 27 iron is about 19 to 35 minutes of play to mine and smelt again, at the pace of the fresh runs' iron work (about 37 and 40 iron in 47 and 27 minutes, 2026-10-24).");
   assert.equal(ironRemakeSays({ iron_ingot: 2, bow: 1 }), '', 'a few ingots: nothing said');
 });
+
+test('a short walk with no food carried is offered food first too, and the state says the food and whether health comes back (note 2335)', async () => {
+  const { bot, goal } = world();
+  goal.survival.deaths[0].position = { x: 200, y: 64, z: 0 };
+  let text = '', state = null;
+  const client = { systemOne: async (args) => { const q = Object.values(args.questions)[0]; text = JSON.stringify(args); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'leave_them', confidence: 0.9 }])) }; } };
+  const task = Object.assign(new Task('run'), { opportunityClient: client });
+  bot.food = 12;
+  await corpseRunStep(bot, task, goal, () => {}, { move: async () => {}, collect: async () => false, gatherFood: async () => {} }).catch(() => {});
+  assert.match(text, /Get food for the walk first/, 'offered under 300 blocks');
+  assert.match(text, /0 food points carried, 5 wanted for the walk; hunger 12: under eighteen, health does not come back until the bot eats/);
+});

@@ -525,7 +525,12 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     // Food for the walk first, where little is carried for it (note 1298):
     // 25597 (2026-10-05 15:37Z), twelve eyes 1895 blocks off and nothing to
     // eat, the walk there costing about 47 hunger sprinted, left them.
-    const foodWant = Math.min(30, Math.round(far / 40));
+    // Into the Nether, the stay there wants its own food too (note 2333 critic, note 2335): health comes back only at
+    // hunger eighteen and more, and the Nether's only food is its hoglins. The walk's want and the Nether floor
+    // (food-reserve.js) said as one.
+    const dropsInNether = /nether/.test(String(run.dimension || ''));
+    const netherFloor = (() => { try { return require('./food-reserve').FLOOR.nether; } catch (_) { return 36; } })();
+    const foodWant = Math.max(Math.min(30, Math.round(far / 40)), dropsInNether ? netherFloor : 0);
     // Arms first (note 2148, Fable's second opinion 04:40Z): at a respawn the
     // question was drops or not, and the move a strong player makes first,
     // a stone sword and a shield in two or three minutes, was not on it.
@@ -539,7 +544,10 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
       let spells = ''; try { spells = require('./decisions').deathSpells(goal) || ''; } catch (_) { spells = ''; }
       tree.arm_first = { description: `Make ${listed(Object.fromEntries(armsWant.map(i => [i, 1])))} here first, then set out for them as go back says: a stone sword is two cobblestone and a stick (${cobble} cobblestone, ${sticks} sticks, ${planks} planks, ${logs} logs carried${cobble >= 2 ? '' : '; stone is dug where the bot stands or below'})${armsWant.includes('shield') ? `, a shield an iron ingot and six planks (${ingots} ingots carried)` : ''}, a few seconds at a crafting table${table ? ' (one is carried)' : ' (four planks make one)'}; about two or three minutes with the gathering. The bot goes to them ${withNow} now. ${left === null ? 'The drops do not age meanwhile.' : `About ${left} seconds before the drops vanish, the arms' minutes among them.`} Ten minutes at most on the arms; then the walk with what there is.${spells ? ` ${spells}` : ''}` };
     }
-    if (gatherFood && far >= 300 && foodCarried < foodWant) tree.food_first = { description: `Get food for the walk first, here: hunted, cooked or taken from a chest, toward ${foodWant} food points carried (${foodCarried} now), then set out for them; the drops do not age meanwhile. Twenty minutes at most on the food; then the walk with what there is.` };
+    // Offered whenever less is carried than the walk (and a Nether stay) wants, not past 300 blocks alone (note 2335):
+    // full-10 (25586, 2026-10-28 04:09:41Z) went back 205 blocks into the Nether with 0 food, offered go_back and
+    // leave_them only, charged a blaze at 20 health and sat at 1.1 with no healing; the live critic's report of 04:15Z.
+    if (gatherFood && foodCarried < foodWant) tree.food_first = { description: `Get food for the walk first, here: hunted, cooked or taken from a chest, toward ${foodWant} food points carried (${foodCarried} now), then set out for them; the drops do not age meanwhile. Twenty minutes at most on the food; then the walk with what there is.` };
     if (toDawn !== null && (night || minutes > until) && !run.loadedAt && /overworld/.test(run.dimension)) tree.wait_for_day = { description: `Set out for them at ${night ? 'dawn' : 'the next dawn'}, about ${toDawn} real minute${toDawn === 1 ? '' : 's'} off, with the day ahead for the walk${night ? '' : ` (the day left now, about ${until}, is shorter than the walk, about ${minutes})`}, and go on with other things until then: the drops do not age while the bot is not within ${TICKING} blocks of them.${night ? ' From dawn the zombies and skeletons on open ground burn in the sun (not under a roof or in water, not husks or a zombie with a helmet, and never spiders or creepers), and no more spawn there in the light.' : ''} Asked again at dawn.` };
     // Through the Nether, where the drop lies far off in the Overworld and a
     // portal the bot knows stands within 600 blocks of it and another within
@@ -560,7 +568,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     }
     const seen = dropsSeenSays(run).trim(), record = recordSays(bot, goal).trim();
     const decision = await require('./decisions').decide('corpse_run', { client, bot, task, goal, save, tree,
-      state: { distance: far, secondsLeft: left, aboutAtDeath: death.about || [], wornAtDeath: death.worn || [], wornNow, night, ...(until !== null ? { [night ? 'minutesToDawn' : 'minutesToNight']: until } : {}), ...(run.stalled ? { walksThatGotNoNearer: run.stalled } : {}), ...(kept ? { inAChest: kept } : {}), ...(seen ? { dropsSeen: seen } : {}), ...(quick ? { quickDeaths: quick.trim() } : {}), ...(tried ? { walksBackThatDied: tried.trim() } : {}), walkBackRecord: record, ...(() => { try { const n = require('./risk').deathCost(bot, goal).nothingToLose; return n ? { nothingToLose: n } : {}; } catch (_) { return {}; } })() } });
+      state: { food: `${foodCarried} food points carried, ${foodWant} wanted for the walk${dropsInNether ? ' and a stay in the Nether, where the only food is its hoglins' : ''}; hunger ${bot.food}: ${bot.food >= 18 ? 'health comes back' : 'under eighteen, health does not come back until the bot eats'}`, distance: far, secondsLeft: left, aboutAtDeath: death.about || [], wornAtDeath: death.worn || [], wornNow, night, ...(until !== null ? { [night ? 'minutesToDawn' : 'minutesToNight']: until } : {}), ...(run.stalled ? { walksThatGotNoNearer: run.stalled } : {}), ...(kept ? { inAChest: kept } : {}), ...(seen ? { dropsSeen: seen } : {}), ...(quick ? { quickDeaths: quick.trim() } : {}), ...(tried ? { walksBackThatDied: tried.trim() } : {}), walkBackRecord: record, ...(() => { try { const n = require('./risk').deathCost(bot, goal).nothingToLose; return n ? { nothingToLose: n } : {}; } catch (_) { return {}; } })() } });
     if (decision.stale) return false;
     if (decision.path.at(-1) === 'kit_first' && bedKit) {
       try { await bedKit.run(bot, task, goal, save, kitActions); }
