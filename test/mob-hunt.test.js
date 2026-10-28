@@ -2508,3 +2508,12 @@ test('none good at the kit question fights with what is carried this once and se
   assert.ok(!isSetAside(goal, 'rung', 'iron_armour') && !isSetAside(goal, 'rung', 'iron_sword') && !isSetAside(goal, 'rung', 'shield'), 'nothing set aside on a none good');
   assert.ok(goal.combatKit?.noneGood, 'the least bad is held, marked as not Jev\'s');
 });
+
+test('no hunt is claimed in the Nether while rods are being banked: the hunt holds then, so the turn would do nothing (note 2425)', () => {
+  const { claim } = require('../src/mob-hunt');
+  const { Vec3 } = require('vec3');
+  const bot = { game: { dimension: 'the_nether' }, entity: { position: new Vec3(0, 70, 0) }, health: 20, food: 20,
+    inventory: { items: () => [{ name: 'blaze_rod', count: 1 }], slots: {} }, entities: { 1: { id: 1, name: 'blaze', position: new Vec3(20, 70, 0), isValid: true } } };
+  const goal = { mobHunt: { entity: 'blaze', item: 'blaze_rod', count: 7 }, rodBank: { at: Date.now(), rods: 1 } };
+  assert.equal(claim(bot, goal), null);
+});

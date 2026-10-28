@@ -5501,6 +5501,10 @@ function noWaySays(state, then) {
 function claim(bot, goal = {}) {
   const state = goal.mobHunt;
   if (!state || !bot?.entity?.position || countOf(bot, state.item) >= huntTarget(bot, goal)) return null;
+  // The rods being banked hold the hunt (huntObserved), so no claim is made meanwhile (note 2425): full-28 (25589,
+  // 2026-10-28 20:22 to 20:25Z), walking its rod out to the portal, gave the hunt the turn fourteen times in a row for a
+  // blaze 21.6 blocks off and out of sight; the hunt did nothing each time, and the walk to the portal stood still.
+  if (/nether/.test(String(bot.game?.dimension || '')) && require('./rod-bank').pending(goal)) return null;
   const handler = handlers[state.entity] || {};
   if (!canBegin(bot, handler)) return null;
   const near = Object.values(bot.entities || {}).filter(e => e.name === state.entity && valid(bot, e) && e.position.distanceTo(bot.entity.position) < 24)
