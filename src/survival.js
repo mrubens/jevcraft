@@ -11046,6 +11046,19 @@ class Survival {
       if ((bot.entity?.metadata?.[0] & 1) && !vitals.inFire(bot) && !require('./body').held(bot, 'fire')) {
         let acted = false;
         const ways = vitals.fireWays(bot, task, step => { acted = true; this.report(goal, save, { ...step, health: bot.health }); });
+        // The mobs biting the burning body run from, as the encounter's retreat (note 2346): the burning's ways were
+        // the fire's alone and a strike at the one mob at arm's length. full-13 (25587, 2026-10-28 05:35:22 to 36Z),
+        // in full iron at y -46 with four zombies on it, touched lava once and was asked the fire three times: struck
+        // at one zombie twice and ate twice, 20 health to none in fourteen seconds, fourteen zombie blows and three
+        // of the fire; no way it was offered left them.
+        try {
+          const blows = vitals.blowsAtBody(bot), danger = this.encounterDanger();
+          if (blows?.mobs?.length && danger.length) {
+            const n = blows.mobs.length, burnLeft = Math.round(require('./body').lasts(bot, 'fire', { inFire: false }).fireLeftSeconds || 0);
+            ways.run_from_them = { description: `Run from the ${n === 1 ? blows.mobs[0].name.replaceAll('_', ' ') : `${n} mobs`} at arm's length, as the encounter's retreat: at a sprint to footing out of their reach by a route that passes none of them, two blocks from any lava first; the fire burns on meanwhile, about ${burnLeft} second${burnLeft === 1 ? '' : 's'} of it left, a health a second, and what is in reach strikes as the bot turns to go. The burning is asked of again once there.`,
+              run: async () => { acted = true; this.report(goal, save, { action: 'run_from_burning', mobs: n, health: bot.health }); return !!await this.runAway(task, goal, save, danger); } };
+          }
+        } catch (err) { if (err?.name === 'Cancelled') throw err; }
         const r = await require('./body').answer(bot, task, 'fire', ways, { client: this.client, goal, save, facts: { inFire: false } });
         if (acted || (r.acted && r.key !== 'burn_out')) { onStep(goal); return true; }
       }
