@@ -7694,6 +7694,11 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
     const left = bot.blockAt(bottom.offset(0, 1, 0))?.name;
     return /fire/.test(left || '') ? `the frame at (${bottom.x}, ${bottom.y + 1}, ${bottom.z}) lit to ${left.replace('_', ' ')} and no portal: the frame is not whole or its inside not empty; the fire burns there` : `no portal in the frame at (${bottom.x}, ${bottom.y + 1}, ${bottom.z}) after lighting (${left || 'nothing'} there)`;
   });
+  // Remembered the moment it is lit (note 2429): the bot standing in its doorway is carried through within seconds, and
+  // what is seen of it later is on the other side. full-31 (25587, 2026-10-28 19:44Z) lit its cast portal at (-98, 44,
+  // -52), was taken through as it cleared the walls, and after a death in the Nether stood 270 blocks from it in the
+  // Overworld knowing only the Nether end, and planned another portal from nothing.
+  { const sheet = bottom.offset(0, 1, 0); const where = dimension(bot); if (['nether', 'overworld'].includes(where)) { if (where === 'overworld') goal.portal = { x: sheet.x, y: sheet.y, z: sheet.z }; rememberPortal(goal, save, { x: sheet.x, y: sheet.y, z: sheet.z }, where); } }
   // The cast's walls in the doorway, before and behind the opening, come out
   // once it is lit: they boxed mid-242-m's portal in (2026-09-27).
   const doorway = cells.interior.flatMap(q => [1, -1].map(d => q.plus(across(axis).scaled(d))));
