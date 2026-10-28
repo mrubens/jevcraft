@@ -362,10 +362,12 @@ function surveyMemo(goal, here) {
 // height), and a trip after it back and forth from `back` at the bot's
 // measured pace. Asked as lava_way once (note 763b); the portal plan prices
 // its routes with it (note 782).
-function wayCosts(here, at, back, { deep = false } = {}) {
+function wayCosts(here, at, back, { deep = false, stairSeconds = null } = {}) {
   const L = require('./levels');
   const across = Math.round(Math.hypot(at.x - here.x, at.z - here.z)), dy = Math.round(at.y - here.y), rise = Math.abs(dy);
-  const there = deep ? Math.max(across, rise) * 3 : Math.max(across, rise) * 3;
+  // At this run's measured pace where there is one (tunneling.js stairSecondsMeasured, note 2376), else three a stair.
+  const perStair = Number.isFinite(stairSeconds) && stairSeconds > 0 ? stairSeconds : 3;
+  const there = Math.max(across, rise) * perStair;
   const from = back || here;
   const tripAcross = Math.round(Math.hypot(at.x - from.x, at.z - from.z)), tripRise = Math.abs(Math.round(at.y - from.y));
   const trip = L.walkSeconds(tripAcross * 2) + (tripRise > 8 ? L.upSeconds(tripRise) + L.downSeconds(tripRise) : 0);

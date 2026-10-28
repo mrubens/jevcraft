@@ -6417,7 +6417,7 @@ function planRoutes(bot, goal, { method, frame, placed, sources, here, ingots, r
   // and each trip after.
   const fromSite = (v, site, atFrame = false) => {
     const at = v.kind === 'deep' && atFrame ? v.fromFrame : v.at;
-    if (v.how === 'dig') { const c = wayCosts(site, at, site); return { first: c.there, trip: c.trip, digs: c.digs }; }
+    if (v.how === 'dig') { const c = wayCosts(site, at, site, { stairSeconds: require('./tunneling').stairSecondsMeasured(goal) }); return { first: c.there, trip: c.trip, digs: c.digs }; }
     const t = fetchTrip(site, { at, distance: d3(site, at) }, isHeld(v) && method?.kind === 'cast' && !method.near ? method : null);
     return { first: surfaceSecs(v), trip: t.seconds, digs: 0, measured: t.made ? t : null };
   };
@@ -6433,7 +6433,7 @@ function planRoutes(bot, goal, { method, frame, placed, sources, here, ingots, r
   const bySurface = v => v.kind === 'pool' && v.how === 'walk' && depth >= L.UNDER && Math.hypot(v.at.x - here.x, v.at.z - here.z) > SURFACE_WALK_FAR
     ? { up: depth, down: Math.max(0, Math.round(here.y + depth - v.at.y)) } : null;
   const surfaceSecs = v => { const b = bySurface(v); return b ? L.upSeconds(b.up) + L.downSeconds(b.down) : 0; };
-  const reachLava = v => v.how === 'dig' ? { seconds: wayCosts(here, v.at, null).there, digs: wayCosts(here, v.at, null).digs } : { seconds: walkTo(here, v.at) + surfaceSecs(v), digs: 0 };
+  const reachLava = v => v.how === 'dig' ? { seconds: wayCosts(here, v.at, null, { stairSeconds: require('./tunneling').stairSecondsMeasured(goal) }).there, digs: wayCosts(here, v.at, null).digs } : { seconds: walkTo(here, v.at) + surfaceSecs(v), digs: 0 };
   const routes = {};
   const add = (key, site, v, price, extra = {}) => { routes[key] = { key, site, lava: v, price, ...extra }; };
   for (const v of lavas) {
@@ -6730,7 +6730,7 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   const askedBecause = due && due.kind !== 'none' ? due.why : null;
   const decision = await decide('portal_plan', { client, bot, task, goal, save, tree,
     context: { current, oldOrder: ordered[0]?.key || 'build_new', leaveSite: !!siteFailed && (siteFailed.siteFailures || 0) >= 10 },
-    state: { dimension: String(bot.game?.dimension || ''), obsidian, diamonds, diamondPickaxe, flintAndSteel: countOf(bot, 'flint_and_steel'), fireCharges: countOf(bot, 'fire_charge'),
+    state: { dimension: String(bot.game?.dimension || ''), ...(() => { const sp = require('./tunneling').stairSecondsMeasured(goal); return sp ? { stairPace: `this run's staircases have gone about ${sp} seconds a stair (${goal.stairPace.stairs} stairs measured, stalls, backing off and retries in it); each route dug to lava is priced at that pace, a stair a block of depth or of the way across, whichever is more` } : {}; })(), obsidian, diamonds, diamondPickaxe, flintAndSteel: countOf(bot, 'flint_and_steel'), fireCharges: countOf(bot, 'fire_charge'),
       buckets: countOf(bot, 'bucket'), waterBuckets: countOf(bot, 'water_bucket'), lavaBuckets: countOf(bot, 'lava_bucket'), ironIngots: ingots, rawIron: raw,
       ...(askedBecause ? { askedAgainBecause: askedBecause } : {}),
       ...(current ? { routeHeld: current, minutesOnRoute: Math.round((method.activeMs || 0) / 60000), minutesStated: method.minutes ?? null } : {}),

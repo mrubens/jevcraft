@@ -527,6 +527,28 @@ class WaysResting extends Error {
   constructor(message, until) { super(message); this.name = 'WaysResting'; this.until = until; }
 }
 
+// This run's pace on stairs (note 2376), stalls, backs-off and retries in it: each stair begun is noted, and a stair
+// that moved the bot counts one made; the time between (each gap at most two minutes) over the stairs made. The plan
+// priced a stair at three seconds; full-17 (25587, 2026-10-28) spent 20 minutes tunnelling and 87 on the way to the
+// Nether, full-19 20 of 56, each dig toward deep lava said as 'about 2 minutes'.
+const STAIR_GAP_MS = 120000, STAIR_KEEP = 200;
+function noteStairPace(goal, here, now = Date.now()) {
+  const pace = goal.stairPace ||= { ms: 0, stairs: 0, last: null };
+  const l = pace.last;
+  if (l) {
+    const gap = Math.min(STAIR_GAP_MS, Math.max(0, now - l.at));
+    const moved = Math.hypot(here.x - l.x, here.y - l.y, here.z - l.z);
+    // More than four blocks on: another staircase begun elsewhere, its gap not a stair's.
+    if (moved > 4) { /* nothing counted */ }
+    else if (moved >= 0.8) { pace.ms += gap; pace.stairs++; }
+    else pace.ms += gap;
+    if (pace.stairs > STAIR_KEEP) { pace.ms *= STAIR_KEEP / pace.stairs; pace.stairs = STAIR_KEEP; }
+  }
+  pace.last = { at: now, x: here.x, y: here.y, z: here.z };
+}
+// Seconds a stair at this run's pace, where twenty stairs or more have been measured; null otherwise.
+const stairSecondsMeasured = goal => { const p = goal?.stairPace; return p && p.stairs >= 20 ? Math.round(p.ms / p.stairs / 100) / 10 : null; };
+
 const RESUME_MS = 15000;
 async function tunnelStep(bot, task, goal, save, target, { dig, navigate, place = null, approach = false, strict = false, within = null, retreat = retreatForTunnel }) {
   if (staircaseResting(goal, target)) throw staircaseStillResting(goal, save, target, 'staircase', area(target));
@@ -534,6 +556,7 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, place 
   if (isSetAside(goal, 'staircase_from', landingKey(from, target))) throw staircaseStillResting(goal, save, target, 'staircase_from', landingKey(from, target));
   goal.tunnel ||= { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {} };
   const tunnel = goal.tunnel;
+  noteStairPace(goal, bot.entity.position);
   // The last pickaxe broken on the way ends the stair once (note 2369), so the question of making another is asked at
   // once and not after minutes dug by hand: full-19 (25591, 2026-10-28 11:16 to 11:28Z) broke its iron pickaxe on a
   // staircase toward its drops and went on by hand, a block every 53 seconds for twelve minutes, the makings of a stone
@@ -921,4 +944,4 @@ function descentTargets(feet, depth) {
   return [24, 48].flatMap(r => unit.map(([dx, dz]) => feet.offset(Math.round(dx * r / Math.hypot(dx, dz)), depth - feet.y, Math.round(dz * r / Math.hypot(dx, dz)))));
 }
 
-module.exports = { stairChoices, restsOnSolid, fallingOver, drainColumn, STAIR_ACROSS, stairFromHere, stairSays, digSeconds, caveUnder, liftStaircaseRest, landingKey, STAIRCASE_REST_MS, descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, restsFromHere, LANDING_NEAR, staircaseWhy, staircaseUntil, restingSays, restingWay, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
+module.exports = { noteStairPace, stairSecondsMeasured, stairChoices, restsOnSolid, fallingOver, drainColumn, STAIR_ACROSS, stairFromHere, stairSays, digSeconds, caveUnder, liftStaircaseRest, landingKey, STAIRCASE_REST_MS, descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, restsFromHere, LANDING_NEAR, staircaseWhy, staircaseUntil, restingSays, restingWay, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
