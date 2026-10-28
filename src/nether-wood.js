@@ -166,13 +166,17 @@ async function reachablePlace(bot, task, places) {
 // 128 blocks.
 async function fetchStemsOffer(bot, task, goal) {
   if (!inNether(bot) || bot.game?.gameMode === 'creative' || !bot.entity?.position) return null;
-  if (isSetAside(goal, 'fetch_stems', 'nether')) return null;
   const wanted = woodWanted(bot);
   if (!wanted.short) return null;
   const here = bot.entity.position;
   const stranded = !wanted.picked && require('./mob-hunt').pickaxeFirst(bot).none;
   const places = typeof bot.findBlocks === 'function' ? stemPlaces(bot, goal) : [];
   const place = places[0] || null;
+  // Gone on without for a while, unless stems are now within eight blocks (note 2360): the answer was to stems
+  // farther off, a crossing away. full-14 (25588, 2026-10-28 08:27 to 08:34Z), no pickaxe, answered without at 08:27
+  // for patches it could not cross to, then stood with warped stems 3 blocks off hand-digging netherrack, offered only
+  // a 248-block trip to the portal or carry_on.
+  if (isSetAside(goal, 'fetch_stems', 'nether') && !(place && place.at.distanceTo(here) <= 8)) return null;
   if (!stranded && !(place && place.at.distanceTo(here) <= NEAR)) return null;
   // Said without the route survey at once, and with it by `describe` (half a
   // second of the pathfinder), for a question about to be asked.
