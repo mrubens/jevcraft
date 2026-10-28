@@ -881,6 +881,21 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
     });
   }
   for (const m of moves) m.from = feet;
+  // In the water with nothing else to aim at, the nearest land is the aim (note 2330): dry footing, a cell with air
+  // over it on solid ground, within 32 blocks and two of the feet's height. The live critic of 2026-10-28 03:32Z saw
+  // 25598 swim nine minutes with four 'Swim one block N/E/S/W ... ends under open sky, in a hole' on offer, none
+  // saying where the land lay, answered none good 0.72 and 0.64; the user had asked for such things to be found.
+  if (!toward?.at && inWater) {
+    let best = null;
+    for (let r = 1; r <= 32 && !best; r++) for (let dx = -r; dx <= r && !best; dx++) for (const dz of [-r, r]) for (const dy of [0, 1, -1, 2]) {
+      for (const [x, z] of [[dx, dz], [dz, dx]]) {
+        const c = feet.offset(x, dy, z);
+        if (!isWater(view.name(c)) && view.name(c) != null && !solid(view.name(c)) && solid(view.name(c.plus(DOWN))) && !isWater(view.name(c.plus(UP))) && !solid(view.name(c.plus(UP)))) { best = c; break; }
+      }
+      if (best) break;
+    }
+    if (best) toward = { at: { x: best.x, y: best.y, z: best.z }, what: `the nearest land, (${best.x}, ${best.y}, ${best.z})` };
+  }
   // Where each move leaves the bot against what the work is there for (a
   // spawner's cage at the fight for its rods, note 700): a move away from it
   // says so. 25585 dug down about thirty times from its box by the cage, each
