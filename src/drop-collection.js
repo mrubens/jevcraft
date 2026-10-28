@@ -191,6 +191,21 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
       if (!gained()) await sleep(Math.max(0, Math.min(100, deadline - Date.now())));
     }
     task.check();
+    // A drop in a gap one high within reach, the passage not opened to it: the block over it dug from where the bot
+    // stands, so the walk straight at it below fits the body (note 2354). full-13 (25587, 2026-10-28 07:00Z) left 2
+    // gold nuggets 3.2 blocks off in the Nether, each in air over netherrack under netherrack, '1 dug' stand and no
+    // walk or passage tried.
+    if (!gained() && allowExcavation) {
+      const eye = bot.entity.position.offset(0, 1.62, 0);
+      for (const drop of nearbyDrops(bot, item, origin, radius, { hostilesOk }).filter(d => d.position.distanceTo(bot.entity.position) <= 4).slice(0, 2)) {
+        task.check(); checkAir(bot);
+        if (!dugStand(bot, drop).length) continue;
+        const over = bot.blockAt(drop.position.floored().offset(0, 1, 0));
+        if (!over || !over.diggable || over.boundingBox !== 'block' || eye.distanceTo(over.position.offset(0.5, 0.5, 0.5)) > 4.5) continue;
+        if ([[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 0, -1]].some(([x, y, z]) => /lava|water/.test(bot.blockAt(over.position.offset(x, y, z))?.name || ''))) continue;
+        try { await require('./skills').digWithTool(bot, over, true); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[drops] the ${over.name} over the ${item.replaceAll('_', ' ')} not dug: ${String(err.message || err).slice(0, 120)}`); }
+      }
+    }
     // A drop within arm's reach that no routed pickup spot could claim: walk
     // straight at it. Pickup is proximity, not a path. Four raw iron lay a
     // block from the bot while the router turned every spot down.
