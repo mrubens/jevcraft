@@ -1360,7 +1360,16 @@ async function upkeepOffers(bot, task, goal, save) {
     const depth = depthOf();
     // With the pickaxes' uses said against the step and the way home, the
     // by-hand rates are in that; said alone, they led (note 543).
-    if (depth >= 8) return ` The bot is about ${depth} blocks under the surface: choosing this now means that climb now (roughly ${require('./surface').climbMinutes(depth)} minutes with a pickaxe), and back down${budget ? '.' : `; with no wood when a pickaxe wears out down here, the climb is by hand: ${require('./hand-dig').handPaceSays(bot)} where the column overhead is open, about ${require('./hand-dig').handPace(bot).minutesUp(depth)} minutes by stairs from here.`}`;
+    // The pickaxes' uses beside the climb's digs (note 2413): full-27 (25591, 2026-10-28 18:20Z), 45 blocks under with
+    // 0.2 logs' worth carried, was told 'roughly 9 minutes with a pickaxe' and chose food and carrying on; its pickaxe
+    // wore out within eight minutes and it dug 96 blocks up by hand, about 45 minutes.
+    const lastUp = (() => { if (depth < 8) return ''; try {
+      const uses = require('./pickaxe-budget').usesCarried(bot), digs = Math.round(depth * 2.5);
+      if (uses >= digs) return ` The pickaxes carried have about ${uses} uses left, and the climb up digs about ${digs} blocks: enough.`;
+      const short = digs - uses, hand = require('./hand-dig').handPace(bot).minutesUp(Math.ceil(short / 2.5));
+      return ` The pickaxes carried have about ${uses} uses left, and the climb up digs about ${digs} blocks: ${uses ? `they wear out about ${Math.ceil(short / 2.5)} blocks of height short of the surface` : 'none is carried'}, and the rest is by hand, about ${hand} minutes more.`;
+    } catch (_) { return ''; } })();
+    if (depth >= 8) return ` The bot is about ${depth} blocks under the surface: choosing this now means that climb now (roughly ${require('./surface').climbMinutes(depth)} minutes with a pickaxe), and back down${lastUp ? `.${lastUp}` : budget ? '.' : `; with no wood when a pickaxe wears out down here, the climb is by hand: ${require('./hand-dig').handPaceSays(bot)} where the column overhead is open, about ${require('./hand-dig').handPace(bot).minutesUp(depth)} minutes by stairs from here.`}`;
     let treeNear = null;
     try { treeNear = typeof bot.findBlocks === 'function' ? find(bot, bot.registry.blocksArray.filter(b => /_log$|_stem$/.test(b.name)).map(b => b.name), 48, 1)[0] : null; } catch (_) { treeNear = null; }
     return treeNear ? ` A tree is ${Math.round(treeNear.distanceTo(bot.entity.position))} blocks away.` : ' No tree is in view from here.';
