@@ -115,6 +115,21 @@ function corpseRun(bot, goal, now = Date.now()) {
       .filter(d => d.at !== goal.corpseRun?.deathAt && now - Date.parse(d.at) < 3 * 3600000 && dim(d.dimension) !== 'end' && !d.lava && d.position && Object.keys(worth(tally(d.worn || []))).length)
       .map(d => ({ deathAt: d.at, position: { ...d.position }, dimension: dim(d.dimension), items: worth(tally(d.worn || [])), more: true, passes: 0, stuck: 0, status: 'open', respawn: null })).slice(-3);
   }
+  // A death before the last that never became a walk back (it died again before one was asked) keeps its drops on the
+  // list too (note 2398): what it wore and what its pockets held. Scanned once a death, from the last scanned (the
+  // first scan looks back half an hour), so runs closed and dropped from the list are not taken up again.
+  {
+    const tally = names => names.reduce((o, n) => ({ ...o, [n]: (o[n] || 0) + 1 }), {});
+    const from = goal.corpseRunsScannedTo || new Date(now - 30 * 60000).toISOString();
+    for (const d of (survival.deaths || []).slice(0, -1)) {
+      if (d.at <= from || d.at === goal.corpseRun?.deathAt || goal.corpseRunsEarlier.some(r => r.deathAt === d.at)) continue;
+      if (now - Date.parse(d.at) >= 3 * 3600000 || dim(d.dimension) === 'end' || d.lava || !d.position) continue;
+      const both = tally(d.worn || []); for (const [n, c] of Object.entries(d.carried || {})) both[n] = (both[n] || 0) + c;
+      const items = worth(both);
+      if (Object.keys(items).length) goal.corpseRunsEarlier.push({ deathAt: d.at, position: { ...d.position }, dimension: dim(d.dimension), items, more: !d.carried, passes: 0, stuck: 0, status: 'open', respawn: null });
+    }
+    goal.corpseRunsScannedTo = (survival.deaths || []).at(-2)?.at || goal.corpseRunsScannedTo || null;
+  }
   if ((goal.corpseRunFor || goal.corpseRun?.deathAt) !== death.at) {
     if (recovery?.at !== death.at || recovery.status === 'pending') return null;
     const old = goal.corpseRun;

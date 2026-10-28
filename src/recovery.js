@@ -70,7 +70,13 @@ function recordDeath(bot, state, now = Date.now()) {
   if (state.home?.bed?.carriedAt) { delete state.home.bed.carriedAt; delete state.home.bed.claimedAt; }
   // A kit lost (note 2273): the iron worn at the death, kept until as much is worn again, for the measured time back.
   { const iron = (worn || []).filter(n => /^(iron|diamond|netherite)_(helmet|chestplate|leggings|boots)$/.test(n)).length; if (iron >= 2 && !state.kitLost) state.kitLost = { at: new Date(now).toISOString(), pieces: iron }; }
+  // What the pockets held, the worth-while part, kept with each death (note 2398): the recovery below holds only the
+  // last death's, and full-19 (25591, 2026-10-28 16:41Z) died in the Nether in full iron and again in the Overworld
+  // three minutes after, before its walk back for the first was ever made; the first death's kit was on no list.
+  let carried = null;
+  try { carried = require('./corpse-run').worth(recent ? { ...observed.items } : stock(bot)); } catch (_) { carried = null; }
   state.deaths = [...(state.deaths || []), { at: new Date(now).toISOString(), position: { ...bot.entity.position }, dimension: bot.game.dimension, about, worn,
+    ...(carried && Object.keys(carried).length ? { carried } : {}),
     food: bot.food, ...(cause ? { cause } : {}), ...(lastChoice ? { lastChoice } : {}), ...(lava ? { lava } : {}) }].slice(-10);
   // No stance or answer outlives the body it was chosen for (note 778b):
   // 25598 (mid-241-bs, 04:58:25Z) respawned with the fight held from
