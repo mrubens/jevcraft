@@ -51,3 +51,13 @@ test('with no room in the pockets for a drop worth carrying, room is made before
     assert.deepEqual(calls, [], 'not for dirt');
   } finally { Object.assign(tidy, was); }
 });
+
+test('the walk back takes a spot beside a hostile; other pickups still pass it over (note 2415)', () => {
+  const { pickupPositions } = require('../src/drop-collection');
+  const zombie = { name: 'zombie', type: 'hostile', position: new Vec3(1.5, 64, 0.5), isValid: true };
+  const bot = { entity: { position: new Vec3(5.5, 64, 0.5) }, entities: { 1: zombie }, game: { dimension: 'overworld' },
+    blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', position: p, boundingBox: p.y < 64 ? 'block' : 'empty', shapes: p.y < 64 ? [[0, 0, 0, 1, 1, 1]] : [] }) };
+  const drop = { position: new Vec3(0.5, 64, 0.5) };
+  assert(pickupPositions(bot, drop, { hostilesOk: true }).length > 0, 'the walk back');
+  assert.equal(pickupPositions(bot, drop).length, 0, 'not by default');
+});

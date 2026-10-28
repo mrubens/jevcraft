@@ -46,7 +46,10 @@ async function swimTo(bot, task, drop, { until, done = () => false }) {
   }
 }
 
-function pickupPositions(bot, drop) {
+// `hostilesOk`: the walk back's own drops (note 2287) are taken beside the mob about them; a spot near a hostile is
+// not passed over there (note 2415): full-26 (25586, 2026-10-28 18:52Z) stood 5 to 11 blocks from four of its drops on
+// crimson nylium, hoglins about, and every one was '0 spots ... 0 walked to', the hostile filter here unsaid.
+function pickupPositions(bot, drop, { hostilesOk = false } = {}) {
   const positions = [], p = drop.position.floored();
   for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) {
     for (let dy = 0; dy >= -2; dy--) {
@@ -56,7 +59,7 @@ function pickupPositions(bot, drop) {
       const standing = new Vec3(p.x + dx + .5, p.y + dy + height, p.z + dz + .5);
       if (Math.hypot(standing.x - drop.position.x, standing.z - drop.position.z) > 1.25 ||
           drop.position.y < standing.y - .1 || drop.position.y > standing.y + 1.8) continue;
-      if (dryStanding(bot, standing) && safeFromHostiles(bot, standing)) positions.push(standing);
+      if (dryStanding(bot, standing) && (hostilesOk || safeFromHostiles(bot, standing))) positions.push(standing);
     }
   }
   return positions.sort((a, b) => a.distanceTo(drop.position) - b.distanceTo(drop.position));
@@ -188,7 +191,7 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
         continue;
       }
       for (const drop of drops) {
-        for (const point of pickupPositions(bot, drop).slice(0, 5)) {
+        for (const point of pickupPositions(bot, drop, { hostilesOk }).slice(0, 5)) {
           task.check();
           if (Date.now() >= deadline || gained()) break;
           const attempt = `${key(bot, drop)}:${point}`;
@@ -226,7 +229,7 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
         if (gained()) break;
       }
       if (!gained() && allowExcavation && !passageTried) {
-        const targets = drops.flatMap(drop => { const at = pickupPositions(bot, drop); return at.length ? at : dugStand(bot, drop); });
+        const targets = drops.flatMap(drop => { const at = pickupPositions(bot, drop, { hostilesOk }); return at.length ? at : dugStand(bot, drop); });
         if (targets.length) {
           passageTried = true;
           const pickupPolicy = { canDig: movement.canDig, allowedPosition: movement.allowedPosition, ...Object.fromEntries(Object.keys(previous).map(k => [k, movement[k]])) };
@@ -293,7 +296,7 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
         const nearest = Math.min(...lyingNow.map(d => d.position.distanceTo(bot.entity.position)));
         // Where each lies, for a pickup with no spot of any kind (note 2349): full-16 (25591, 2026-10-28 06:2xZ) left
         // raw iron 1.6 blocks off with every count at 0, after 2347, and the line said nothing of where it lay.
-        const cells = lyingNow.slice(0, 3).map(d => { const c = d.position.floored(); return `(${c.x}, ${c.y}, ${c.z}) in ${bot.blockAt(c)?.name || '?'} over ${bot.blockAt(c.offset(0, -1, 0))?.name || '?'} under ${bot.blockAt(c.offset(0, 1, 0))?.name || '?'}, ${pickupPositions(bot, d).length} spots, ${dugStand(bot, d).length} dug`; }).join('; ');
+        const cells = lyingNow.slice(0, 3).map(d => { const c = d.position.floored(); return `(${c.x}, ${c.y}, ${c.z}) in ${bot.blockAt(c)?.name || '?'} over ${bot.blockAt(c.offset(0, -1, 0))?.name || '?'} under ${bot.blockAt(c.offset(0, 1, 0))?.name || '?'}, ${pickupPositions(bot, d, { hostilesOk }).length} spots, ${dugStand(bot, d).length} dug`; }).join('; ');
         console.log(`[drops] lying at ${cells}; the bot at ${bot.entity.position.floored()} ${bot.entity.onGround ? 'on the ground' : 'in the air'}`);
         console.log(`[drops] ${item.replaceAll('_', ' ')} not taken: ${lyingNow.length} lying within ${radius} of the search's origin, the nearest ${Math.round(nearest * 10) / 10} from the bot; spots passed over: ${why.hostile} by a hostile about, ${why.bounds} out of bounds or on damaging ground, ${why.route} with no short clear route, ${why.moved} the drop moving; ${why.walked} walked to without the pickup`);
       }
