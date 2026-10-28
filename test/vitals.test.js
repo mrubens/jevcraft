@@ -693,6 +693,16 @@ test('a dig the server never finishes is given up after three times what it shou
   assert(Date.now() - started < 4000, 'given up in about 2.3 seconds, not waited on');
 });
 
+test('a dig whose stop does nothing (the finish already sent, the world changed) still ends, not waited on forever (note 2422)', async () => {
+  // full-31 (25587, 2026-10-28 19:44Z): a cast wall dug as the portal took the bot to the Nether; eight minutes waited.
+  const bot = { oxygenLevel: 20, entity: { position: new Vec3(0, 64, 0), onGround: true }, heldItem: null, blockAt: () => ({ name: 'air' }),
+    dig: () => new Promise(() => {}), stopDigging: () => {} };
+  const block = { name: 'cobblestone', position: new Vec3(1, 64, 0), digTime: () => 100 };
+  const started = Date.now();
+  await assert.rejects(digWithAirGuard(bot, new Task('dig'), block), { name: 'DigStalled' });
+  assert(Date.now() - started < 6000, 'ended about 1.5 seconds after it was given up');
+});
+
 test('told by the server it is freezing, the bot leaves the snow though the blocks did not show it in any', async () => {
   // mid-202-f froze to death at y 121, the way out of the snow tried once (note 308).
   const { maintainVitals } = require('../src/vitals');

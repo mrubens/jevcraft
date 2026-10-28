@@ -94,16 +94,22 @@ function digBound(bot, block) {
 }
 async function digWithAirGuard(bot, task, block) {
   task.check(); checkAir(bot);
-  let interrupted;
+  let interrupted, abort, abortAt = null;
+  // A dig stopped is a dig ended even when the library's never settles (note 2422): its finish is sent when the dig
+  // time is up and the task then waits on the block's update, and stopDigging does nothing once the finish was sent.
+  // full-31 (25587, 2026-10-28 19:44 to 19:52Z) was digging a cast wall out of its portal frame when the portal took
+  // it to the Nether; the update never came, and the work waited eight minutes, connected, until the bot was killed.
+  const aborted = new Promise((_, reject) => { abort = reject; }); aborted.catch(() => {});
   const started = Date.now(), bound = typeof block?.digTime === 'function' ? digBound(bot, block) : null;
   const watcher = setInterval(() => {
+    if (interrupted && abortAt !== null && Date.now() >= abortAt) { abort(interrupted); return; }
     try {
       task.check(); checkAir(bot);
       if (bound && Date.now() - started > bound) throw Object.assign(new Error(`The ${block.name.replaceAll('_', ' ')} did not break in ${Math.round((Date.now() - started) / 1000)} seconds, ${DIG_SLACK} times what the dig takes: given up`), { name: 'DigStalled' });
     }
-    catch (err) { interrupted ||= err; bot.stopDigging(); }
+    catch (err) { interrupted ||= err; abortAt ??= Date.now() + 1500; bot.stopDigging(); }
   }, 100);
-  try { await require('./skills').digWithTool(bot, block); }
+  try { await Promise.race([require('./skills').digWithTool(bot, block), aborted]); }
   catch (err) { throw interrupted || err; }
   finally { clearInterval(watcher); }
   if (interrupted) throw interrupted;
