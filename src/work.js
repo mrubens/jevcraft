@@ -5561,6 +5561,26 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
       }
     }
   }
+  // A portal well below, a way down dug before near it (a staircase's top at the surface, remembered for the way back
+  // up): its top first, then down its own steps (note 2406). full-22 (25590, 2026-10-28 18:00Z), its portal at (-102,
+  // 29, -246) 35 blocks under it, had five walks end 'no route', took a boat for it, and paced the surface, the top of
+  // the stairs it had come up by 17 blocks from the portal; the user, watching: 'Is there not already a previous staircase'.
+  if (where === 'overworld' && p.y < bot.entity.position.y - 8 && !isSetAside(goal, 'portal_stairs', pos(p))) {
+    const top = (goal.surfaceEntrances || []).filter(e => e.dimension === String(bot.game?.dimension || '') && e.y > p.y + 4 && Math.hypot(e.x - p.x, e.z - p.z) <= 32)
+      .sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z))[0];
+    if (top) {
+      goal.step = { action: 'return_to_portal', portal: { x: p.x, y: p.y, z: p.z }, via: 'stairs dug before', top: { x: top.x, y: top.y, z: top.z } }; save();
+      try {
+        if (bot.entity.position.distanceTo(new Vec3(top.x, top.y, top.z)) > 3) await navigate(bot, task, new goals.GoalNear(top.x, top.y, top.z, 2), { timeoutMs: 60000, stallMs: 8000 });
+        await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3), { timeoutMs: 90000, stallMs: 10000 });
+        console.log(`[portal] down the stairs dug before, from (${top.x}, ${top.y}, ${top.z}) to the portal at (${p.x}, ${p.y}, ${p.z})`);
+        return true;
+      } catch (err) {
+        task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+        setAside(goal, 'portal_stairs', pos(p), `down the stairs dug before from (${top.x}, ${top.y}, ${top.z}): ${String(err.message || err).slice(0, 120)}`, 5 * 60000); save();
+      }
+    }
+  }
   if (distance <= 48) {
     try { await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3), { timeoutMs: 60000, stallMs: 8000, passing: where === 'nether' }); return true; }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; walk = `the walk there failed (${String(err.message || err).slice(0, 80)})`; }
