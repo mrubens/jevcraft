@@ -124,8 +124,24 @@ async function barterStep(bot, task, goal, save, actions = {}) {
           const ore = bot.findBlocks({ matching: id, maxDistance: 32, count: 16 }).filter(p => !tried.has(`${p}`)).sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
           if (!ore) break;
           tried.add(`${ore}`);
+          // A route search that ran out of time is not a way found closed (note 2439, as the walk back's 2397): once more with
+          // four times the time to think, then straight at the ore through the netherrack. full-36 (25590, 2026-10-28
+          // 22:0x to 22:2xZ) and full-28 (25589) dug 0 nether gold ore go after go, their walks to the ore ending 'Took to
+          // long to decide path to goal!' 46 times.
+          let walkErr = null;
           try { await actions.navigate(bot, task, new goals.GoalNear(ore.x, ore.y, ore.z, 2), { timeoutMs: 15000, stallMs: 5000 }); }
-          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; continue; }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; walkErr = err; }
+          if (walkErr && /Took to long to decide path/i.test(String(walkErr.message || walkErr)) && bot.pathfinder) {
+            const think = bot.pathfinder.thinkTimeout; bot.pathfinder.thinkTimeout = Math.max(20000, 4 * (think || 5000));
+            try { await actions.navigate(bot, task, new goals.GoalNear(ore.x, ore.y, ore.z, 2), { timeoutMs: 30000, stallMs: 6000 }); walkErr = null; }
+            catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; walkErr = err; }
+            finally { if (think === undefined) delete bot.pathfinder.thinkTimeout; else bot.pathfinder.thinkTimeout = think; }
+          }
+          if (walkErr && ore.distanceTo(bot.entity.position) <= 24) {
+            try { await require('./bridging').tunnelStraight(bot, task, ore, { maxSteps: 24, navigate: actions.navigate, down: true }); walkErr = null; }
+            catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; walkErr = err; }
+          }
+          if (walkErr) { console.log(`[barter] the way to the gold ore at ${ore} came to nothing: ${String(walkErr.message || walkErr).slice(0, 100)}`); continue; }
           const block = bot.blockAt(ore);
           if (block?.name !== 'nether_gold_ore' || block.position.distanceTo(bot.entity.position) > 5) continue;
           const pick = bot.inventory.items().find(i => /_pickaxe$/.test(i.name));
