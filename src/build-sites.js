@@ -46,6 +46,12 @@ function reservedForConstruction(goal, p, { from = null, bot = null } = {}) {
   const doorway = p[along] >= portal[along] + 1 && p[along] <= portal[along] + 2 && Math.abs(p[acrossAxis] - portal[acrossAxis]) >= 1 &&
     Math.abs(p[acrossAxis] - portal[acrossAxis]) <= 2 && p.y >= portal.y + 1 && p.y <= portal.y + 3;
   if (doorway) return false;
+  // Below the frame's level, only the floor under its own blocks and the cast's walls, two deep (note 2381): the rock
+  // beside and under that holds nothing of the frame, and a staircase to the frame's own lava begins beside it.
+  // full-22 (25590, 2026-10-28 14:33 to 14:36Z), its frame at (-96, 16, -23) with the cast's walls up, had every
+  // staircase down toward the lava 43 below set aside for 'a building in the way' from a landing beside the frame.
+  const cells = [...(goal.portalFrame.blocks || []), ...(goal.portalFrame.castTemp || [])];
+  if (p.y < portal.y && cells.length) return cells.some(c => c.x === p.x && c.z === p.z && p.y >= c.y - 2 && p.y < c.y);
   return p[along] >= portal[along] - 1 && p[along] <= portal[along] + 4 &&
     Math.abs(p[acrossAxis] - portal[acrossAxis]) <= 2 && p.y >= portal.y - 4;
 }
