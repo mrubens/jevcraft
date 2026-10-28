@@ -40,6 +40,13 @@ function netherStay(bot, goal = null) {
   const points = Math.ceil(minutes / 60 * NETHER_HUNGER_AN_HOUR / 8) * 8;
   return { minutes, points, rodsLeft, pearlsLeft, rodsWanted: wants.rodsWanted, pearlsWanted: wants.pearlsWanted, eyes: wants.target };
 }
+// The stay's two legs, each with its minutes and the food points they spend (note 2322): the rods, then the pearls,
+// the portal the way back for more between them.
+function stayLegs(bot, goal = null) {
+  const { rodsLeft, pearlsLeft } = need(bot, goal);
+  const leg = (minutes) => ({ minutes, points: Math.ceil(minutes / 60 * NETHER_HUNGER_AN_HOUR / 8) * 8 });
+  return { rods: leg(Math.round(STAY_FOR.rods.minutes * rodsLeft / STAY_FOR.rods.count)), pearls: leg(Math.round(STAY_FOR.pearls.minutes * pearlsLeft / STAY_FOR.pearls.count)) };
+}
 function staySays(stay) {
   const left = [stay.rodsLeft ? `${stay.rodsLeft} blaze rod${stay.rodsLeft === 1 ? '' : 's'}` : null, stay.pearlsLeft ? `${stay.pearlsLeft} ender pearl${stay.pearlsLeft === 1 ? '' : 's'}` : null].filter(Boolean);
   const hours = stay.minutes >= 90 ? `about ${Math.round(stay.minutes / 30) / 2} hours` : `about ${stay.minutes} minutes`;
@@ -413,4 +420,4 @@ function kitRungSays(bot, goal, rung) {
   return ` ${rung.carried} food points carried, ${rung.wants} wanted: the Nether stay the goal still needs, about ${stay.minutes} minutes for ${left}, at about ${NETHER_HUNGER_AN_HOUR} hunger an hour. Health comes back only at hunger 18 or more, and in the Nether a hoglin is the only meat. At the crossing ${c.none} of ${c.n} carried no food and ${c.shortOfStay} were short of the stay (note 664).${ways}`;
 }
 
-module.exports = { portalDeathsSays, PORTAL_DEATH_REACH, NETHER_WEAR, netherWearSays, kitBlocksWanted, NETHER_PICK_USES, pickUses, SPARE_PICKAXE_DURABILITY, KIT_PHASES, chestWood, CHEST_PLANKS, kitRungs, kitRungSays, chestRungSays, soundPickaxes, PICKAXES_TAKEN, cauldronSet, stayCauldron, netherStay, staySays, NETHER_HUNGER_AN_HOUR, netherHitSays, kitItems, valuablesAt, kitSummary, netherBlocks, logsCarried, NETHER_HEALTH, NETHER_BLOCKS, SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS };
+module.exports = { stayLegs, portalDeathsSays, PORTAL_DEATH_REACH, NETHER_WEAR, netherWearSays, kitBlocksWanted, NETHER_PICK_USES, pickUses, SPARE_PICKAXE_DURABILITY, KIT_PHASES, chestWood, CHEST_PLANKS, kitRungs, kitRungSays, chestRungSays, soundPickaxes, PICKAXES_TAKEN, cauldronSet, stayCauldron, netherStay, staySays, NETHER_HUNGER_AN_HOUR, netherHitSays, kitItems, valuablesAt, kitSummary, netherBlocks, logsCarried, NETHER_HEALTH, NETHER_BLOCKS, SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS };
