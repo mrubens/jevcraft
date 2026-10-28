@@ -1747,6 +1747,15 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     // comes out at: the rule went back at hunger seventeen unasked, and
     // mid-202-o-nether-3 came out into the night and was 330 blocks from
     // its portal by the morning's food search (note 495).
+    // Gone on in the Nether without food and now under the fight's floor, nothing to eat and no regeneration: the wait
+    // below brings nothing back, so going back is asked again, with the health as it is now, at most once in five minutes
+    // (note 2442). full-29 (25592, 2026-10-28 23:38Z), its 7 rods banked and 9 pearls in a chest, stood at 7.9 health
+    // on its span over the lava 'recover_before_combat' for 25 seconds, the stall then walked it off the span's end into
+    // the lava, keep_on answered at full health long before.
+    if (isSetAside(goal, 'nether_return', 'food') && dimension(bot) !== 'overworld' && bot.food < 18 && !hasFood(bot) && (bot.health ?? 20) < HUNT_FLOOR && actions.returnOverworld && !(goal.keepOnLowAskedAt > Date.now() - 5 * 60000)) {
+      goal.keepOnLowAskedAt = Date.now(); attemptsFor(goal).clear('nether_return', 'food'); save();
+      console.log(`[hunt] at ${Math.round((bot.health ?? 0) * 10) / 10} health with nothing to eat in the Nether: going back for food is asked again`);
+    }
     let keepOn = isSetAside(goal, 'nether_return', 'food');
     if (bot.food < 18 && !hasFood(bot) && dimension(bot) !== 'overworld' && actions.returnOverworld && !keepOn) {
       const { netherLeaveHeld } = require('./game-progress');
