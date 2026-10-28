@@ -2401,6 +2401,16 @@ test('sealed in with the next item makeable from the pockets, working here is on
   assert.deepEqual(acquired, [['iron_helmet', 1]]);
 });
 
+test('a bare-handed creeper hunt says the creeper goes off before it dies and leaves nothing (note 2423)', () => {
+  const registry = require('prismarine-registry')('26.1');
+  const bot = Object.assign(new EventEmitter(), { registry, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' },
+    entity: { position: new Vec3(0, 64, 0) }, entities: { 1: { id: 1, name: 'creeper', position: new Vec3(8, 64, 0), height: 1.7, isValid: true } },
+    health: 20, food: 20, experience: { level: 0 }, spawnPoint: new Vec3(0, 64, 100), time: { timeOfDay: 15000 },
+    inventory: { items: () => [], slots: [] }, world: { raycast: () => null }, blockAt: () => null });
+  const options = new Survival(bot, {}).huntOptions({});
+  assert.match(options.hunt_creeper.description, /goes off before it dies \(20 swings.*no gunpowder/);
+});
+
 test('a night hunt is offered for each kind of mob about, with its drops, its cost and what a death would drop', () => {
   const registry = require('prismarine-registry')('26.1');
   const item = (name, count, slot) => ({ name, count, slot, type: registry.itemsByName[name].id });

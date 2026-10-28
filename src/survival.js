@@ -10219,8 +10219,12 @@ class Survival {
       // Counted in the figures where it goes off (combat-estimate.js
       // creeperFought, note 529), and said why.
       const blast = name === 'creeper' && one.creeper ? ` ${one.creeper.replace(/^counted: /, '')}` : '';
+      // A creeper that goes off before it dies drops nothing (note 2423): full-34 (25591, 2026-10-28 20:0xZ), bare-handed,
+      // was offered its hunt as 'about 3 seconds and 0 damage' for gunpowder, twenty swings against a 1.5-second fuse.
+      const fought = name === 'creeper' ? require('./combat-estimate').creeperFought({ weapon, distance: kind.nearest.distance }) : null;
+      const noDrop = fought && !fought.diesFirst ? ` Fought this way it goes off before it dies (${fought.swings} swings, about ${fought.killSeconds} seconds, against its fuse): the blast leaves no gunpowder and no experience, so this hunt gets nothing from it.` : '';
       options[`hunt_${name}`] = {
-        description: `Go out and hunt the ${label}${kind.count > 1 ? `s (${kind.count} within thirty-two blocks, nearest ${Math.round(kind.nearest.distance)})` : ` ${Math.round(kind.nearest.distance)} blocks off`} for two minutes, others met on the way fought as they come, and pick up what they drop: ${drops.drops} (${drops.for}), and experience. One ${label} with ${weapon ? `the ${weapon.replaceAll('_', ' ')}` : 'bare hands'}${armour.length ? ` and ${armour.length} piece${armour.length === 1 ? "" : "s"} of armour` : ' and no armour'}: about ${one.seconds} seconds and ${one.damageTaken} damage, from ${Math.round(bot.health)} health. ${risk}${blast}${crowd}${where}${healing}`,
+        description: `Go out and hunt the ${label}${kind.count > 1 ? `s (${kind.count} within thirty-two blocks, nearest ${Math.round(kind.nearest.distance)})` : ` ${Math.round(kind.nearest.distance)} blocks off`} for two minutes, others met on the way fought as they come, and pick up what they drop: ${drops.drops} (${drops.for}), and experience. One ${label} with ${weapon ? `the ${weapon.replaceAll('_', ' ')}` : 'bare hands'}${armour.length ? ` and ${armour.length} piece${armour.length === 1 ? "" : "s"} of armour` : ' and no armour'}: about ${one.seconds} seconds and ${one.damageTaken} damage, from ${Math.round(bot.health)} health. ${risk}${blast}${noDrop}${crowd}${where}${healing}`,
         kind: name };
     }
     return options;
