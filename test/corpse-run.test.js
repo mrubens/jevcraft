@@ -86,6 +86,18 @@ test('a walk each way that gets no nearer: whether the things are given up is as
   assert.equal(goal.corpseRun.status, 'left');
 });
 
+test('a leg whose route search ran out of time is searched once more with four times the time to think (full-25, note 2397)', async () => {
+  const { bot, goal } = world();
+  bot.pathfinder = { thinkTimeout: 5000 };
+  const client = { systemOne: async ({ questions }) => ({ answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'go_back', confidence: 0.9 }])) }) };
+  const task = Object.assign(new Task('run'), { opportunityClient: client });
+  const thinks = [];
+  const move = async () => { thinks.push(bot.pathfinder.thinkTimeout); if (thinks.length === 1) throw new Error('Took to long to decide path to goal!'); };
+  assert.equal(await corpseRunStep(bot, task, goal, () => {}, { move, collect: async () => false }), true);
+  assert.deepEqual(thinks, [5000, 20000]);
+  assert.equal(bot.pathfinder.thinkTimeout, 5000, 'put back');
+});
+
 test('a run the code closed as out of reach, its drops never come near, is open again and asked (note 1179)', async () => {
   const { bot, goal } = world();
   corpseRun(bot, goal);

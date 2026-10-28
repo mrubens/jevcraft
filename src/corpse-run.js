@@ -698,6 +698,17 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     let failed = null;
     try { await move(bot, task, leg, { timeoutMs: LEG_MS, stallMs: 8000, sprint: true, hostilesOk: true, passing: /nether/.test(String(bot.game?.dimension || '')) }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; failed = String(err.message || err).slice(0, 120); }
+    // A route search that ran out of time is not a way found closed: once more with four times the time to think, as
+    // the exploration's walk does (note 767e). full-25 (25587, 2026-10-28 16:27 to 16:29Z), its full kit 89 blocks
+    // off past a lava pocket, had five legs end 'Took to long to decide path to goal!' and was asked to leave them.
+    if (failed && /Took to long to decide path/i.test(failed) && bot.pathfinder && flat(bot.entity.position, spot) > ARRIVE) {
+      const think = bot.pathfinder.thinkTimeout;
+      bot.pathfinder.thinkTimeout = Math.max(20000, 4 * (think || 5000));
+      try { await move(bot, task, leg, { timeoutMs: LEG_MS, stallMs: 8000, sprint: true, hostilesOk: true, passing: /nether/.test(String(bot.game?.dimension || '')) }); failed = null; }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; failed = String(err.message || err).slice(0, 120); }
+      finally { if (think === undefined) delete bot.pathfinder.thinkTimeout; else bot.pathfinder.thinkTimeout = think; }
+      console.log(`[corpse run] the leg searched again with more time to think: ${failed ? `still ${failed}` : 'walked'}`);
+    }
     let after = flat(bot.entity.position, spot);
     // A walk that got no nearer, the drops within a leg: dug and bridged
     // straight at them as the tunnel home goes (bridging.js), the pickaxe and
