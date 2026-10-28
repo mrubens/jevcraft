@@ -4023,6 +4023,17 @@ async function smelt(bot, task, step, goal, save = () => {}) {
           let back = null;
           try { back = await approachWorkstation(bot, task, 'furnace', [block.position]); }
           catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; back = null; }
+          // The way back dug where the walk alone finds none (note 2341): the work meanwhile went into the rock, and the
+          // approach (workstation-access.js) neither digs, towers nor lays a block. full-14 (25588, 2026-10-28
+          // 05:05:32Z) left 3 raw iron cooking to mine the iron nearby and said 'I can't get back to the furnace with
+          // the raw iron from here'; full-11 left 7 mutton the same way at 19:31Z. The user: 'Feels like something
+          // rotten with the pathfinding'.
+          if (!back) {
+            const fp = block.position, from = bot.entity.position.floored();
+            try { await navigate(bot, task, new goals.GoalNear(fp.x, fp.y, fp.z, 2), { timeoutMs: 45000, stallMs: 8000 }); back = await approachWorkstation(bot, task, 'furnace', [fp]); }
+            catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; back = null; }
+            console.log(`[cook] back to the furnace at ${fp} from ${from} with digging allowed: ${back ? 'there' : 'not there either'}`);
+          }
           // No way back from where the work led: the batch is left where it
           // is, asked about at upkeep (fetch_batch or leave_batch, note 775),
           // not thrown as a failure the next step walks into again (25590,
