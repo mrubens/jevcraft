@@ -125,7 +125,11 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
       !damagingTerrain.has(bot.blockAt(supportCell(p))?.name) && (hostilesOk || safeFromHostiles(bot, p));
   };
   Object.assign(movement, { allow1by1towers: false, scafoldingBlocks: [], allowParkour: false, ...(hostilesOk ? { allowSprinting: true, hostilesOk: true } : {}),
-    maxDropDown: Math.min(previous.maxDropDown ?? 2, 2), allowedPosition: allowed });
+    // Three down: a fall of three blocks hurts nothing (the game counts the fall past three), and drops lie as often
+    // a ledge below the bot as beside it (note 2371). full-14 (25588, 2026-10-28 11:5xZ) stood 3 above its own kit on a
+    // fortress's bricks, a diamond, its shield and an iron pickaxe 3 to 4 blocks off, and every spot was 'no short
+    // clear route' at a drop of two.
+    maxDropDown: Math.min(previous.maxDropDown ?? 3, 3), allowedPosition: allowed });
   const attempted = new Set();
   // Why a pickup spot was passed over, counted for the line said when nothing was taken (note 2285).
   const why = { hostile: 0, bounds: 0, route: 0, moved: 0, walked: 0 };
