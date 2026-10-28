@@ -12791,6 +12791,10 @@ class Survival {
       const nr = require('./night-record');
       for (const k of Object.keys(nr.BARE_NIGHT.by)) if (tree[k] && typeof tree[k].description === 'string') tree[k].description += nr.bareNightSays(bot, k);
     }
+    // The mobs that reach a body standing still, said for every way here (note 2332): full-13 (25587, 2026-10-28
+    // 03:44:03 to 13Z) woke at its bed among zombies, chose rest_to_heal at 17 with one at it, and died twice in ten
+    // seconds; the meal's own question says it since note 2331.
+    if (tree.rest_to_heal) Object.assign(state, require('./vitals').mealThreatSays(bot, { what: 'Resting here or eating is standing still, about two seconds a meal and four a health point', key: 'inReachStandingStill' }));
     const decision = await this.decide(task, goal, save, { id: 'survival_priority', state, tree, interrupt: () => checkThreats(bot),
       isFresh: () => bot.health === state.health && bot.food === state.food && !immediateThreat(bot) });
     onStep(goal);

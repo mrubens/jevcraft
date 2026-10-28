@@ -1671,7 +1671,7 @@ function bodyTask(task) {
 // magma cube at it, chose eat_rotten_flesh and took two blows, 11.2 to none; the live critic's report of 03:32Z had
 // 25599 eat_first with a piglin 7.8 blocks off, 12 to none. The user: 'Jev just did a horrible job fighting the magma
 // cube'.
-function mealThreatSays(bot) {
+function mealThreatSays(bot, { what = 'The meal is about two seconds standing still', key = 'inReachDuringMeal' } = {}) {
   try {
     const { threats } = require('./danger'), { blowOf } = require('./arbiter'), ce = require('./combat-estimate');
     const close = threats(bot, 8).filter(t => t.entity && blowOf(bot, t) > 0).map(t => {
@@ -1681,7 +1681,7 @@ function mealThreatSays(bot) {
     if (!close.length) return {};
     const hp = bot.health ?? 20, worst = Math.max(...close.map(x => x.blow));
     const list = close.slice(0, 3).map(x => `a ${x.t.entity.name.replaceAll('_', ' ')} ${Math.round(x.t.distance * 10) / 10} blocks off${x.reachIn < 0.2 ? ', at reach now' : `, at reach in about ${Math.round(x.reachIn * 10) / 10} s`}, about ${Math.round(x.blow * 10) / 10} a blow through what is worn`).join('; ');
-    return { inReachDuringMeal: `The meal is about two seconds standing still, and these reach the body in it: ${list}. At ${Math.round(hp * 10) / 10} health ${Math.max(1, Math.ceil(hp / worst))} such blow${Math.ceil(hp / worst) === 1 ? '' : 's'} end the bot.` };
+    return { [key]: `${what}, and these reach the body in it: ${list}. At ${Math.round(hp * 10) / 10} health ${Math.max(1, Math.ceil(hp / worst))} such blow${Math.ceil(hp / worst) === 1 ? '' : 's'} end the bot.` };
   } catch (_) { return {}; }
 }
 async function maintainVitals(bot, task, onAction = () => {}, { client = null, goal = null, save = () => {}, claimed = null, cookFirst = null } = {}) {

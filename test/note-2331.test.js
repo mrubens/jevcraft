@@ -20,3 +20,9 @@ test('a magma cube at reach: the meal names it, its blow and how many end the bo
   assert.deepEqual(mealThreatSays(world([])), {});
   assert.deepEqual(mealThreatSays(world([{ name: 'magma_cube', position: new Vec3(30, 64, 0) }])), {}, 'far off: nothing said');
 });
+
+test('the same fact for standing still to rest, under its own key (note 2332)', () => {
+  const { mealThreatSays } = require('../src/vitals');
+  const r = mealThreatSays(world([{ name: 'zombie', position: new Vec3(1, 64, 0) }]), { what: 'Resting here or eating is standing still', key: 'inReachStandingStill' });
+  assert.match(r.inReachStandingStill, /^Resting here or eating is standing still, and these reach the body in it: a zombie 1 blocks off, at reach now/);
+});
