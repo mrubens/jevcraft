@@ -2879,6 +2879,11 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
     const mine = nightMineLeftSays(bot, goal);
     if (mine) { tree.climb.description += mine; for (const k of ['stay_below', 'mine_first']) if (tree[k]) tree[k].description += ' The night mine chosen goes on under the rock meanwhile.'; }
     if (client && (cost?.up ?? 0) >= 3 && night.toDawn >= 1) tree.wait_for_dawn = { description: `Wait under the rock here for the dawn, about ${night.toDawn} real minute${night.toDawn === 1 ? '' : 's'}, and make the climb for ${need} then, by day: nothing is gained meanwhile but the night up there gone by; the step waits, and mobs spawn in the dark down here as up there, the rock between.` };
+    // The wait's own record beside the climb's (note 2408): the climb said 'going out for food ... a death within five
+    // minutes 10 times in 49' and the wait said only that mobs spawn down here as up there; full-25 (25587, 2026-10-28
+    // 18:06 to 18:09Z), back to life bare at night, chose the climb at 0.63 and 0.60 and died twice within a minute of
+    // each. By armour, at night with nothing worn: 1.6 deaths an hour on the surface, 0.3 under the rock.
+    if (tree.wait_for_dawn) { try { tree.wait_for_dawn.description += require('./night-record').byArmourSays('underground', bot, night.toDawn); } catch (_) { /* no record */ } }
   }
   let pick = 'climb', asked = false;
   if (tree.stay_below || tree.dig_site || tree.mine_first || tree.dig_to_water || tree.wait_for_dawn) {
