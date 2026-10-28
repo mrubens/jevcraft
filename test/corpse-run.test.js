@@ -38,6 +38,18 @@ test('a far death: the bot walks back, picks up its things and puts the armour b
   assert.equal(await corpseRunStep(bot, new Task('win'), goal, () => {}, { move, collect }), false, 'nothing more to do');
 });
 
+test('the kit taken up on the first pass and nothing on the second is partial, not gone (full-21, note 2400)', async () => {
+  const { bot, goal, give } = world();
+  const move = async () => { bot.entity.position = new Vec3(398, 64, 1); };
+  // The chestplate and the sword come up; the rods are not there.
+  const collect = async (b, task, name) => { if (name !== 'blaze_rod') give(name, 1); return name !== 'blaze_rod'; };
+  await corpseRunStep(bot, new Task('win'), goal, () => {}, { move, collect });
+  await corpseRunStep(bot, new Task('win'), goal, () => {}, { move, collect });
+  assert.equal(goal.corpseRun.status, 'partial');
+  assert.equal(goal.corpseRecord.partial, 1);
+  assert.equal(goal.corpseRecord.gone, undefined);
+});
+
 test('drops by the bed age from the death; after five minutes the run is not made', () => {
   const { bot, goal } = world({ deathAgoMs: 6 * 60000, at: new Vec3(380, 64, 0) });
   assert.equal(corpseRun(bot, goal), null);

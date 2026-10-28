@@ -790,6 +790,9 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     }
   }
   run.passes++;
+  // Counted over every pass (note 2400): full-21 (25589, 2026-10-28 16:46Z) took up its diamond pickaxe, its iron, sword
+  // and shield on the first pass and nothing on the second, and the run was closed 'gone'.
+  run.got = (run.got || 0) + got;
   if (got) await wearRecovered(bot);
   if (!Object.keys(run.items).length) { run.status = 'done'; note(goal, 'done'); bot.chat?.('Got my things back.'); }
   // Not closed while something on the list is still seen lying there and
@@ -798,7 +801,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     if (full) bot.chat?.('My pockets are full and my things are still lying here. Making room.');
   }
   else if (!got || run.passes >= 2) {
-    run.status = got ? 'partial' : 'gone'; note(goal, run.status);
+    run.status = run.got ? 'partial' : 'gone'; note(goal, run.status);
     // What the entity list held at the verdict (note 2116): in 288 deaths this
     // month no walk back got the kit, and the arena drill of 2026-10-26 (die
     // in iron, respawn 40 blocks off, on flat ground and on a pillar) saw every
