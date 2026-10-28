@@ -217,7 +217,7 @@ function tree(bot, goal, r, now = Date.now()) {
     // Bartering wants a piglin in view (note 2407): said, with how many are, so the mining is chosen knowing it.
     const piglinsNow = Object.values(bot.entities || {}).filter(e => e?.name === 'piglin' && e.position && bot.entity?.position && e.position.distanceTo(bot.entity.position) <= 32).length;
     const piglinSays = piglinsNow ? ` ${piglinsNow} piglin${piglinsNow === 1 ? '' : 's'} within 32 blocks now.` : ' No piglin is within 32 blocks now: the gold is mined and carried, and the barter waits until one is in view.';
-    out.mine_gold_for_barter = { description: `Mine the ${g.count} nether gold ore${g.count === 1 ? '' : 's'} within 32 blocks (the nearest ${g.nearest} off) and barter the gold with the piglins: an ore drops two to six nuggets (about four), nine nuggets make an ingot, so about ${ingots} ingot${ingots === 1 ? '' : 's'} from these, and the measured barter is nine ingots a pearl (every throw a roll: a pearl drop is four to eight), about ${pearls} pearl${pearls === 1 ? '' : 's'}' worth; an ore is a few seconds with any pickaxe, the first ingots go on a gold piece if none is worn (four for boots). ${g.piglinsNear ? `${g.piglinsNear} piglin${g.piglinsNear === 1 ? '' : 's'} within 32 now.` : 'No piglin within 32 now: the gold is carried until one is, and the barter is asked then.'} Pearls ${o.pearls}.${rec}${piglinSays}` };
+    out.mine_gold_for_barter = { description: `Mine the ${g.count} nether gold ore${g.count === 1 ? '' : 's'} within 32 blocks (the nearest ${g.nearest} off) and barter the gold with the piglins: an ore drops two to six nuggets (about four), nine nuggets make an ingot, so about ${ingots} ingot${ingots === 1 ? '' : 's'} from these, and the measured barter is nine ingots a pearl (every throw a roll: a pearl drop is four to eight), about ${pearls} pearl${pearls === 1 ? '' : 's'}' worth; an ore is a few seconds with any pickaxe, the first ingots go on a gold piece if none is worn (four for boots). ${g.piglinsNear ? `${g.piglinsNear} piglin${g.piglinsNear === 1 ? '' : 's'} within 32 now.` : 'No piglin within 32 now: the gold is carried until one is, and the barter is asked then.'} Pearls ${o.pearls}.${rec}${piglinSays}${minedSays(goal, bot)}` };
   }
   if (r.bastion) {
     const l = r.bastion.landmark;
@@ -303,4 +303,14 @@ async function ask(bot, task, goal, save, actions = {}, { now = Date.now() } = {
   return pick;
 }
 
+// The mining's own goes from about here in the last twenty minutes (note 2431): full-28 (25589, 2026-10-28 20:47 to
+// 21:07Z) chose mine_gold_for_barter at 0.79 five times, 64 ores within 32 blocks, and each go dug 0, the walk to every
+// ore it tried ending short; it was told none of it.
+function minedSays(goal, bot, now = Date.now()) {
+  const f = bot?.entity?.position;
+  const goes = (goal?.barterMineGoes || []).filter(g => now - g.at < 20 * 60000 && (!f || Math.hypot(g.x - f.x, g.z - f.z) <= 48));
+  if (!goes.length) return '';
+  const dug = goes.reduce((n, g) => n + (g.dug || 0), 0), tried = goes.reduce((n, g) => n + (g.tried || 0), 0);
+  return ` Mined from about here ${goes.length} time${goes.length === 1 ? '' : 's'} in the last twenty minutes: ${dug} ore${dug === 1 ? '' : 's'} dug of ${tried} walked toward${dug ? '' : ', the walk to each ending short of it'}.`;
+}
 module.exports = { endHeld, rodsAgain, routes, held, askAgainBecause, orderStage, stageFor, overlap, tree, ask, HOLD_MS, NONE_GOOD_MS, ENDERMAN_REACH, HUNT_SIGHT, FOREST_REACH, KIND };

@@ -136,6 +136,8 @@ async function barterStep(bot, task, goal, save, actions = {}) {
         }
       } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
       console.log(`[barter] dug ${dug} nether gold ore: ${nuggets(bot)} nuggets and ${ingots(bot)} ingots carried`);
+      // Each go kept for the option's words (note 2431): what the mining came to, said when it is offered again.
+      { const f = bot.entity.position; (goal.barterMineGoes ||= []).push({ at: Date.now(), dug, tried: tried.size, x: Math.round(f.x), z: Math.round(f.z) }); goal.barterMineGoes = goal.barterMineGoes.slice(-10); save(); }
       if (nuggets(bot) >= 9) {
         goal.step = { action: 'barter_make_ingots', nuggets: nuggets(bot) }; save();
         try { await actions.acquireStep(bot, task, 'gold_ingot', ingots(bot) + Math.floor(nuggets(bot) / 9), goal, save); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
