@@ -12743,7 +12743,12 @@ class Survival {
     // 25589 (2026-09-30 23:57:55 to 00:00:11Z) chose search_food five times
     // standing at (205, 36, 416), each run going nowhere.
     let heldLeaf = planHeld?.choice === 'food' && planHeld.key ? String(planHeld.key).split('/').at(-1) : null;
-    const walkHeld = heldLeaf && /^(seen_food_\d+|search_food|go_home_for_food|village_food|return_for_food|hoglin_food|raid_bastion)$/.test(heldLeaf) && tree.obtain_food?.children?.[heldLeaf] && !immediateThreat(bot);
+    // Not held up by a threat out of sight and past arm's reach (note 2326): no stance is asked for it, so the held walk
+    // waiting on it waited on nothing. full-13 (25587, 2026-10-28 02:44 to 02:48Z), food plan return_for_food held, a
+    // blaze 5.3 blocks off out of sight, was given the turn every ten seconds and 'acted in 6 ms with nothing reported',
+    // standing at (153, 66, 463) at 10.4 health with no food; the user: 'I can't tell what jev is doing right now'.
+    const threatNow = immediateThreat(bot);
+    const walkHeld = heldLeaf && /^(seen_food_\d+|search_food|go_home_for_food|village_food|return_for_food|hoglin_food|raid_bastion)$/.test(heldLeaf) && tree.obtain_food?.children?.[heldLeaf] && !(threatNow && (threatNow.visible || threatNow.distance <= 3));
     if (walkHeld) {
       const outcome = require('./decisions/outcome');
       try { outcome.judge(bot, goal, 'survival_priority', { now }); } catch (_) { /* judged at the next asking */ }
