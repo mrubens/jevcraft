@@ -47,6 +47,8 @@ function lastResortSupply(bot) {
   const says = Object.entries(counts).map(([name, n]) => `${n} ${name === 'chicken' ? 'raw chicken' : name.replaceAll('_', ' ')}, ${bot.registry.foodsByName[name].foodPoints} hunger each; ${sideEffectSays(name)}`).join('; ');
   return { points, says };
 }
+// How long a food walk stopped by a threat is said on its option (note 2342).
+const FOOD_STOP_MS = 5 * 60000;
 
 async function candidates(bot, task, state) {
   const surface = surfaceMovement(bot);
@@ -309,6 +311,21 @@ async function forageChoices(bot, task, goal, save, actions, state, { target = 1
   // Herds seen earlier and out of view now (sightings.js): a walk of known
   // length, where the search is a wander.
   const sightings = require('./sightings');
+  // The food walks a threat stopped, said on the option walked (note 2342): full-14 (25588, 2026-10-28 05:14 to
+  // 05:16Z), respawned with nothing, walked for food toward a creeper out of sight eight times in three minutes,
+  // each walk stopped at 'Threat nearby: creeper at 8 to 24 blocks', a retreat chosen, then the same walk again.
+  const stops = (goal.foodWalkStops || []).filter(x => Date.now() - x.at <= FOOD_STOP_MS);
+  const stoppedSays = key => {
+    const mine = stops.filter(x => x.key === key);
+    if (!mine.length) return {};
+    const last = mine[mine.length - 1];
+    return { stoppedBefore: `this walk was started ${mine.length} time${mine.length === 1 ? '' : 's'} in the last ${Math.ceil((Date.now() - mine[0].at) / 60000)} minute${Math.ceil((Date.now() - mine[0].at) / 60000) === 1 ? '' : 's'}, each stopped short by a threat on the way, the last ${Math.round((Date.now() - last.at) / 1000)} s ago: ${last.why.replace(/^Threat nearby: /, '')}, ${last.walked} blocks walked of it` };
+  };
+  const noteStop = (key, err, from) => {
+    if (err?.name !== 'NeedsSafety') return;
+    goal.foodWalkStops = [...(goal.foodWalkStops || []).filter(x => Date.now() - x.at <= FOOD_STOP_MS), { key, at: Date.now(), why: String(err.message || ''), walked: Math.round(bot.entity.position.distanceTo(from)) }].slice(-10);
+    save();
+  };
   const herds = ['cow', 'sheep', 'rabbit'].flatMap(kind => sightings.sighted(bot, goal, kind).filter(s => s.distance > 32 && s.distance <= 192).map(s => ({ kind, s })))
     .sort((a, b) => a.s.distance - b.s.distance).slice(0, 3);
   // Each herd keyed by the number it was given when first offered (keys.js,
@@ -317,12 +334,13 @@ async function forageChoices(bot, task, goal, save, actions, state, { target = 1
   const herdIds = require('./decisions/keys').ids(goal, 'seen_food', herds.map(h => h.s), { near: 24 });
   herds.forEach(({ kind, s }, i) => {
     const key = `seen_food_${herdIds[i]}`;
-    choices[key] = { target: { x: Math.round(s.x), y: Math.round(s.y ?? bot.entity.position.y), z: Math.round(s.z) }, description: { action: `Walk back to where ${s.says} and hunt there; animals wander, but not far.`, animal: kind, count: s.count, distance: s.distance, direction: s.direction, minutesAgo: s.minutesAgo, ...walkFacts(s.distance, s) },
+    choices[key] = { target: { x: Math.round(s.x), y: Math.round(s.y ?? bot.entity.position.y), z: Math.round(s.z) }, description: { action: `Walk back to where ${s.says} and hunt there; animals wander, but not far.`, animal: kind, count: s.count, distance: s.distance, direction: s.direction, minutesAgo: s.minutesAgo, ...walkFacts(s.distance, s), ...stoppedSays(key) },
       run: async () => {
         goal.survivalAction = { action: 'search_food', toward: { x: s.x, y: s.y, z: s.z }, animal: kind, at: new Date().toISOString() }; save();
         const outerCheck = task.interruptCheck; task.interruptCheck = () => checkThreats(bot);
-        const out = {};
+        const out = {}, from = bot.entity.position.clone();
         try { await sightings.walkToSighting(bot, task, goal, save, kind, s, actions.navigate, out); }
+        catch (err) { noteStop(key, err, from); throw err; }
         finally { task.interruptCheck = outerCheck; }
         // A walk that found no way there is a try that came to nothing,
         // recorded as such (note 771): it had returned quietly, so the
@@ -363,12 +381,14 @@ async function forageChoices(bot, task, goal, save, actions, state, { target = 1
     return facts;
   };
   if (!isSetAside(goal, 'forage', 'search_food')) choices.search_food = {
-    description: { action: 'Walk to another observed dry area on the surface to search for passive animals, how far not known until they are seen; avoid remembered failed targets.', ...searchFacts() },
+    description: { action: 'Walk to another observed dry area on the surface to search for passive animals, how far not known until they are seen; avoid remembered failed targets.', ...searchFacts(), ...stoppedSays('search_food') },
     run: async () => {
       goal.survivalAction = { action: 'search_food', at: new Date().toISOString() }; save();
       const outerCheck = task.interruptCheck; task.interruptCheck = () => checkThreats(bot);
+      const from = bot.entity.position.clone();
       try { await actions.explore(bot, task, goal, save, 'food animals', { surfaceOnly: true }); }
       catch (err) {
+        noteStop('search_food', err, from);
         if (/No reachable surveyed ground/.test(err.message || '')) { setAside(goal, 'forage', 'search_food', 'no dry ground to walk to within forty-eight blocks', 120000); save(); }
         throw err;
       }
