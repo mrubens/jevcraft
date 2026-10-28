@@ -34,3 +34,12 @@ test('out of reach, nothing is dug (note 2392)', async () => {
   const bot = world(new Set(['5,32,95']), { '9,32,90': 'iron_ore' });
   assert.equal(await clearLineToOre(bot, task, new Vec3(9, 32, 90), { digBlock: async () => assert.fail('dug') }), 0);
 });
+
+test('the line open and the ore in reach, the ore itself is dug from the tunnel\'s end (note 2399)', async () => {
+  const solid = new Set(['2,32,99', '2,33,99']);
+  const bot = world(solid, { '3,32,98': 'iron_ore' });
+  bot.canDigBlock = b => b.name === 'iron_ore';
+  const dug = [];
+  await clearLineToOre(bot, task, new Vec3(3, 32, 98), { digBlock: async (b, t, c) => { dug.push(`${c}`); solid.delete(`${c.x},${c.y},${c.z}`); } });
+  assert.equal(dug.at(-1), '(3, 32, 98)', dug.join(' '));
+});

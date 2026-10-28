@@ -2057,6 +2057,14 @@ async function clearLineToOre(bot, task, ore, { most = 3, digBlock = dig } = {})
     await digBlock(bot, task, c, { requireDrops: false }); task.check(); dug++;
   }
   if (dug) console.log(`[mine] dug ${dug} block${dug === 1 ? '' : 's'} on the line to the ore at ${ore}`);
+  // The line open and the ore in reach, the ore is dug from here (note 2399): left for the mine step, full-25 (25587,
+  // 2026-10-28 16:4x to 16:5xZ) dug the line to iron at (-59, 100, -114) four times and turned between mine and
+  // tunnel eight times in 34 seconds, the ore never dug.
+  const oreBlock = bot.blockAt(new Vec3(ore.x, ore.y, ore.z));
+  if (oreBlock && /_ore$/.test(oreBlock.name) && typeof bot.canDigBlock === 'function' && bot.canDigBlock(oreBlock) && eye.distanceTo(center) <= 4.5) {
+    try { await digBlock(bot, task, oreBlock.position, { requireDrops: false }); task.check(); console.log(`[mine] the ${oreBlock.name.replaceAll('_', ' ')} at ${ore} dug from the tunnel's end`); }
+    catch (err) { task.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err; }
+  }
   return dug;
 }
 async function tunnelOrSetAside(bot, task, goal, save, target, resource, ore = null) {
