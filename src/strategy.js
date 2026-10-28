@@ -485,6 +485,22 @@ function diamondPickaxeOption(bot, goal) {
   };
 }
 
+// What the spare costs in minutes and what a death has cost this run without one (note 2327): the option said the
+// ingots and the deaths' record, and was taken 13 times of 91 offered on the fresh runs of 2026-10-27; full-12 spent
+// 71% of its run after deaths before the kit was back. The user: 'Worth it to make spares you mean?', then 'check the
+// spare kit wording'.
+function spareCostSays(goal, iron, ingots, raw) {
+  try {
+    const { IRON_MINUTES } = require('./corpse-run');
+    const mined = Math.max(0, iron - ingots - raw), smeltS = Math.max(0, iron - ingots) * 10;
+    const lo = Math.round(mined * IRON_MINUTES.low + smeltS / 60), hi = Math.max(lo, Math.round(mined * IRON_MINUTES.high + smeltS / 60));
+    const make = iron <= ingots ? ' Making it is a craft from the ingots carried, seconds.' : mined ? ` Making it is about ${lo} to ${hi} minutes, ${mined} iron mined and ${Math.max(0, iron - ingots)} smelted at the fresh runs' pace.` : ` Making it is about ${Math.max(1, Math.round(smeltS / 60))} minute${Math.round(smeltS / 60) === 1 ? '' : 's'} of smelting from what is carried.`;
+    const back = goal?.survival?.kitBack || [];
+    const m = back.map(b => b.minutes).sort((x, y) => x - y);
+    const lost = m.length ? ` Without one, this run's ${m.length === 1 ? 'one kit lost at a death was' : `${m.length} kits lost at deaths were`} back on the body after ${m.length === 1 ? `${m[0]} minutes` : `a median ${m[Math.floor(m.length / 2)]} minutes`}.` : '';
+    return make + lost;
+  } catch (_) { return ''; }
+}
 function spareArmourOption(bot, goal) {
   if (bot.game?.gameMode && bot.game.gameMode !== 'survival') return null;
   if (!/overworld/.test(String(bot.game?.dimension || ''))) return null;
@@ -499,7 +515,7 @@ function spareArmourOption(bot, goal) {
   const off = Math.round(bot.entity.position.distanceTo(new Vec3(bed.x + 0.5, bed.y, bed.z + 0.5)));
   const chest = goal.bedKit?.position ? 'the chest beside the bed slept in' : 'a chest put beside the bed slept in (eight planks)';
   return {
-    description: `Make a spare ${name.replaceAll('_', ' ')} (${iron} iron ingots, ${points} armour points; ${ingots} ingots and ${raw} raw iron carried, the rest mined and smelted) and leave it in ${chest}, ${off} blocks off: a death drops what is worn, and the chest's piece is put on at that bed when the bot comes back to life there. It is the ${name === 'iron_chestplate' ? 'most armour for its iron' : 'most armour for its iron of the places worn and not yet spared'}.${bareDeathsSays(bot)}${bareChainSays(bot)}`,
+    description: `Make a spare ${name.replaceAll('_', ' ')} (${iron} iron ingots, ${points} armour points; ${ingots} ingots and ${raw} raw iron carried, the rest mined and smelted) and leave it in ${chest}, ${off} blocks off: a death drops what is worn, and the chest's piece is put on at that bed when the bot comes back to life there. It is the ${name === 'iron_chestplate' ? 'most armour for its iron' : 'most armour for its iron of the places worn and not yet spared'}.${spareCostSays(goal, iron, ingots, raw)}${bareDeathsSays(bot)}${bareChainSays(bot)}`,
     says: `I'll make a spare ${name.replaceAll('_', ' ')} for the chest by my bed`,
     rung: { phase: 'spare_armour', action: 'acquire', item: name, count: 1 },
   };
@@ -1150,4 +1166,4 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
   return { ran: true };
 }
 
-module.exports = { diamondPickaxeOption, woolStockOption, WOOL_STOCK, enderChestOption, bareChainSays, spareArmourOption, SPARE_ORDER, bareDeathsSays, cameOutSays, errandUnderWay, woolTrip, WOOL_HUNTS, oreFacts, carryBedOption, homeOption, strategyTree, pickaxeLeft, planSpends, HAND_BLOCKS_PER_MINUTE, rungTakes, WITHOUT, RUNG_WHY, rungOption, strategyOptions, strategyStep, HOLD_MS, SIDE_REST_MS, SIDE_FAIL_MS, rungStatus, lastStrategyFact };
+module.exports = { spareCostSays, diamondPickaxeOption, woolStockOption, WOOL_STOCK, enderChestOption, bareChainSays, spareArmourOption, SPARE_ORDER, bareDeathsSays, cameOutSays, errandUnderWay, woolTrip, WOOL_HUNTS, oreFacts, carryBedOption, homeOption, strategyTree, pickaxeLeft, planSpends, HAND_BLOCKS_PER_MINUTE, rungTakes, WITHOUT, RUNG_WHY, rungOption, strategyOptions, strategyStep, HOLD_MS, SIDE_REST_MS, SIDE_FAIL_MS, rungStatus, lastStrategyFact };
