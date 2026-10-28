@@ -774,6 +774,16 @@ define({
   }),
 });
 define({
+  id: 'passing_ore', area: 'resources', kind: 'mining', primitive: 'choice', stakes: 'low',
+  question: 'Iron, gold or diamond ore lies five to eight blocks off a walk: a short detour to mine it, then the same walk on, or walk past?',
+  trigger: 'A walk that looks in passing has iron, gold or diamond ore past the four blocks the rule takes and within eight, with a walk of sixteen steps or fewer to it (note 2328).',
+  source: 'src/opportunistic-mining.js (mineInPassing)',
+  unreachable: 'Jev not reachable (or no answer within five seconds a try): the bot holds and asks again with a backoff (jev-down.js); an answer after an outage is not used, and the step goes on to ask it fresh at its next turn',
+  build: ({ options }) => require('../typesafe').choice('The bot is walking and passes ore it could mine with a short detour. Each option says what the ore drops, what is carried of it, what the plan still wants of it, and the detour in seconds.', {
+    ...options, continue: 'Walk past without a detour.',
+  }),
+});
+define({
   id: 'opportunistic_animal', area: 'resources', kind: 'pickup', primitive: 'choice', stakes: 'low',
   question: 'An animal whose drop the bot is short of is in view: chase it briefly, or carry on?',
   trigger: 'Every third step with a sheep in view and fewer than three wool carried .',

@@ -225,8 +225,12 @@ function passingCandidates(bot, goal) {
     const standing = c.standing.filter(s => !s.offset(0, -1, 0).equals(c.position));
     if (!standing.length) return [];
     const distance = here.distanceTo(c.position.offset(0.5, 0.5, 0.5)), gold = !!GOLD_WORTH[c.block];
-    // Diamonds, iron and lapis are the rule's alone, as before.
-    if (!gold && (distance > PASSING_RADIUS + 0.5 || !vitalsFit(bot))) return [];
+    // Diamonds, iron and lapis within four are the rule's; past it to eight, iron, gold ore and diamonds are Jev's to
+    // take or walk past (note 2328, the user 2026-10-28: 'there are lots of times where Jev is near iron but doesn't take
+    // it all. I think if Jev tried to build up a surplus of iron that would be beneficial without slowing down').
+    const offerable = /^(deepslate_)?(iron|gold|diamond)_ore$/.test(c.block);
+    if (!gold && distance > PASSING_RADIUS + 0.5) return offerable && distance <= PASSING_REACH + 0.5 ? [{ ...c, standing, distance, tier: 'offer' }] : [];
+    if (!gold && !vitalsFit(bot)) return [];
     const rule = distance <= PASSING_RADIUS + 0.5 && vitalsFit(bot) && (!gold || RULE_GOLD.includes(c.block));
     return [{ ...c, standing, distance, tier: rule ? 'rule' : 'offer' }];
   });
@@ -250,6 +254,16 @@ function detourSeconds(bot, c) {
     if (Number.isFinite(t)) digMs = t;
   } catch (_) { /* no block data here */ }
   return Math.max(1, Math.round(2 * c.routeSteps / WALK_SPEED + digMs / 1000 + 0.7));
+}
+// An ore past the rule's reach, said for Jev (note 2328): what it drops, what is carried of it, what the plan still
+// wants of it, and the detour.
+function passingOreSays(bot, c, goal = null) {
+  const drop = /iron/.test(c.block) ? 'raw_iron' : /gold/.test(c.block) ? 'raw_gold' : 'diamond';
+  const carried = drop === 'raw_iron' ? countOf(bot, 'raw_iron') + countOf(bot, 'iron_ingot') : drop === 'raw_gold' ? countOf(bot, 'raw_gold') + countOf(bot, 'gold_ingot') : countOf(bot, 'diamond');
+  let wants = '';
+  try { if (drop === 'raw_iron') { const w = require('./work').ladderSmeltWants(bot, goal || bot._goal, 'iron_ingot'); wants = w.wants > 0 ? `; the plan's open steps still want ${w.wants} more iron (${w.rungs.filter(r => r.n).map(r => `${r.phase.replaceAll('_', ' ')} ${r.n}`).join(', ')})` : '; the plan wants no more iron now: a surplus is spare armour, buckets, shears and pickaxes after a death'; } } catch (_) { /* no plan read */ }
+  const what = drop === 'raw_iron' ? 'one raw iron' : drop === 'raw_gold' ? 'one raw gold (four ingots make golden boots, which piglins spare)' : 'one diamond (three make a diamond pickaxe, which mines obsidian)';
+  return `${c.block.replaceAll('_', ' ')} ${round(c.distance)} blocks from the walk, ${c.routeSteps} walking steps: a detour of about ${detourSeconds(bot, c)} s there and back with the dig, then the same walk goes on. It drops ${what}; ${carried} carried${wants}.`;
 }
 function passingSays(bot, c) {
   const worth = GOLD_WORTH[c.block];
@@ -315,14 +329,32 @@ async function mineInPassing(bot, task, goal, save, { navigate, dig }, client = 
     if (rule.length) {
       candidate = choices[0];
       state.lastDecision = { at: new Date().toISOString(), answer: { choice: 'gold_0', rule: `in passing: ${candidate.block} within ${PASSING_RADIUS} blocks of the walk, taken while the pearls are short (or the ore is)` } };
+    } else if (!GOLD_WORTH[choices[0].block]) {
+      // Ore past the rule's four blocks (note 2328): its own question, said by what it drops, what is carried and what
+      // the plan still wants of it, and the detour's seconds.
+      bot._passingAskedAt = Date.now();
+      const ores = choices.filter(c => !GOLD_WORTH[c.block]);
+      const response = await require('./decisions').ask(client, {
+        state: { request: goal.request, walk: goal.step?.action, health: bot.health, food: bot.food,
+          takenWithoutAsking: `iron, gold and diamond ore within ${PASSING_RADIUS} blocks of the walk`,
+          candidates: ores.map(c => ({ block: c.block, distance: round(c.distance), routeSteps: c.routeSteps, seconds: detourSeconds(bot, c) })) },
+        questions: { passing: ['passing_ore', { options: Object.fromEntries(ores.map((c, i) => [`ore_${i}`, passingOreSays(bot, c, goal)])) }] },
+        timeoutMs: 5000, hold: { bot, goal, task } });
+      task.check();
+      if (response.stale) return false;
+      const selected = response.answers?.passing?.choice;
+      state.lastDecision = { at: new Date().toISOString(), question: 'passing_ore', answer: response.answers?.passing, usage: response.usage };
+      const index = /^ore_(\d+)$/.exec(selected || '')?.[1];
+      candidate = index !== undefined && ores[Number(index)];
+      if (!candidate) { passed(ores); return false; }
     } else {
       bot._passingAskedAt = Date.now();
       const pearls = countOf(bot, 'ender_pearl');
       const response = await require('./decisions').ask(client, {
         state: { request: goal.request, walk: goal.step?.action, pearls, pearlsWanted: pearlsWanted(bot, goal), goldCarriedIngots: round(goldCarried(bot), 10), health: bot.health, food: bot.food,
           takenWithoutAsking: `nether gold ore and gold blocks within ${PASSING_RADIUS} blocks while pearls are short and health is at least ${VITALS.health} and food at least ${VITALS.food}`,
-          candidates: choices.map(c => ({ block: c.block, distance: round(c.distance), routeSteps: c.routeSteps, seconds: detourSeconds(bot, c) })) },
-        questions: { passing: ['passing_gold', { pearls, options: Object.fromEntries(choices.map((c, i) => [`gold_${i}`, passingSays(bot, c)])) }] },
+          candidates: choices.filter(c => GOLD_WORTH[c.block]).map(c => ({ block: c.block, distance: round(c.distance), routeSteps: c.routeSteps, seconds: detourSeconds(bot, c) })) },
+        questions: { passing: ['passing_gold', { pearls, options: Object.fromEntries(choices.filter(c => GOLD_WORTH[c.block]).map((c, i) => [`gold_${i}`, passingSays(bot, c)])) }] },
         timeoutMs: 5000, hold: { bot, goal, task } });
       task.check();
       // Held through an outage (note 707): asked fresh at its next look.
@@ -330,7 +362,7 @@ async function mineInPassing(bot, task, goal, save, { navigate, dig }, client = 
       const selected = response.answers?.passing?.choice;
       state.lastDecision = { at: new Date().toISOString(), question: 'passing_gold', answer: response.answers?.passing, usage: response.usage };
       const index = /^gold_(\d+)$/.exec(selected || '')?.[1];
-      candidate = index !== undefined && choices[Number(index)];
+      candidate = index !== undefined && choices.filter(c => GOLD_WORTH[c.block])[Number(index)];
       if (!candidate) { passed(choices); return false; }
     }
     if (bot.blockAt(candidate.position)?.name !== candidate.block) { passed([candidate]); return false; }
@@ -347,5 +379,5 @@ async function mineGoldInPassing(bot, task, goal, save, { navigate, dig }) {
   return mineInPassing(bot, task, goal, save, { navigate, dig }, null);
 }
 
-module.exports = { mineWithinReach, shortOfPearls, goldInPassing, mineGoldInPassing, mineInPassing, passingCandidates, passingSays, valuableInPassing: goldInPassing, mineValuableInPassing: mineGoldInPassing,
+module.exports = { passingOreSays, mineWithinReach, shortOfPearls, goldInPassing, mineGoldInPassing, mineInPassing, passingCandidates, passingSays, valuableInPassing: goldInPassing, mineValuableInPassing: mineGoldInPassing,
   PASSING_RADIUS, PASSING_REACH, GOLD_WORTH, VITALS, piglinsWithin, LIMITS, opportunityCandidates, opportunisticMining, fuelCarried, FUEL_UNITS_WANTED };
