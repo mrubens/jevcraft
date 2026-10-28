@@ -385,6 +385,17 @@ function woolCarried(bot) {
   if ((!best || best[1] < 3) && total >= 3 && whiteDye >= 3 - Math.min(3, white)) return { colour: 'white', count: 3, total, dyed: 3 - Math.min(3, white) };
   return best ? { colour: best[0].replace(/_wool$/, ''), count: best[1], total } : { colour: 'white', count: 0, total: 0 };
 }
+// The wool carried as the bed takes it, three of one colour (note 2352): said as a total it read '3 of 3 wool carried'
+// with 1 light gray and 2 white, no bed in them. full-14 (25588, 2026-10-28 06:45Z), so told on every option, walked
+// 97 blocks east and back 94 west for sheep at night with 33 skeletons about.
+function woolSays(bot) {
+  const w = woolCarried(bot), counts = {};
+  for (const i of bot.inventory.items()) if (/_wool$/.test(i.name)) counts[i.name.replace(/_wool$/, '').replaceAll('_', ' ')] = (counts[i.name.replace(/_wool$/, '').replaceAll('_', ' ')] || 0) + i.count;
+  const each = Object.entries(counts).map(([c, n]) => `${n} ${c}`).join(', ');
+  if (!w.total) return 'no wool carried; a bed takes three of one colour';
+  if (w.count >= 3) return `${w.total} wool carried (${each}): three ${w.colour.replaceAll('_', ' ')}${w.dyed ? `, ${w.dyed} dyed white,` : ''} make a bed`;
+  return `${w.total} wool carried (${each}), at most ${w.count} of one colour; a bed takes three of one colour, so ${3 - w.count} more ${w.colour.replaceAll('_', ' ')} (or three of another)`;
+}
 // Fences from the wood already carried, then the trees that were seen.
 function woodSpecies(bot) {
   const counts = {};
@@ -1003,7 +1014,7 @@ async function searchForSheep(bot, task, goal, save, actions) {
   // 00:54:50 to 00:56:21Z), five minutes into the search with one wool and
   // dawn come, answered none good twelve times in a row; only where to look,
   // or leaving the sheep for a night already over, was on offer.
-  tree.without_bed = { description: `Go on without the bed for now: the wool search is set aside half an hour and the ladder's other work goes on (to the crossing if nothing else is left), then looked for again. ${woolCarried(bot).total} of 3 wool carried, ${minutes} minutes searched so far. Without a bed the nights are waited out, not slept through (phantoms come after three nights without sleep), and a death respawns at the world spawn, not by the bed.` };
+  tree.without_bed = { description: `Go on without the bed for now: the wool search is set aside half an hour and the ladder's other work goes on (to the crossing if nothing else is left), then looked for again. ${woolSays(bot)}; ${minutes} minutes searched so far. Without a bed the nights are waited out, not slept through (phantoms come after three nights without sleep), and a death respawns at the world spawn, not by the bed.` };
   if (webs.length >= 2 && stringWanted) {
     const nearWeb = [...webs].sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0];
     const webDy = Math.round(nearWeb.y - bot.entity.position.y);
@@ -1014,7 +1025,7 @@ async function searchForSheep(bot, task, goal, save, actions) {
   let pick = null;
   try {
     const decision = await require('./decisions').decide('sheep_search', { client, bot, task, goal, save, tree,
-      state: { biome: view?.biome, biomeHas: view?.biomeHas, biomesNearby: nearby.map(({ x, z, says, ...b }) => b), sheepSeenEarlier: flocks.map(({ says, ...s }) => s), ...((() => { try { return { shearing: require('./shearing').shearSays(bot, goal) }; } catch (_) { return {}; } })()), searchingMinutes: minutes, woolCarried: woolCarried(bot).total, woolOfOneColour: woolCarried(bot).count, stringCarried: string,
+      state: { biome: view?.biome, biomeHas: view?.biomeHas, biomesNearby: nearby.map(({ x, z, says, ...b }) => b), sheepSeenEarlier: flocks.map(({ says, ...s }) => s), ...((() => { try { return { shearing: require('./shearing').shearSays(bot, goal) }; } catch (_) { return {}; } })()), searchingMinutes: minutes, woolCarried: woolCarried(bot).total, woolOfOneColour: woolCarried(bot).count, woolForABed: woolSays(bot), stringCarried: string,
         timeOfDay: tod, ...(underground ? { underground: true, climbToSurface: climb != null ? `about ${climb} blocks up, roughly ${climbMinutes(climb)} minutes` : 'how far up is not known' } : {}), ...(underwater ? { underwater: true, oxygen: bot.oxygenLevel } : {}),
         ...(bot.game?.gameMode === 'survival' ? { riskNow: require('./risk').riskNow(bot) } : {}),
         // The bed's own record (note 763's kit record): what the trials that
@@ -1459,6 +1470,6 @@ function homeChores(bot, goal, { now = Date.now() } = {}) {
   return options;
 }
 
-module.exports = { cutCobwebs, noSheepSays, searchForSheep, takeHomeBed, bedCarried, placeOriented, isBed, siteWork, levelSite, clearStray, repairPlot, HOME_REACH, BREAD_WHEAT, layout, inside, baseAnchor, siteFits, chooseBaseSite, establishHome, homeOf, homeDistance, goHome, plotStatus, bedStatus, penStatus,
+module.exports = { woolSays, cutCobwebs, noSheepSays, searchForSheep, takeHomeBed, bedCarried, placeOriented, isBed, siteWork, levelSite, clearStray, repairPlot, HOME_REACH, BREAD_WHEAT, layout, inside, baseAnchor, siteFits, chooseBaseSite, establishHome, homeOf, homeDistance, goHome, plotStatus, bedStatus, penStatus,
   woolCarried, woodSpecies, homeStage, homeComplete, homeStep, tillPlot, plantPlot, harvestPlot, placeBed, claimBed, buildPen, gatherWool, lureCows, breedCows, takeSteak, bake,
   homeFood, eatFromHome, homeChores };

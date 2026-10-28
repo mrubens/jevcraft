@@ -24,7 +24,7 @@ test('the sheep search offers without_bed by day; chosen, the bed\'s search rest
       inventory: { items: () => [{ name: 'white_wool', count: 1 }] }, blockAt: () => null, findBlocks: () => [], chat: m => said.push(m) };
     const goal = {};
     await home.searchForSheep(bot, { check() {}, opportunityClient: {} }, goal, () => {}, { explore: async () => assert.fail('explored') });
-    assert.match(asked.tree.without_bed.description, /^Go on without the bed for now: the wool search is set aside half an hour .* 1 of 3 wool carried, \d+ minutes searched so far\. Without a bed the nights are waited out/);
+    assert.match(asked.tree.without_bed.description, /^Go on without the bed for now: the wool search is set aside half an hour .* 1 wool carried \(1 white\), at most 1 of one colour; a bed takes three of one colour, so 2 more white \(or three of another\); \d+ minutes searched so far\. Without a bed the nights are waited out/);
     assert.equal(asked.tree.until_day, undefined, 'by day, no until_day');
     assert(isSetAside(goal, 'bed_search', 'wool'));
     assert.deepEqual(said, ['No bed for now. On with the rest.']);
