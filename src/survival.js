@@ -12411,6 +12411,13 @@ class Survival {
     if (stayUp) {
       for (const [key, o] of Object.entries(this.huntOptions(goal))) tree[key] = { description: o.description,
         run: async () => { this.state.nightPlan = { plan: 'hunt', kind: o.kind, until: Date.now() + 120000, startHealth: bot.health }; this.report(goal, save, { action: 'night_hunt_chosen', kind: o.kind }); } };
+    }
+    // The valuables put in a chest before the night, whatever the night's answer (note 2339): offered where a shelter
+    // is wanted as well as staying up, bed or none. full-14 (25588, 2026-10-28 04:47Z) gathered a bed's wool and more
+    // and lost it all to a skeleton 13 minutes in; the user: 'It seems like Jev should make a chest before the first
+    // night and store valuables in there, no?', then 'Seems like it should be offered either way to store anything
+    // before night'.
+    if (stayUp || needsShelter) {
       const stash = this.stashOption(goal);
       if (stash) tree.stash_valuables = { description: stash.description, run: () => stash.run(task, goal, save) };
       const cache = !stash && this.cacheOption(goal);
