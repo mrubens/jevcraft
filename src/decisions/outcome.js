@@ -224,6 +224,12 @@ function judge(bot, goal, id, { asked = false, now = Date.now() } = {}) {
   const nothing = noRise || nothingSays(o.mark, here, o.by);
   let why = null;
   try { why = require('./repeats').whyItEnded(bot, goal, o.at); } catch (_) { why = null; }
+  // Ended by a threat or a push about, not by its own way (note 2385): the survival layer's to answer, and the way not
+  // judged as having changed nothing. full-21 (25589, 2026-10-28 14:5x to 15:1xZ), a fortress 73 to 80 blocks off,
+  // ghasts about: each way in ('head toward', 'tunnel') was stopped within a second by 'Threat nearby: ghast' or
+  // 'Preempted by push', recorded failed, and with every way so recorded 'keep searching' was the one option left; it
+  // went 187 blocks off, no rod in 27 minutes.
+  if (why && /^(Threat nearby|Preempted by)/.test(String(why))) return { cut: String(why).slice(0, 160) };
   const says = `${words(o.key)} was chosen ${secs(took)} ago and changed nothing ${within}: ${nothing}${why ? `; it ended: ${String(why).replace(/\.$/, '')}` : ''}`;
   const f = { q: id, key: o.key, at: o.at, judgedAt: now, says, place: o.mark.p, dimension: o.mark.dimension, kinds: Object.keys(o.mark.inv || {}), sameStall: o.sameStall };
   if (e) {
