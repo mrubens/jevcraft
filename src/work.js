@@ -5763,6 +5763,20 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
       const line = require('./bridging').surveyCrossing(bot, target, { cells: stretch, blocks: 999 });
       if (line?.bridge) gapSays = ` Its line at this height crosses about ${line.bridge} cell${line.bridge === 1 ? '' : 's'} of open air to floor in the next ${line.cells}, against ${blocksLaid} block${blocksLaid === 1 ? '' : 's'} carried; inside the rock it digs the blocks for its floor from its own walls, over open air there is no wall to dig${line.bridge > blocksLaid ? `: it stops at the gap where the blocks carried run out` : ''}.`;
     } catch (_) { gapSays = ''; }
+    // The lava under its line's open cells, where a blow is a fall into it (note 2357): the option said 'no drop
+    // beside it' inside the rock. full-13 (25587, 2026-10-28 07:57:42Z), its 13 pearls and every rod carried, took
+    // tunnel_home along the lava sea at y 35, was hit, and fell 7 blocks into the lava; swim_up and back_the_way_came
+    // came to nothing, 15.8 health to none.
+    try {
+      const h = bot.entity.position, len = Math.hypot(target.x - h.x, target.z - h.z) || 1, ux = (target.x - h.x) / len, uz = (target.z - h.z) / len;
+      let over = 0, first = null;
+      for (let i = 1; i <= Math.min(stretch, 48); i++) {
+        const c = new Vec3(Math.floor(h.x + ux * i), Math.floor(h.y), Math.floor(h.z + uz * i));
+        if (bot.blockAt(c.offset(0, -1, 0))?.boundingBox === 'block') continue;
+        for (let d = 1; d <= 12; d++) { const b = bot.blockAt(c.offset(0, -d, 0)); if (/lava/.test(b?.name || '')) { over++; first ||= { c, d, i }; break; } if (b?.boundingBox === 'block') break; }
+      }
+      if (over) gapSays += ` Of the first ${Math.min(stretch, 48)} cells of its line, ${over} ${over === 1 ? 'is' : 'are'} open air over lava, the first ${first.i} blocks on with the lava ${first.d} below: there the floor is laid over the drop, and a blow while on it is a fall into the lava.`;
+    } catch (_) { /* nothing more said */ }
     // The pickaxe uses it takes against those left (note 943): two cells dug
     // for each block across (more on the steps), each a use while a pickaxe
     // lasts. On 2026-10-02 the share of Nether time with no pickaxe carried
