@@ -5397,6 +5397,19 @@ async function enterPortal(bot, task, portal, arrived, { walk = navigate, dig: d
   }
   if (arrived()) return;
   if (!inPortal(bot)) throw new Error('Could not step into the portal');
+  // Into the middle of the sheet before the wait (note 2426): the step in stops as the feet reach the portal's cell, at
+  // its edge, and the sheet itself is a slab a quarter of a block thick across the cell's middle. full-28 (25589,
+  // 2026-10-28 20:28 to 20:31Z), its rod banked and going back, stood in its Overworld sheet at z 63.9 or 63.1 for the
+  // ten seconds six times over and was never taken; on arrival, in the middle at 63.5, it had been.
+  {
+    const cell = bot.entity.position.floored(), sheet = b => /nether_portal|obsidian|crying_obsidian/.test(b?.name || '');
+    const alongX = [1, -1].some(dx => sheet(bot.blockAt?.(cell.offset(dx, 0, 0)))), alongZ = [1, -1].some(dz => sheet(bot.blockAt?.(cell.offset(0, 0, dz))));
+    const off = () => alongX && !alongZ ? Math.abs(bot.entity.position.z - (cell.z + 0.5)) : alongZ && !alongX ? Math.abs(bot.entity.position.x - (cell.x + 0.5)) : Math.hypot(bot.entity.position.x - (cell.x + 0.5), bot.entity.position.z - (cell.z + 0.5));
+    if (!arrived() && bot.blockAt?.(cell)?.name === 'nether_portal' && off() > 0.15) {
+      try { await move(bot, task, { label: 'portal_middle', keys: ['forward'], sneak: true, look: new Vec3(cell.x + 0.5, cell.y + 0.5, cell.z + 0.5), maxMs: 800, tick: 50, until: () => arrived() || off() <= 0.15 }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    }
+  }
   // Standing in the sheet: the teleport comes after about four seconds.
   await waitFor(task, arrived, 10000);
 }
