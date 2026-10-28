@@ -9217,6 +9217,15 @@ class Survival {
         };
         const r = await wg.guard(bot, task, { until: Date.now() + 15000, focus: e.id, radius: 16, stop: () => bot.health <= start - holdLoss(start) || crowdStop() || creeperStop() });
         if (creeperIn != null) { this.state.stanceWhy = `the guard ended as a creeper came within ${creeperIn} blocks: the shield faced the ${name}, and blocks a blast only from the way it faces`; return true; }
+        // Ended with 'none left' while the biters it was chosen against still stand within reach: the guard found none
+        // to face (its own count missed them), and the stance fails so it is asked again at once (note 2373), not held
+        // on while the work resumes. full-17 (25587, 2026-10-28 10:27:08 to 10:27:23Z), full iron and a shield, two
+        // zombies at arm's length: the guard returned 'none left' in a millisecond, the tunnel step went on under the
+        // held stance, and nothing was asked until 3.8 health, 14 blows later; it died.
+        if (r.ended === 'none left') {
+          const still = biters.filter(t => { const x = bot.entities?.[t.entity.id]; return x && x.isValid !== false && x.position && x.position.distanceTo(bot.entity.position) <= 4; });
+          if (still.length) throw Object.assign(new Error(`The guard found none to face, but ${still.length === 1 ? `the ${still[0].entity.name.replaceAll('_', ' ')} is` : `${still.length} that bite are`} still within reach`), { name: 'StanceFailed' });
+        }
         this.state.stanceWhy = `the guard ${r.ended === 'none left' ? 'ended with no biter left about' : crowdStop.grown ? `ended as the crowd grew (${crowdStop.grown}) after ${r.swings} swing${r.swings === 1 ? '' : 's'}` : `ran ${r.swings} swing${r.swings === 1 ? '' : 's'}`}, ${r.hurt ? `${r.hurt} health lost` : 'no health lost'}`;
         return true;
       } };
