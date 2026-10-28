@@ -3060,6 +3060,15 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
               run: async () => {
                 const t0 = Date.now(), before = blocksCarried(bot); let cells = 0, roofs = 0, why = 'reached';
                 goal.step = { action: 'tunnel_to_crystal', crystal: target.id, cells: path.length }; save();
+                // A breath cloud on the way, not walked or dug into (note 2324): a cloud's box is its radius about it and
+                // half a block up and down, and a cell the body stands in that meets it takes six a second, in a tunnel
+                // with no run out. The stage of 2026-10-28 (25592, dragon-463, 02:00:24Z) took tunnel_to_43 with a cloud
+                // 2.9 off and 3 down, dug into it, and died in the pit, 9.5 to none, no run from four walls.
+                const cloudIn = cell => Object.values(bot.entities).find(e => e.name === 'area_effect_cloud' && e.isValid !== false && e.position &&
+                  Math.hypot(cell.x + .5 - e.position.x, cell.z + .5 - e.position.z) <= cloudRadius(bot, e) + 0.4 && e.position.y >= cell.y - 0.6 && e.position.y <= cell.y + 1.9);
+                { const fd = bot.entity.position.floored(), shaft = []; for (let y = fd.y - 1; y >= f0.y; y--) shaft.push(new Vec3(fd.x, y, fd.z));
+                  const c0 = shaft.map(cloudIn).find(Boolean);
+                  if (c0) { console.log(`[end combat] the tunnel to crystal ${target.id} not begun from ${fd}: the breath's cloud lies in its way down, ${Math.round((fd.y - c0.position.y) * 10) / 10} below the feet, ${Math.round(cloudRadius(bot, c0) * 10) / 10} wide`); return false; } }
                 for (let d = 0, edged = 0; d < 6 && Math.floor(bot.entity.position.y) > f0.y; d++) { const y0 = Math.floor(bot.entity.position.y), under = new Vec3(Math.floor(bot.entity.position.x), y0 - 1, Math.floor(bot.entity.position.z));
                   // The body on a block's edge (note 1784): 'air under the feet' with the body on the ground means it stands over the lip of the cell beside, and the shaft gave up; 25588's dragon-153 (2026-10-17 19:0xZ) twice at (31, 56, -23), the arena the same. The body steps onto the solid cell beside first.
                   if (!sd(under)) { if (edged++ >= 2) break; const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => under.offset(dx, 0, dz)).find(c => sd(c) && !sd(c.offset(0, 1, 0)) && !sd(c.offset(0, 2, 0))); if (!nb) break; try { await centreOn(nb.x, nb.z, 0.25, { maxMs: 1200 }); } catch (err) { if (['Cancelled', 'Blocked', 'NeedsAir', 'EndEmergency'].includes(err.name)) throw err; } continue; } if (hard(under)) throw new Error(`${bot.blockAt(under)?.name} under the feet at ${under}: no shaft down`); await actions.dig(bot, task, under, { requireDrops: false, dropInto: true, openPit: true }); for (let i = 0; i < 30 && Math.floor(bot.entity.position.y) >= y0; i++) await sleep(50); for (let i = 0; i < 20 && !bot.entity.onGround; i++) await sleep(50);
@@ -3077,6 +3086,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
                   if (!pickCarried()) { why = 'the pickaxe gone'; break; } // note 1779: dragon-149's tunnel to crystal 63 went on bare-handed for 156 s, 6 of 25 cells
                   if (!sd(q.offset(0, -1, 0)) || voidEdge(bot, q.offset(.5, 0, .5), 4) !== null) { why = 'no floor ahead'; break; }
                   if (wetNear(q)) { why = 'water beside the way'; break; }
+                  if (cloudIn(q)) { why = 'the breath\'s cloud in the next cell'; break; }
                   for (const cell of [q.offset(0, 1, 0), q]) if (sd(cell)) { if (hard(cell)) { why = `${bot.blockAt(cell)?.name} in the way`; break; } await actions.dig(bot, task, cell, { requireDrops: false }); }
                   if (why !== 'reached') break;
                   if (!sd(q.offset(0, 2, 0))) { const block = bot.inventory.items().find(i => i.name === 'end_stone') || bot.inventory.items().find(i => require('./pillar-recovery').SCAFFOLD.includes(i.name)); if (block) { try { await actions.place(bot, task, q.offset(0, 2, 0), block.name); roofs++; } catch (err) { if (['Cancelled', 'Blocked', 'NeedsAir', 'EndEmergency'].includes(err.name)) throw err; } } }
