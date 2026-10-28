@@ -2033,6 +2033,32 @@ async function miningDepthChoice(bot, task, goal, save, step, candidates, now = 
   if (pick === 'down_to_depth') bot.chat?.(`Down to y ${depth} for ${dropWord}: it is thicker there than up here.`);
   return pick;
 }
+// The tunnel ends within four blocks of the ore, and rock may still stand
+// in the line from the eyes to it: the mine step looks for a stand beside
+// the ore or a clear line to it, finds neither, and hands back to the tunnel.
+// The rock on that line is dug, up to three blocks, none with lava or water
+// behind it. full-25 (25587, 2026-10-28 15:5xZ) turned between mine and
+// tunnel four times in 13 seconds 2.8 blocks from iron at (3, 32, 98), a
+// block of stone between, 'No reachable dry standing position' each time.
+async function clearLineToOre(bot, task, ore, { most = 3, digBlock = dig } = {}) {
+  const center = new Vec3(ore.x + 0.5, ore.y + 0.5, ore.z + 0.5), eye = bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0);
+  if (eye.distanceTo(center) > 4.5) return 0;
+  const cells = [];
+  for (let t = 0.05; t < 1; t += 0.05) {
+    const c = eye.plus(center.minus(eye).scaled(t)).floored();
+    if (c.equals(new Vec3(ore.x, ore.y, ore.z))) break;
+    if (!cells.some(q => q.equals(c))) cells.push(c);
+  }
+  let dug = 0;
+  for (const c of cells) {
+    const b = bot.blockAt(c);
+    if (!b || b.boundingBox !== 'block') continue;
+    if (dug >= most || !safeExcavation(bot, c)) break;
+    await digBlock(bot, task, c, { requireDrops: false }); task.check(); dug++;
+  }
+  if (dug) console.log(`[mine] dug ${dug} block${dug === 1 ? '' : 's'} on the line to the ore at ${ore}`);
+  return dug;
+}
 async function tunnelOrSetAside(bot, task, goal, save, target, resource, ore = null) {
   try {
     for (let i = 0; i < STAIRS_AT_A_TIME; i++) {
@@ -2044,6 +2070,7 @@ async function tunnelOrSetAside(bot, task, goal, save, target, resource, ore = n
       task.check();
       if (bot.entity.position.distanceTo(target) <= 4 || bot.entity.position.distanceTo(before) < 0.5) break;
     }
+    if (ore) await clearLineToOre(bot, task, ore);
   }
   catch (err) {
     if (err.name !== 'StaircaseStalled') throw err;
@@ -10343,4 +10370,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { bedBackSays, takeUpFoodSays, woodLeftSays, oreUseSays, ruinSays, buildSays, mineAtSource, nightMineLeftSays, NIGHT_MINES_LEFT, cookTimeSays, rawCostSays, FOOD_POINTS_A_MINUTE, noteClimb, climbsLatelySays, bedFromPockets, portalToJudge, capLavaBeside, portalPickaxeFirst, endPortalActions, miningCandidates, portalSurfaceFirst, nightUpSays, oreToTunnel, gatherRests, gatherResting, relightPortalAt, stairPickaxeWanted, pickaxeForStair, siteHoldEnds, exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
+module.exports = { clearLineToOre, bedBackSays, takeUpFoodSays, woodLeftSays, oreUseSays, ruinSays, buildSays, mineAtSource, nightMineLeftSays, NIGHT_MINES_LEFT, cookTimeSays, rawCostSays, FOOD_POINTS_A_MINUTE, noteClimb, climbsLatelySays, bedFromPockets, portalToJudge, capLavaBeside, portalPickaxeFirst, endPortalActions, miningCandidates, portalSurfaceFirst, nightUpSays, oreToTunnel, gatherRests, gatherResting, relightPortalAt, stairPickaxeWanted, pickaxeForStair, siteHoldEnds, exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
