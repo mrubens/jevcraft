@@ -4496,7 +4496,10 @@ function exposedBricks(bot, bricks) {
 // as before.
 function onFortressFloor(here, floors, bot = null, goal = null) {
   if (bot && typeof bot.blockAt === 'function') {
-    try { if (require('./own-blocks').laidAt(bot, here.floored().offset(0, -1, 0), goal)) return false; } catch (_) { /* the block under the feet is not known as the bot's own */ }
+    // On a block of its own with the fortress's floor a step beside it (not across a corner) at the same height, it is there (note 2365):
+    // full-16 (25591, 2026-10-28 09:54:02Z) pillared to (268, 64, 1088), a block from the bricks' floor, was told it got
+    // no closer, took leg_south off the fortress and died to its blazes 57 blocks along it 90 seconds later.
+    try { if (require('./own-blocks').laidAt(bot, here.floored().offset(0, -1, 0), goal)) return floors.some(f => Math.abs(f.y + 1 - here.y) <= 0.6 && Math.hypot(f.x + 0.5 - here.x, f.z + 0.5 - here.z) <= 1.1); } catch (_) { /* the block under the feet is not known as the bot's own */ }
   }
   return floors.some(f => Math.abs(f.y + 1 - here.y) <= 1.5 && Math.hypot(f.x + 0.5 - here.x, f.z + 0.5 - here.z) <= 6);
 }
