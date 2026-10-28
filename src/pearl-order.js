@@ -128,6 +128,15 @@ function orderStage(bot, goal, { count: want = 1, now = Date.now(), phase = 'obt
     // No longer real from here: the ladder goes on with the rods, and the
     // answer stands as the order until a named fact changes.
     h.ended = { at: now, why: endedWhy(h.pick) };
+    // A way that brought pearls is asked of again as it ends, its yield said (note 2374), not left for the rods
+    // unasked: full-16 (25591, 2026-10-28 09:00Z) had 11 pearls of 13 from a warped forest in 31 minutes, the hold ended
+    // on 'no enderman left within 48 blocks', the rods came next, and it went 48 minutes with no pearl and died at the
+    // fortress with them. Pearls at a working slot came at 12 to 24 an hour today, the Nether hour's average 2.1.
+    const gained = Math.max(0, count(bot, 'ender_pearl') - (h.pearlsAt || 0));
+    if (gained > 0) {
+      const mins = Math.max(1, Math.round((now - h.at) / 60000));
+      return { phase, action: 'pearl_order', item: 'blaze_rod', because: `the way held (${h.pick.replaceAll('_', ' ')}) ended (${h.ended.why}) after bringing ${gained} pearl${gained === 1 ? '' : 's'} in ${mins} minute${mins === 1 ? '' : 's'}, about ${Math.round(gained * 60 / mins)} an hour` };
+    }
   }
   if (!kinds.length) return null;
   const because = askAgainBecause(bot, goal, kinds, now);
