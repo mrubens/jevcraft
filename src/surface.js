@@ -808,9 +808,16 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
       // A landing whose staircase has been given up is not tried again for a
       // while; with none left, a heading of its own, turned at each give-up.
       const open = candidates.filter(c => !staircaseResting(goal, c.offset(0, Math.max(0, start.y + 1 - c.y), 0)));
-      const heading = (state.heading || 0) * Math.PI / 4;
-      const target = open[0]?.clone() || (state.target ? new Vec3(state.target.x, state.target.y, state.target.z)
-        : start.offset(Math.round(24 * Math.cos(heading)), 32, Math.round(24 * Math.sin(heading))));
+      // With no landing open, the heading whose staircase is not resting (note 2345): the one kept was offered
+      // resting, 'taken, it digs nothing until then', and taken. full-14 (25588, 2026-10-28 05:35 to 05:40Z), at
+      // y 20 in a wet cave with an iron pickaxe and 146 cobblestone, chose that staircase and paced the same few
+      // cells, 44 tries at the surface in five minutes, the staircases of four headings set aside in turn.
+      const toward = h => start.offset(Math.round(24 * Math.cos(h * Math.PI / 4)), 32, Math.round(24 * Math.sin(h * Math.PI / 4)));
+      const restsAt = t => staircaseResting(goal, t.offset(0, Math.max(0, start.y + 1 - t.y), 0));
+      let target = open[0]?.clone();
+      if (!target && state.target && !restsAt(new Vec3(state.target.x, state.target.y, state.target.z))) target = new Vec3(state.target.x, state.target.y, state.target.z);
+      if (!target) for (let i = 0; i < 8 && !target; i++) { const h = ((state.heading || 0) + i) % 8; if (!restsAt(toward(h))) { if (h !== (state.heading || 0)) { state.heading = h; delete state.target; } target = toward(h); } }
+      if (!target) target = state.target ? new Vec3(state.target.x, state.target.y, state.target.z) : toward(state.heading || 0);
       target.y = Math.max(target.y, start.y + 1);
       // Which way to dig out is Jev's: a staircase, or straight up the
       // column overhead, each said with what it costs and leaves.
