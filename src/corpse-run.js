@@ -131,7 +131,10 @@ function corpseRun(bot, goal, now = Date.now()) {
     goal.corpseRunsScannedTo = (survival.deaths || []).at(-2)?.at || goal.corpseRunsScannedTo || null;
   }
   if ((goal.corpseRunFor || goal.corpseRun?.deathAt) !== death.at) {
-    if (recovery?.at !== death.at || recovery.status === 'pending') return null;
+    // Pending in another dimension is no reason to wait (note 2435): its walk is not this dimension's to make, and the
+    // recovery closes only on a turn given to it. full-30 (25588, 2026-10-28 21:42 to 21:50Z), back in the Overworld
+    // from a blaze death, passed over 'go back for the items dropped' and was never asked about its kit in the Nether.
+    if (recovery?.at !== death.at || (recovery.status === 'pending' && dim(recovery.dimension) === dim(bot?.game?.dimension))) return null;
     const old = goal.corpseRun;
     if (old?.status === 'open' && old.choice === 'go_back') note(goal, 'diedOnWay');
     if (old && ['open', 'left', 'unreachable'].includes(old.status) && !old.loadedAt && Object.keys(old.items || {}).length && !goal.corpseRunsEarlier.some(r => r.deathAt === old.deathAt)) goal.corpseRunsEarlier = [...goal.corpseRunsEarlier, old].slice(-3);
