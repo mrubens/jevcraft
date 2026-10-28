@@ -21,6 +21,12 @@ const KEEP_MS = 30 * 60000;
 const EVERY_MS = 15000;
 const COMPASS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
 
+// Whether a sheep seen still has its wool, and the flock said by it (note 2343): full-14 (25588, 2026-10-28
+// 05:17:54 to 05:21Z) walked back four times across its island to a sheep 'seen just now', the one it had sheared
+// there, and came to 2 of 3 wool. A sheep sheared grows it back eating grass, a few minutes.
+const woolly = (bot, e) => { try { return !require('./shearing').sheared(bot, e); } catch (_) { return true; } };
+const woollySays = s => s.woolly == null ? '' : s.woolly === s.count ? '' : s.woolly === 0 ? ` (sheared, none with wool when seen)` : ` (${s.woolly} with wool when seen)`;
+
 function noteSightings(bot, goal, now = Date.now()) {
   if (!goal || !bot.entity?.position || now - (bot._sightedAt || 0) < EVERY_MS) return;
   bot._sightedAt = now;
@@ -34,10 +40,11 @@ function noteSightings(bot, goal, now = Date.now()) {
       const flock = list.find(s => s.dimension === dimension && Math.hypot(s.x - p.x, s.z - p.z) <= FLOCK);
       if (flock) {
         // Counted afresh each look: the flock is where most of it is now.
-        if (flock.at !== now) Object.assign(flock, { at: now, count: 0, sx: 0, sy: 0, sz: 0 });
-        flock.count++; flock.sx += p.x; flock.sy += p.y; flock.sz += p.z;
+        if (flock.at !== now) Object.assign(flock, { at: now, count: 0, sx: 0, sy: 0, sz: 0, woolly: kind === 'sheep' ? 0 : undefined });
+        flock.count++;
+        if (kind === 'sheep') flock.woolly = (flock.woolly || 0) + (woolly(bot, e) ? 1 : 0); flock.sx += p.x; flock.sy += p.y; flock.sz += p.z;
         Object.assign(flock, { x: Math.round(flock.sx / flock.count), y: Math.round(flock.sy / flock.count), z: Math.round(flock.sz / flock.count) });
-      } else list.push({ x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z), count: 1, at: now, dimension, sx: p.x, sy: p.y, sz: p.z });
+      } else list.push({ x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z), count: 1, at: now, dimension, sx: p.x, sy: p.y, sz: p.z, ...(kind === 'sheep' ? { woolly: woolly(bot, e) ? 1 : 0 } : {}) });
     }
     seen[kind] = list.sort((a, b) => b.at - a.at).slice(0, 8);
   }
@@ -51,7 +58,7 @@ function sighted(bot, goal, kind, now = Date.now()) {
     const direction = distance ? COMPASS[((Math.round(Math.atan2(dz, dx) / (Math.PI / 4)) % 8) + 8) % 8] : 'here';
     const minutes = Math.round((now - s.at) / 60000);
     return { x: s.x, y: s.y, z: s.z, count: s.count, distance, direction, minutesAgo: minutes,
-      says: `${s.count} ${kind} seen ${minutes ? `${minutes} minute${minutes === 1 ? '' : 's'} ago` : 'just now'}, ${distance} blocks ${direction}${require('./height-says').heightSays(bot, s)} (${s.x}, ${s.y ?? '?'}, ${s.z})${require('./height-says').wayFailedSays(bot, s)}` };
+      woolly: s.woolly, says: `${s.count} ${kind}${woollySays(s)} seen ${minutes ? `${minutes} minute${minutes === 1 ? '' : 's'} ago` : 'just now'}, ${distance} blocks ${direction}${require('./height-says').heightSays(bot, s)} (${s.x}, ${s.y ?? '?'}, ${s.z})${require('./height-says').wayFailedSays(bot, s)}` };
   }).sort((a, b) => a.distance - b.distance);
 }
 
