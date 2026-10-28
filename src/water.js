@@ -129,6 +129,29 @@ async function collectWater(bot, task, goal, save, { navigate, explore, digTo = 
   // inside the rock. full-11 (25588, 2026-10-27 20:36 to 20:47Z), in a pocket of a mountain at y 75 with water 8 below
   // and its frame beside it, met 'No route' on every wade and dry stand and an explore that went nowhere, and ran the
   // fetch several times a second for ten minutes; the user: '11 is taking forever'.
+  // Water behind one block in reach: that block dug and the bucket filled from where the bot stands (note 2350). The
+  // staircase does not open a cell with water behind it, so a dig to water a block off circled it. full-15 (25586,
+  // 2026-10-28 06:18 to 06:21Z) tunnelled 47 steps round the water at (8, 23, -137), 1 to 4 blocks from it, 'No
+  // measurable progress' four times, and left without the bucket; full-14 spent 9 minutes on a cast with no water.
+  if (sources.length && dryStanding(bot, bot.entity.position)) {
+    const eye = bot.entity.position.offset(0, 1.62, 0);
+    for (const p of sources.filter(q => eye.distanceTo(q.offset(0.5, 0.5, 0.5)) <= 4.2).sort((a, b) => eye.distanceTo(a) - eye.distanceTo(b)).slice(0, 3)) {
+      task.check(); checkThreats(bot);
+      const to = p.offset(0.5, 0.5, 0.5), dir = to.minus(eye), hit = bot.world?.raycast?.(eye, dir.unit(), dir.norm());
+      const wall = hit?.position && !hit.position.equals(p) ? bot.blockAt(hit.position) : null;
+      if (!wall || !wall.diggable || /water|lava/.test(wall.name) || wall.position.distanceTo(p) > 1.5) continue;
+      // Not where the wall holds back lava, nor under the bot's own feet.
+      if ([[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].some(([x, y, z]) => /lava/.test(bot.blockAt(wall.position.offset(x, y, z))?.name || ''))) continue;
+      if (wall.position.equals(bot.entity.position.floored().offset(0, -1, 0))) continue;
+      try {
+        console.log(`[water] the water at ${p} is behind the ${wall.name} at ${wall.position}: digging it and filling from here`);
+        await require('./skills').digWithTool(bot, wall, true);
+        await fillWaterBucket(bot, task, p, { guard: () => checkThreats(bot) });
+        if (goal.search?.water) goal.search.water.attempts = 0;
+        goal.step = { action: 'fill_bucket', position: { ...p }, item: 'water_bucket', confirmed: true, throughWall: true }; save(); return;
+      } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[water] through the wall to ${p}: ${String(err.message || err).slice(0, 120)}`); }
+    }
+  }
   if (sources.length && digTo) {
     const near = sources.slice().sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0];
     goal.step = { action: 'fill_bucket', position: { x: near.x, y: near.y, z: near.z }, item: 'water_bucket', dig: true }; save();
