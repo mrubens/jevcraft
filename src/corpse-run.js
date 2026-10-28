@@ -407,6 +407,10 @@ function armsFirstWant(bot) {
   if (!has(/^shield$/) && !(bot?.inventory?.slots?.[45]?.name === 'shield') && countOf(bot, 'iron_ingot') >= 1) out.push('shield');
   return out;
 }
+// Stairs a go toward the drops: by hand a tunnel of 64 took past the ten minutes a pass may run (note 2370). full-19
+// (25591, 2026-10-28 11:13 to 11:48Z), no pickaxe, dug down toward its drops 220 blocks off inside one pass, was
+// restarted by the stuck watch three times into the same pass, and the pickaxe it chose to make was never made.
+const handSteps = bot => (bot.inventory?.items?.() || []).some(i => /_pickaxe$/.test(i.name)) ? 64 : 8;
 async function corpseRunStep(bot, task, goal, save, { move = navigate, collect = collectNearbyDrops, surface = null, room = null, gatherFood = null, kitActions = null, arm = null } = {}) {
   const run = corpseRun(bot, goal);
   if (!run && await kitTrip(bot, task, goal, save)) return false;
@@ -656,7 +660,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
         const unit = { x: (here.x - spot.x) / across, z: (here.z - spot.z) / across };
         const target = new Vec3(Math.round(spot.x + unit.x * edge), Math.round(spot.y + 1), Math.round(spot.z + unit.z * edge));
         goal.step = { action: 'corpse_run', to: { ...run.position }, items: { ...run.items }, way: `down to their level (y ${Math.round(spot.y)}) before coming within ${TICKING} blocks` }; save();
-        try { await require('./bridging').tunnelStraight(bot, task, target, { maxSteps: 64, navigate: move, down: true }); }
+        try { await require('./bridging').tunnelStraight(bot, task, target, { maxSteps: handSteps(bot), navigate: move, down: true }); }
         catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[corpse run] the way down stopped: ${String(err.message || err).slice(0, 160)}`); }
         return true;
       }
@@ -680,7 +684,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     // and left them, their five minutes running.
     if (after > ARRIVE && before - after < 2 && before <= FAR) {
       try {
-        const r = await require('./bridging').tunnelStraight(bot, task, spot, { maxSteps: 64, navigate: move, down: true });
+        const r = await require('./bridging').tunnelStraight(bot, task, spot, { maxSteps: handSteps(bot), navigate: move, down: true });
         console.log(`[corpse run] dug and bridged toward the drops: ${r?.arrived ? 'arrived' : `${Math.round(after - flat(bot.entity.position, spot))} blocks nearer`}`);
       } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[corpse run] the dig toward the drops stopped: ${String(err.message || err).slice(0, 120)}`); }
       after = flat(bot.entity.position, spot);
