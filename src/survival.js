@@ -12909,7 +12909,12 @@ function pocketHeldOf(bot, state, now = Date.now()) {
   // A stay held by the seal's hold (night-record.js, note 789): held until
   // what the pocket was sealed for ends, said with the longest of those waits.
   const h = state.sealHold;
-  if (p?.choice === 'stay' && h?.stayHealth != null && h.read?.waiting?.length && !h.read.askedFor) {
+  // Held three minutes at the most, then asked again with what is about (note 2372): the threat gone never comes
+  // while a mob stays near with no way in, and the countdown said about 30 seconds each look. full-19 (25591,
+  // 2026-10-28 12:00:23 to 12:09:51Z) stayed sealed past dawn, a zombie with no way to it and a creeper out of sight
+  // 9 blocks off, pocket_next not asked for nine minutes though each turn said it would be in about 30 seconds.
+  const SEAL_HOLD_MS = 3 * 60000;
+  if (p?.choice === 'stay' && h?.stayHealth != null && h.read?.waiting?.length && !h.read.askedFor && now - (p.at || now) < SEAL_HOLD_MS) {
     const waits = h.read.waiting.map(w => w === 'dawn' ? Math.round(((DAY.DAWN - (bot.time?.timeOfDay ?? 0) + 24000) % 24000) / 20)
       : w === 'the threat gone' ? Math.max(1, Math.round((require('./night-record').CLEAR_MS - (h.clearSince ? now - h.clearSince : 0)) / 1000)) : Math.max(1, Math.round((20 - (bot.health ?? 20)) * 4)));
     return { choice: 'stay', secondsAgo: Math.round((now - (p.at || now)) / 1000), forSeconds: Math.max(...waits), why: `the stay held until ${h.read.waiting.join(' and ')}, what the pocket was sealed for` };
