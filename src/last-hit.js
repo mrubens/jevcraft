@@ -41,10 +41,27 @@ function lastHit(bot) {
     const hit = ce.afterArmour(least, worn);
     if (hit < lightest) { lightest = hit; kind = k; }
   }
+  // The mobs about now count as well (note 2404): the lightest blow of the dimension's mobs is a piglin's or a magma
+  // cube's, and full-21 (25589, 2026-10-28 17:12 to 17:3xZ) sat at 6.6 health with hunger 13 and nothing to eat beside a
+  // blaze spawner, its blazes' fireball about 2.7 through its iron and five of fire after; no hit was the last by the
+  // lightest, so its 'go on without food' held and no food was asked for half an hour.
+  let about = null;
+  try {
+    const here = bot.entity?.position;
+    for (const e of Object.values(bot.entities || {})) {
+      const m = e?.name && ce.MOBS[e.name];
+      if (!m?.hit || !here || !e.position || e.position.distanceTo(here) > 16 || e.isValid === false) continue;
+      let hit = ce.afterArmour(m.hit, worn);
+      if (e.name === 'blaze' && typeof ce.landingCost === 'function') hit = ce.landingCost(hit);
+      if (!about || hit > about.hit) about = { hit, kind: e.name, distance: e.position.distanceTo(here) };
+    }
+  } catch (_) { about = null; }
+  if (about && health <= about.hit && (!kind || health > lightest)) { lightest = about.hit; kind = about.kind; }
   if (!kind || health > lightest) return null;
   const place = { nether: "the Nether's", overworld: "the Overworld's", end: "the End's" }[dim(bot)];
   const food = points ? `${points} food points carried bring hunger only to ${Math.min(20, hunger + points)}` : 'nothing to eat carried';
-  const says = `At ${r1(health)} health any hit ends the bot: the lightest blow of ${place} mobs is about ${r1(lightest)} through the armour worn (a ${kind.replaceAll('_', ' ')}'s), and a drop of four blocks costs one. Health does not come back: hunger ${hunger}, under 18, and ${food}. Only food brings it back; a way that brings none risks the end and gains no health.`;
+  const byAbout = about && kind === about.kind && lightest === about.hit;
+  const says = `At ${r1(health)} health ${byAbout ? `a hit from the ${kind.replaceAll('_', ' ')} ${Math.round(about.distance)} blocks off ends the bot: about ${r1(lightest)} through the armour worn${kind === 'blaze' ? ', its fire counted' : ''}` : `any hit ends the bot: the lightest blow of ${place} mobs is about ${r1(lightest)} through the armour worn (a ${kind.replaceAll('_', ' ')}'s)`}, and a drop of four blocks costs one. Health does not come back: hunger ${hunger}, under 18, and ${food}. Only food brings it back; a way that brings none risks the end and gains no health.`;
   return { health: r1(health), hunger, points, lightest: r1(lightest), kind, says };
 }
 
