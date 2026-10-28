@@ -104,7 +104,10 @@ async function pickUpDrops(bot, task, goal, save, state, drops, { navigate, coll
     for (const drop of drops) {
       if (Date.now() >= deadline) break;
       const before = countOf(bot, drop.item);
-      try { await collect(bot, bounded, drop.item, { radius: LIMITS.dropRadius, origin: start, timeoutMs: Math.max(500, deadline - Date.now()), move: navigate }); }
+      // The block between dug where the drop lies in a pocket (note 2419), as the mine step's pickup does: ore dug from
+      // a staircase through the rock in front of it (note 2402) drops into the pocket it leaves, and full-28 (25589,
+      // 2026-10-28 19:1xZ) turned between this pickup and its tunnel four times in 26 seconds, the raw iron in reach.
+      try { await collect(bot, bounded, drop.item, { radius: LIMITS.dropRadius, origin: start, timeoutMs: Math.max(500, deadline - Date.now()), move: navigate, allowExcavation: true }); }
       catch (err) { task.check(); if (fatal(err)) throw err; }
       const gained = countOf(bot, drop.item) - before;
       if (gained > 0) picked.push({ item: drop.item, count: gained }); else state.skipped[`drop:${drop.item}`] = Date.now();
