@@ -285,7 +285,7 @@ function dropsSeenSays(run) {
 // to go straight back for it is Jev's, asked once a death (note 1233).
 // -> true when the trip was chosen (the errand set).
 const KIT_ERRAND = 'the kit dropped at the death there';
-const KIT_FIRST_HOLD_MS = 30 * 60000;
+const KIT_FIRST_HOLD_MS = 30 * 60000, QUICK_KIT_MS = 10 * 60000;
 // Measured again on the full runs of 2026-10-27 and 10-28 (each Nether
 // death's corpse record against the flight frames' next Nether entry, note
 // 2393): the 8 answered kit_first were back in the Nether 61 to 294 minutes
@@ -319,6 +319,8 @@ async function kitTrip(bot, task, goal, save, now = Date.now()) {
   // made since stands at: asked once a death, it was never weighed again
   // while the remaking ran its three hours (note 2393).
   if (run?.trip?.pick === 'kit_first' && now - run.trip.at >= KIT_FIRST_HOLD_MS) delete run.trip;
+  // A quick kit holds ten minutes, then the trip is asked again with what was made (note 2405).
+  if (run?.trip?.pick === 'quick_kit' && now - run.trip.at >= QUICK_KIT_MS) delete run.trip;
   if (!run || run.status !== 'open' || run.trip || run.loadedAt || run.dimension !== 'nether' || dim(bot.game?.dimension) !== 'overworld' || !bot.entity?.position) return false;
   if (!Object.keys(run.items || {}).length || now - Date.parse(run.deathAt) > KEEP_MS) return false;
   const here = bot.entity.position, spot = run.position;
@@ -368,6 +370,10 @@ async function kitTrip(bot, task, goal, save, now = Date.now()) {
   const withSays = `with ${weapon ? `a ${weapon}` : 'no sword or axe'} and ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'}`;
   const tree = {
     go_now: { description: `Go back for them now, as the bot stands (${withSays}): ${listed(run.items)} lie in the Nether where the bot died, ${fromPortal} blocks from the portal on that side; the portal on this side is ${toPortal} blocks off, about ${minutes} minute${minutes === 1 ? '' : 's'} at a clear walk over level ground, and longer over water, hills or rock.${hourSays}${depthSays} They are not a second older: dropped things age only while a player is within 128 blocks, and they last until the bot comes that near again, then five minutes. ${death.cause ? `The bot ${death.cause} there; when it died, ` : 'When the bot died, '}${about || 'nothing hostile was seen'}${about ? ' was about' : ''}; what was about then may be about still, and a mob the bot had struck forgets it once the bot is gone.${/burn|flame|fire|lava/i.test(death.cause || '') ? ' A death by fire is often on burning ground, and what drops into fire or lava is destroyed: 25593 (2026-10-04) went back 162 blocks for the kit of a death it burned to, and nothing lay there.' : ''} The bot wore ${(death.worn || []).map(n => n.replaceAll('_', ' ')).join(', ') || 'nothing'} then. Taken up, the kit is worn and carried at once and the ladder goes on from there.${foodSays}${piglinSays}${waySays} ${TRIPS}` },
+    // Between going bare and the whole kit (note 2405): full-26 (25586, 2026-10-28 17:21 to 17:44Z) went back bare,
+    // 'cross_now' chosen over a pickaxe and wood twice, and a hoglin killed it on the way; kit_first's record is a
+    // median 206 minutes.
+    quick_kit: { description: `Make a quick kit first, ten minutes at most, then go back for them: ${[!weapon && 'a stone sword', !pickaxe && 'a stone pickaxe', blocks < 32 && 'a stack of blocks to bridge and wall with', carriedFood < 12 && 'food for the walk'].filter(Boolean).join(', ') || 'what the ladder asks for next'}, from wood and stone about here; asked again with what was made after ten minutes. The drops do not age meanwhile. The iron, diamonds and rods are fetched with the drops, not made again.` },
     kit_first: { description: `Make a kit again here first, and take the drops up on the next trip into the Nether: ${again || 'what the ladder asks for'}. In the record, ${TRIP_RECORD}. The drops do not age meanwhile, and the bot comes to them ${withSays.replace(/^with /, 'no longer with ')}, in whatever it has made.` },
   };
   if (night && toDawn !== null) tree.go_at_dawn = { description: `Go back for them at dawn, about ${toDawn} real minute${toDawn === 1 ? '' : 's'} off: the night is seen out first as the night's own question has it (a shelter, a bed), and this is asked again by day. The drops do not age meanwhile.` };

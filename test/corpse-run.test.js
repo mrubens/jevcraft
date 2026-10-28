@@ -435,6 +435,22 @@ test('the kit made again first is the other answer: no trip, the drops left for 
   assert.equal(asked.length, 2, 'asked again after half an hour');
 });
 
+test('a quick kit is offered between going bare and the whole kit, says what is missing, and is asked again after ten minutes (note 2405)', async () => {
+  const { bot, goal } = world({ dimension: 'overworld', deathDimension: 'the_nether' });
+  goal.portals = [{ x: 30, y: 64, z: 40, dimension: 'overworld' }, { x: 300, y: 64, z: 0, dimension: 'nether' }];
+  const asked = [];
+  const client = { systemOne: async ({ questions }) => { asked.push(Object.values(questions)[0].criteria); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'quick_kit', confidence: 0.9 }])) }; } };
+  const task = Object.assign(new Task('run'), { opportunityClient: client });
+  await corpseRunStep(bot, task, goal, () => {}, {});
+  assert.match(asked[0].quick_kit, /^Make a quick kit first, ten minutes at most, then go back for them: a stone sword, a stone pickaxe, a stack of blocks/);
+  assert.equal(goal.corpseRun.trip.pick, 'quick_kit');
+  await corpseRunStep(bot, task, goal, () => {}, {});
+  assert.equal(asked.length, 1, 'held');
+  goal.corpseRun.trip.at -= 11 * 60000;
+  await corpseRunStep(bot, task, goal, () => {}, {});
+  assert.equal(asked.length, 2, 'asked again after ten minutes');
+});
+
 test('by night the kit trip says the hour and offers the dawn, and is asked again then; in a kit already it is not asked (note 1236)', async () => {
   const { bot, goal } = world({ dimension: 'overworld', deathDimension: 'the_nether' });
   bot.time.timeOfDay = 18000;
