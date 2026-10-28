@@ -634,3 +634,22 @@ test('a short walk with no food carried is offered food first too, and the state
   assert.match(text, /Get food for the walk first/, 'offered under 300 blocks');
   assert.match(text, /0 food points carried, 5 wanted for the walk; hunger 12: under eighteen, health does not come back until the bot eats/);
 });
+
+test('drops far under the bot are gone to down the stairs it dug near them, top then foot (note 2421)', async () => {
+  const { stairsNear } = require('../src/corpse-run');
+  const visited = {}; for (let i = 0; i <= 22; i++) visited[`(171, ${44 - i}, ${155 + i})`] = 1;
+  const goal = { miningSites: { 'overworld:iron_ore': { dimension: 'overworld', visited }, 'overworld:stone': { dimension: 'overworld', visited: { '(130, 83, 216)': 1 } } } };
+  const s = stairsNear(goal, { x: 143.5, y: 18, z: 197.5 }, 'overworld');
+  assert.deepEqual(s.top, { x: 171, y: 44, z: 155 });
+  assert.deepEqual(s.foot, { x: 171, y: 22, z: 177 });
+  assert.equal(stairsNear(goal, { x: 400, y: 18, z: 400 }, 'overworld'), null, 'stairs 48 blocks or more off are not the way');
+  assert.equal(stairsNear(goal, { x: 143.5, y: 18, z: 197.5 }, 'the_nether'), null);
+  const { bot, goal: g } = world({ at: new Vec3(146, 57, 198) });
+  g.miningSites = goal.miningSites;
+  g.survival.deaths[0].position = { x: 143.5, y: 18, z: 197.5 };
+  corpseRun(bot, g).choice = 'go_back';
+  const walked = [];
+  await corpseRunStep(bot, new Task('t'), g, () => {}, { move: async (b, t, goalNear) => { walked.push([goalNear.x, goalNear.y, goalNear.z]); b.entity.position = new Vec3(goalNear.x, goalNear.y, goalNear.z); } });
+  assert.deepEqual(walked, [[171, 44, 155], [171, 22, 177]]);
+  assert.match(g.step.way, /stairs dug from y 44 to y 22/);
+});
