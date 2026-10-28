@@ -50,3 +50,28 @@ test('the leg\'s question says where fortresses can begin: the bastion\'s region
   assert.equal(facts.portalBack, 'the nearest portal known in the Nether is at (27, 41, 7), 294 blocks north of here');
   assert.equal(state.heading, 0);
 });
+
+test('the leg chosen is held to what it said it would open: at the next question the columns seen since are said beside it (full-18, note 2391)', async t => {
+  const { chooseLeg } = require('../src/mob-hunt');
+  const coverage = require('../src/nether-coverage');
+  const open = p => p.y >= 57 && p.y <= 75;
+  const at = p => { const q = p.floored ? p.floored() : p, name = open(q) ? 'air' : 'netherrack'; return { name, boundingBox: name === 'air' ? 'empty' : 'block', diggable: true, position: q, digTime: () => 400 }; };
+  const bot = { registry, game: { dimension: 'the_nether', gameMode: 'survival' }, health: 20, food: 20, entity: { position: new Vec3(97.5, 62, 292.5) }, entities: {},
+    world: { raycast: () => null }, inventory: { items: () => [{ name: 'netherrack', count: 64, type: 1 }] }, findBlocks: () => [], chat() {}, blockAt: at };
+  const goal = { portals: [{ x: 27, y: 41, z: 7, dimension: 'nether' }] };
+  const state = goal.fortressSearch = { legs: 3 };
+  const asked = [];
+  const client = { systemOne: async ({ state: facts }) => { asked.push(facts); return { answers: { branch_0: { choice: 'leg_east', confidence: 0.9 } } }; } };
+  const T0 = Date.parse('2026-10-28T15:30:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: T0 });
+  await chooseLeg(bot, new Task('hunt'), goal, () => {}, { client, navigate: async () => {}, tunnel: async () => {} }, state);
+  assert.equal(asked[0].legsOpened, undefined, 'nothing to say before a leg');
+  assert.equal(state.legPromise.pick, 'leg_east');
+  // Three minutes on, three columns more seen (and what the look at the
+  // question itself reaches).
+  const seen = coverage.coverageOf(state, 'nether').seen; seen['999,999'] = 0b111;
+  t.mock.timers.setTime(T0 + 180000);
+  await chooseLeg(bot, new Task('hunt'), goal, () => {}, { client, navigate: async () => {}, tunnel: async () => {} }, state);
+  assert.match(asked[1].legsOpened, /^What this search's last leg said it would open to view at fortress heights, and what was seen from it before the next question, in columns of 4 by 4: leg east, said about \d+, (\d+) seen in 3 minutes\.$/);
+  assert(Number(asked[1].legsOpened.match(/, (\d+) seen in/)[1]) >= 3, 'the three marked, and what the look at the question saw');
+});

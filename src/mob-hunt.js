@@ -3375,8 +3375,18 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   if (swordThere) { if (options.fetch_stems) options.fetch_stems.description += ` ${swordThere.leaves}`; if (options.make_pickaxe) options.make_pickaxe.description += ` ${swordThere.makes}`; }
   const tree = Object.fromEntries(Object.entries(lead ? bs.pickaxeFirstOrder(options) : options).map(([k, o]) => [k, { description: o.description, ...(o.target ? { target: o.target } : {}), ...(o.waits ? { waits: o.waits } : {}) }]));
   const blazesSeen = blazesSeenFacts(bot, goal);
+  // What the legs said they would open to view and what was seen from
+  // them: the estimate counts the unseen ground in line of the open air on
+  // a leg, and full-18 (25586, 2026-10-28 15:3xZ), at y 109 in rock, was
+  // told its east leg opened 1,859 columns and saw none on it ('no new ground
+  // looked over'), seven legs and 86 minutes into the search (note 2391).
+  const seenNow = coverage.seenCount(state, dim);
+  if (state.legPromise && state.legPromise.dim === dim) state.legYields = [...(state.legYields || []), { pick: state.legPromise.pick, opens: state.legPromise.opens, seen: Math.max(0, seenNow - state.legPromise.seen), minutes: Math.round((Date.now() - state.legPromise.at) / 6000) / 10 }].slice(-6);
+  delete state.legPromise;
+  const yields = (state.legYields || []).filter(l => l.minutes >= 0.5);
+  const legsOpened = yields.length ? `What this search's last ${yields.length === 1 ? 'leg' : `${yields.length} legs`} said ${yields.length === 1 ? 'it' : 'each'} would open to view at fortress heights, and what was seen from ${yields.length === 1 ? 'it' : 'each'} before the next question, in columns of 4 by 4: ${yields.map(l => `${l.pick.replaceAll('_', ' ')}${l.opens != null ? `, said about ${l.opens}` : ''}, ${l.seen} seen in ${l.minutes} minute${l.minutes === 1 ? '' : 's'}`).join('; ')}.` : null;
   const facts = { ...(lead ? { withoutAPickaxe: lead } : {}), ...(blazesSeen ? { blazesSeen } : {}), netherRecord: require('./nether-record').says(goal), ...(() => { try { const t = require('./nether-record').stintsSays(bot, goal); return t ? { netherStays: t } : {}; } catch (_) { return {}; } })(), height: y, fortressHeights: 'corridors and bridges mostly between y 48 and 75, over the lava sea at y 31; bricks are seen within 128 blocks, and only through open air',
-    legsSoFar: state.legs || 0, minutesSearching: state.since ? Math.round((Date.now() - state.since) / 60000) : 0,
+    ...(legsOpened ? { legsOpened } : {}), legsSoFar: state.legs || 0, minutesSearching: state.since ? Math.round((Date.now() - state.since) / 60000) : 0,
     lastLeg: Number.isInteger(state.lastHeading) ? (() => { const seeking = state.legMode === 'descend', h = state.legHistory?.[legKey(state.lastHeading, state.legMode)];
       return `${seeking ? 'a staircase toward the fortress heights ' : state.legMode === 'floor' ? 'down to the floor and along it ' : state.legMode === 'round' ? 'round what stopped the line ' : ''}${HEADING_NAMES[state.lastHeading]}${h ? `, ended no nearer: ${h.ended}` : ''}`; })() : null,
     ...(resting.length ? { legsResting: resting } : {}), ...(blocked.length ? { legsClosed: blocked } : {}),
@@ -3405,7 +3415,9 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   const decision = await decide('fortress_leg', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree, state: facts,
     context: { current: `leg_${HEADING_NAMES[current]}`, open, unseen, stood, passes: fortress?.passes || 0, widen: options.widen_search ? { leg: sideLeg, unseen: widenUnseen } : null } });
   if (decision.stale) return false;
-  return options[decision.path.at(-1)].run();
+  const picked = decision.path.at(-1);
+  if (/^(leg_|round_|widen_search|seek_fortress_height)/.test(picked)) state.legPromise = { pick: picked, opens: unseen[picked] ?? null, seen: seenNow, at: Date.now(), dim };
+  return options[picked].run();
 }
 // The portal the search can go home by, as the way back (work.js
 // returnFromNether) finds it: one in view, the nearest remembered in the

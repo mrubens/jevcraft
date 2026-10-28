@@ -311,6 +311,11 @@ function coverageSays(state, dim, here, radius = LEG) {
 }
 
 // Whether the column at (x, z) has been stood on.
+// How many columns of 4 by 4 have been seen at fortress heights in all.
+function seenCount(state, dim) {
+  let n = 0; for (const v of Object.values(coverageOf(state, dim).seen)) { let b = v >>> 0; while (b) { n += b & 1; b >>>= 1; } }
+  return n;
+}
 function stoodAt(state, dim, x, z) { return has(coverageOf(state, dim).stood, Math.floor(x / CELL), Math.floor(z / CELL)); }
 
-module.exports = { stoodAt, look, stand, lastGround, groundStood, watch, headingCoverage, headingSays, backSays, spiralSide, liesThatWay, stoodNear, coverageSays, coverageOf, dimOf, CELL, RAYS, LEG, RING, REVEAL, BAND_LOW, BAND_HIGH };
+module.exports = { seenCount, stoodAt, look, stand, lastGround, groundStood, watch, headingCoverage, headingSays, backSays, spiralSide, liesThatWay, stoodNear, coverageSays, coverageOf, dimOf, CELL, RAYS, LEG, RING, REVEAL, BAND_LOW, BAND_HIGH };
