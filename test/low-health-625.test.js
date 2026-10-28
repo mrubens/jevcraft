@@ -45,8 +45,8 @@ test('the walk back to a portal in the Nether is said at the pace the day\'s wal
   const far = netherBot({ at: new Vec3(-125.5, 39, 415.5), health: 3.5, food: 13, worn, items: [] });
   const said = portalTrip(far, goal);
   assert.match(said, /^The nearest portal remembered is 4\d\d blocks off, about 9\d seconds at a walk if nothing stops it, and back through one after\./);
-  assert.match(said, /In the Nether the bot's walks back to a portal made 17 to 30 blocks a minute over 2026-09-28's trials, the stops for mobs, edges and drops counted: about 1\d to 2\d minutes, not seconds\./);
-  assert.match(said, /Of 181 such walks of over 60 blocks 22 came out in the Overworld, 18 ended in a death and the rest were given up, set aside or stalled; of the 33 begun under eight health 4 came out and 6 died\./);
+  assert.match(said, /In the Nether the bot's walks back to a portal made 21 to 33 blocks a minute over the full runs of 2026-10-26 to 2026-10-28, the stops for mobs, edges and drops counted: about 1\d to 2\d minutes, not seconds\./);
+  assert.match(said, /Of 83 such walks of over 60 blocks 13 came out in the Overworld, 1 ended in a death and the rest stopped short in the Nether \(broken off for a fight or other work and begun again, given up, set aside or stalled\); of the 3 begun under eight health 1 came out and 1 died\./);
   // Above eight health the walks begun under it are not the bot's.
   assert.doesNotMatch(portalTrip(netherBot({ at: new Vec3(-125.5, 39, 415.5), health: 15, food: 13, worn, items: [] }), goal), /begun under eight health/);
   // Forty-one blocks: the straight walk.
@@ -56,7 +56,7 @@ test('the walk back to a portal in the Nether is said at the pace the day\'s wal
   // The Overworld's walks are not the Nether's.
   const over = netherBot({ at: new Vec3(400.5, 70, 400.5), health: 20, food: 20, dimension: 'overworld', items: [] });
   assert.doesNotMatch(portalTrip(over, { portals: [{ x: 3, y: 64, z: 8, dimension: 'overworld' }] }), /blocks a minute/);
-  assert.equal(NETHER_TRIPS.trips, 181);
+  assert.equal(NETHER_TRIPS.trips, 83);
 });
 
 // mid-243-ag-fortress-5, 18:09:58: the walk back for food Jev chose at 18:07:00 (go_back 0.52, 3.5 health, the portal 277

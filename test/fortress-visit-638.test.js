@@ -45,7 +45,7 @@ test('at 5 health, hunger 14 and nothing to eat: no wait is offered (nothing wou
   assert.match(tree.go_in.description, /Health does not come back: hunger 14 is under eighteen and nothing carried is food, so every point lost in the fight stays lost/);
   assert.doesNotMatch(tree.go_in.description, /Health does come back/);
   // Going back: the walk is minutes at the measured pace, from note 626, and its record.
-  assert.match(tree.go_back.description, /17 to 30 blocks a minute/);
+  assert.match(tree.go_back.description, /21 to 33 blocks a minute/);
   assert.match(tree.go_back.description, /minutes, not seconds/);
   assert.match(tree.go_back.description, /It gains no rod while it lasts/);
   // The hoglin: the pillar's figures and the hunts' record, both, and that this hunt is on foot.

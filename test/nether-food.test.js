@@ -236,7 +236,7 @@ test('restock_food is asked with its ways, the pick carried out, and the stay an
   assert.match(state.whatTheNetherHas, /piglin barter's items \(19 in the jar\) hold none, a strider drops string, chorus fruit grows only in the End/);
   assert.match(state.carried, /^0 food points$/);
   assert(state.waysNotOffered.some(s => /mushroom stew: 0 red and 0 brown mushrooms within 48 blocks/.test(s)));
-  assert.match(state.theNetherPace, /17 to 30 blocks a minute/);
+  assert.match(state.theNetherPace, /21 to 33 blocks a minute/);
   assert.deepEqual(state.stay, { minutesWanted: 120, pointsWanted: 80, carriedLastMinutes: 0 });
   // The keep_on it offers is the same twenty minutes' rest of the trip back the stalls offer.
   const { question } = require('../src/decisions');

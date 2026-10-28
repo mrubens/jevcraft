@@ -635,14 +635,21 @@ function cameThrough(goal, here) {
 // at was about ten times too short. 22 of them came out in the Overworld, 18
 // ended in a death and the rest were given up, set aside or stalled; of the 33
 // begun under eight health 4 got through and 6 died.
-const NETHER_TRIPS = { day: '2026-09-28', trips: 181, over: 60, slow: 17, fast: 30, arrived: 22, died: 18, lowTrips: 33, lowArrived: 4, lowDied: 6 };
+// Measured again on the full runs of 2026-10-26 to 10-28 (node
+// scripts/nether-trips.js --from 2026-10-26T00:00:00Z, note 2389): 83 trips,
+// 21 blocks a minute in all and 33 for those that came out, 13 out, 1 death;
+// of 3 begun under eight health 1 came out and 1 died. The 09-28 figures
+// (18 deaths in 181) were from before the tunnel home: full-21 (25589,
+// 2026-10-28 15:35 to 15:53Z) stood 18 minutes at 10.8 health with nothing
+// to eat, the trip back told it '18 ended in a death', and died to a blaze.
+const NETHER_TRIPS = { day: '2026-10-26 to 2026-10-28', trips: 83, over: 60, slow: 21, fast: 33, arrived: 13, died: 1, lowTrips: 3, lowArrived: 1, lowDied: 1 };
 // The measured pace against the walk: said only where the walk is long enough
 // for it to count and the bot is in the Nether.
 function netherPaceSays(bot, d) {
   if (dimension(bot) !== 'nether' || !(d >= NETHER_TRIPS.over)) return { seconds: d / 4.3, says: '' };
   const { slow, fast } = NETHER_TRIPS, r = n => Math.max(1, Math.round(n));
   const low = (bot.health ?? 20) < 8;
-  return { seconds: d / ((slow + fast) / 2) * 60, says: ` In the Nether the bot's walks back to a portal made ${slow} to ${fast} blocks a minute over ${NETHER_TRIPS.day}'s trials, the stops for mobs, edges and drops counted: about ${r(d / fast)} to ${r(d / slow)} minutes, not seconds. Of ${NETHER_TRIPS.trips} such walks of over ${NETHER_TRIPS.over} blocks ${NETHER_TRIPS.arrived} came out in the Overworld, ${NETHER_TRIPS.died} ended in a death and the rest were given up, set aside or stalled${low ? `; of the ${NETHER_TRIPS.lowTrips} begun under eight health ${NETHER_TRIPS.lowArrived} came out and ${NETHER_TRIPS.lowDied} died` : ''}.` };
+  return { seconds: d / ((slow + fast) / 2) * 60, says: ` In the Nether the bot's walks back to a portal made ${slow} to ${fast} blocks a minute over the full runs of ${NETHER_TRIPS.day}, the stops for mobs, edges and drops counted: about ${r(d / fast)} to ${r(d / slow)} minutes, not seconds. Of ${NETHER_TRIPS.trips} such walks of over ${NETHER_TRIPS.over} blocks ${NETHER_TRIPS.arrived} came out in the Overworld, ${NETHER_TRIPS.died} ended in a death and the rest stopped short in the Nether (broken off for a fight or other work and begun again, given up, set aside or stalled)${low ? `; of the ${NETHER_TRIPS.lowTrips} begun under eight health ${NETHER_TRIPS.lowArrived} came out and ${NETHER_TRIPS.lowDied} died` : ''}.` };
 }
 
 // How far the portal the trip back would use is: the nearest remembered here,

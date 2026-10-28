@@ -76,7 +76,7 @@ test('the options say the spawner\'s rule, the median, the cell, and that health
   assert.match(stand, /^Take a stand at a cell [\d.]+ blocks from the cage, (a \d+-block walk|where the bot stands), (rock at its back|under a ceiling) and wait/);
   // The way back: its minutes at the measured pace, and the walks begun under 8 health.
   assert.match(tree.go_back.description, /about \d+ to \d+ minutes at the walks' measured pace/);
-  assert.match(tree.go_back.description, /of the 33 begun under 8 health, 4 came out and 6 died/);
+  assert.match(tree.go_back.description, /of the 3 begun under 8 health, 1 came out and 1 died/);
   // Food here: the hoglin seen, the pillar's measure and the hunts' record, both.
   assert.match(tree.get_food_here.description, /one seen \d+ blocks off 8 minutes ago/);
   assert.match(tree.get_food_here.description, /168 stances lost 0\.1 health on average\); the 66 hunts of 2026-09-28 brought none/);

@@ -92,7 +92,7 @@ test('the pocket\'s way to food keeps the trip back while Jev\'s keep-on holds, 
   assert.match(ways.hoglin_food.description, /more than the 2\.2 health left: at this health the bot is dead before the hoglin is/);
   // The walk to a hoglin seen 123 blocks off is said at the Nether's pace as well (note 625), and the
   // day's hunts said: 66 begun, none brought meat.
-  assert.match(ways.hoglin_food.description, /The walk there is about 29 seconds at a walk and if nothing stops it \(the Nether's walks made 17 to 30 blocks a minute over 2026-09-28, stops counted: about 4 to 7 minutes\), at 2\.2 health, and the hoglin may have moved on\. Two minutes, or six health lost, ends the hunt; at 2\.2 health that six is more than the bot has\./);
+  assert.match(ways.hoglin_food.description, /The walk there is about 29 seconds at a walk and if nothing stops it \(the Nether's walks made 21 to 33 blocks a minute over 2026-10-26 to 2026-10-28, stops counted: about 4 to 6 minutes\), at 2\.2 health, and the hoglin may have moved on\. Two minutes, or six health lost, ends the hunt; at 2\.2 health that six is more than the bot has\./);
   assert.match(ways.hoglin_food.description, /How the hunts of a hoglin for its meat went over 2026-09-28's trials in the Nether: 66 begun, 0 brought meat; 61 ended at the place a hoglin was seen with none within thirty-two blocks \(they move on\), 5 in a fight that took six health\./);
 });
 
@@ -146,7 +146,7 @@ test('the stalled Nether work offers the trip back for food itself, with its wal
   assert.equal(answers.keep_on, undefined, 'keep-on already holds');
   assert.match(answers.return_for_food.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Go back through the portal to the Overworld for food, hunted and cooked there, and come back fed\. The nearest portal remembered is 6\d blocks off, about 1\d seconds at a walk if nothing stops it, and back through one after\./);
   // Sixty-odd blocks is where the measured pace begins to be said (note 625): 2 to 4 minutes, not seconds.
-  assert.match(answers.return_for_food.description, /In the Nether the bot's walks back to a portal made 17 to 30 blocks a minute over 2026-09-28's trials, the stops for mobs, edges and drops counted: about 2 to 4 minutes, not seconds\. Of 181 such walks of over 60 blocks 22 came out in the Overworld, 18 ended in a death and the rest were given up, set aside or stalled; of the 33 begun under eight health 4 came out and 6 died\./);
+  assert.match(answers.return_for_food.description, /In the Nether the bot's walks back to a portal made 21 to 33 blocks a minute over the full runs of 2026-10-26 to 2026-10-28, the stops for mobs, edges and drops counted: about 2 to 3 minutes, not seconds\. Of 83 such walks of over 60 blocks 13 came out in the Overworld, 1 ended in a death and the rest stopped short in the Nether \(broken off for a fight or other work and begun again, given up, set aside or stalled\); of the 3 begun under eight health 1 came out and 1 died\./);
   assert.match(answers.return_for_food.description, /Health does not come back on the way: hunger 10, under eighteen, and nothing to eat; 4 health is what it walks with\./);
   assert.match(answers.return_for_food.description, /Jev chose 4 minutes ago, at 4 health, to go on in the Nether without this trip for twenty minutes; health is 4 now\.$/);
   await answers.return_for_food.run();
