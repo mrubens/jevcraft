@@ -217,6 +217,10 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
       const lyingNow = nearbyDrops(bot, item, origin, radius, { hostilesOk });
       if (lyingNow.length) {
         const nearest = Math.min(...lyingNow.map(d => d.position.distanceTo(bot.entity.position)));
+        // Where each lies, for a pickup with no spot of any kind (note 2349): full-16 (25591, 2026-10-28 06:2xZ) left
+        // raw iron 1.6 blocks off with every count at 0, after 2347, and the line said nothing of where it lay.
+        const cells = lyingNow.slice(0, 3).map(d => { const c = d.position.floored(); return `(${c.x}, ${c.y}, ${c.z}) in ${bot.blockAt(c)?.name || '?'} over ${bot.blockAt(c.offset(0, -1, 0))?.name || '?'} under ${bot.blockAt(c.offset(0, 1, 0))?.name || '?'}, ${pickupPositions(bot, d).length} spots, ${dugStand(bot, d).length} dug`; }).join('; ');
+        console.log(`[drops] lying at ${cells}; the bot at ${bot.entity.position.floored()} ${bot.entity.onGround ? 'on the ground' : 'in the air'}`);
         console.log(`[drops] ${item.replaceAll('_', ' ')} not taken: ${lyingNow.length} lying within ${radius} of the search's origin, the nearest ${Math.round(nearest * 10) / 10} from the bot; spots passed over: ${why.hostile} by a hostile about, ${why.bounds} out of bounds or on damaging ground, ${why.route} with no short clear route, ${why.moved} the drop moving; ${why.walked} walked to without the pickup`);
       }
       let failed = failures.get(bot);
