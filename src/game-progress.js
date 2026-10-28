@@ -777,8 +777,11 @@ function errandStage(bot, goal, where, now = Date.now()) {
   // needed the log, and Jev's set_aside_rung twice changed nothing (note 603).
   if (isSetAside(goal, 'rung', 'errand', now)) return null;
   const left = (errand.items || []).filter(i => count(bot, i.item) < i.count);
-  // Nothing named to bring is a trip there, and the ladder there after.
-  if (errand.items?.length ? !left.length : where === errand.dimension) return null;
+  // Nothing named to bring is a trip there, and the ladder there after: arrived, it is over, not kept for the hour
+  // (note 2411). full-21 (25589, 2026-10-28 18:13 to 18:22Z), its errand 'a kit made again' to the Overworld met there,
+  // was sent back out each time it came into the Nether by the same errand, twice in ten minutes.
+  if (!errand.items?.length && where === errand.dimension) { delete goal.errand; return null; }
+  if (errand.items?.length && !left.length) return null;
   const why = { for: errand.for };
   if (where === errand.dimension) return { phase: 'errand', action: 'acquire', item: left[0].item, count: left[0].count, ...why };
   if (where === 'nether' && errand.dimension === 'overworld') return { phase: 'errand', action: 'return_overworld', ...why };
