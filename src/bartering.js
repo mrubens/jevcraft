@@ -101,7 +101,11 @@ async function barterStep(bot, task, goal, save, actions = {}) {
   // step then failed 'No gold to wear' on every pass: the mining ran only with no gold at all.
   const inHand = () => ingots(bot) + Math.floor(nuggets(bot) / 9);
   const shortOf = dressed(bot) ? 1 : BOOTS_INGOTS + 1;
-  if (inHand() < shortOf && actions.acquireStep && bot.inventory.items().some(i => /_pickaxe$/.test(i.name))) {
+  // Chosen as the pearls' way (pearl_order mine_gold_for_barter), the ore is mined to the ingots it promised whatever
+  // gold is in hand (note 2407): full-25 (25587, 2026-10-28 17:57Z) and full-24 (25588) chose it with an ingot carried,
+  // nothing was mined, and the step ended at once 'No adult piglin in view to barter with'.
+  const chosenToMine = goal?.pearlOrder?.pick === 'mine_gold_for_barter';
+  if ((inHand() < shortOf || (chosenToMine && inHand() < 9)) && actions.acquireStep && bot.inventory.items().some(i => /_pickaxe$/.test(i.name))) {
     let near = 0; try { const id = bot.registry?.blocksByName?.nether_gold_ore?.id; near = id !== undefined && typeof bot.findBlocks === 'function' ? bot.findBlocks({ matching: id, maxDistance: 32, count: 64 }).length : 0; } catch (_) { near = 0; }
     if (near) {
       const want = Math.max(shortOf, Math.min(9, Math.floor(near * 4 / 9)));
@@ -142,7 +146,7 @@ async function barterStep(bot, task, goal, save, actions = {}) {
   if (!await wearGold(bot, task, goal, save, actions)) throw new Error('No gold to wear: piglins will not barter with a player in no gold');
   const pearlsBefore = countOf(bot, 'ender_pearl'), potionsBefore = firePotions(bot);
   const round = piglins(bot, goal).slice(0, PER_ROUND);
-  if (!round.length) throw new Error('No adult piglin in view to barter with');
+  if (!round.length) throw new Error(`No adult piglin in view to barter with: ${ingots(bot)} gold ingot${ingots(bot) === 1 ? '' : 's'} carried for when one is`);
   const state = goal.barter ||= { thrown: 0, pearls: 0 };
   const ingot = bot.registry.itemsByName.gold_ingot.id;
   const thrownAt = [];
