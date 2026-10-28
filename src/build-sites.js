@@ -2,7 +2,7 @@
 const { Vec3 } = require('vec3');
 const air = block => block && ['air', 'cave_air', 'void_air'].includes(block.name);
 
-function reservedForConstruction(goal, p, { from = null } = {}) {
+function reservedForConstruction(goal, p, { from = null, bot = null } = {}) {
   // A dug-in pocket is one night's stop, not construction: reserving its
   // cells froze the tunnel at the pocket against a fortress wall, thirty-eight
   // rounds of "no route away from the blocked staircase".
@@ -32,6 +32,12 @@ function reservedForConstruction(goal, p, { from = null } = {}) {
   // The frame and a block about it, along whichever axis it runs.
   const portal = goal.portalFrame?.origin;
   if (!portal) return false;
+  // A frame with nothing of it standing yet, no obsidian in its slots and no wall of the cast's put up, reserves no
+  // rock about it (note 2378): the site is a plan, and the rock about it is the way to its lava. full-20 (25588,
+  // 2026-10-28 13:40 to 13:56Z) had lava 10 blocks off, and every staircase toward it from (-379, 50, 610) was set
+  // aside for 'a building in the way', 4 to 6 of the steps nearer, then took a 227-block plan.
+  if (bot && typeof bot.blockAt === 'function' && !goal.portalFrame.ruin && !(goal.portalFrame.castTemp || []).length
+    && !(goal.portalFrame.blocks || []).some(b => /obsidian/.test(bot.blockAt(new (require('vec3').Vec3)(b.x, b.y, b.z))?.name || ''))) return false;
   const [along, acrossAxis] = goal.portalFrame.axis === 'z' ? ['z', 'x'] : ['x', 'z'];
   // Not the doorway, the cells in front of and behind the opening: those are
   // the way in. mid-242-m's portal was boxed in by its own cast walls there,
