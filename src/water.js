@@ -171,6 +171,18 @@ async function collectWater(bot, task, goal, save, { navigate, explore, digTo = 
     const here = bot.entity.position, mv = bot.pathfinder?.movements;
     const above = sources.filter(q => q.y > here.y + 1 && q.distanceTo(here) <= 9).sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
     const scaffold = (mv?.scafoldingBlocks || []).length || bot.inventory.items().some(i => /^(cobblestone|cobbled_deepslate|dirt|netherrack|stone|andesite|diorite|granite)$/.test(i.name));
+    // Under it first, by the staircase, three below where no cell dug touches the water, then through the one block
+    // above as note 2350 does (note 2384): the build up toward water across and above came to 'Navigation ended' and
+    // 'No route' each source in turn (full-23, 25592, 2026-10-28 15:0xZ, water at y -25 nine across and five up).
+    // Dug toward for ten minutes at the most, a few stairs a call, then the climb below is the way left.
+    const underSince = goal.waterUnderAt?.[`${above}`];
+    if (above && digTo && !(underSince && Date.now() - underSince > 10 * 60000)) {
+      (goal.waterUnderAt ||= {})[`${above}`] ||= Date.now(); save();
+      const under = above.offset(0, -3, 0);
+      console.log(`[water] the water at ${above} is ${Math.round(above.y - here.y)} above: digging to under it at ${under}`);
+      try { await digTo(under); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[water] under ${above}: ${String(err.message || err).slice(0, 120)}`); }
+      return;
+    }
     if (above && mv && scaffold && !goal.waterClimbAt?.[`${above}`]) {
       (goal.waterClimbAt ||= {})[`${above}`] = Date.now(); save();
       const saved = { allow1by1towers: mv.allow1by1towers, canDig: mv.canDig, scafoldingBlocks: mv.scafoldingBlocks };
