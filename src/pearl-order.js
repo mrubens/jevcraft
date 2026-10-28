@@ -203,7 +203,8 @@ function tree(bot, goal, r, now = Date.now()) {
   if (r.forest) {
     const l = r.forest.landmark;
     let pace = '';
-    try { pace = require('./game-progress').netherPaceSays(bot, r.forest.distance).says; } catch (_) { pace = ''; }
+    // The pace alone (note 2412): the walks back to a portal, how many came out in the Overworld, are not this walk's.
+    try { pace = require('./game-progress').netherPaceSays(bot, r.forest.distance, { toPortal: false }).says; } catch (_) { pace = ''; }
     out.warped_forest = { target: { x: l.x, y: Number.isFinite(l.y) ? l.y : Math.round(bot.entity.position.y), z: l.z },
       description: `Go to the warped forest at (${l.x}, ${l.z}), ${r.forest.distance} blocks off, and hunt its endermen one at a time for the pearls; ${o.fortress}. Held while the forest's walk and hunt do not rest (a hunt fifteen minutes without a pearl rests it), then the rods again.${pace} ${record.routeSays('warped_forest', goal)} Pearls ${o.pearls}.` };
   }
@@ -221,7 +222,7 @@ function tree(bot, goal, r, now = Date.now()) {
   if (r.bastion) {
     const l = r.bastion.landmark;
     let pace = '';
-    try { pace = require('./game-progress').netherPaceSays(bot, r.bastion.distance).says; } catch (_) { pace = ''; }
+    try { pace = require('./game-progress').netherPaceSays(bot, r.bastion.distance, { toPortal: false }).says; } catch (_) { pace = ''; }
     out.bastion_gold = { target: { x: l.x, y: Number.isFinite(l.y) ? l.y : Math.round(bot.entity.position.y), z: l.z },
       description: `Go to the bastion at (${l.x}, ${l.z}), ${r.bastion.distance} blocks off, for its gold, then barter it with the piglins there: ${goldWaySays(bot, goal)} Its gold blocks and the chests are asked of on arrival (take only the gold blocks no piglin sees, raid the chests, or leave it). Held while the bastion's gold does not rest, the barter after, then the rods again.${pace} Pearls ${o.pearls}.` };
   }

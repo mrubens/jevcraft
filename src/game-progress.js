@@ -645,11 +645,11 @@ function cameThrough(goal, here) {
 const NETHER_TRIPS = { day: '2026-10-26 to 2026-10-28', trips: 83, over: 60, slow: 21, fast: 33, arrived: 13, died: 1, lowTrips: 3, lowArrived: 1, lowDied: 1 };
 // The measured pace against the walk: said only where the walk is long enough
 // for it to count and the bot is in the Nether.
-function netherPaceSays(bot, d) {
+function netherPaceSays(bot, d, { toPortal = true } = {}) {
   if (dimension(bot) !== 'nether' || !(d >= NETHER_TRIPS.over)) return { seconds: d / 4.3, says: '' };
   const { slow, fast } = NETHER_TRIPS, r = n => Math.max(1, Math.round(n));
   const low = (bot.health ?? 20) < 8;
-  return { seconds: d / ((slow + fast) / 2) * 60, says: ` In the Nether the bot's walks back to a portal made ${slow} to ${fast} blocks a minute over the full runs of ${NETHER_TRIPS.day}, the stops for mobs, edges and drops counted: about ${r(d / fast)} to ${r(d / slow)} minutes, not seconds. Of ${NETHER_TRIPS.trips} such walks of over ${NETHER_TRIPS.over} blocks ${NETHER_TRIPS.arrived} came out in the Overworld, ${NETHER_TRIPS.died} ended in a death and the rest stopped short in the Nether (broken off for a fight or other work and begun again, given up, set aside or stalled)${low ? `; of the ${NETHER_TRIPS.lowTrips} begun under eight health ${NETHER_TRIPS.lowArrived} came out and ${NETHER_TRIPS.lowDied} died` : ''}.` };
+  return { seconds: d / ((slow + fast) / 2) * 60, says: ` In the Nether the bot's walks back to a portal made ${slow} to ${fast} blocks a minute over the full runs of ${NETHER_TRIPS.day}, the stops for mobs, edges and drops counted: about ${r(d / fast)} to ${r(d / slow)} minutes, not seconds.${toPortal ? ` Of ${NETHER_TRIPS.trips} such walks of over ${NETHER_TRIPS.over} blocks ${NETHER_TRIPS.arrived} came out in the Overworld, ${NETHER_TRIPS.died} ended in a death and the rest stopped short in the Nether (broken off for a fight or other work and begun again, given up, set aside or stalled)${low ? `; of the ${NETHER_TRIPS.lowTrips} begun under eight health ${NETHER_TRIPS.lowArrived} came out and ${NETHER_TRIPS.lowDied} died` : ''}.` : ''}` };
 }
 
 // How far the portal the trip back would use is: the nearest remembered here,
