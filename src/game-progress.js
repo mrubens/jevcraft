@@ -934,6 +934,13 @@ async function leaveNetherStep(bot, task, goal, save, stage, actions = {}, now =
 // it (wayBackSays' routeThreatsSays), not hidden.
 async function readyForHomeStep(bot, task, goal, save, actions = {}) {
   let tripClosed = null; try { tripClosed = require('./mob-hunt').tripHomeClosed(bot, goal); } catch (_) { tripClosed = null; }
+  // With a pickaxe carried the way home is the portal's way question's (work.js stairsOrWay: round by the legs, the
+  // tunnel home, the staircase's rest waited), not a hold over it (note 2356): the hold ran before the question's
+  // answers did. full-13 (25587, 2026-10-28 07:46 to 07:52Z), every rod and 13 pearls carried, the portal 218 blocks
+  // off, stood at (-97, 64, 181) six minutes; portal_way was answered around_right, tunnel_home and around_left, and
+  // each answer was followed by the hold 'until_rest_ends', no block dug.
+  let pickaxe = false; try { pickaxe = require('./skills').pickaxeTier(bot) >= 1; } catch (_) { pickaxe = false; }
+  if (tripClosed && pickaxe && actions.return_overworld) tripClosed = null;
   if (tripClosed) {
     const why = `The rods (and pearls) the ladder wants are carried, but ${tripClosed.says}`;
     if (!actions.hold_for_rest) { const { WaysResting } = require('./tunneling'); throw new WaysResting(why, tripClosed.until); }

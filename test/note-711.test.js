@@ -47,7 +47,8 @@ test('the rods (and pearls) the ladder wants are carried: the ladder is ready fo
 
 test('closed from here (every way home resting): the trip is not walked into, it waits and says why, not "cannot be reached" thrown at every pass (note 711)', async () => {
   const { readyForHomeStep } = require('../src/game-progress');
-  const bot = netherBot(), goal = goalOf();
+  // No pickaxe carried: with one, the portal's way question has the tunnel home (note 2356, the test after).
+  const bot = netherBot({ items: [['iron_sword', 1], ['netherrack', 150], ['blaze_rod', 7], ['ender_pearl', 13]] }), goal = goalOf();
   waysResting(bot, goal);
   const holds = [];
   const actions = { hold_for_rest: async (_b, _t, _g, _sv, opts) => holds.push(opts), return_overworld: async () => assert.fail('closed: the walk should not be begun') };
@@ -55,6 +56,16 @@ test('closed from here (every way home resting): the trip is not walked into, it
   assert.equal(holds.length, 1, 'other work in the Nether while it rests, not a bare throw');
   assert.equal(holds[0].reason, 'step:return_with_blaze_supplies');
   assert.match(holds[0].why, /cannot be reached from here/);
+});
+
+test('closed from here with a pickaxe carried: the trip home is begun, its way the portal\'s way question\'s, not a hold over it (note 2356)', async () => {
+  const { readyForHomeStep } = require('../src/game-progress');
+  const bot = netherBot(), goal = goalOf();
+  waysResting(bot, goal);
+  const left = [];
+  const actions = { hold_for_rest: async () => assert.fail('a pickaxe carried: not held'), return_overworld: async () => left.push('portal') };
+  await readyForHomeStep(bot, new Task('win'), goal, () => {}, actions);
+  assert.equal(left.length, 1);
 });
 
 test('open from here, full health: going is one way, taken without asking (no real choice, none held: cheap to re-derive, note 711)', async () => {
