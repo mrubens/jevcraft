@@ -743,7 +743,10 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     const dy = here.y - spot.y, edge = TICKING + 8, across = Math.hypot(here.x - spot.x, here.z - spot.z) || 1;
     if (!run.loadedAt && dy > 12 && across > edge) {
       const start = edge + dy + 16;
-      if (across <= start) {
+      // Within a leg's own reach of the start the way down begins from here (note 2438): the leg to a point within four
+      // blocks ends where it began. full-35 (25586, 2026-10-28 22:08 to 22:12Z), 233 blocks across and 29 over its drops
+      // (the start 229 off), had legs of 4 blocks that ended at once, 21 passes a second, 'No measurable progress'.
+      if (across <= start + 6) {
         const unit = { x: (here.x - spot.x) / across, z: (here.z - spot.z) / across };
         const target = new Vec3(Math.round(spot.x + unit.x * edge), Math.round(spot.y + 1), Math.round(spot.z + unit.z * edge));
         goal.step = { action: 'corpse_run', to: { ...run.position }, items: { ...run.items }, way: `down to their level (y ${Math.round(spot.y)}) before coming within ${TICKING} blocks` }; save();
