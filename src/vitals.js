@@ -1666,6 +1666,24 @@ function bodyTask(task) {
     check() { if (task.cancelled) throw new (require('./skills').Cancelled)(task.label); } };
 }
 
+// The mobs that reach the body in the meal's two seconds standing still, and their blows through what is worn (note
+// 2331): said on the meal question for every way of it. full-13 (25587, 2026-10-28 03:42:12Z), at 11.2 health with a
+// magma cube at it, chose eat_rotten_flesh and took two blows, 11.2 to none; the live critic's report of 03:32Z had
+// 25599 eat_first with a piglin 7.8 blocks off, 12 to none. The user: 'Jev just did a horrible job fighting the magma
+// cube'.
+function mealThreatSays(bot) {
+  try {
+    const { threats } = require('./danger'), { blowOf } = require('./arbiter'), ce = require('./combat-estimate');
+    const close = threats(bot, 8).filter(t => t.entity && blowOf(bot, t) > 0).map(t => {
+      const speed = ce.MOBS[t.entity.name]?.speed || 4, reachIn = Math.max(0, (t.distance - 1.5) / speed);
+      return { t, reachIn, blow: blowOf(bot, t) };
+    }).filter(x => x.reachIn <= 2).sort((a, b) => a.reachIn - b.reachIn);
+    if (!close.length) return {};
+    const hp = bot.health ?? 20, worst = Math.max(...close.map(x => x.blow));
+    const list = close.slice(0, 3).map(x => `a ${x.t.entity.name.replaceAll('_', ' ')} ${Math.round(x.t.distance * 10) / 10} blocks off${x.reachIn < 0.2 ? ', at reach now' : `, at reach in about ${Math.round(x.reachIn * 10) / 10} s`}, about ${Math.round(x.blow * 10) / 10} a blow through what is worn`).join('; ');
+    return { inReachDuringMeal: `The meal is about two seconds standing still, and these reach the body in it: ${list}. At ${Math.round(hp * 10) / 10} health ${Math.max(1, Math.ceil(hp / worst))} such blow${Math.ceil(hp / worst) === 1 ? '' : 's'} end the bot.` };
+  } catch (_) { return {}; }
+}
 async function maintainVitals(bot, task, onAction = () => {}, { client = null, goal = null, save = () => {}, claimed = null, cookFirst = null } = {}) {
   const own = bodyTask(task);
   own.check();
@@ -1830,7 +1848,7 @@ async function maintainVitals(bot, task, onAction = () => {}, { client = null, g
   const first = `eat_${food.name}`;
   let pick = ways[first] ? first : Object.keys(ways)[0];
   const decision = await require('./decisions').decide('meal', { client, bot, task: own, goal, save, tree: ways, watchAir: false,
-    context: { default: pick }, state: { says: mw.hungerSays(bot), hunger: bot.food, health: bot.health, ...(claimed?.action === 'eat' ? { turn: 'the meal was given this turn' } : {}) } });
+    context: { default: pick }, state: { says: mw.hungerSays(bot), hunger: bot.food, health: bot.health, ...(claimed?.action === 'eat' ? { turn: 'the meal was given this turn' } : {}), ...mealThreatSays(bot) } });
   if (!decision || decision.stale) return false;
   if (decision.path?.[0] && ways[decision.path[0]]) pick = decision.path[0];
   food = await ways[pick].run();
@@ -1961,4 +1979,4 @@ function claim(bot) {
 // stepOnce runs it too): the turn they took was the vitals'.
 const ACTIONS = new Set(['dig_out_of_block', 'douse', 'eat', 'out_of_fire', 'off_hot_floor', 'out_of_powder_snow', 'surface']);
 
-module.exports = { COOKED, rawFacts, bodyColumns, wayOutRunning, atWaterTop, bobUp, blowsAtBody, blowsDuring, strikeAtArm, strikeWay, BLOW_REACH, shootersAtBody, flamesAbout, pourFloor, claim, checkMeal, closeHostile, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, creeperAtFuse, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, straightUp, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };
+module.exports = { mealThreatSays, COOKED, rawFacts, bodyColumns, wayOutRunning, atWaterTop, bobUp, blowsAtBody, blowsDuring, strikeAtArm, strikeWay, BLOW_REACH, shootersAtBody, flamesAbout, pourFloor, claim, checkMeal, closeHostile, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, creeperAtFuse, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, straightUp, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };
