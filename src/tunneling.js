@@ -422,6 +422,7 @@ const landingKey = (landing, target) => {
 // way's question to offer the way down into it (work.js portalMethod).
 function staircaseStalled(goal, save, target, why, { landing, blocked, cave } = {}) {
   setAside(goal, 'staircase', area(target), why, STAIRCASE_REST_MS);
+  if (landing) { const entry = attemptsFor(goal).entries[keyOf('staircase', area(target))]; if (entry) entry.from = { x: landing.x, y: landing.y, z: landing.z }; }
   if (landing) setAside(goal, 'staircase_from', landingKey(landing, target), why, STAIRCASE_REST_MS);
   goal.staircaseStalled = { why, at: Date.now(), target: { x: target.x, y: target.y, z: target.z }, ...(landing ? { landing: { x: landing.x, y: landing.y, z: landing.z } } : {}), ...(blocked ? { blocked } : {}), ...(cave ? { cave } : {}) };
   save();
@@ -467,6 +468,18 @@ function staircaseStillResting(goal, save, target, kind, key) {
 // moves a block or two with every step taken toward it.
 const area = t => ({ x: Math.floor(t.x / 8) * 8, y: Math.floor(t.y / 8) * 8, z: Math.floor(t.z / 8) * 8 });
 const staircaseResting = (goal, target) => isSetAside(goal, 'staircase', area(target));
+// A way set aside for what was met at one landing rests only near that landing (note 2344): a stall says what the
+// rock round the landing was, not the target's. full-14 (25588, 2026-10-28 05:33Z), in a flooded pocket at
+// (-396, 25, 30), had every staircase down stall there in turn, 'no safe step toward it from (-396, 25, 30)', each
+// target set aside twenty minutes; it climbed out, and every way down from anywhere still rested ('Every way down
+// toward the iron ore from here is set aside for now', sixteen times), the iron helmet set aside. `kind` is
+// 'staircase' (by the target's area) or 'reach' (by the target).
+const LANDING_NEAR = 16;
+function restsFromHere(goal, kind, key, here, now = Date.now()) {
+  const entry = attemptsFor(goal).entries[keyOf(kind, kind === 'staircase' ? area(key) : key)];
+  if (!(entry?.until > now)) return false;
+  return !entry.from || !here || Math.hypot(here.x - entry.from.x, here.y - entry.from.y, here.z - entry.from.z) <= LANDING_NEAR;
+}
 // Why the staircase toward `target` rests, as its set-aside said it.
 const staircaseWhy = (goal, target) => attemptsFor(goal).why('staircase', area(target)) || 'the staircase toward it is resting';
 // When it is taken up again (0 when it is not resting).
@@ -901,4 +914,4 @@ function descentTargets(feet, depth) {
   return [24, 48].flatMap(r => unit.map(([dx, dz]) => feet.offset(Math.round(dx * r / Math.hypot(dx, dz)), depth - feet.y, Math.round(dz * r / Math.hypot(dx, dz)))));
 }
 
-module.exports = { stairChoices, restsOnSolid, fallingOver, drainColumn, STAIR_ACROSS, stairFromHere, stairSays, digSeconds, caveUnder, liftStaircaseRest, landingKey, STAIRCASE_REST_MS, descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, staircaseWhy, staircaseUntil, restingSays, restingWay, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
+module.exports = { stairChoices, restsOnSolid, fallingOver, drainColumn, STAIR_ACROSS, stairFromHere, stairSays, digSeconds, caveUnder, liftStaircaseRest, landingKey, STAIRCASE_REST_MS, descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, restsFromHere, LANDING_NEAR, staircaseWhy, staircaseUntil, restingSays, restingWay, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };

@@ -2044,9 +2044,12 @@ async function tunnelOrSetAside(bot, task, goal, save, target, resource, ore = n
   catch (err) {
     if (err.name !== 'StaircaseStalled') throw err;
     const at = ore || target;
-    setAside(goal, 'reach', at, err.message, 1200000);
+    // Where it stalled travels with each rest (tunneling.js restsFromHere, note 2344).
+    const landing = err.landing || bot.entity.position.floored(), { attemptsFor, keyOf } = require('./progress');
+    const mark = p => { const entry = attemptsFor(goal).entries[keyOf('reach', p)]; if (entry) entry.from = { x: landing.x, y: landing.y, z: landing.z }; };
+    setAside(goal, 'reach', at, err.message, 1200000); mark(at);
     const names = [bot.blockAt(at)?.name].filter(Boolean);
-    if (names.length) for (const p of find(bot, names, 72, 32)) if (p.distanceTo(at) <= 4) setAside(goal, 'reach', p, 'beside a staircase set aside', 1200000);
+    if (names.length) for (const p of find(bot, names, 72, 32)) if (p.distanceTo(at) <= 4) { setAside(goal, 'reach', p, 'beside a staircase set aside', 1200000); mark(p); }
     save();
   }
 }
@@ -2974,7 +2977,8 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
         // Eight headings, near and far, not four: mid-205-j had its four
         // resting at once and threw "every way down is set aside" fifteen
         // passes running until the loop watch ended the trial (2026-09-27).
-        target = descentTargets(feet, step.depth).find(t => !staircaseResting(goal, t) && !isSetAside(goal, 'reach', t));
+        const { restsFromHere } = require('./tunneling');
+        target = descentTargets(feet, step.depth).find(t => !restsFromHere(goal, 'staircase', t, feet) && !restsFromHere(goal, 'reach', t, feet));
         if (!target) throw new Error(`Every way down toward the ${String(step.block).replaceAll('_', ' ')} from here is set aside for now`);
       }
       await tunnelOrSetAside(bot, task, goal, save, target, step.block, ore);
