@@ -42,6 +42,18 @@ function pickupPositions(bot, drop) {
   return positions.sort((a, b) => a.distanceTo(drop.position) - b.distanceTo(drop.position));
 }
 
+// Where a drop lies with no body's room about it, its own cell stood in once the cell over it is dug (note 2347):
+// ore mined from a tunnel's wall drops into the one-high hole it leaves, and no pickup spot is two high there, so
+// neither a walk nor the passage was tried. full-15 (25586, 2026-10-28 06:0xZ) mined iron at (-39, 32, -140) from
+// its tunnel at y 31 and left 2 raw iron 2.5 blocks off, 'spots passed over: 0' of every kind; full-13 left raw iron
+// 4 blocks off the same way.
+function dugStand(bot, drop) {
+  const p = drop.position.floored(), floor = bot.blockAt(p.offset(0, -1, 0));
+  if (floor?.boundingBox !== 'block' || damagingTerrain.has(floor.name)) return [];
+  if (!safeFromHostiles(bot, new Vec3(p.x + .5, p.y, p.z + .5))) return [];
+  return [new Vec3(p.x + .5, p.y, p.z + .5)];
+}
+
 // A hot floor the straight walk at a drop would bring the body to rest on:
 // the walk is crouched, which a magma block does not hurt, but it ends
 // where the keys are let go. mid-242-aa-nether-3 walked so at a netherrack
@@ -155,7 +167,7 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
         if (gained()) break;
       }
       if (!gained() && allowExcavation && !passageTried) {
-        const targets = drops.flatMap(drop => pickupPositions(bot, drop));
+        const targets = drops.flatMap(drop => { const at = pickupPositions(bot, drop); return at.length ? at : dugStand(bot, drop); });
         if (targets.length) {
           passageTried = true;
           const pickupPolicy = { canDig: movement.canDig, allowedPosition: movement.allowedPosition, ...Object.fromEntries(Object.keys(previous).map(k => [k, movement[k]])) };
@@ -172,6 +184,7 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
             while (!gained() && !changed() && Date.now() < pickupDeadline) { task.check(); checkAir(bot); await sleep(50); }
           } catch (error) {
             task.check(); if (['NeedsAir', 'NeedsSafety'].includes(error.name)) throw error;
+            console.log(`[drops] the passage to the ${item.replaceAll('_', ' ')} came to nothing: ${String(error.message || error).slice(0, 160)}`);
           } finally { Object.assign(movement, pickupPolicy); }
         }
       }
@@ -218,4 +231,4 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
   }
 }
 
-module.exports = { nearbyDrops, collectNearbyDrops, pickupPositions, hotOnTheWay, edgeOnTheWay };
+module.exports = { dugStand, nearbyDrops, collectNearbyDrops, pickupPositions, hotOnTheWay, edgeOnTheWay };
