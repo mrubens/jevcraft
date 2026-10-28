@@ -48,7 +48,7 @@ test('a pocket sealed once and opened since is the pocket to the step as it is t
   await survival.step(new Task('x'), goal, () => {});
   assert.deepEqual(asked.map(a => a.id), ['pocket_next'], 'the question the claim promised is the one asked');
   assert.match(asked[0].state.pocketNotWhole, /^shut before, but not now: a wall was opened since it was last sealed \(its own mining, or working free\): 1 cell of its wall is open \(0, 30, -1\)$/);
-  assert.match(asked[0].tree.stay.description, /^Close the 1 open cell of the pocket's wall \(1 block, 43 carried\) and stay/);
+  assert.match(asked[0].tree.stay.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Close the 1 open cell of the pocket's wall \(1 block, 43 carried\) and stay/);
 });
 
 test('stay in a pocket opened since it was sealed closes the opening before it waits, and the pocket reads sealed after (note 758)', async () => {
@@ -72,7 +72,7 @@ test('with nothing to close it with, stay in an opened pocket says the wall stay
   survival.decide = async (task, g, save, q) => { tree = q.tree; return { path: ['stay'], stale: false }; };
   survival.wait = async () => {};
   await survival.step(new Task('x'), goal, () => {});
-  assert.match(tree.stay.description, /^Stay in the pocket with 1 cell of its wall open \(no blocks carried to close it\)/);
+  assert.match(tree.stay.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Stay in the pocket with 1 cell of its wall open \(no blocks carried to close it\)/);
 });
 
 test('the claim promises pocket_next exactly where the step asks it, for every pocket shape: sealed, shut but for lava, opened since sealed, and never sealed (note 758)', async () => {

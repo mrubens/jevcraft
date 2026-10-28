@@ -11,7 +11,7 @@ const bot = (items, y = 64, dimension = 'overworld') => ({ game: { gameMode: 'su
 test('with an iron pickaxe and none of diamond, the diamond pickaxe is offered with the depth to the diamonds and what it does', () => {
   const o = diamondPickaxeOption(bot([['iron_pickaxe', 1], ['diamond', 1]]), {});
   assert.deepEqual(o.rung, { phase: 'diamond_pickaxe', action: 'acquire', item: 'diamond_pickaxe', count: 1 });
-  assert.match(o.description, /^Make a diamond pickaxe \(1 of the three diamonds carried; the rest mined from here, 122 blocks down to about y -58\): three diamonds and two sticks/);
+  assert.match(o.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Make a diamond pickaxe \(1 of the three diamonds carried; the rest mined from here, 122 blocks down to about y -58\): three diamonds and two sticks/);
   assert.match(o.description, /lasts 1,561 uses against the iron pickaxe's 250 and digs faster, and it alone mines obsidian/);
   assert.match(diamondPickaxeOption(bot([['iron_pickaxe', 1], ['diamond', 3]]), {}).description, /3 diamonds carried: it is made now, at a crafting table/);
 });

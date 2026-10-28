@@ -101,7 +101,7 @@ test('win_strategy offers each optional rung with its record beside the Nether, 
   assert(options.stage_reach_nether?.ladderNext, Object.keys(options).join(','));
   assert(options.rung_nether_food && !options.rung_iron_helmet && !options.rung_bed, Object.keys(options).join(','));
   assert.equal(options.rung_nether_food.ladderNext, false);
-  assert.match(options.rung_nether_food.description, /^Get food carried for the Nether stay\./);
+  assert.match(options.rung_nether_food.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Get food carried for the Nether stay\./);
   assert.match(options.rung_nether_food.description, /No benefit in the record: optional before the Nether, made only if chosen/);
   const asked = [];
   const decide = async (id, args) => { asked.push(args); return { path: ['rung_nether_food'] }; };

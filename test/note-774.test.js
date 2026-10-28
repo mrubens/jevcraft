@@ -211,7 +211,7 @@ test('with twenty or more stacked within sixteen, pulling back out of their sigh
   assert(fight, 'at the cage');
   const pb = ch.pullBackOption(bot, { check() {} }, goal, () => {}, fight, { navigate: async () => {} });
   assert(pb, 'offered');
-  assert.match(pb.description, /^Pull back out of their sight: walk \d+ blocks/);
+  assert.match(pb.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Pull back out of their sight: walk \d+ blocks/);
   assert.match(pb.description, /22 blazes are within 16 \(0 out of sight\); \d+ of them within the spawner's own range of the cage, which it caps at 6/);
   assert.match(pb.description, /past 16 of the cage the spawner makes none and its delay stops; a blaze shoots only with a line to the bot; a monster with no player within 32 blocks for 30 seconds is removed at random/);
   bot.entities = Object.fromEntries(blazes.slice(0, 12).map(b => [b.id, b]));
@@ -259,7 +259,7 @@ test('a blaze no walk reaches is not priced as a kill by fight, and is offered a
   assert(!options.close_in && !options.charge_nearest);
   assert(options.rise_to_strike, Object.keys(options).join(','));
   assert.equal(options.rise_to_strike.kind, 'rise');
-  assert.match(options.rise_to_strike.description, /^Rise to the blaze \d(\.\d)? blocks off, which no walk on the ground reaches within the sword's reach: walk \d blocks? to \(2, 64, 0\) and pillar [1-3] blocks? up/);
+  assert.match(options.rise_to_strike.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Rise to the blaze \d(\.\d)? blocks off, which no walk on the ground reaches within the sword's reach: walk \d blocks? to \(2, 64, 0\) and pillar [1-3] blocks? up/);
   assert(options.await_in_reach, 'with a shield, the hold for it to come in');
   assert.match(options.await_in_reach.description, /It comes only as it chooses: nothing here brings it in\./);
 });

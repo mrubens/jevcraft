@@ -107,6 +107,6 @@ test('every stance leads with the creeper it was asked about, not a zombie sixte
   for (const [k, o] of Object.entries(options)) {
     if (k === 'none_good') continue;
     assert.match(saidAs(survival, o), /^The creeper 6 blocks off goes off 1\.5 seconds after it lights, within 3 blocks in sight of the bot: about [\d.]+ through the armour worn two blocks off/, k);
-    assert.doesNotMatch(o.description, /^The zombie/, k);
+    assert.doesNotMatch(o.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?The zombie/, k);
   }
 });

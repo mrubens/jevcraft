@@ -24,14 +24,14 @@ test('at a gap\'s edge where no stair step has a floor, the staircase is offered
   const actions = { navigate: async (b, t, g) => { walks.push({ x: g.x, y: g.y, z: g.z }); bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); }, tunnel: async (...a) => { tunnels.push(a[4]); }, dig: async () => {}, mineAt: async () => {}, acquireStep: async () => false };
   const { options, facts } = await fortressApproaches(bot, new Task('hunt'), goal, () => {}, actions, goal.fortressSearch, BRICK, [], { failed: [] });
   assert(options.tunnel, `offered: ${Object.keys(options).join(', ')}`);
-  assert.match(options.tunnel.description, /^Dig a staircase through the rock toward the fortress, \d+ blocks off and 28 blocks up, from \(-248, 45, -242\), a step back onto the floor beside the bot \(from where it stands no step toward it has a floor: no floor to step onto \(a gap, for a span or a pillar\): \d+ of the steps nearer\)/);
+  assert.match(options.tunnel.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Dig a staircase through the rock toward the fortress, \d+ blocks off and 28 blocks up, from \(-248, 45, -242\), a step back onto the floor beside the bot \(from where it stands no step toward it has a floor: no floor to step onto \(a gap, for a span or a pillar\): \d+ of the steps nearer\)/);
   assert.equal(facts.staircase, undefined, 'not said as no staircase');
   await options.tunnel.run();
   assert.deepEqual(walks, [{ x: -248, y: 45, z: -242 }]);
   assert.equal(tunnels.length, 1);
   // Where a step from the cell stood in has a floor, the staircase is the plain one.
   const plain = await fortressApproaches(kcBot(new Vec3(-246.5, 45, -242.5)), new Task('hunt'), goal, () => {}, actions, goal.fortressSearch, BRICK, [], { failed: [] });
-  assert.match(plain.options.tunnel.description, /^Dig a staircase through the rock toward the fortress, \d+ blocks off and 28 blocks up, a step at a time/);
+  assert.match(plain.options.tunnel.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Dig a staircase through the rock toward the fortress, \d+ blocks off and 28 blocks up, a step at a time/);
 });
 
 test('with none good on top of the leg question under a fortress in view, a leg away is not taken as the least bad: the best listed that stays is (25581 at 14:55:53Z, note 750c)', async t => {

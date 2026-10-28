@@ -200,7 +200,7 @@ test('every option facing a piglin says whether gold is worn and what is carried
     const survival = new Survival(bot, { navigate: async () => {}, place: async () => {} }, { state: { shelters: [] } });
     const options = survival.stanceOptions(new Task('t'), {}, () => {}, danger, false);
     assert(options.wear_gold, Object.keys(options).join(','));
-    assert.match(options.wear_gold.description, /^Put on the golden boots carried, in place of the iron boots \(1 armour point less\): one move in the inventory, under half a second\. Worn, a piglin leaves the bot alone, save one angry with it/);
+    assert.match(options.wear_gold.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?Put on the golden boots carried, in place of the iron boots \(1 armour point less\): one move in the inventory, under half a second\. Worn, a piglin leaves the bot alone, save one angry with it/);
     assert.match(options.wear_gold.description, /each piglin here stops going for the bot once it is on\. About 0 damage from the mobs here in the next fifteen seconds this way, the 0\.5 seconds of putting it on included, from 20 health\./);
     assert.equal(options.wear_gold.expects.damage, 0);
     assert.match(options.fight.description, /the golden boots is carried, not worn \(wear_gold puts it on in under half a second\)/);

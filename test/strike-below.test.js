@@ -98,7 +98,7 @@ test('the stance question on the recorded 06:47:06 state offers striking from ab
   const options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat()], false);
   const strike = options.strike_from_above;
   assert.ok(strike, `offered: ${Object.keys(options)}`);
-  assert.match(strike.description, /^Step 1 block along this ground to \(-39, 46, 66\), crouched, and from there strike down at the hoglin 3 blocks off with the iron sword\. It stands 2 blocks below that ground, its top 0\.6 under the bot's feet there: a mob's blow reaches out from its body sideways and not up \(the game's rule\), so while it stands down there it cannot strike the bot/);
+  assert.match(strike.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?Step 1 block along this ground to \(-39, 46, 66\), crouched, and from there strike down at the hoglin 3 blocks off with the iron sword\. It stands 2 blocks below that ground, its top 0\.6 under the bot's feet there: a mob's blow reaches out from its body sideways and not up \(the game's rule\), so while it stands down there it cannot strike the bot/);
   assert.match(strike.description, /To kill: about 7 swings that land/);
   assert.match(strike.description, /A sword's knockback barely moves a hoglin/);
   assert.match(strike.description, /Any way up to the bot it has goes round, \d+ blocks of walking or more/);

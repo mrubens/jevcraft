@@ -125,7 +125,7 @@ test('a village remembered with beds is offered for the night when no bed is in 
   const goal = { kind: 'win', request: 'beat the game', villages: [{ x: 60, y: 64, z: 0, dimension: 'overworld', beds: 3, seenAt: Date.now() }] };
   await survival.step(new Task('wait'), goal, () => {});
   assert(tree?.village_bed, `village_bed was offered; options were ${Object.keys(tree || {}).join(', ')}`);
-  assert.match(tree.village_bed.description, /^Walk to the village 60 blocks off \(seen with 3 beds\), about 14 seconds at a walk, and sleep in one of its beds from 12541/);
+  assert.match(tree.village_bed.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Walk to the village 60 blocks off \(seen with 3 beds\), about 14 seconds at a walk, and sleep in one of its beds from 12541/);
 });
 
 test('at night below, the sheep search says the time to dawn on the climb and offers leaving the sheep until day; chosen, the bed\'s search rests until dawn (note 755b, 25590)', async () => {
@@ -153,7 +153,7 @@ test('at night below, the sheep search says the time to dawn on the climb and of
     assert.equal(goal.surfaceReturn, undefined);
     assert(stopped, 'the walk in flight is stopped');
     assert.match(asked.tree.climb_first.description, /It is night: the surface's mobs are out until dawn, about 6 real minutes off, and the walk to look comes out among them\./);
-    assert.match(asked.tree.until_day.description, /^Leave the sheep until day, about 6 real minutes to dawn/);
+    assert.match(asked.tree.until_day.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Leave the sheep until day, about 6 real minutes to dawn/);
     assert(isSetAside(goal, 'bed_search', 'wool'));
     assert.deepEqual(said, ['The sheep can wait till morning.']);
   } finally { exploration.biomeTrips = realTrips; surface.surfaceObserver = realObs; surface.climbToSurface = realClimb; decisions.decide = realDecide; }

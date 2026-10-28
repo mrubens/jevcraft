@@ -19,6 +19,6 @@ test('the night mine offers stopping to wait for dawn, said with the hunger it k
   let tree;
   survival.decide = async (task, goal, save, q) => { tree = q.tree; return { path: ['seal_and_wait'], stale: false }; };
   const r = await survival.nightTarget(new Task('night'), {}, () => {}, new Vec3(0, 40, 0));
-  assert.match(tree.seal_and_wait.description, /^Stop the mine and seal a pocket here to wait for dawn, about 2 real minutes off: standing still spends no hunger \(hunger 5 stays 5; each block dug spends it\), and the pickaxe's uses are kept; the minutes to dawn gain nothing\. Health 8 does not come back meanwhile/);
+  assert.match(tree.seal_and_wait.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Stop the mine and seal a pocket here to wait for dawn, about 2 real minutes off: standing still spends no hunger \(hunger 5 stays 5; each block dug spends it\), and the pickaxe's uses are kept; the minutes to dawn gain nothing\. Health 8 does not come back meanwhile/);
   assert.deepEqual(r, { seal: true });
 });

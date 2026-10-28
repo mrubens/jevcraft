@@ -130,7 +130,7 @@ test('endermen in the open Nether: the hunt here is a way to the pearls from the
   setAsides(goal, T0);
   const routes = pearlRoutes(bot, goal, { now: T0, save: () => {} });
   assert.ok(routes.options.pearls_endermen_here, Object.keys(routes.options).join(','));
-  assert.match(routes.options.pearls_endermen_here.description, /^Hunt the enderman here, the nearest 19 blocks off: struck with the sword and never looked in the eye/);
+  assert.match(routes.options.pearls_endermen_here.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Hunt the enderman here, the nearest 19 blocks off: struck with the sword and never looked in the eye/);
   await routes.options.pearls_endermen_here.run(new Task('t'));
   assert.equal(goal.pearlOrder.pick, 'hunt_enderman');
   const again = pearlRoutes(bot, goal, { now: T0, save: () => {} });

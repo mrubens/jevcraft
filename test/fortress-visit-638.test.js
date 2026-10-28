@@ -30,7 +30,7 @@ test('at 20 health fed the visit has two answers: go in, or leave the fortress; 
   const b = bot();
   const tree = visit.options(b, null, goalOf(), () => {}, { navigate: async () => {} }, { fortress, leave: () => {} });
   assert.deepEqual(Object.keys(tree).sort(), ['go_in', 'leave_fortress']);
-  assert.match(tree.go_in.description, /^Go in now, at health 20 and hunger 20 with nothing to eat:/);
+  assert.match(tree.go_in.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Go in now, at health 20 and hunger 20 with nothing to eat:/);
   assert.match(tree.go_in.description, /at health 20: over 16 health, 523 fights begun there, 22% died, 34% brought a rod; at hunger 20: 18 or more, 462 fights begun there, 23% died, 35% brought a rod/);
   assert.match(tree.go_in.description, /the record of fights begun in that row \(two days of trials\), not a forecast for this fortress/);
   assert.match(tree.leave_fortress.description, /gains no rod|It gains no rod/);
@@ -75,7 +75,7 @@ test('at 12 health and hunger 18 with food carried: eating and waiting is offere
   const tree = visit.options(b, null, goalOf(), () => {}, { returnOverworld: async () => {}, navigate: async () => {} }, { fortress, leave: () => {} });
   // Note 664: 32 points carried is short of the stay's own count, so the way home is priced too.
   assert.deepEqual(Object.keys(tree).sort(), ['go_back', 'go_in', 'heal_first', 'leave_fortress']);
-  assert.match(tree.heal_first.description, /^Do not go in yet: eat what is carried \(4 cooked beef, 8 hunger each\), which brings hunger to 20, and wait where the bot stands until the health is full: from 12, about \d+(\.\d)? seconds/);
+  assert.match(tree.heal_first.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Do not go in yet: eat what is carried \(4 cooked beef, 8 hunger each\), which brings hunger to 20, and wait where the bot stands until the health is full: from 12, about \d+(\.\d)? seconds/);
   assert.match(tree.heal_first.description, /standing still spends no hunger; at most three minutes, then the visit is asked again/);
   assert.match(tree.heal_first.description, /the health row moves from 8 to 16 health \(40% died, 11% brought a rod\) to over 16 health \(22% died, 34% brought a rod\)/);
   assert.match(tree.heal_first.description, /fights begun in that row, not a trial of waiting/);

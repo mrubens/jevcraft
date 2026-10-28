@@ -64,7 +64,7 @@ test('at 4 health under a skeleton\'s hits, every stance leads with the skeleton
   const keys = Object.keys(options);
   // Said once in the question's state (note 2267), not before each way.
   assert.match(survival._stanceShared.hitting, /Hitting the bot now: the skeleton 6 blocks off \(1 hit in the last 20 seconds/);
-  for (const [k, o] of Object.entries(options)) { if (k !== 'none_good') assert.doesNotMatch(o.description, /^The spider|Hitting the bot now/, k); }
+  for (const [k, o] of Object.entries(options)) { if (k !== 'none_good') assert.doesNotMatch(o.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?The spider|Hitting the bot now/, k); }
   assert(options.eat, 'the beef is offered');
   assert.equal(keys[0], Object.entries(options).filter(([, o]) => o.quick).sort((a, b) => a[1].quick.seconds - b[1].quick.seconds)[0][0], 'the quickest way out of the hits listed first');
   // The low-and-hit summary is the question's state (note 2267), on no way.

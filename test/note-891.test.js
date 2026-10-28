@@ -29,7 +29,7 @@ test('walled in by its own netherrack, a blaze 5 blocks east and 3 up: the east 
   const blaze = { name: 'blaze', position: new Vec3(feet.x + 5.5, feet.y + 3, feet.z + 0.5) };
   const o = openWallOption(bot, { check() {} }, goal, () => {}, blaze);
   assert.ok(o);
-  assert.match(o.description, /^Open the wall: dig the 2 blocks of its own netherrack on the side toward the blaze 6 blocks off, about \d+ seconds?, and be asked again from the opening\. Walled in by its own blocks, no walk reaches a blaze and no fight with one is offered from in here/);
+  assert.match(o.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Open the wall: dig the 2 blocks of its own netherrack on the side toward the blaze 6 blocks off, about \d+ seconds?, and be asked again from the opening\. Walled in by its own blocks, no walk reaches a blaze and no fight with one is offered from in here/);
   assert.equal(await o.run(), true);
   assert.deepEqual(dug.sort(), [`(${feet.x + 1}, ${feet.y}, ${feet.z})`, `(${feet.x + 1}, ${feet.y + 1}, ${feet.z})`].sort());
   assert.equal(goal.step.action, 'open_the_wall');

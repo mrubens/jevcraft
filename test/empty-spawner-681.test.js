@@ -143,7 +143,7 @@ test('the heal chosen eats what is carried and waits, and is not asked again mea
   bot.consume = async () => { ate++; bot.food = Math.min(20, bot.food + 8); };
   const known = es.knownSpawner(bot, goal);
   const tree = es.options(bot, task(), goal, () => {}, {}, known);
-  assert.match(tree.heal_first.description, /^Eat what is carried \(hunger to 20\) and wait here until health is full/);
+  assert.match(tree.heal_first.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Eat what is carried \(hunger to 20\) and wait here until health is full/);
   const client = { systemOne: async () => ({ answers: { branch_0: { choice: 'heal_first', confidence: 0.9 } } }) };
   await es.atSpawner(bot, task(), goal, () => {}, { client });
   assert.equal(goal.emptySpawner.pick, 'heal_first');
@@ -163,7 +163,7 @@ test('in the lull, stand_by_spawner keeps the trials\' health-cost row: box opti
   const known = es.knownSpawner(bot, goal);
   known.lull = { cage: known.cage, off: known.off, within16: 0, next: {}, says: 'No blaze sees the bot now', short: 'No blaze in sight.' };
   const tree = es.options(bot, task(), goal, () => {}, { returnOverworld: async () => {}, navigate: async () => {}, dig: async () => {} }, known);
-  assert.match(tree.stand_by_spawner.description, /^Take a stand in the open at/, 'the lull\'s own short form');
+  assert.match(tree.stand_by_spawner.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Take a stand in the open at/, 'the lull\'s own short form');
   assert.match(tree.stand_by_spawner.description, /Of the trials' fights begun at under 8 health, 29: 62% died, 3% brought a rod\./, 'the health-cost record is kept, not stripped, in the lull');
 });
 

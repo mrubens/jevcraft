@@ -1262,8 +1262,8 @@ test('the way across along the ground digs round the lava through natural rock, 
   bot.inventory.items = () => [{ name: 'netherrack', count: 64, type: 1 }, { name: 'bucket', count: 1, type: 2 }];
   let options = crossingOptions(bot, new Task('hunt'), 'floors seen', across, {});
   assert.deepEqual(Object.keys(options).sort(), ['cover_lava', 'dig_through', 'scoop_lava']);
-  assert.match(options.scoop_lava.description, /^Scoop the lava on the way to floors seen with the 1 empty bucket carried: 2 of its 6 cells on the way are sources, and a bucket takes a source each \(flowing lava cannot be scooped/);
-  assert.match(options.dig_through.description, /^Dig through the rock filling the way to floors seen, round the lava: .* No pickaxe carried: the rock is dug by hand, and netherrack dug by hand drops nothing\. Rock is dug only where no lava or water lies behind it\./);
+  assert.match(options.scoop_lava.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Scoop the lava on the way to floors seen with the 1 empty bucket carried: 2 of its 6 cells on the way are sources, and a bucket takes a source each \(flowing lava cannot be scooped/);
+  assert.match(options.dig_through.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Dig through the rock filling the way to floors seen, round the lava: .* No pickaxe carried: the rock is dug by hand, and netherrack dug by hand drops nothing\. Rock is dug only where no lava or water lies behind it\./);
   // A corridor's mouth filled with netherrack, the floor seen past it: dug through, no lava.
   const plug = p => p.x >= 12 && p.x <= 13 && p.y >= 65 && p.y <= 67 && p.z >= -1 && p.z <= 1 ? 'netherrack' : undefined;
   const { bot: b2 } = corridor({ extra: plug });
@@ -1286,7 +1286,7 @@ test('the way across along the ground digs round the lava through natural rock, 
   const parts = unwalkedParts(b3, map3, planned3);
   assert.equal(parts.length, 1, 'one way across the lava to both');
   assert.deepEqual(parts[0].groups.map(g => g.cells), [21, 45]);
-  assert.match(options.dig_through.description, /^Dig through the rock filling the way to floors seen: 3 cells from \(11, 65, -?\d\) to \(14, 65, -?\d\): 2 of rock filling the way, to dig \(4 blocks, about 1\.6 seconds\), 1 of floor\./);
+  assert.match(options.dig_through.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Dig through the rock filling the way to floors seen: 3 cells from \(11, 65, -?\d\) to \(14, 65, -?\d\): 2 of rock filling the way, to dig \(4 blocks, about 1\.6 seconds\), 1 of floor\./);
 });
 
 test('walking a small room again is said as pacing it: how far the floors joined to here run (mid-235-q-nether-1-fortress-3, note 564)', async () => {
@@ -2129,7 +2129,7 @@ test('on a span over a walkable cavern floor, going down and walking the floor i
   const nav = [];
   const answers = netherAnswers(b2, new Task('stall'), g2, () => {}, { actions: { navigate: async (b, t, g) => { nav.push(g); if (Number.isFinite(g.y)) b2.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); else b2.entity.position = new Vec3(g.x, 57, g.z); } } });
   assert(answers.cross_toward, 'the crossing at this height is still offered');
-  assert.match(answers.floor_toward.description, /^Go down to the floor and walk it toward the fortress search's leg\. The way down to the floor 17 blocks below/);
+  assert.match(answers.floor_toward.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Go down to the floor and walk it toward the fortress search's leg\. The way down to the floor 17 blocks below/);
   assert.match(answers.floor_toward.description, /of floor to walk, 3 of lava on the floor/);
   await answers.floor_toward.run();
   assert.deepEqual(nav.map(g => g.constructor.name), ['GoalNear', 'GoalNearXZ']);

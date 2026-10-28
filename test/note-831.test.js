@@ -51,7 +51,7 @@ test('25593: out for the Overworld\'s endermen with ladder steps open, win_strat
   stage = gp.nextGameStage(bot, goal);
   const options = strategyOptions(bot, goal, stage, {});
   assert(options.pearls_first, Object.keys(options).join(','));
-  assert.match(options.pearls_first.description, /^Hunt the Overworld's endermen for the ender pearls first, the route chosen for the pearls 3 minutes ago \(held 27 more\): 0 pearls carried\./);
+  assert.match(options.pearls_first.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Hunt the Overworld's endermen for the ender pearls first, the route chosen for the pearls 3 minutes ago \(held 27 more\): 0 pearls carried\./);
   await options.pearls_first.run();
   const next = gp.nextGameStage(bot, goal);
   assert.equal(next.phase, 'obtain_ender_pearls', JSON.stringify(next));

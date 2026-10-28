@@ -193,7 +193,7 @@ test('the corner: behind rock a blaze has no line past, the cell beside it in th
   const built = T.cornerSite(open, [b2]);
   assert(built?.build?.length === 4, 'two wide and two high');
   const o = stand.blazeStands(open, near(open)).corner_ambush;
-  assert.match(o.description, /^No rock to go round within ten blocks of walking: make a corner where the bot stands/);
+  assert.match(o.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?No rock to go round within ten blocks of walking: make a corner where the bot stands/);
   assert.match(o.description, /a blaze that loses sight of the bot flies toward it for a quarter of a second and then hovers where it is; it gives the bot up after three seconds unseen and wanders after that, and comes round the corner only by wandering/);
 });
 
@@ -215,7 +215,7 @@ test('away to heal: offered hurt with food, the walk out of every line and the h
   blazeAt(bot, 1, 12.5, 64.5, 0.5);
   const o = stand.blazeStands(bot, near(bot)).leave_and_heal;
   assert(o, 'offered');
-  assert.match(o.description, /^Go out of their sight to heal and come back: walk \d+ blocks? \(about [\d.]+ seconds in their fire, about [\d.]+ damage\) to \(\d, 64, 0\), where none of the 1 blaze about has a line to the bot/);
+  assert.match(o.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Go out of their sight to heal and come back: walk \d+ blocks? \(about [\d.]+ seconds in their fire, about [\d.]+ damage\) to \(\d, 64, 0\), where none of the 1 blaze about has a line to the bot/);
   assert.match(o.description, /eat the cooked beef \(about 1\.6 seconds\) and stay until the health is full, 15 seconds at a time and asked again between: at hunger 20 with saturation a point comes back each half second, at 18 or 19 one each four seconds/);
   const full = floorWorld({ spawner: null, solid: pillar, at: new Vec3(6.5, 64, 0.5) });
   blazeAt(full, 1, 12.5, 64.5, 0.5);
@@ -231,7 +231,7 @@ test('away to heal at hunger 14 with nothing to eat: offered, and says nothing c
   blazeAt(bot, 1, 12.5, 64.5, 0.5);
   const o = stand.blazeStands(bot, near(bot)).leave_and_heal;
   assert(o, 'offered at hunger 14 with nothing to eat');
-  assert.match(o.description, /^Go out of their sight \(no health comes back at this hunger\): walk \d+ blocks? /);
+  assert.match(o.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Go out of their sight \(no health comes back at this hunger\): walk \d+ blocks? /);
   assert.match(o.description, /stay only until the fire on the body is out: at hunger 14, under eighteen, no health comes back \(nothing carried is food\), so healing there would take never/);
   assert.match(o.description, /It gets the bot out of the fire and the volleys and no health back: it stays at about [\d.]+ health, and each point lost from here on stays lost until the bot has eaten to eighteen/);
   assert.match(o.description, /the fight after is asked again at the health it has now/);
@@ -244,13 +244,13 @@ test('away to heal at hunger 14 with one cooked chicken: eating brings hunger to
   const fed = floorWorld({ spawner: null, solid: healPillar, at: new Vec3(6.5, 64, 0.5), health: 9, food: 14, items: [['iron_sword', 1], ['cooked_chicken', 1]] });
   blazeAt(fed, 1, 12.5, 64.5, 0.5);
   const a = stand.blazeStands(fed, near(fed)).leave_and_heal;
-  assert.match(a.description, /^Go out of their sight to heal and come back:/);
+  assert.match(a.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Go out of their sight to heal and come back:/);
   assert.match(a.description, /eat the cooked chicken \(about 1\.6 seconds\) and stay until the health is full/);
   const thin = floorWorld({ spawner: null, solid: healPillar, at: new Vec3(6.5, 64, 0.5), health: 9, food: 10, items: [['iron_sword', 1], ['potato', 1]] });
   blazeAt(thin, 1, 12.5, 64.5, 0.5);
   const b = stand.blazeStands(thin, near(thin)).leave_and_heal;
   assert(b, 'offered');
-  assert.match(b.description, /^Go out of their sight \(no health comes back at this hunger\)/);
+  assert.match(b.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Go out of their sight \(no health comes back at this hunger\)/);
   assert.match(b.description, /eat the potato \(it brings hunger only to 11\) and stay only until the fire on the body is out/);
 });
 

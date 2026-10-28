@@ -156,7 +156,7 @@ test("the stall's question offers the way straight at where the failed walk was 
   const answer = straightToward(bot, new Task('x'), {}, () => {}, walk, now);
   assert.ok(answer, 'offered');
   assert.deepEqual(answer.target, { x: 27, y: 64, z: 0 });
-  assert.match(answer.description, /^The walk there from about here failed 8 seconds ago: the pathfinder's search for a route ran out of time, 0 blocks walked, ending 27 blocks from it\. Go straight at where the last walk was going, \(27, 64, 0\), 27 blocks off at the height the bot stands/);
+  assert.match(answer.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?The walk there from about here failed 8 seconds ago: the pathfinder's search for a route ran out of time, 0 blocks walked, ending 27 blocks from it\. Go straight at where the last walk was going, \(27, 64, 0\), 27 blocks off at the height the bot stands/);
   // Far below or far off: not this way.
   assert.equal(straightToward(bot, new Task('x'), {}, () => {}, { ...walk, goal: { x: 27, y: 40, z: 0 } }, now), null);
   assert.equal(straightToward(bot, new Task('x'), {}, () => {}, { ...walk, goal: { x: 90, y: 64, z: 0 } }, now), null);

@@ -72,9 +72,9 @@ test('the stall at the cage offers a slit toward it through the bot\'s own roof 
   const dug = [];
   const answers = ch.stallAnswers(bot, { check() {} }, goal, () => {}, ch.cageFight(bot, goal), { dig: async (b, t, p) => { dug.push(`${p}`); } });
   assert.deepEqual(Object.keys(answers), ['open_slit', 'stay_and_fight']);
-  assert.match(answers.open_slit.description, /^Open a slit toward the cage: dig the block on the line from the eyes to it \(the netherrack at \(-203, 55, -152\), laid by the bot at 22:50Z\), then stay a minute and fight what comes into that line\./);
+  assert.match(answers.open_slit.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Open a slit toward the cage: dig the block on the line from the eyes to it \(the netherrack at \(-203, 55, -152\), laid by the bot at 22:50Z\), then stay a minute and fight what comes into that line\./);
   assert.doesNotMatch(answers.open_slit.description, /spawn range/, '5 blocks off: outside the four-block spawn range');
-  assert.match(answers.stay_and_fight.description, /^Stay here, 5 blocks from the cage, a minute and fight what comes\. No try of the spawner's has been seen since the bot came near, so the next can come any moment up to 40 seconds from now\. .*7 rods still needed\.$/);
+  assert.match(answers.stay_and_fight.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Stay here, 5 blocks from the cage, a minute and fight what comes\. No try of the spawner's has been seen since the bot came near, so the next can come any moment up to 40 seconds from now\. .*7 rods still needed\.$/);
   assert.equal(stillness.stepWait(bot, goal), null, 'nothing chosen yet');
   await answers.open_slit.run();
   assert.deepEqual(dug, ['(-203, 55, -152)']);

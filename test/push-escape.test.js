@@ -44,7 +44,7 @@ test('on the ridge, the sides a fireball\'s push goes toward are walled with the
   const options = survival.stanceOptions(new Task('x'), { step: { action: 'find_fortress' } }, () => {}, danger, false);
   assert.ok(options.rail_and_fight, `no wall on offer: ${Object.keys(options).join(', ')}`);
   const rail = options.rail_and_fight.description;
-  assert.match(rail, /^Wall the 2 sides at the feet a push goes toward or open over the drop: west and north floored but with the drop beside them, where a push carries the body past the cell beside it \(2 blocks, 2 of them gravel, which holds on the floor under it/);
+  assert.match(rail, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Wall the 2 sides at the feet a push goes toward or open over the drop: west and north floored but with the drop beside them, where a push carries the body past the cell beside it \(2 blocks, 2 of them gravel, which holds on the floor under it/);
   // Every other stance still says the fall a fireball that lands is.
   assert.match(options.fight.description, /Open here to the ghast 43 blocks off/);
   await survival.railSpan(new Task('rail'), {}, () => {}, { blast: true });

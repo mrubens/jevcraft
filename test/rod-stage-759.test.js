@@ -110,7 +110,7 @@ test('body_way alight with a blaze seeing the bot: a way to the nearest cell out
   assert.deepEqual(require('../src/bunker').seenFrom(bot, [seer], new Vec3(...at)), [], 'no line from the blaze there');
   // The blaze is at arm's length and the burn out's seconds take more than the bot has: the strike, which they do not, is first (note 1018).
   assert.equal(Object.keys(ways)[0], 'strike_at_arm');
-  assert.match(ways.burn_out.description, /^Over the next \d+ seconds this way, if nothing turns to the blaze: .*more than the bot has\. /);
+  assert.match(ways.burn_out.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Over the next \d+ seconds this way, if nothing turns to the blaze: .*more than the bot has\. /);
   // No shooter seeing the bot: not offered.
   assert.equal(vitals.fireWays(sceneBot({ alight: true, seen: false }), { check() {} }).out_of_their_line, undefined);
 });

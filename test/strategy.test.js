@@ -422,7 +422,7 @@ test('the rungs are said alike, none as the ladder\'s own; the first is still th
   const { bot, goal } = fixture(['golden_boots', 'diamond_sword']);
   const options = strategyOptions(bot, goal, { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 });
   for (const key of ['rung_golden_boots', 'rung_diamond_sword']) {
-    assert.match(options[key].description, /^Get /, key);
+    assert.match(options[key].description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Get /, key);
     assert.doesNotMatch(options[key].description, /ladder/, key);
   }
   assert.equal(options.rung_golden_boots.ladderNext, true);

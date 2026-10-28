@@ -255,7 +255,7 @@ test('the stance in the lull offers stash_rods with the record\'s row; with a bl
   const o = offered(frameBot());
   assert.ok(o.stash_rods, Object.keys(o).join(', '));
   assert.deepEqual(o.stash_rods.expects, { damage: 0, seconds: 1 });
-  assert.match(o.stash_rods.description, /^Keep the 4 blaze rods safe from a death first: .* A chest keeps them \(no mob opens one\), counted as held, taken out before the portal\. Toward the rods/);
+  assert.match(o.stash_rods.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?Keep the 4 blaze rods safe from a death first: .* A chest keeps them \(no mob opens one\), counted as held, taken out before the portal\. Toward the rods/);
   assert.doesNotMatch(o.stash_rods.description, /Of 63 times/);
   // The rods at risk and the record are the question's own fact (note 759, rodsAtRisk).
   assert.match(require('../src/rod-risk').risk(frameBot(), huntGoal()).says, /^4 rods carried, 7 wanted; 3 still needed\./);
@@ -275,7 +275,7 @@ test('the chest here as an answer of its own: said with the health and what a gh
   let after = 0;
   const keep = rs.keepOption(bot, { check() {} }, goal, () => {}, {}, { then: async () => { after++; }, thenSays: 'Then back for food.' });
   assert.ok(keep, 'offered');
-  assert.match(keep.description, /^Keep the 3 blaze rods/);
+  assert.match(keep.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?Keep the 3 blaze rods/);
   assert.match(keep.description, /taken out on the way out once every rod wanted is got; a death meanwhile .* drops none of them/);
   assert.match(keep.description, /A ghast's fireball breaks a chest only where it lands beside it/);
   assert.match(keep.description, /Now: health 5, and at hunger 9 it does not come back/);
@@ -289,7 +289,7 @@ test('seen by a blaze, the chest here is offered by a step out of its line first
   assert.equal(rs.stashOffer(bot, goal), null, 'no chest set down in a blaze\'s line');
   const keep = rs.keepOption(bot, { check() {} }, goal, () => {}, {}, { thenSays: 'Then the hunt goes on.' });
   assert.ok(keep, 'offered by the step out');
-  assert.match(keep.description, /^Step out of their line first, then keep them here: walk \d+ blocks? to \(-?\d+, \d+, -?\d+\), which none of the \d+ shooters? that see the bot now has a line to \(the nearest then [\d.]+ blocks off\), set a chest down there and put 2 blaze rods in it: about [\d.]+ seconds in all, the walk in their fire\./);
+  assert.match(keep.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?Step out of their line first, then keep them here: walk \d+ blocks? to \(-?\d+, \d+, -?\d+\), which none of the \d+ shooters? that see the bot now has a line to \(the nearest then [\d.]+ blocks off\), set a chest down there and put 2 blaze rods in it: about [\d.]+ seconds in all, the walk in their fire\./);
   assert.match(keep.description, /a death meanwhile .* drops none of them.* Then the hunt goes on\.$/);
   // No chest and no wood for one: not offered either way.
   assert.equal(rs.keepOption(frameBot({ inventory: { blaze_rod: 2, iron_sword: 1 }, blazes: seeing }), { check() {} }, huntGoal(), () => {}, {}), null);
@@ -327,6 +327,6 @@ test('a blaze rod lying near the blazes is a way of the stance too, said with th
   const survival = new Survival(bot, { navigate: async () => {}, place: async () => {}, dig: async () => {}, acquireStep: async () => {} }, { state: { shelters: [] } });
   const o = survival.stanceOptions(new Task('x'), huntGoal(), () => {}, require('../src/danger').threats(bot, 24), false);
   assert.ok(o.fetch_rod_77, Object.keys(o).join(', '));
-  assert.match(o.fetch_rod_77.description, /^Fetch the blaze rod lying 5 blocks off at .*, about \d+ seconds there and back, the walk going past the blazes about it\. It vanishes at most 300 seconds from now \(seen 0 seconds ago; a drop lasts five minutes from when it lands while the bot is near\)\./);
+  assert.match(o.fetch_rod_77.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?Fetch the blaze rod lying 5 blocks off at .*, about \d+ seconds there and back, the walk going past the blazes about it\. It vanishes at most 300 seconds from now \(seen 0 seconds ago; a drop lasts five minutes from when it lands while the bot is near\)\./);
   assert.ok(Number.isFinite(o.fetch_rod_77.expects.seconds));
 });

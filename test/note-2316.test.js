@@ -17,5 +17,5 @@ test('a pig in view while the Nether food is gathered is offered to hunt, said w
   const ways = await detourWork(bot, { check() {}, cancelled: false }, goal, () => {}, { preview: true });
   const hunt = ways.find(w => w.key === 'hunt_in_view');
   assert.ok(hunt, ways.map(w => w.key).join(', '));
-  assert.match(hunt.description, /^Hunt the pig 10 blocks off: its meat, killed with what is held\. The step is the Nether's food, \d+ of 80 points carried\.$/);
+  assert.match(hunt.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Hunt the pig 10 blocks off: its meat, killed with what is held\. The step is the Nether's food, \d+ of 80 points carried\.$/);
 });

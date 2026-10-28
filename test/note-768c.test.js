@@ -29,7 +29,7 @@ test('25593: a pickaxe that will not last the climb, one stick short: wood_first
   const { options, estimate } = climbOptions(bot, feet.offset(24, 32, 0), straightUpColumn(bot, feet, { throughFalls: true }), { goal: {} });
   assert(options.wood_first, `offered: ${Object.keys(options)}`);
   assert.equal(options.wood_first.item, 'stone_pickaxe');
-  assert.match(options.wood_first.description, /^Make a stone pickaxe first: the nearest wood known is oak planks 52 blocks off.*break 2 plank blocks .* for the sticks \(1 stick carried\), craft it at the crafting table carried with the cobblestone carried: about \d+ (seconds|minutes) there and back with the crafting \(the walk at the bot's measured pace, .*38\.5 blocks a minute/);
+  assert.match(options.wood_first.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Make a stone pickaxe first: the nearest wood known is oak planks 52 blocks off.*break 2 plank blocks .* for the sticks \(1 stick carried\), craft it at the crafting table carried with the cobblestone carried: about \d+ (seconds|minutes) there and back with the crafting \(the walk at the bot's measured pace, .*38\.5 blocks a minute/);
   assert.match(options.wood_first.description, /against the climbs on the 47 uses carried, then by hand, beside it/);
   assert(!options.pickaxe_first, 'no pickaxe from the pockets: one stick, no planks');
   assert(Number.isFinite(estimate.wood_first));
@@ -48,7 +48,7 @@ test('a wooden pickaxe with sticks and a table and no cobblestone: a stone picka
   const { options, estimate } = climbOptions(bot, feet.offset(24, 32, 0), straightUpColumn(bot, feet, { throughFalls: true }), { goal: {} });
   assert(options.pickaxe_first, `offered: ${Object.keys(options)}`);
   assert.equal(options.pickaxe_first.item, 'stone_pickaxe');
-  assert.match(options.pickaxe_first.description, /^Make a stone pickaxe first from the pockets: 2 sticks carried, the crafting table carried, 3 stone dug here with the pickaxe carried for the head; about \d+ seconds; then the climb with it, .*\(131 uses, beside the 59 the pickaxes carried have left against about \d+ digs on the shortest way up\)/);
+  assert.match(options.pickaxe_first.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Make a stone pickaxe first from the pockets: 2 sticks carried, the crafting table carried, 3 stone dug here with the pickaxe carried for the head; about \d+ seconds; then the climb with it, .*\(131 uses, beside the 59 the pickaxes carried have left against about \d+ digs on the shortest way up\)/);
   assert(!options.wood_first);
   assert(Number.isFinite(estimate.pickaxe_first));
 });

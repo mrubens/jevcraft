@@ -85,7 +85,7 @@ test('the pocket\'s way to food keeps the trip back while Jev\'s keep-on holds, 
   const survival = new Survival(bot, { navigate: async () => {}, returnOverworld: async () => {} }, { state: goal.survival });
   const ways = survival.offWorldFood(new Task('food'), goal, () => {});
   assert.deepEqual(Object.keys(ways).sort(), ['hoglin_food', 'return_for_food']);
-  assert.match(ways.return_for_food.description, /^Go back through the portal to the Overworld, where food can be hunted and cooked\. In the Nether hoglins are the only meat\. No portal here has been seen since the crossing, but the one the bot came through/);
+  assert.match(ways.return_for_food.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Go back through the portal to the Overworld, where food can be hunted and cooked\. In the Nether hoglins are the only meat\. No portal here has been seen since the crossing, but the one the bot came through/);
   assert.match(ways.return_for_food.description, /Known on the Overworld side: 4 cow seen/);
   assert.match(ways.return_for_food.description, /Jev chose under a minute ago, at 10\.1 health, to go on in the Nether without this trip for twenty minutes; health is 2\.2 now\.$/);
   assert.match(ways.hoglin_food.description, /hits for three to eight before armour/);
@@ -122,7 +122,7 @@ test('turn_priority at 4 health in the Nether: the hunt says the hoglin is lost 
   const decide = async (id, { tree, state }) => { asked = { tree, state }; return { path: ['work'] }; };
   const mobs = require('../src/danger').threats(bot, 16);
   await arbiter.arbitrate(bot, [{ ...survivalClaim, run: async () => true }, work], { state: {}, mobs, decide, run: false, goal });
-  assert.match(asked.tree.survival.description.does, /^Go on with the hunt for food of hoglins, as chosen: close on those met and fight them\. Health 4\. It does not come back at hunger 10\. None in view; 1 hoglin seen 1 minute ago, 4\d blocks north-east(?:, \d+ blocks (?:up|down))? \(116, (?:-?\d+, )?2\)\. One hoglin with the iron sword: about [\d.]+ seconds and [\d.]+ damage, more than the 4 health left: at this health the bot is dead before the hoglin is; a blow is [\d.]+ to [\d.]+ through the armour worn: one of its harder blows ends the bot\.$/);
+  assert.match(asked.tree.survival.description.does, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Go on with the hunt for food of hoglins, as chosen: close on those met and fight them\. Health 4\. It does not come back at hunger 10\. None in view; 1 hoglin seen 1 minute ago, 4\d blocks north-east(?:, \d+ blocks (?:up|down))? \(116, (?:-?\d+, )?2\)\. One hoglin with the iron sword: about [\d.]+ seconds and [\d.]+ damage, more than the 4 health left: at this health the bot is dead before the hoglin is; a blow is [\d.]+ to [\d.]+ through the armour worn: one of its harder blows ends the bot\.$/);
   assert.match(asked.tree.work.description.does, /Health 4: it does not come back at hunger 10, and nothing carried is food, so it does not come back while the work goes on\. Mobs within sixteen blocks now: A piglin 9\.\d blocks off, about [\d.]+ a hit through the armour worn \(as much as the health left\); it sees the bot \(no gold is worn\) and comes at it: at the bot in about \d+ seconds at its walk\. At low health: In the played record .* Nothing carried is food, and no pocket can be walled here with the blocks carried\.$/);
   // Sixteen seconds on, a ghast sixty blocks off in sight: its fire reaches, and it is said.
   const later = turn25584({ ghast: true });
@@ -144,7 +144,7 @@ test('the stalled Nether work offers the trip back for food itself, with its wal
   const answers = netherAnswers(bot, new Task('stall'), goal, () => {}, { survival: { foodHunt() {} }, actions: { navigate: async () => {}, returnOverworld: async () => { back++; } } });
   assert(answers.hoglin_food, 'the hoglin is still offered');
   assert.equal(answers.keep_on, undefined, 'keep-on already holds');
-  assert.match(answers.return_for_food.description, /^Go back through the portal to the Overworld for food, hunted and cooked there, and come back fed\. The nearest portal remembered is 6\d blocks off, about 1\d seconds at a walk if nothing stops it, and back through one after\./);
+  assert.match(answers.return_for_food.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Go back through the portal to the Overworld for food, hunted and cooked there, and come back fed\. The nearest portal remembered is 6\d blocks off, about 1\d seconds at a walk if nothing stops it, and back through one after\./);
   // Sixty-odd blocks is where the measured pace begins to be said (note 625): 2 to 4 minutes, not seconds.
   assert.match(answers.return_for_food.description, /In the Nether the bot's walks back to a portal made 17 to 30 blocks a minute over 2026-09-28's trials, the stops for mobs, edges and drops counted: about 2 to 4 minutes, not seconds\. Of 181 such walks of over 60 blocks 22 came out in the Overworld, 18 ended in a death and the rest were given up, set aside or stalled; of the 33 begun under eight health 4 came out and 6 died\./);
   assert.match(answers.return_for_food.description, /Health does not come back on the way: hunger 10, under eighteen, and nothing to eat; 4 health is what it walks with\./);

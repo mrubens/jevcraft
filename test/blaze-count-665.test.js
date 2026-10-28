@@ -157,7 +157,7 @@ test('wait_far_off is offered at a live spawner with a way found, whatever the c
   const one = stand.blazeStands(bot, near(bot)).wait_far_off;
   assert.ok(one, 'one blaze about, a live spawner, a way out: offered');
   assert.equal(one.kind, 'far');
-  assert.match(one.description, /^Go out of their reach and let the room thin: walk 41 blocks/);
+  assert.match(one.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Go out of their reach and let the room thin: walk 41 blocks/);
   assert.match(one.description, /a place \d+ blocks from the cage, the nearest blaze now [\d.]+ blocks off and none nearer than that along the way/);
   assert.match(one.description, /stay 120 seconds, eating what is carried \(health comes back at hunger 18 or more\)/);
   assert.match(one.description, /one in 800 each tick \(a mean of about 40 seconds each: about 78 in 100 gone at 90 seconds, 89 in 100 after 120 seconds here\), and at once beyond 128/);

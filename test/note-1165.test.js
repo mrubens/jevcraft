@@ -18,7 +18,7 @@ const stage = { phase: 'obtain_ender_pearls', action: 'enter_nether', item: 'end
 test('with no food carried at hunger 13 on the way into the Nether, getting food first is a way at the strategy question (note 1165)', () => {
   const options = strategyOptions(overworld(13, PACK), goalOf(), stage);
   assert.ok(options?.take_up_nether_food, Object.keys(options || {}).join(','));
-  assert.match(options.take_up_nether_food.description, /^Get food first, before the Nether: nothing to eat is carried and hunger is 13 of 20, where health does not come back under eighteen\. The last crossing turned back through the portal for food 2 minutes ago/);
+  assert.match(options.take_up_nether_food.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Get food first, before the Nether: nothing to eat is carried and hunger is 13 of 20, where health does not come back under eighteen\. The last crossing turned back through the portal for food 2 minutes ago/);
   assert.equal(options.take_up_nether_food.takeUp, true);
   assert.equal(options.take_up_nether_food.rung.phase, 'nether_food');
 });

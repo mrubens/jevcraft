@@ -109,7 +109,7 @@ test('25589 at 23:52:38Z: the night reserve trip keeps the work on offer at ever
   await survival.step(new Task('t', 'food'), goal, () => {});
   assert(asked[1]?.tree?.continue_request, 'continue_request offered again once the way failed');
   assert.match(asked[1].state.lastFoodChoice, /^food first \(survival priority\), chosen \d+ seconds? ago, ended: the way chosen failed: no way to the sheep/);
-  assert.match(asked[1].tree.obtain_food.children.search_food.description.failedHere, /^failed here once in the last 30 minutes, the last \d+ seconds? ago: no way to the sheep/);
+  assert.match(asked[1].tree.obtain_food.children.search_food.description.failedHere, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?failed here once in the last 30 minutes, the last \d+ seconds? ago: no way to the sheep/);
   // At hunger 13 (under eighteen, nothing to meet it) a food plan keeps the work out, as before.
   const hungry = underBot({ food: 13 });
   const s2 = survivalOf(hungry);

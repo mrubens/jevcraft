@@ -1002,7 +1002,7 @@ test('in a flame on a risen column with nowhere to walk and no block to rise on,
   assert.equal(vitals.fireRoute(bot), null, 'no cell to walk to');
   const ways = vitals.fireWays(bot, new Task('t'));
   assert.deepEqual(Object.keys(ways), ['put_out_flames']);
-  assert.match(ways.put_out_flames.description, /^Punch out the flame the body stands in or beside \(1\), where it stands: a hit puts fire out at once/);
+  assert.match(ways.put_out_flames.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Punch out the flame the body stands in or beside \(1\), where it stands: a hit puts fire out at once/);
   assert.equal(await ways.put_out_flames.run(), true, 'out of the fire once the flame is punched');
   assert.deepEqual(dug, ['(-197, 44, -152)']);
   // With no other way out the punch stays on offer, punched a moment ago or not (note 886).
@@ -1120,8 +1120,8 @@ test('the routine meal is asked: the foods carried, the cook first, or later (no
     assert(await maintainVitals(a.bot, new Task('test', 'eat'), s => actions.push(s), { cookFirst: a.cookFirst }));
   });
   assert.deepEqual(Object.keys(offered), ['eat_mutton', 'cook_then_eat', 'eat_later']);
-  assert.match(offered.eat_mutton.description, /^Eat a mutton now \(5 carried\): about two seconds standing still, 2 hunger and 1\.2 saturation, hunger 14 to 16\. Raw: cooked it gives 6\./);
-  assert.match(offered.cook_then_eat.description, /^Cook the 5 mutton carried first, then eat: 10 food points raw, 30 cooked \(\+20\); a furnace of eight of the cobblestone carried put down here, oak log for fuel, about 56 seconds/);
+  assert.match(offered.eat_mutton.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Eat a mutton now \(5 carried\): about two seconds standing still, 2 hunger and 1\.2 saturation, hunger 14 to 16\. Raw: cooked it gives 6\./);
+  assert.match(offered.cook_then_eat.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Cook the 5 mutton carried first, then eat: 10 food points raw, 30 cooked \(\+20\); a furnace of eight of the cobblestone carried put down here, oak log for fuel, about 56 seconds/);
   assert.deepEqual(a.cooks.map(i => [i.raw, i.cooked, i.n]), [['mutton', 'cooked_mutton', 5]]);
   assert.deepEqual(actions.map(s => s.action), ['cook_meat', 'eat']);
   assert.deepEqual(a.eaten, ['cooked_mutton']);

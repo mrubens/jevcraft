@@ -4567,7 +4567,7 @@ test('cover beside a railed span goes on top of the rail, and cover that cannot 
   // Both cells solid already: its line is stopped, and the bot stays behind what is there.
   rail = new Set(['(1, 72, 0)', '(1, 73, 0)']); placed.length = 0;
   options = survival.stanceOptions(new Task('x'), {}, () => {}, [piglin], false);
-  assert.match(options.take_cover.description, /^Stay here behind what stands in the line already: nothing for the piglin \(24 blocks off\): the netherrack at \(1, 73, 0\) is in its line already/);
+  assert.match(options.take_cover.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?Stay here behind what stands in the line already: nothing for the piglin \(24 blocks off\): the netherrack at \(1, 73, 0\) is in its line already/);
   assert.equal(await options.take_cover.run(), true);
   assert.deepEqual(placed, []);
   // A cover that cannot go down fails with its why.
@@ -4817,7 +4817,7 @@ test('in a corridor with a skeleton down its length, the side opening out of its
   const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async (b, t, goal) => { went = new Vec3(goal.x, goal.y, goal.z); } }, { state: { shelters: [] } });
   const options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, skeleton)], false);
   assert(options.out_of_sight, Object.keys(options).join(','));
-  assert.match(options.out_of_sight.description, /^Walk 4 blocks to a spot [\d.]+ blocks off that no line from the skeleton reaches \(rock stands between\), about 0\.9 seconds in their fire on the way/);
+  assert.match(options.out_of_sight.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?Walk 4 blocks to a spot [\d.]+ blocks off that no line from the skeleton reaches \(rock stands between\), about 0\.9 seconds in their fire on the way/);
   // The record of first answers to a skeleton is said on it in the Overworld (note 1100).
   assert.match(options.out_of_sight.description, /the arrows a skeleton landed in the minute after the first answer to it: a walk out of its sight/);
   assert.match(options.out_of_sight.description, /About [\d.]+ damage from the mobs here in the next fifteen seconds this way, the 0\.9 seconds of walking there included/);
@@ -4841,7 +4841,7 @@ test('a hiding spot whose walk ended where it began is said with why and passed 
   assert.deepEqual(walks[0], new Vec3(-3, 64, 1));
   assert.equal(survival.state.stanceWhy, 'the walk to the spot at (-3, 64, 1) ended 3.2 blocks short of it, where it began: No path to the goal!');
   options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, skeleton)], false);
-  assert.match(options.out_of_sight.description, /^Walk 5 blocks to a spot/, 'the next spot, not the one just failed');
+  assert.match(options.out_of_sight.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?Walk 5 blocks to a spot/, 'the next spot, not the one just failed');
   assert.match(options.out_of_sight.description, /Not the spot tried just now: the walk to the spot at \(-3, 64, 1\) ended 3\.2 blocks short of it, where it began: No path to the goal!, 1 seconds ago\.( In the record \(.*)?$/);
   await options.out_of_sight.run();
   assert.deepEqual(walks[1], new Vec3(-3, 64, 2));
@@ -4850,7 +4850,7 @@ test('a hiding spot whose walk ended where it began is said with why and passed 
   // Half a minute on, the spots are tried afresh.
   for (const f of survival.state.coverFailed) f.at -= 31000;
   options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, skeleton)], false);
-  assert.match(options.out_of_sight?.description || '', /^Walk 4 blocks to a spot/);
+  assert.match(options.out_of_sight?.description || '', /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?Walk 4 blocks to a spot/);
 });
 
 test('in a wall of stone with a skeleton in the open, an L dug in out of its line is offered, its seconds from the tool carried', () => {
@@ -4869,7 +4869,7 @@ test('in a wall of stone with a skeleton in the open, an L dug in out of its lin
   assert.equal(site.blocks, 6);
   assert.equal(site.digMs, 6 * blockDigMs(bot, stone));
   const secs = Math.round((site.ms + 3 * 250) / 100) / 10;
-  assert.match(options.nook.description, new RegExp(`^Dig an L into the rock: two blocks in and one to the side, 6 blocks with the iron pickaxe, about ${secs} seconds of digging and stepping in`));
+  assert.match(options.nook.description, new RegExp(`^(?:This way: .*? health(?: \\(more than the bot has\\))?\\. )?Dig an L into the rock: two blocks in and one to the side, 6 blocks with the iron pickaxe, about ${secs} seconds of digging and stepping in`));
   assert.match(options.nook.description, /no line from the skeleton reaches its end/);
   assert.match(options.nook.description, /What bites comes to the mouth and round the turn one at a time/);
   const openCells = new Set(site.cells.flatMap(c => [`${c}`, `${c.offset(0, 1, 0)}`]));
@@ -4931,7 +4931,7 @@ test('a stance that hid the bot is asked again once a shooter has a line to wher
   await seen.survival.stanceStep(new Task('t'), {}, () => {}, [threat(seen.bot, seen.skeleton)], false);
   assert(seen.asked(), 'asked again, not held');
   assert.match(seen.asked().state.previousStance.askedAgainFor, /the skeleton [\d.]+ blocks off has a line to where the bot hid/);
-  assert.match(seen.asked().tree.nook.description, /^Stay round the turn of the nook dug here: the skeleton [\d.]+ blocks off has a line into it now/);
+  assert.match(seen.asked().tree.nook.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?Stay round the turn of the nook dug here: the skeleton [\d.]+ blocks off has a line into it now/);
   // Rock between: held, not asked.
   const hid = make(p => p.y >= 64 && (p.x !== -1 || p.z < -3 || p.z > 3));
   await hid.survival.stanceStep(new Task('t'), {}, () => {}, [threat(hid.bot, hid.skeleton)], false);
@@ -5136,7 +5136,7 @@ test('with a blaze in sight beside a nether-brick wall, the stance offers a hole
   assert(options.dig_in_and_fight, Object.keys(options).join(','));
   const { blockDigMs } = require('../src/bunker');
   const secs = Math.round(2 * blockDigMs(bot, bot.blockAt(new Vec3(-1, 64, 0))) / 100) / 10;
-  assert.match(options.dig_in_and_fight.description, new RegExp(`^Dig a hole one wide and two high into the nether bricks beside the bot \\(2 blocks with the iron pickaxe, about ${secs} seconds? of digging`));
+  assert.match(options.dig_in_and_fight.description, new RegExp(`^(?:This way: .*? health(?: \\(more than the bot has\\))?\\. )?Dig a hole one wide and two high into the nether bricks beside the bot \\(2 blocks with the iron pickaxe, about ${secs} seconds? of digging`));
   assert.match(options.dig_in_and_fight.description, /a fireball's push there meets rock, not a drop; only a blaze in line with the mouth can shoot in/);
   assert.match(options.dig_in_and_fight.description, /within two blocks it swings for 6 before armour instead of shooting/);
   assert.match(options.dig_in_and_fight.description, /A blaze's fireball lands about \d+ in 100 from 8 blocks/);
@@ -5147,7 +5147,7 @@ test('with a blaze in sight beside a nether-brick wall, the stance offers a hole
   assert(Number(/about ([\d.]+) seconds? of digging/.exec(wooden)[1]) > secs, wooden);
   // The wall at the back, where the bot stands: rock west, the blaze east, no drop within a push.
   assert(options.back_to_wall, Object.keys(options).join(','));
-  assert.match(options.back_to_wall.description, /^Stay on footing with a wall at its back on the side away from the blazes and no drop or lava within 2 blocks, and fight there: a fireball from them pushes the bot into the wall/);
+  assert.match(options.back_to_wall.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?Stay on footing with a wall at its back on the side away from the blazes and no drop or lava within 2 blocks, and fight there: a fireball from them pushes the bot into the wall/);
   // Taken: the two blocks dug, the bot steps in; held, it stays.
   bot.setControlState = (key, on) => { if (key === 'forward' && on) bot.entity.position = new Vec3(-0.5, 64, 0.5); };
   bot.clearControlStates = () => {}; bot.lookAt = async () => {}; bot.equip = async () => {};
@@ -5167,9 +5167,9 @@ test('in a hole already, the stance is to stay and fight from inside; with a spa
   const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
   const options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, blaze)], false);
   assert(options.dig_in_and_fight, Object.keys(options).join(','));
-  assert.match(options.dig_in_and_fight.description, /^Stay in the hole the bot is in and fight from inside/);
+  assert.match(options.dig_in_and_fight.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?Stay in the hole the bot is in and fight from inside/);
   assert(options.fight_at_spawner, Object.keys(options).join(','));
-  assert.match(options.fight_at_spawner.description, /^Walk \d+ blocks? \(about [\d.]+ seconds?, in their fire meanwhile\) to a cell [\d.]+ blocks from the blaze spawner's cage, under a ceiling, with no drop or lava within a push/);
+  assert.match(options.fight_at_spawner.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?Walk \d+ blocks? \(about [\d.]+ seconds?, in their fire meanwhile\) to a cell [\d.]+ blocks from the blaze spawner's cage, under a ceiling, with no drop or lava within a push/);
   const { spawnerSite } = require('../src/blaze-stand');
   const site = spawnerSite(bot);
   assert(site.off <= 3 && bot.blockAt(site.cell.offset(0, 2, 0)).boundingBox === 'block', 'within three of the cage, a block over the head');
@@ -5187,7 +5187,7 @@ test('a sealed pocket with blazes about offers its wall opened toward them, foug
   const window = blazeStands(bot, threats(bot, 24), { pocket: true }).dig_in_and_fight;
   assert(window, 'offered');
   assert.deepEqual(window.site.window.map(String), ['(1, 65, 0)', '(1, 64, 0)'], 'the wall toward the blaze, head and feet');
-  assert.match(window.description, /^Open the pocket's wall toward the blazes, one wide and two high \(2 blocks of nether bricks with the iron pickaxe, about [\d.]+ seconds? of digging\), and fight from inside the pocket through it\./);
+  assert.match(window.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Open the pocket's wall toward the blazes, one wide and two high \(2 blocks of nether bricks with the iron pickaxe, about [\d.]+ seconds? of digging\), and fight from inside the pocket through it\./);
 });
 
 test('the pocket\'s window is priced over its digging and fifteen held after, with every blaze within forty-eight that sees in or settles into its line (mid-235-q-nether-3, note 548)', () => {
@@ -5388,8 +5388,8 @@ test('a sword piglin on the slope with no way onto the bridge is said first wher
     const goal = { step: { action: 'cross_toward' } };
     const options = survival.stanceOptions(new Task('x'), goal, () => {}, onSlope(bot, 'golden_sword'), false);
     assert.ok(options.keep_working, 'carrying on is offered');
-    const says = sure ? /^The piglin \(holding golden sword, no crossbow: it hits at arm's length only\), 2 blocks below the bot's feet, has no way to the bot/
-      : /^The piglin 7\.5 blocks off, 2 below the bot's feet, \(holding golden sword, no crossbow: it hits at arm's length only\) has no way to the bot within 12 blocks of it: any way it has goes round, \d+ blocks of walking or more/;
+    const says = sure ? /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?The piglin \(holding golden sword, no crossbow: it hits at arm's length only\), 2 blocks below the bot's feet, has no way to the bot/
+      : /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?The piglin 7\.5 blocks off, 2 below the bot's feet, \(holding golden sword, no crossbow: it hits at arm's length only\) has no way to the bot within 12 blocks of it: any way it has goes round, \d+ blocks of walking or more/;
     assert.match(options.keep_working.description, says, `${from}: ${options.keep_working.description}`);
     for (const [k, o] of Object.entries(options)) if (k !== 'keep_working') assert.match(o.description, /The work \(cross toward\) waits meanwhile/, k);
   }
@@ -5439,7 +5439,7 @@ test('carrying on past a walker with no way to the bot says where the work stand
   const level = groundBridgeBot({ level: true });
   const survival2 = new Survival(level, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
   const options2 = survival2.stanceOptions(new Task('x'), goal, () => {}, piglinAt(level, 65), false);
-  assert.match(options2.keep_working.description, /^The piglin \(holding golden sword.*has no way to the bot/);
+  assert.match(options2.keep_working.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?The piglin \(holding golden sword.*has no way to the bot/);
   assert.ok(options2.fight_from_footing, 'the slope is firm ground');
   assert.match(options2.fight_from_footing.description, /The piglin 7 blocks off, with no way to the bot here, is not kept from that ground \(a way there, or none the search can rule out\): stepping there can put the bot where it can get to it\./);
 });
@@ -5876,7 +5876,7 @@ test('a held stance no longer on offer scouts the run before it asks, as a new q
   survival.state.stance = { choice: 'creeper_dance', ids: [9], at: Date.now(), health: 16 };
   await survival.stanceStep(new Task('x'), {}, () => {}, [{ entity: { id: 9, name: 'creeper' }, distance: 7.1 }], false);
   assert.equal(scouted.length, 1, 'the run was looked for before the question');
-  assert.match(trees[0].retreat.description, /^scouted/);
+  assert.match(trees[0].retreat.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?scouted/);
 });
 
 // mid-231-r (note 538): a shaft pocket dug on a snowy slope at dusk, 0.7
@@ -6027,7 +6027,7 @@ test('a ghast in sight: its fireball can be struck back, and it can be shot past
   const options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, ghast)], false);
   assert(options.return_fireball, Object.keys(options).join(','));
   const back = options.return_fireball.description;
-  assert.match(back, /^Stand in the ghast's line 30 blocks off, look at it, and strike its fireball as it comes/);
+  assert.match(back, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Stand in the ghast's line 30 blocks off, look at it, and strike its fireball as it comes/);
   assert.match(back, /kills it outright/);
   assert.match(back, /each fireball takes about 1\.4 seconds to come 30 blocks, about 1\.1 to go back/);
   assert.match(back, /an arrow does not send it back/);
@@ -6044,7 +6044,7 @@ test('a ghast in sight: its fireball can be struck back, and it can be shot past
   assert.equal(since.expects.damage, 2.2);
   const shot = options.shoot_21;
   assert(shot, Object.keys(options).join(','));
-  assert.match(shot.description, /^Shoot the ghast 30 blocks off with the bow from here/);
+  assert.match(shot.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?Shoot the ghast 30 blocks off with the bow from here/);
   assert.match(shot.description, /lands for at least 6, so about 2 that land bring down its 10 health \(64 carried\)/);
   // A fireball is a fireball, not an arrow.
   assert.match(options.fight.description, /At 7 health, 2 fireballs from the ghast \(about 6 each after armour\) end it/);
@@ -6287,7 +6287,7 @@ test('a pillar with a hoglin at the bot before the blocks are down says so first
   };
   const near = make(-6.2), far = make(4.5);
   assert.ok(near.pillar && far.pillar, `${Object.keys(near)} / ${Object.keys(far)}`);
-  assert.match(near.pillar.description, /^(This way: about [\d.]+ damage over about \d+ seconds, from [\d.]+ health( \(more than the bot has\))?\. )?The hoglin 2\.3 blocks off is at the bot in about 0\.2 seconds, before the pillar's two blocks are down \(about [\d.]+\): its blow lands on the way up and throws the bot off the first block/);
+  assert.match(near.pillar.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?(This way: about [\d.]+ damage over about \d+ seconds, from [\d.]+ health( \(more than the bot has\))?\. )?The hoglin 2\.3 blocks off is at the bot in about 0\.2 seconds, before the pillar's two blocks are down \(about [\d.]+\): its blow lands on the way up and throws the bot off the first block/);
   assert.doesNotMatch(far.pillar.description, /before the pillar's two blocks are down/);
 });
 

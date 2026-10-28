@@ -65,7 +65,7 @@ test('25593 at 19:47:18: the meal is offered beside the trips, and the trip is s
   survival.decide = async (task, goal, save, q) => { tree = q.tree; return { path: ['eat_carried'], action: { run: async () => {} }, stale: false }; };
   await survival.step(new Task('t', 'food'), nightGoal(), () => {});
   assert(tree, 'asked');
-  assert.match(tree.eat_carried.description, /^Eat the bread carried now: about two seconds standing still, hunger 17 to 20, eighteen or more\. Health is full: nothing waits on it now; eaten, the hunger holds up the healing for later\. No walk; the reserve stays where it is, 0 points after\./);
+  assert.match(tree.eat_carried.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Eat the bread carried now: about two seconds standing still, hunger 17 to 20, eighteen or more\. Health is full: nothing waits on it now; eaten, the hunger holds up the healing for later\. No walk; the reserve stays where it is, 0 points after\./);
   const food = tree.obtain_food.description;
   assert.doesNotMatch(food, /does not come back/);
   assert.match(food, /This trip is for the reserve alone \(the hunger is a meal of what is carried\)\. 5 food points carried of the 12 kept for healing and the night/);
@@ -116,5 +116,5 @@ test('a raw meal with eight stone and fuel carried: cooking it first is offered 
   await survival.step(new Task('t', 'food'), nightGoal(), () => {});
   assert(tree?.eat_carried, 'the raw meal offered');
   assert(tree.cook_then_eat, Object.keys(tree).join(', '));
-  assert.match(tree.cook_then_eat.description, /^Cook the raw meat carried first, then eat it: 5 mutton, 10 food points raw and 30 cooked \(\+20\); a furnace of eight of the cobblestone carried put down here, oak log for fuel, about 56 seconds standing at it before the meal\. The \+20 points are about 3 to 5 minutes of getting food/);
+  assert.match(tree.cook_then_eat.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Cook the raw meat carried first, then eat it: 5 mutton, 10 food points raw and 30 cooked \(\+20\); a furnace of eight of the cobblestone carried put down here, oak log for fuel, about 56 seconds standing at it before the meal\. The \+20 points are about 3 to 5 minutes of getting food/);
 });

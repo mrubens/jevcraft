@@ -97,6 +97,6 @@ test('sealed under rock at night, the stay does not wait for daylight: it says t
   survival.decide = async (task, g, save, { id, tree: tr }) => { if (id === 'pocket_next') tree = tr; return { path: ['stay'], stale: false }; };
   await survival.step(new Task('x'), { kind: 'win', request: 'beat the game' }, () => {});
   assert(tree?.stay, 'pocket_next asked with stay');
-  assert.match(tree.stay.description, /^Stay in the pocket: under rock here the night up top changes nothing/);
+  assert.match(tree.stay.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Stay in the pocket: under rock here the night up top changes nothing/);
   assert.doesNotMatch(tree.stay.description, /until daylight/);
 });

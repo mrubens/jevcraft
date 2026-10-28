@@ -44,7 +44,7 @@ test('the stall\'s question under a fortress floor offers the climb with what is
   const climb = answers.pillar_up;
   assert(climb, Object.keys(answers).join(', '));
   assert.deepEqual(climb.target, { x: 144, y: 61, z: 318 });
-  assert.match(climb.description, /^Pillar straight up 16 blocks from a column 1 block from here, then span \d+ cells across at that height to the fortress floor at \(144, 61, 318\): 16 blocks laid of 231 carried, about \d+ seconds\./);
+  assert.match(climb.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Pillar straight up 16 blocks from a column 1 block from here, then span \d+ cells across at that height to the fortress floor at \(144, 61, 318\): 16 blocks laid of 231 carried, about \d+ seconds\./);
   assert.match(climb.description, /It digs 16 blocks of [a-z ]+ over the head on the way up, about \d+ seconds by hand, none of which drops anything\./);
   assert.match(climb.description, /Across, it digs \d+ blocks, 2 of them the fortress's wall \(nether bricks\), about \d+ seconds\./);
   assert.match(climb.description, /The column is walled by rock on every side above y 47; below that a push is a fall of up to 1 block, no harm\./);
@@ -129,7 +129,7 @@ test('a rung set aside is said on the option that takes it back, with why and un
   assert(options, 'asked even with the stage alone');
   const o = options.stage_reach_nether;
   assert.equal(o.takeBack, 'reach_nether');
-  assert.match(o.description, /^Take the reach nether back up now after all\./);
+  assert.match(o.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Take the reach nether back up now after all\./);
   assert.match(o.description, /The reach nether was set aside 65 seconds ago \(Jev set it aside at the rung's question, worked on 11 minutes\)\. Stuck on, as it stood when set aside: the lava bucket: No route from here to the lava pool \(noPath\)\. It comes back on its own in 29 minutes \(\d\d:\d\dZ\); taken now, that rest is cut short and what it was stuck on is before it again\./);
   // Not set aside: as before, and not asked alone.
   assert.equal(strategyOptions(overworld(), { version: 1, kind: 'win' }, stage), null);

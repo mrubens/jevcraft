@@ -131,7 +131,7 @@ test('on the way to the Nether an enderman in reach is a way to the pearls asked
   const order = require('../src/pearl-order');
   const { tree } = order.tree(bot, goal, order.routes(bot, goal));
   assert.deepEqual(Object.keys(tree).sort(), ['hunt_enderman', 'rods_first']);
-  assert.match(tree.rods_first.description, /^Go on to the Nether for the rods/);
+  assert.match(tree.rods_first.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Go on to the Nether for the rods/);
   assert.match(tree.hunt_enderman.description, /the shield raised between swings, struck first while it is calm/);
   assert.doesNotMatch(tree.hunt_enderman.description, /more than the health there is/);
   // Chosen, the enderman is the step while one is in view.

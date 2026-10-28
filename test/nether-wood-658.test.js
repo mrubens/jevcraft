@@ -70,7 +70,7 @@ test('low wood with a pickaxe carried: offered while stems are near, not where n
   // A pickaxe and no wood by the warped stems: the spare's wood, offered.
   let offer = await nw.fetchStemsOffer(deltaBot([['iron_pickaxe', 1], ['iron_ingot', 3]]), new Task('work'), { kind: 'win' });
   assert(offer, 'offered by the stems');
-  assert.match(offer.description, /^Fetch 2 stems .* for a spare \(iron, from the ingots carried\): a crafting table \(4 planks\), the sticks for 1 pickaxe \(2 sticks, 2 planks\)/);
+  assert.match(offer.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Fetch 2 stems .* for a spare \(iron, from the ingots carried\): a crafting table \(4 planks\), the sticks for 1 pickaxe \(2 sticks, 2 planks\)/);
   // A span over the lava sea with no stem in the loaded ground, a pickaxe carried: not offered.
   const spanBot = items => groundBot(BARE, { at: new Vec3(-78.3, 38, -88.9), dimension: 'the_nether', items, indexed: true });
   assert.equal(await nw.fetchStemsOffer(spanBot([['iron_pickaxe', 1]]), new Task('work'), { kind: 'win' }), null);

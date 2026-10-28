@@ -197,7 +197,7 @@ test('with a blaze in line and food a meal helps with, the eat says whether it i
   assert.ok(o.eat, Object.keys(o).join(', '));
   assert.match(o.eat.description, /Not done before a shot: the blaze 8 blocks off, with a line here, shoots in about 1 second, inside the 1.9 seconds the meal takes/);
   assert.ok(o.step_out_and_eat, Object.keys(o).join(', '));
-  assert.match(o.step_out_and_eat.description, /^Walk 1 block \(about 0.2 seconds, in their fire meanwhile\) to a spot no line from the blaze reaches, then eat the beef there \(about 1.6 seconds\)\..* over the walk and the meal, the 0.2 seconds of walking there included/);
+  assert.match(o.step_out_and_eat.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?Walk 1 block \(about 0.2 seconds, in their fire meanwhile\) to a spot no line from the blaze reaches, then eat the beef there \(about 1.6 seconds\)\..* over the walk and the meal, the 0.2 seconds of walking there included/);
   // The day's record of the way at this health is appended (note 2168), about 150 characters.
   assert.ok(o.step_out_and_eat.description.length < 1800, o.step_out_and_eat.description);
 });

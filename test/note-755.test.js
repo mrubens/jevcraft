@@ -123,7 +123,7 @@ test('under the rock with no reason to seal: no bed known, the night is not aske
 test('with a mob in sight, secure_shelter opens with it (note 755)', async () => {
   const { tree } = await askPriority(belowBot({ mobs: [{ name: 'zombie', at: new Vec3(12, 8, 0) }], sight: true }));
   assert(tree?.secure_shelter);
-  assert.match(tree.secure_shelter.description, /^Sealing against the zombie 12 blocks off/);
+  assert.match(tree.secure_shelter.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Sealing against the zombie 12 blocks off/);
 });
 
 test('the turn: under the rock with no reason and no bed nothing is claimed for the night (note 773); a mob in sight keeps the shelter pressing (note 755)', () => {
@@ -162,11 +162,11 @@ test('pocket_next says leave and night_mine undo the seal chosen seconds ago wit
   survival.wait = async () => {};
   await survival.step(new Task('wait'), goal, () => {}).catch(() => {});
   assert(tree, 'pocket_next was asked');
-  assert.match(tree.leave.description, /^Undoes the seal chosen \d+ seconds ago \(with no reason named for it\): the pocket is opened again/);
+  assert.match(tree.leave.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Undoes the seal chosen \d+ seconds ago \(with no reason named for it\): the pocket is opened again/);
   // The night mine keeps the seal (note 2157): said so, not as undoing it.
-  if (tree.night_mine) { assert.match(tree.night_mine.description, /^Keeps the seal chosen \d+ seconds ago \(with no reason named for it\): the mine goes down from inside the pocket/); assert.doesNotMatch(tree.night_mine.description, /staying up at the work was followed/); }
+  if (tree.night_mine) { assert.match(tree.night_mine.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Keeps the seal chosen \d+ seconds ago \(with no reason named for it\): the mine goes down from inside the pocket/); assert.doesNotMatch(tree.night_mine.description, /staying up at the work was followed/); }
   assert(tree.leave, 'leave was offered');
-  if (tree.stay) assert.doesNotMatch(tree.stay.description, /^Undoes/);
+  if (tree.stay) assert.doesNotMatch(tree.stay.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Undoes/);
   assert.equal(survival.state.sealLog?.at(-1)?.next, 'night_mine');
   assert.equal(survival.state.sealLog.at(-1).none, true);
 });

@@ -86,7 +86,7 @@ test('with a portal plan held and the rung on the portal, the detours name askin
   goal.step = { action: 'to_lava_for_portal' };
   const jobs = portalJobs(bot, goal);
   assert.deepEqual(jobs.map(j => j.key), ['replan_portal']);
-  assert.match(jobs[0].description, /^The portal's own plan: ask it again, this stall on to lava for portal said as its route's failure\. The route held: a frame cast beside its lava, its lava at \(-149, 62, -611\), 4 of its stated 12 minutes worked\./);
+  assert.match(jobs[0].description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?The portal's own plan: ask it again, this stall on to lava for portal said as its route's failure\. The route held: a frame cast beside its lava, its lava at \(-149, 62, -611\), 4 of its stated 12 minutes worked\./);
   const work = await detourWork(bot, new Task('detour'), goal, () => {}, {});
   assert.equal(work[0].key, 'replan_portal', `first: ${work.map(w => w.key)}`);
   await jobs[0].run(new Task('detour'), () => {});

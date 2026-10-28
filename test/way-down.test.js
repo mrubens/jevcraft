@@ -84,7 +84,7 @@ test('the water bucket is a waterfall off an open side to the ground, not in the
   const shut = perchOf(sealed, new Vec3(0, 90, 0));
   assert(shut, 'still a top');
   const out = waysDown(sealed, shut, { health: 20, carried: { water_bucket: 1 } }).ride_water;
-  assert.match(out.description, /^Dig out the dirt and dirt of the wall on the \w+ side, then pour the water bucket at the feet/);
+  assert.match(out.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Dig out the dirt and dirt of the wall on the \w+ side, then pour the water bucket at the feet/);
   assert.equal(out.plan.wall.length, 2);
   // A short tower: its fall is said with its cost.
   const short = viewOf((x, y, z) => y <= 64 ? 'stone' : x === 0 && z === 0 && y <= 69 ? 'dirt' : 'air');

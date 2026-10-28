@@ -13,7 +13,7 @@ const bot = (items, { food = 16, health = 20 } = {}) => ({ registry, food, healt
 test('one porkchop at full health: said as the last food carried, eating back hunger alone', () => {
   const ways = mealWays(bot([['cooked_porkchop', 1]]));
   assert.match(ways.eat_cooked_porkchop.description, /, 4 of its points past 20 lost\. It is the last food carried: eaten, nothing carried heals after it, and health is full now, so it eats back hunger alone; the food known from here: none known\.$/);
-  assert.match(ways.eat_later.description, /^Eat nothing now and go on with the work: asked again when hunger or health falls\. Kept, the 8 food points carried are the meal for a hurt later: health comes back only at hunger 18 or more, and from hunger 16 that takes 2 points eaten first\.$/);
+  assert.match(ways.eat_later.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Eat nothing now and go on with the work: asked again when hunger or health falls\. Kept, the 8 food points carried are the meal for a hurt later: health comes back only at hunger 18 or more, and from hunger 16 that takes 2 points eaten first\.$/);
 });
 
 test('with more food carried nothing is the last; hurt, the full-health clause goes', () => {

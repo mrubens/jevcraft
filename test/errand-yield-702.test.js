@@ -114,7 +114,7 @@ test('a hold at a live cage says its minutes, kills, rods and health lost; three
   let o = fresh();
   const f0 = cy.annotate(bot, goal, o, t0);
   assert.equal(f0.minutes, 1);
-  assert.match(o.box_here.description, /^Box\. At this cage 1 minute so far: 0 blazes killed, 0 rods, 0 health lost\.$/);
+  assert.match(o.box_here.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Box\. At this cage 1 minute so far: 0 blazes killed, 0 rods, 0 health lost\.$/);
   assert.equal(o.fight.description, 'Fight.', 'a strike is not a hold');
   assert.match(o.take_cover.description, /At full health, cover gives up the strike close in offers on the blaze \d+(\.\d)? blocks off: a blaze out of the bot's line brings no rod\.$/);
   // A hit: health lost is counted as it goes.
@@ -206,7 +206,7 @@ test('25595\'s stock-up: met at full hunger with food carried, it is not asked (
     const night = { kind: 'win', request: 'beat the game', stockFood: true };
     await survival.step(new Task('t', 'food'), night, () => {});
     assert.equal(trees.length, 1);
-    assert.match(trees[0].obtain_food.description, /^Get food\. Hunger 17, health full: nothing waits on the hunger now; the 5 food points carried bring it to eighteen or more when eaten, in seconds\. This trip is for the reserve alone \(the hunger is a meal of what is carried\)\. 5 food points carried of the 12 kept for healing and the night/);
+    assert.match(trees[0].obtain_food.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Get food\. Hunger 17, health full: nothing waits on the hunger now; the 5 food points carried bring it to eighteen or more when eaten, in seconds\. This trip is for the reserve alone \(the hunger is a meal of what is carried\)\. 5 food points carried of the 12 kept for healing and the night/);
     // Three and a half minutes on, the reserve no higher: it rests.
     delete survival.state.foodPlan; delete survival.state.searchFoodHold;
     Date.now = () => t0 + 210000;

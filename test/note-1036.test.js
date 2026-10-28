@@ -18,8 +18,8 @@ test('a drowned at arm\'s length: the blows said first on each way, and the stri
   t.mock.method(danger, 'threats', () => [drownedAt(bot, new Vec3(2.1, 62, 0.5))]);
   const ways = vitals.airWays(bot, { check() {}, cancelled: false });
   assert.ok(ways.strike_at_arm, `offered: ${Object.keys(ways)}`);
-  assert.match(ways.swim_to_air.description, /^Over the next \d+ seconds this way, if nothing turns to the drowned at arm's length: about [\d.]+ health, \d+ blows?, from 20 \(each blow about [\d.]+ through the armour worn and knocking the body back off its swim\)\. Swim the shortest way to air/);
-  assert.match(ways.strike_at_arm.description, /^Over the next \d+ seconds this way: about [\d.]+ health, \d+ blows?, from 20 .*Turn to the drowned 1\.6 blocks off(, behind the bot,)? and strike it with the iron sword, head under: it has 20 health, about \d+ swings, about [\d.]+ seconds, against [\d.]+ seconds of breath/);
+  assert.match(ways.swim_to_air.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Over the next \d+ seconds this way, if nothing turns to the drowned at arm's length: about [\d.]+ health, \d+ blows?, from 20 \(each blow about [\d.]+ through the armour worn and knocking the body back off its swim\)\. Swim the shortest way to air/);
+  assert.match(ways.strike_at_arm.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Over the next \d+ seconds this way: about [\d.]+ health, \d+ blows?, from 20 .*Turn to the drowned 1\.6 blocks off(, behind the bot,)? and strike it with the iron sword, head under: it has 20 health, about \d+ swings, about [\d.]+ seconds, against [\d.]+ seconds of breath/);
 });
 
 test('at low health the ways whose blows take more than the bot has come after the strike; with no mob at arm, nothing is added', t => {
@@ -32,7 +32,7 @@ test('at low health the ways whose blows take more than the bot has come after t
   t.mock.method(danger, 'threats', () => []);
   const calm = vitals.airWays(pond(), { check() {}, cancelled: false });
   assert.equal(calm.strike_at_arm, undefined);
-  assert.match(calm.swim_to_air.description, /^Swim the shortest way to air/);
+  assert.match(calm.swim_to_air.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Swim the shortest way to air/);
 });
 
 // Note 1053: alight with biters in sight and none at arm's length yet, every way out of the fire says them first.
@@ -47,5 +47,5 @@ test('alight with two wither skeletons eight and nine blocks off: each fire way 
   t.mock.method(danger, 'threats', (b, r) => [mob(1, 7.9), mob(2, 9.3)].filter(m => m.distance <= r));
   const ways = vitals.fireWays(bot, { check() {}, cancelled: false });
   assert.ok(Object.keys(ways).length, 'ways offered');
-  for (const [k, w] of Object.entries(ways)) assert.match(w.description, /^In sight and able to walk at the bot: 2 wither skeletons \(7\.9, 9\.3 blocks off\)\. At its speed \(about [\d.]+ blocks a second\) the nearest is at the bot in about [\d.]+ seconds if it comes/, k);
+  for (const [k, w] of Object.entries(ways)) assert.match(w.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?In sight and able to walk at the bot: 2 wither skeletons \(7\.9, 9\.3 blocks off\)\. At its speed \(about [\d.]+ blocks a second\) the nearest is at the bot in about [\d.]+ seconds if it comes/, k);
 });

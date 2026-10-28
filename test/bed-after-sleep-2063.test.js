@@ -21,7 +21,7 @@ test('a bed the pockets make is offered as a second bed to carry, this one left 
     inventory: { items: () => [{ name: 'white_wool', count: 5 }, { name: 'oak_planks', count: 6 }] } };
   const tree = bedAfterSleepTree(bot, { deaths: [] }, Date.now(), { bedNow: { item: 'white_bed', from: '5 white wool' } });
   assert.deepEqual(Object.keys(tree), ['second_bed', 'leave_as_respawn']);
-  assert.match(tree.second_bed.description, /^Leave this bed standing as the respawn and make another to carry, from what is carried \(5 white wool\), crafts alone/);
+  assert.match(tree.second_bed.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Leave this bed standing as the respawn and make another to carry, from what is carried \(5 white wool\), crafts alone/);
   assert.match(tree.second_bed.description, /A bed slept in becomes the respawn/);
   assert.equal(Object.keys(bedAfterSleepTree(bot, { deaths: [] }, Date.now())).length, 1);
 });

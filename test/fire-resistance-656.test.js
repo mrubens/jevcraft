@@ -146,7 +146,7 @@ test('before a fortress: a potion carried is offered to drink, priced by its min
   const bot = floorWorld({ items: [potion('potion', 11)] });
   let tree = visit.fireOptions(bot, null, {}, () => {}, {}, ctx);
   assert.deepEqual(Object.keys(tree), ['drink_fire_resistance']);
-  assert.match(tree.drink_fire_resistance.description, /^Drink a potion of fire resistance \(3:00\), drunk in 1\.6 seconds now, then go in/);
+  assert.match(tree.drink_fire_resistance.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?Drink a potion of fire resistance \(3:00\), drunk in 1\.6 seconds now, then go in/);
   assert.match(tree.drink_fire_resistance.description, /about 10 seconds' walk off/);
   // On for more than a minute: nothing to offer.
   effectOn(bot, 120);
@@ -167,7 +167,7 @@ test('in lava or alight, a fire resistance potion carried is one of the body\'s 
   const bot = floorWorld({ items: [potion('potion', 11), potion('splash_potion', 11)] });
   const way = fr.bodyWay(bot, null, 'the lava and burning do not hurt');
   assert.equal(way.seconds, fr.SPLASH_SECONDS);
-  assert.match(way.description, /^Throw at the feet a splash potion of fire resistance \(3:00\)/);
+  assert.match(way.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Throw at the feet a splash potion of fire resistance \(3:00\)/);
   assert.match(way.description, /2 fire resistance potions carried/);
   assert.equal(fr.bodyWay(floorWorld(), null, 'x'), null);
 });
@@ -214,7 +214,7 @@ test('in a blaze fight a potion carried is a stance, priced over its drinking, w
   const m = bare.drink_fire_resistance.description.match(/about ([\d.]+) damage as the bot is, about ([\d.]+) with the effect on/);
   assert(m, bare.drink_fire_resistance.description);
   assert(Number(m[1]) > 0 && Number(m[2]) === 0, m[0]);
-  assert.match(bare.drink_fire_resistance.description, /^Drink a potion of fire resistance \(3:00\), drunk in 1\.6 seconds now \(1 carried\)/);
+  assert.match(bare.drink_fire_resistance.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?(?:This way: .*? health(?: \(more than the bot has\))?\. )?Drink a potion of fire resistance \(3:00\), drunk in 1\.6 seconds now \(1 carried\)/);
   assert.equal(bare.drink_fire_resistance.expects.seconds, fr.DRINK_SECONDS);
   // Drunk: not offered again, and a stance that stands in their fire is priced lower.
   effectOn(bot, 170);

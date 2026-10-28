@@ -155,7 +155,7 @@ test('in the lava sea under the gravel beach, no cell out is one a swim reaches,
   const ways = survival.lavaWays(new Task('lava'), {}, () => {});
   // The beach's gravel stands a block over the lava's top: bobbing against it is not a way out.
   assert.equal(ways.to_dry_ground, undefined, `no swim onto the gravel: ${ways.to_dry_ground?.description}`);
-  assert.match(ways.pillar_out.description, /^Press against the netherrack at \(-232, 31, 55\) holding jump, .* put a block into the lava under the feet at \(-232, 31, 56\) as they clear it: about [\d.]+ seconds in the lava, about [\d.]+ health in the lava at [\d.]+ a second, then up to 15 burning after it \(no water to put it out in the Nether\)/);
+  assert.match(ways.pillar_out.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Press against the netherrack at \(-232, 31, 55\) holding jump, .* put a block into the lava under the feet at \(-232, 31, 56\) as they clear it: about [\d.]+ seconds in the lava, about [\d.]+ health in the lava at [\d.]+ a second, then up to 15 burning after it \(no water to put it out in the Nether\)/);
   assert.match(ways.pillar_out.description, /standing on it at the lava's top the body is out of the lava, and a step up from it is dry ground at \(-232, 33, 57\)/);
   // Its footing gone into the lava, the last dry cell is no way out, and is
   // not offered as one (note 754b; 25584 took it at 15:21:25Z).

@@ -80,7 +80,7 @@ test('in the wart bed the blaze on the stair has a line to the bot, and no stanc
   // Recorded: "round the corner at (-169, 53, 146), where none of the 4
   // blazes about has a line to the bot", the cell the bot stood in.
   if (options.corner_ambush) assert.doesNotMatch(options.corner_ambush.description, /at \(-169, 53, 146\)/);
-  if (options.out_of_sight) assert.doesNotMatch(options.out_of_sight.description, /^Stay/);
+  if (options.out_of_sight) assert.doesNotMatch(options.out_of_sight.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Stay/);
 });
 
 test('the blaze resting on the stair four up is struck from the stair run beside it: close_in is offered, and the ground it walks to is within the sword\'s reach (note 618)', () => {

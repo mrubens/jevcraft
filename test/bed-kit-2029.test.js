@@ -24,7 +24,7 @@ test('beside the bed slept in, with spare armour and no home chest there, a ches
   const { bot, blocks, goal } = fixture();
   const chores = bedKitChores(bot, goal);
   assert.ok(chores.kit_by_bed, `offered: ${Object.keys(chores)}`);
-  assert.match(chores.kit_by_bed.description, /^Put a chest \(eight planks\) beside the bed slept in, \d+ blocks off, and leave in it .*iron chestplate/);
+  assert.match(chores.kit_by_bed.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Put a chest \(eight planks\) beside the bed slept in, \d+ blocks off, and leave in it .*iron chestplate/);
   const cell = chestCell(bot, bot._survivalState.spawnBed.foot, bot._survivalState.spawnBed.head);
   assert.ok(cell && cell.y === 103 && !((cell.x === 700 || cell.x === 701) && cell.z === 293));
   // A home base's chest by the bed: none of this.

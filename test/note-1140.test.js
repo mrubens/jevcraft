@@ -21,7 +21,7 @@ test('walled in its own cobblestone with an enderman twenty blocks off and fourt
   const enderman = { name: 'enderman', position: new Vec3(feet.x + 14.5, feet.y - 14, feet.z + 0.5) };
   const o = openWallOption(bot, { check() {} }, goal, () => {}, enderman);
   assert.ok(o);
-  assert.match(o.description, /^Open the wall: dig the 2 blocks of its own cobblestone on the side toward the enderman 20 blocks off/);
+  assert.match(o.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Open the wall: dig the 2 blocks of its own cobblestone on the side toward the enderman 20 blocks off/);
   assert.match(o.description, /no walk reaches the enderman and no fight with one is offered from in here/);
   assert.doesNotMatch(o.description, /blaze/);
   assert.equal(await o.run(), true);

@@ -100,7 +100,7 @@ test('the hunt at a cleared spawner 8 blocks off: the ways to prepare are offere
   // Its record of kills at a cage said beside its safety (note 812).
   assert.match(tree.box_here.description, /Its record at a cage: in the trials since 2026-09-30, the box holds that ended \(5\) killed no blaze/);
   assert.match(tree.box_here.description, /done before the spawner's next try about \d+ times in 100 \(its last try not seen\)/);
-  assert.match(tree.stand_by_spawner.description, /^Take a stand in the open at .* and fight its next blazes as they come; each that sees the bot shoots at it\. Nothing is built\./);
+  assert.match(tree.stand_by_spawner.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Take a stand in the open at .* and fight its next blazes as they come; each that sees the bot shoots at it\. Nothing is built\./);
   assert.match(tree.step_out.description, /past 16: the spawner makes none and its clock stops/);
   // Full health, fed: the outage default builds.
   assert.equal(oldOrder('empty_spawner')(tree), 'box_here');

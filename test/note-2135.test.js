@@ -25,8 +25,8 @@ test('the two ways: stop at the floor, or take the animals to a mark', () => {
   const bot = world([['cow', 8, 0], ['sheep', 20, 0]]);
   const ways = fe.ways(bot, {}, { kind: 'win', survival: {} }, { supply: 16, floor: 12 });
   assert.equal(ways.target, 41);
-  assert.match(ways.enough_now.description, /^Stop the food here with the 16 food points carried \(the floor kept here is 12, met\) and go back to the work: at the record's [\d.]+ hunger an hour of play they last about \d+ minutes of play, and the next food is a climb back up from wherever the work is then\./);
-  assert.match(ways.take_more.description, /^Take the 2 animals in view first: a cow 8 blocks off \(16 food points cooked\), a sheep 20 blocks off \(9 food points cooked\)\. The errand goes on to 41 food points \(about \d+ minutes of play at the record's drain\), then this is not asked again for it; the mark holds 15 minutes or until it is carried\./);
+  assert.match(ways.enough_now.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Stop the food here with the 16 food points carried \(the floor kept here is 12, met\) and go back to the work: at the record's [\d.]+ hunger an hour of play they last about \d+ minutes of play, and the next food is a climb back up from wherever the work is then\./);
+  assert.match(ways.take_more.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Take the 2 animals in view first: a cow 8 blocks off \(16 food points cooked\), a sheep 20 blocks off \(9 food points cooked\)\. The errand goes on to 41 food points \(about \d+ minutes of play at the record's drain\), then this is not asked again for it; the mark holds 15 minutes or until it is carried\./);
   assert.equal(fe.ways(world([]), {}, {}, { supply: 16, floor: 12 }), null, 'no animal in view: not asked');
   assert.equal(fe.ways(world([['cow', 8, 0]]), {}, {}, { supply: 64, floor: 12 }), null, 'nothing more to take past 64');
 });

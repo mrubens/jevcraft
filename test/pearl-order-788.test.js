@@ -147,7 +147,7 @@ test('a bastion known is a pearl way: its gold then a barter, priced by the tabl
   assert.ok(r.bastion, 'the bastion is a way');
   const { tree } = order.tree(bot, goal, r);
   assert.ok(tree.bastion_gold);
-  assert.match(tree.bastion_gold.description, /^Go to the bastion at \(120, 50\), 130 blocks off, for its gold, then barter it with the piglins there: no gold ingots carried, and 6 raw gold that a furnace makes ingots of, about ten seconds each\. A gold block is 9 ingots, about 0\.6 of a pearl at the game's 15\.6 ingots a pearl, so a pearl is about 1\.7 blocks and about 1\.6 minutes of throwing/);
+  assert.match(tree.bastion_gold.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Go to the bastion at \(120, 50\), 130 blocks off, for its gold, then barter it with the piglins there: no gold ingots carried, and 6 raw gold that a furnace makes ingots of, about ten seconds each\. A gold block is 9 ingots, about 0\.6 of a pearl at the game's 15\.6 ingots a pearl, so a pearl is about 1\.7 blocks and about 1\.6 minutes of throwing/);
   assert.match(tree.bastion_gold.description, /On this run's clock the pearls have taken 150 minutes for the/);
   // Chosen, the step is the bastion's gold; with gold to throw and a piglin about, the barter.
   assert.equal(order.stageFor(bot, goal, 'bastion_gold', r, 3).action, 'bastion_gold');

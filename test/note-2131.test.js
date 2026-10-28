@@ -26,7 +26,7 @@ test('the kit rungs after an End death come with the End first, priced', () => {
   assert.ok(options.rung_bow, 'the bow is the ladder\'s rung');
   assert.ok(!options.nether_first, 'the Nether holds nothing more');
   assert.ok(options.end_first, `end_first offered: ${Object.keys(options)}`);
-  assert.match(options.end_first.description, /^Leave bow for later and go to the End portal now, with the kit carried now: the ring at \(2052, 42, 1511\), 64[23] blocks off, about 17 minutes' walk at the 38\.5 blocks a minute the bot's walks have made, stalls and detours counted, lit\. The kit as it stands is short of bow \(0 of 1\), arrow \(16 of \d+\)/);
+  assert.match(options.end_first.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Leave bow for later and go to the End portal now, with the kit carried now: the ring at \(2052, 42, 1511\), 64[23] blocks off, about 17 minutes' walk at the 38\.5 blocks a minute the bot's walks have made, stalls and detours counted, lit\. The kit as it stands is short of bow \(0 of 1\), arrow \(16 of \d+\)/);
   assert.match(options.end_first.description, / On full-2, the run that killed the dragon \(2026-10-20 to 10-24\), about 23 of its 109 hours went to kitting again in the Overworld after deaths in the End\. Without the bow: /);
   assert.equal(options.end_first.chat, "I'll leave the bow for later and go to the End portal now.");
 });

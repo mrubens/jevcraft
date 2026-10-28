@@ -19,7 +19,7 @@ test('a spare iron chestplate for the chest by the bed is offered with its iron,
   const o = spareArmourOption(bot(), goal);
   assert.ok(o);
   assert.deepEqual(o.rung, { phase: 'spare_armour', action: 'acquire', item: 'iron_chestplate', count: 1 });
-  assert.match(o.description, /^Make a spare iron chestplate \(8 iron ingots, 6 armour points; 3 ingots and 0 raw iron carried, the rest mined and smelted\) and leave it in a chest put beside the bed slept in \(eight planks\), 20 blocks off/);
+  assert.match(o.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Make a spare iron chestplate \(8 iron ingots, 6 armour points; 3 ingots and 0 raw iron carried, the rest mined and smelted\) and leave it in a chest put beside the bed slept in \(eight planks\), 20 blocks off/);
   goal.bedKit = { position: { x: 99, y: 64, z: 40 }, contents: { iron_chestplate: 1 } };
   assert.equal(spareArmourOption(bot(), goal), null, 'the chest holds one');
   assert.equal(spareArmourOption(bot({ worn: { 6: 'iron_chestplate', 7: 'iron_leggings' } }), goal).rung.item, 'iron_leggings');

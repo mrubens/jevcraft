@@ -105,7 +105,7 @@ test('close_in is offered with a blaze over ground the sword reaches from, not o
   bot.entities = { 3: over };
   const options = stand.blazeStands(bot, threats(bot, 24), { dig: false, hunted: true });
   assert(options.close_in, Object.keys(options).join(','));
-  assert.match(options.close_in.description, /^Go at them with the sword: walk in on the nearest blaze ground reaches \(5 blocks off/);
+  assert.match(options.close_in.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Go at them with the sword: walk in on the nearest blaze ground reaches \(5 blocks off/);
   assert.match(options.close_in.description, /a shield raised and facing it as the glow ends takes all three whole, the fire with them/);
   // Over the lava ten out: no ground within the sword's reach of it.
   bot.entities = { 4: blazeAt(4, 11.5, 64.5, 0.5) };
@@ -179,7 +179,7 @@ test('without a shield the blaze in reach is still charged, as close_in and as t
   const options = stand.blazeStands(bot, danger, { dig: false });
   const close = options.close_in, charge = options.charge_nearest;
   assert(close && charge, Object.keys(options).join(','));
-  assert.match(close.description, /^Go at them with the sword: no shield carried: walk straight in on the nearest blaze ground reaches \(4\.3 blocks off/);
+  assert.match(close.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Go at them with the sword: no shield carried: walk straight in on the nearest blaze ground reaches \(4\.3 blocks off/);
   assert.match(close.description, /No shield is carried: every fireball from those that see the bot lands at its chance by distance/);
   assert.doesNotMatch(close.description, /behind the shield|the lulls|with the shield down/);
   // The arena's runs, measured with another kit, are not said as this
@@ -196,7 +196,7 @@ test('without a shield the blaze in reach is still charged, as close_in and as t
   assert.equal(charge.cost.deathAt, null);
   assert(charge.cost.damage < close.cost.damage, `the one: ${charge.cost.damage}, all of them: ${close.cost.damage}`);
   assert(charge.cost.damage < 20 && charge.cost.seconds < 10, JSON.stringify(charge.cost));
-  assert.match(charge.description, /^Charge the nearest blaze alone: 4\.3 blocks off, over ground the bot can stand on within a sword's reach of it; no shield carried: walk straight in on it, strike it until it dies/);
+  assert.match(charge.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Charge the nearest blaze alone: 4\.3 blocks off, over ground the bot can stand on within a sword's reach of it; no shield carried: walk straight in on it, strike it until it dies/);
   assert.match(charge.description, /About [\d.]+ damage over the [\d.]+ seconds to that one killed, from 20 health, [\d.]+ after\./);
   // With a shield the same walk waits out the volleys behind it, and says so.
   const shielded = stand.blazeStands(aaFight({ shield: true }), threats(aaFight({ shield: true }), 24), { dig: false });
@@ -343,7 +343,7 @@ test('break_spawner says the rods still owed and that breaking ends every one of
   const options = stand.blazeStands(bot, threats(bot, 24), { need: 1, of: 'the goal wants 7 in all for 13 eyes, 6 carried', goal });
   const o = options.break_spawner;
   assert(o, Object.keys(options).join(','));
-  assert.match(o.description, /^1 rod still owed at this spawner \(the goal wants 7 in all for 13 eyes, 6 carried\), and breaking it ends every one of them it would ever give, for good: no other spawner is known yet\. Break the blaze spawner:/);
+  assert.match(o.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?1 rod still owed at this spawner \(the goal wants 7 in all for 13 eyes, 6 carried\), and breaking it ends every one of them it would ever give, for good: no other spawner is known yet\. Break the blaze spawner:/);
 });
 
 test('break_spawner names the nearest other known spawner\'s distance, when one is known, instead of "none known" (note 740)', () => {
@@ -360,7 +360,7 @@ test('break_spawner says nothing extra up front when no rods are needed (note 74
   bot.entities = { 1: blazeAt(1, 10.5, 66, 0.5) };
   const options = stand.blazeStands(bot, threats(bot, 24));
   const o = options.break_spawner;
-  assert.match(o.description, /^Break the blaze spawner:/, 'no rods owed said, and the plain text leads as before');
+  assert.match(o.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Break the blaze spawner:/, 'no rods owed said, and the plain text leads as before');
 });
 
 test('box_here inside the spawner\'s own spawn range says a blaze can spawn already at its wall, not only fly in through the window (note 740)', () => {

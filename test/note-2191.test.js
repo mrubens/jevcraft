@@ -15,7 +15,7 @@ test('the facts and the two ways, priced', () => {
   assert.equal(f.flat, 215); assert.equal(f.down, 30); assert.equal(f.picks, 1); assert.equal(f.uses, 100);
   const t = RW.tree(f);
   assert.deepEqual(Object.keys(t), ['swim_on', 'tunnel_under']);
-  assert.match(t.tunnel_under.description, /^Dig a tunnel straight at the ring through the rock, two high, down to its level: about 215 cells and 460 digs \(about 11 minutes at three seconds a cell\), 100 digs left in the pickaxe carried \(short by 360: the tunnel stops there unless another is made\)/);
-  assert.match(t.swim_on.description, /^Swim straight at the ring along its line, the head kept up/);
+  assert.match(t.tunnel_under.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Dig a tunnel straight at the ring through the rock, two high, down to its level: about 215 cells and 460 digs \(about 11 minutes at three seconds a cell\), 100 digs left in the pickaxe carried \(short by 360: the tunnel stops there unless another is made\)/);
+  assert.match(t.swim_on.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Swim straight at the ring along its line, the head kept up/);
   assert.match(RW.says(f), /^The ring is 215 blocks off across the ground and 30 down\./);
 });

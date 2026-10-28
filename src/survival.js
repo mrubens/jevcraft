@@ -6493,11 +6493,14 @@ class Survival {
     // The price, put in last so that it is the figure as it stands (a fall
     // by a drop that kills raises it after the lead is set): after the lead
     // wherever it stands in the words, else first.
-    if (lead) for (const o of Object.values(options)) {
+    // With no lead too (note 2361): the price went with it. full-14 (25588, 2026-10-28 08:51:17 to 18Z), 24 blazes
+    // about a fortress and none in sight a moment, was asked the stance three times with no 'This way' on any option,
+    // chose bunker at 0.05 (60 seconds of nether brick dug by hand) and took 8 blows in 8 seconds, 20 to none.
+    for (const o of Object.values(options)) {
       if (typeof o.description !== 'string') continue;
       const price = priceOf(o);
       if (!price) continue;
-      const at = o.description.indexOf(`${lead} `);
+      const at = lead ? o.description.indexOf(`${lead} `) : -1;
       o.description = at >= 0 ? `${o.description.slice(0, at + lead.length + 1)}${price}${o.description.slice(at + lead.length + 1)}` : `${price}${o.description}`;
     }
     // A deadly drop within two blocks of the feet, said on every way that stands here (note 2166): full-5 (2026-10-26

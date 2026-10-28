@@ -66,7 +66,7 @@ test('hungry with nothing to eat, the held trip is still the leave\'s work, as n
   const now = T(fx.askedAt);
   assert.equal(foodTripDrives(bot, goal, now, { sealedAt: T(fx.sealedAt) }), true);
   const tree = await ask(bot, origin, goal, now);
-  assert.match(tree.leave.description, /^Open the pocket and go on with the way back to the Overworld for food, as Jev chose at 10:58, before this pocket was sealed on it/);
+  assert.match(tree.leave.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Open the pocket and go on with the way back to the Overworld for food, as Jev chose at 10:58, before this pocket was sealed on it/);
   assert.doesNotMatch(tree.leave.description, /From here that work is/);
   // Hungry with food carried, the hunt's rule would not go back: nor is the leave the trip.
   const fedLater = pocket({ food: 16 });

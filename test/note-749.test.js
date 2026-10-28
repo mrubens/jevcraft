@@ -171,7 +171,7 @@ test('below the surface, sheep_search offers the climb first with its cost; on i
     const goal = {};
     await home.searchForSheep(bot, { check() {}, opportunityClient: {} }, goal, () => {}, { explore: async () => {} });
     assert.ok(asked.tree.climb_first, Object.keys(asked.tree).join(', '));
-    assert.match(asked.tree.climb_first.description, /^Climb to the surface first, about 62 blocks up, roughly \d+ minutes?/);
+    assert.match(asked.tree.climb_first.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Climb to the surface first, about 62 blocks up, roughly \d+ minutes?/);
     assert.equal(asked.tree.explore_here, undefined);
     assert.ok(!Object.keys(asked.tree).some(k => /^far_/.test(k)), 'no long walk from underground');
     assert.ok(asked.tree.biome_forest && asked.tree.biome_birch_forest, 'the biomes by name');

@@ -60,7 +60,7 @@ test('at the span\'s end with the ghast 56 blocks off, the walls and the cover a
   assert.ok(options.rail_and_fight, `no rail: ${Object.keys(options).join(', ')}`);
   assert.match(options.rail_and_fight.description, /Carried that it can break: white wool \(5, blast resistance 0\.8\), light gray wool \(2, blast resistance 0\.8\), gray wool \(2, blast resistance 0\.8\)/);
   assert.ok(options.take_cover, `no cover: ${Object.keys(options).join(', ')}`);
-  assert.match(options.take_cover.description, /^Put 2 blocks, two high, in the line from the eyes of the ghast \(56 blocks off\) to the bot's/);
+  assert.match(options.take_cover.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Put 2 blocks, two high, in the line from the eyes of the ghast \(56 blocks off\) to the bot's/);
   assert.match(options.take_cover.description, /None of the blocks carried holds: the cover can be blown out by the fireball it stops/);
   assert.match(options.take_cover.description, /Until the first block in the fireball's line stands, about 1\.2 seconds, the bot is open over the drop/);
 });

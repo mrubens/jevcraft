@@ -251,9 +251,9 @@ test('the ways out of lava are worked out in a small part of the time they took 
   // swim to the dry cell, about 7.5.
   // With a water bucket carried, the water poured at the feet comes first (note 2161), about half a second.
   assert.equal(Object.keys(ways)[0], 'pour_water', Object.keys(ways).join(', '));
-  assert.match(ways.pour_water.description, /^Pour the water bucket at the feet \(1 carried\): looking down, the water goes into the lava's cell where the body is, the burning is out at once/);
+  assert.match(ways.pour_water.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Pour the water bucket at the feet \(1 carried\): looking down, the water goes into the lava's cell where the body is, the burning is out at once/);
   assert.ok(ways.pillar_out.seconds < ways.to_dry_ground.seconds);
-  assert.match(ways.to_dry_ground.description, /^Onto the dry cell [\d.]+ blocks off by the way through at \(-145, -54, -516\)/);
+  assert.match(ways.to_dry_ground.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Onto the dry cell [\d.]+ blocks off by the way through at \(-145, -54, -516\)/);
 });
 
 test('after a join the mobs the server sends a moment later are waited for before the ground is read (note 1993, full-1 07:31Z)', async () => {

@@ -94,7 +94,7 @@ test('the rod is offered with a rod or with two string to make one of, and not o
   assert.equal((await forageChoices(none, new Task('food'), {}, () => {}, actions, {})).fish_with_rod, undefined);
   const string = shore([{ name: 'string', count: 2 }]);
   const made = (await forageChoices(string, new Task('food'), {}, () => {}, actions, {})).fish_with_rod;
-  assert.match(made.description.rod, /^made first from 3 sticks and 2 of the 2 string carried/);
+  assert.match(made.description.rod, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?made first from 3 sticks and 2 of the 2 string carried/);
   const dry = shore([{ name: 'fishing_rod', count: 1 }], { pool: false });
   assert.equal((await forageChoices(dry, new Task('food'), {}, () => {}, actions, {})).fish_with_rod, undefined, 'no water within 32 blocks');
 });
@@ -168,7 +168,7 @@ test('with no rod and no string, making the rod first is offered beside the sear
   const actions = { acquireStep: async (b, t, item, n) => { fetched.push([item, n]); } };
   const choices = await forageChoices(bot, new Task('food'), {}, () => {}, actions, {});
   assert(choices.rod_first, Object.keys(choices).join(','));
-  assert.match(choices.rod_first.description.action, /^Make a fishing rod first \(three sticks and two string; 0 string carried\), then fish: string is a spider's drop/);
+  assert.match(choices.rod_first.description.action, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Make a fishing rod first \(three sticks and two string; 0 string carried\), then fish: string is a spider's drop/);
   assert.match(choices.rod_first.description.action, /caught 64 cod and salmon in 33 minutes/);
   assert.match(choices.rod_first.description.waterWithABank, /blocks off/);
   await choices.rod_first.run();

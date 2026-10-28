@@ -60,7 +60,7 @@ test('the step says why it is on offer, the stay against what is carried, and ea
   const found = foodRoutes(bot, new Task('t'), goal, save, { actions });
   assert.deepEqual(Object.keys(found.routes).sort(), ['hoglin_pillar', 'hoglin_walk', 'return_for_food']);
   const option = restockFoodOption(bot, new Task('t'), goal, save, { actions });
-  assert.match(option.description, /^Get food here before going on, the way asked next with each priced: a hoglin hunted on foot \(2 to 4 raw porkchops, 6 to 12 points raw, 16 to 32 cooked\); the same hoglin hunted from a pillar two blocks up/);
+  assert.match(option.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Get food here before going on, the way asked next with each priced: a hoglin hunted on foot \(2 to 4 raw porkchops, 6 to 12 points raw, 16 to 32 cooked\); the same hoglin hunted from a pillar two blocks up/);
   assert.match(option.description, /On offer because 0 food points carried, under 8; hunger 12 with health 6 \(health comes back at eighteen or more\)\./);
   assert.match(option.description, /The goal still wants about 120 minutes in the Nether, and a stay spends about 40 hunger an hour .*no food points are carried to last, and 80 points \(10 cooked steaks or porkchops\) cover the stay, 80 more than are carried\./);
   const pillar = found.routes.hoglin_pillar.description;
@@ -88,7 +88,7 @@ test('mushroom stew is offered where a red and a brown mushroom are in view and 
   const found = foodRoutes(bot, new Task('t'), goal, save, { actions });
   const stew = found.routes.mushroom_stew;
   assert(stew, `stew on offer: ${Object.keys(found.routes)}`);
-  assert.match(stew.description, /^Make mushroom stew from the mushrooms in view: 2 red and 1 brown within 48 blocks \(the nearest 10 off; up to 1 stew counted\)/);
+  assert.match(stew.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Make mushroom stew from the mushrooms in view: 2 red and 1 brown within 48 blocks \(the nearest 10 off; up to 1 stew counted\)/);
   assert.match(stew.description, /Each stew is 6 hunger, 6 for 1/);
   assert.match(stew.description, /three planks make four/);
   assert.match(stew.description, /The game generates them in the nether wastes and basalt deltas only/);
@@ -116,7 +116,7 @@ test('a furnace is fuelled by coal, charcoal or a blaze rod, not by the Nether\'
   assert(stuck.notOffered.some(s => /cooking the raw meat carried \(4 porkchop, \+20 points\).*the Nether's stems and planks do not burn/.test(s)), stuck.notOffered.join('; '));
   const coal = netherBot({ items: [item('porkchop', 4), item('furnace'), item('coal', 5)] });
   const ready = foodRoutes(coal, new Task('t'), {}, save, { actions });
-  assert.match(ready.routes.cook_meat.description, /^Cook the raw meat carried: 4 porkchop, 12 food points as carried and 32 once cooked \(\+20\)\. The furnace carried is put down here, fuelled with the coal carried \(coal and charcoal burn 8 items, a blaze rod 12; the Nether's own wood does not burn\): about ten seconds an item/);
+  assert.match(ready.routes.cook_meat.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Cook the raw meat carried: 4 porkchop, 12 food points as carried and 32 once cooked \(\+20\)\. The furnace carried is put down here, fuelled with the coal carried \(coal and charcoal burn 8 items, a blaze rod 12; the Nether's own wood does not burn\): about ten seconds an item/);
 });
 
 test('a hunt walked to a sighting where no hoglin is begins nothing and says so; one in view is begun with its method (61 of the day\'s 66 hunts, note 626)', async () => {

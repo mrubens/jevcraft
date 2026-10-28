@@ -44,8 +44,8 @@ test('body_way asks with each way ending in its row while blazes are about, and 
   const asked = [];
   const decide = async (id, q) => { asked.push(q.tree); return { path: ['out_of_fire'] }; };
   await body.answer({ ...blazeBot({ blazes: 5 }), inventory: { items: () => [] } }, new Task('t'), 'fire', ways(), { client: {}, decide, facts: { inFire: true }, log: () => {} });
-  assert.match(asked[0].put_out_flames.description, /^Punch out the flame\. In the fights of 2026-09-28 to 2026-09-29T11:40Z, with four or more blazes within sixteen/);
-  assert.match(asked[0].out_of_fire.description, /^Run out of the fire\. In the fights of/);
+  assert.match(asked[0].put_out_flames.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Punch out the flame\. In the fights of 2026-09-28 to 2026-09-29T11:40Z, with four or more blazes within sixteen/);
+  assert.match(asked[0].out_of_fire.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Run out of the fire\. In the fights of/);
   assert.match(asked[0].out_of_fire.description, /\(97 answers\)/);
   await body.answer({ ...blazeBot({ blazes: 0 }), inventory: { items: () => [] } }, new Task('t'), 'fire', ways(), { client: {}, decide, facts: { inFire: true }, log: () => {} });
   assert.equal(asked[1].put_out_flames.description, 'Punch out the flame.');

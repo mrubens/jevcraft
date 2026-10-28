@@ -113,7 +113,7 @@ test('off the top the hold is kept with what it came to, and the next pillar fro
   // Down at the column's foot, beside it: the hold ends.
   bot.entity.position = new Vec3(-0.5, 60, 0.5);
   const foot = await stanceAt(survival, t0 + 255000, [threat()], () => 'fight');
-  assert.match(foot.tree.pillar.description, /^.*Go two blocks straight up on placed blocks and fight from there/);
+  assert.match(foot.tree.pillar.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?.*Go two blocks straight up on placed blocks and fight from there/);
   assert.doesNotMatch(foot.tree.pillar.description, /Up on this pillar/);
   assert.equal(foot.state.pillarSoFar, undefined);
   assert.equal(survival.state.pillarHolds.length, 1);
@@ -141,7 +141,7 @@ test('on its own pillar the way down is offered off its middle and under a cap w
   const survival = new Survival(bot, { navigate: async () => {} }, { state: { shelters: [], pillar: { x: 0, y: 60, z: 0, at: Date.now() - 60000 } } });
   const options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat()], false);
   assert(options.come_down, Object.keys(options).join(','));
-  assert.match(options.come_down.description, /^.*Come down the pillar the way it went up: the block under the feet is dug out and the bot drops onto the next, about a second each, 2 blocks down to the ground it went up from/);
+  assert.match(options.come_down.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?.*Come down the pillar the way it went up: the block under the feet is dug out and the bot drops onto the next, about a second each, 2 blocks down to the ground it went up from/);
 });
 
 test('held on with nothing new, the pillar is asked again the moment what it was chosen on changes: the hoglin gone out of sight, then come in to the foot (note 599)', async () => {

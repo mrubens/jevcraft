@@ -131,7 +131,7 @@ test('a Nether pocket with nothing to eat says its wait from the seal across a r
   const survival = new Survival(bot, {}, { state: JSON.parse(JSON.stringify(persisted)), client: { systemOne: async () => ({}) } });
   // Five minutes in, the trip back still held: the leave goes on with it.
   let { tree } = await askAt(survival, goal, t0 + 5 * min);
-  assert.match(tree.leave.description, /^Open the pocket and go on with the way back to the Overworld for food, as Jev chose at \d\d:\d\d, before this pocket was sealed on it\./);
+  assert.match(tree.leave.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Open the pocket and go on with the way back to the Overworld for food, as Jev chose at \d\d:\d\d, before this pocket was sealed on it\./);
   assert.match(tree.leave.description, /The nearest portal remembered is 280 blocks off, about 65 seconds at a walk.*The obtain blaze rods step waits till the bot is fed and back\./);
   assert.ok(!tree.go_for_food?.children?.return_for_food, 'the trip back is the leave\'s, not offered twice');
   // The bot restarted at thirteen minutes, as the trial's was: its record
@@ -173,7 +173,7 @@ test('a Nether pocket with nothing to eat says its wait from the seal across a r
   // the trip.
   goal.leaveNether.at = t0 - 11 * min;
   ({ tree } = await askAt(again, goal, t0 + 26 * min));
-  assert.match(tree.leave.description, /^Open the pocket and go back to the obtain blaze rods step/);
+  assert.match(tree.leave.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Open the pocket and go back to the obtain blaze rods step/);
   assert.match(tree.go_for_food.description, /off the Overworld the food is back through the portal/);
   assert.match(tree.go_for_food.children.return_for_food.description, /Go back through the portal to the Overworld.*The nearest portal remembered is 280 blocks off.*Health does not come back on the way: hunger 16, under eighteen, and nothing to eat/);
 });
@@ -256,7 +256,7 @@ test('sealed on a fortress pier by a blaze spawner, nothing to eat: a way out un
   assert.match(stay, /Within 24 blocks of the pocket: 5 mobs at the wait's first look 19 minutes ago, 2\d now\./);
   assert.deepEqual(s.pocketSoFar.mobsWithin24.firstLook, 5);
   // Nineteen minutes sealed in are not the trip's: the leave goes on with it.
-  assert.match(tree.leave.description, /^Open the pocket and go on with the way back to the Overworld for food, as Jev chose at \d\d:\d\d, before this pocket was sealed on it/);
+  assert.match(tree.leave.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Open the pocket and go on with the way back to the Overworld for food, as Jev chose at \d\d:\d\d, before this pocket was sealed on it/);
   // Chosen, the passage is dug as surveyed, three blocks a step down, and
   // the trip is chosen again from its end.
   survival.decide = async () => ({ path: ['tunnel_out'], stale: false });
@@ -277,7 +277,7 @@ test('a trip back for food chosen more than ten minutes before the seal has laps
     leaveNether: { reason: 'food', pick: 'go_back', until: 0, at: t0 - 11 * min } };
   const survival = new Survival(bot, { dig: async () => {}, navigate: async () => {} }, { state: { shelters: [{ origin: { ...origin }, dimension: 'the_nether', emergency: true }], sealing: { origin: { ...origin }, at: t0 }, pocketOutAt: t0 - 600 }, client: { systemOne: async () => ({}) } });
   const { tree } = await askAt(survival, goal, t0 + 2 * min);
-  assert.match(tree.leave.description, /^Open the pocket and go back to the obtain blaze rods step/);
+  assert.match(tree.leave.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Open the pocket and go back to the obtain blaze rods step/);
   assert.match(tree.go_for_food.children.return_for_food.description, /The nearest portal remembered is 344 blocks off/);
   assert.match(tree.tunnel_out.description, /then go back to the obtain blaze rods step from its end\./);
 });

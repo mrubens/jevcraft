@@ -55,7 +55,7 @@ test('back to the ground last stood on is offered where the route ends short of 
   const back = await backToGround(bot, new Task('leg'), {}, state, { want: 0, need: 96, carried: 0 });
   assert(back?.option, JSON.stringify(back));
   const o = back.option({ navigate: async () => {} }, () => {});
-  assert.match(o.description, /^Walk back to the basalt last stood on at \(7, 57, -12\), 133 blocks back the way the pathfinder finds \(125 steps, about \d+ seconds; its route ends 10 blocks short of it, within the 16 blocks the digging reaches from where it stands\)/);
+  assert.match(o.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Walk back to the basalt last stood on at \(7, 57, -12\), 133 blocks back the way the pathfinder finds \(125 steps, about \d+ seconds; its route ends 10 blocks short of it, within the 16 blocks the digging reaches from where it stands\)/);
   // Farther short than the digging reaches: said, not offered.
   bot.pathfinder.getPathTo = () => ({ status: 'partial', path: path.slice(0, 60) });
   const far = await backToGround(bot, new Task('leg'), {}, state, { want: 0, need: 96, carried: 0 });
