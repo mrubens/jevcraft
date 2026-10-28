@@ -401,13 +401,18 @@ function gate(bot, goal, q, tree, { now = Date.now() } = {}) {
   const i = holding(bot, goal, now);
   const ended = endedSays(goal?.intentionEnded, now);
   const out = { tree, underWay: null, withheld: [], ended };
-  if (!i || !(GATED.has(q) || AT_A_CHANGE.has(q))) return out;
+  // A trip back through the portal for food held: upkeep is gated too, its carry_on kept (note 2386). full-19 (25591,
+  // 2026-10-28 15:19 to 15:23Z), 10 health, hunger 16 and nothing to eat, answered return_for_food twice and never
+  // went: upkeep's fetch_stems, the rods banked and an enderman hunt came between, and a ghast and a pack of
+  // zombified piglins killed it at the edge of a 48-block drop.
+  const foodTrip = /return_for_food$/.test(String(i?.path || i?.choice || '')) && q === 'upkeep';
+  if (!i || !(GATED.has(q) || AT_A_CHANGE.has(q) || foodTrip)) return out;
   out.underWay = says(i, now);
   // A trip held (note 749: an answer that goes somewhere, tripOf) is gated
   // at rung_progress and stillness_detour too, the same as
   // upkeep's fetch already is (note 703): otherwise asked wide open, they
   // could drop it with nothing said (note 726).
-  const errandGate = ERRAND_GATED.has(q) && !!i.trip;
+  const errandGate = (ERRAND_GATED.has(q) || foodTrip) && !!i.trip;
   // Its own question, asked again, ordinarily goes unfiltered: what holds
   // is one of its own answers, so the full menu is put to Jev afresh. Not
   // while the intention is an errand (note 745): 25593's return_for_blocks
