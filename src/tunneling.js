@@ -534,6 +534,13 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, place 
   if (isSetAside(goal, 'staircase_from', landingKey(from, target))) throw staircaseStillResting(goal, save, target, 'staircase_from', landingKey(from, target));
   goal.tunnel ||= { entrance: { ...bot.entity.position.floored() }, steps: 0, visited: {} };
   const tunnel = goal.tunnel;
+  // The last pickaxe broken on the way ends the stair once (note 2369), so the question of making another is asked at
+  // once and not after minutes dug by hand: full-19 (25591, 2026-10-28 11:16 to 11:28Z) broke its iron pickaxe on a
+  // staircase toward its drops and went on by hand, a block every 53 seconds for twelve minutes, the makings of a stone
+  // pickaxe carried; full-14 six minutes the same.
+  { const carried = bot.inventory?.items?.().some(i => /_pickaxe$/.test(i.name)) || false;
+    if (tunnel.pickaxe === true && !carried) { tunnel.pickaxe = false; save(); throw Object.assign(new Error('The last pickaxe broke on the stairs: the rest is by hand until another is made'), { name: 'PickaxeGone' }); }
+    tunnel.pickaxe = carried; }
   // Ore in the walls the stairs pass, dug from the step (note 2295).
   try { await require('./opportunistic-mining').mineWithinReach(bot, task); } catch (err) { if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
   // Where a way down began at the surface, remembered: the way back up is
