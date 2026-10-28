@@ -20,7 +20,10 @@ async function command(line) { fs.writeFileSync(consolePath, line + '\n'); await
 const log = data => console.log(JSON.stringify({ at: new Date().toISOString(), mode: MODE, ...data }));
 const KIT = ['iron_sword', 'iron_pickaxe', 'shield', 'cooked_beef', 'raw_iron'];
 const WORN = { head: 'iron_helmet', chest: 'iron_chestplate', legs: 'iron_leggings', feet: 'iron_boots' };
-const DEATH = new Vec3(100, 70, 100), RESPAWN = new Vec3(140, 70, 100);
+// DRILL_WATER=1: the death in a pool four deep, the drops floating up to its surface (note 2394: full-23, 25592,
+// 2026-10-28 15:48Z, died in water, came back at 2:17 to 39 drops floating 5 to 10 blocks about it and took none).
+const WATER = process.env.DRILL_WATER === '1';
+const DEATH = WATER ? new Vec3(100, 67, 100) : new Vec3(100, 70, 100), RESPAWN = new Vec3(140, 70, 100);
 const count = (bot, name) => bot.inventory.items().filter(i => i.name === name).reduce((n, i) => n + i.count, 0) + [5, 6, 7, 8, 45].filter(s => bot.inventory.slots?.[s]?.name === name).length;
 const task = { check() {}, cancelled: false, label: 'walkback-drill' };
 
@@ -32,7 +35,7 @@ bot.on('kicked', r => log({ kicked: String(r).slice(0, 200) }));
 
 async function run(n) {
   for (const c of ['gamerule spawn_mobs false', 'gamerule advance_time false', 'gamerule keep_inventory false', 'gamerule immediate_respawn true', 'time set noon', 'weather clear', 'difficulty normal',
-    `gamemode survival ${username}`, 'kill @e[type=zombie]', 'kill @e[type=item]', 'fill 85 60 85 155 69 115 stone', 'fill 85 70 85 155 80 115 air',
+    `gamemode survival ${username}`, 'kill @e[type=zombie]', 'kill @e[type=item]', 'fill 85 60 85 155 69 115 stone', 'fill 85 70 85 155 80 115 air', ...(WATER ? ['fill 92 66 92 108 69 108 water'] : []),
     `clear ${username}`, ...Object.entries(WORN).map(([slot, item]) => `item replace entity ${username} armor.${slot} with ${item}`),
     ...KIT.map(i => `give ${username} ${i} ${i === 'cooked_beef' ? 8 : i === 'raw_iron' ? 4 : 1}`), `effect give ${username} instant_health 1 5`,
     `spawnpoint ${username} ${RESPAWN.x} ${RESPAWN.y} ${RESPAWN.z}`, `tp ${username} ${DEATH.x + 0.5} ${DEATH.y} ${DEATH.z + 0.5}`,

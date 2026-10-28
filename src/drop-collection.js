@@ -26,6 +26,26 @@ function nearbyDrops(bot, item, origin, radius, { hostilesOk = false } = {}) {
     .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position)).slice(0, 8);
 }
 
+const WATERY = /^(water|bubble_column|seagrass|tall_seagrass|kelp|kelp_plant)$/;
+// In water: the block at the drop, or the one just under where it bobs.
+function floatsInWater(bot, drop) {
+  const at = n => WATERY.test(bot.blockAt(n)?.name || '') || bot.blockAt(n)?.getProperties?.()?.waterlogged === true;
+  return at(drop.position.floored()) || at(drop.position.offset(0, -0.4, 0).floored());
+}
+// Swims at the surface to a floating drop: faced, forward, jump held so the body rises to the air and bobs there.
+// Ends when `done` says so, the drop is gone, or `until` passes.
+async function swimTo(bot, task, drop, { until, done = () => false }) {
+  const { move } = require('./motion');
+  const gone = () => bot.entities[drop.id] !== drop || drop.isValid === false;
+  const flat = () => Math.hypot(drop.position.x - bot.entity.position.x, drop.position.z - bot.entity.position.z);
+  while (Date.now() < until && !done() && !gone()) {
+    task.check();
+    await move(bot, task, { label: 'swim_to_drop', keys: flat() > 0.4 ? ['forward', 'jump'] : ['jump'], sneak: false,
+      why: 'swimming at the surface to a drop floating in the water, jump held to keep the head in the air (note 2394)',
+      look: drop.position.offset(0, 0.3, 0), until: () => done() || gone(), maxMs: 1200 });
+  }
+}
+
 function pickupPositions(bot, drop) {
   const positions = [], p = drop.position.floored();
   for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) {
@@ -145,6 +165,17 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
       // raw iron 1.6 blocks off with every count at 0, no spot tried, the drop known by the line written after.
       const unread = !drops.length && !seen && Object.values(bot.entities || {}).some(e => e.name === 'item' && e.isValid !== false && e.position && e.position.distanceTo(origin) <= radius && !e.getDroppedItem?.());
       if (!drops.length && (seen || (Date.now() >= spawnDeadline && !unread))) break;
+      // A drop floating in water is swum to at the surface, where the air is, not walked to along the floor (note
+      // 2394): full-23 (25592, 2026-10-28 15:50 to 15:53Z) came back to 39 of its drops floating on a pool 5 to 10
+      // blocks about it and took none; in the arena the walk to them went along the pool's floor, ran low on air, and
+      // gave up every drop at 'Low air: interrupt work and surface', 4 of 19 taken.
+      const floating = drops.find(d => !attempted.has(`swim:${key(bot, d)}`) && floatsInWater(bot, d));
+      if (floating) {
+        attempted.add(`swim:${key(bot, floating)}`); why.walked++;
+        onTarget({ item, position: { ...floating.position.floored() } });
+        await swimTo(bot, task, floating, { until: Math.min(deadline, Date.now() + 15000), done: gained });
+        continue;
+      }
       for (const drop of drops) {
         for (const point of pickupPositions(bot, drop).slice(0, 5)) {
           task.check();
