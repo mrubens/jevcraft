@@ -35,6 +35,7 @@ test('the End (note 2236): offered with no pickaxe and nothing to eat and the ed
   assert.equal(RF.offeredEnd(bare, {}, { edge: null }), null, 'no edge known');
   assert.equal(RF.offeredEnd(botWith([], 'the_nether'), {}, { edge }), null, 'not the Nether');
   const s = RF.saysEnd(bare, { survival: { spawnBed: { foot: { x: 5, y: 63, z: 9 } } } }, { edge }, { dragonHealth: 200 });
-  assert.match(s, /^Die here on purpose and come back to life at the bed at \(5, 63, 9\) in the Overworld: walk off the island's edge 7 blocks east at \(30, -12\) into the void\. Everything of worth carried \(the armour taken off, the tools, iron, gold, diamonds, rods, pearls, eyes, food\) goes into a chest here first where wood for one is carried; the rest carried, 3 stacks \(1 bow, 54 arrow, 1 white bed\), is lost at once in the void\. With no pickaxe and nothing to eat here, health 1\.3 at hunger 11 does not come back/);
-  assert.match(s, /the dragon keeps its health \(200 of 200\)\. On the full runs the time from a death to the kit worn and held again was about 73 minutes/);
+  assert.match(s, /^Die here on purpose and come back to life at the bed at \(5, 63, 9\) in the Overworld, a position reset as speedrunners use it: walk off the island's edge 7 blocks east at \(30, -12\) into the void, about \d+ seconds\. The trade in minutes: here, with no pickaxe and nothing to eat, health 1\.3 at hunger 11 does not come back/);
+  assert.match(s, /What is carried and not stashed is lost at once in the void: 1 bow, 54 arrow, 1 white bed\./);
+  assert.match(s, /The dragon keeps its health \(200 of 200\)\. For scale, a death that loses a whole kit cost about 73 minutes/);
 });
