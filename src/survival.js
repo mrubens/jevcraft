@@ -8264,13 +8264,19 @@ class Survival {
     const listed = names.slice(0, 8).map(n => n.replaceAll('_', ' ')).join(', ') + (names.length > 8 ? `, and ${names.length - 8} more kinds` : '');
     const arms = order.filter(n => ARMS.test(n.name)).map(n => n.name.replaceAll('_', ' '));
     return { expects: { damage: cost.damage, seconds, oneHit },
-      description: `Take up the kit dropped at the death, lying within ${Math.ceil(far)} blocks: ${listed}; ${arms.length ? `the ${arms.join(', ')} first, the armour worn as it is taken up, ` : ''}walked to past the mobs here, the hands busy and the shield down, about ${seconds} seconds.${costSays(cost, bot.health, mobs, { over: 'while it is taken up' })} Left lying, it lasts five minutes from when the bot came near it again.`,
+      description: `Take up the kit dropped at the death, lying within ${Math.ceil(far)} blocks: ${listed}; ${arms.length ? `the ${arms.join(', ')} first, the armour worn as it is taken up, ` : ''}walked to past the mobs here, the hands busy and the shield down, about ${seconds} seconds.${(bot.inventory?.emptySlotCount?.() ?? 1) === 0 ? ' The pockets are full: room is made first, the least needed stacks dropped, as the walk back does at the spot.' : ''}${costSays(cost, bot.health, mobs, { over: 'while it is taken up' })} Left lying, it lasts five minutes from when the bot came near it again.`,
       run: async () => {
         this.report(goal, save, { action: 'grab_kit', target: 'drops', threats: [], health: bot.health, stance: true });
         const { collectNearbyDrops } = require('./drop-collection');
         const until = Date.now() + Math.max(4000, seconds * 1500);
+        // Room made in the pockets first, as the walk back does at the spot (note 2403): full-22 (25590, 2026-10-28 17:19
+        // to 17:23Z) stood among 29 of its drops within six blocks, its iron armour, sword and pickaxe among them, with no
+        // free slot (cobblestone, andesite, gravel and copper), and took none of them up.
+        const keep = new Set(Object.keys(run.items || {}));
         for (const name of names) {
           if (Date.now() >= until) break;
+          try { await require('./inventory-tidy').makeRoom(bot, task, name, { keep, purpose: 'the kit dropped at the death, lying here', goal }); }
+          catch (err) { task.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err; }
           try { await collectNearbyDrops(bot, task, name, { origin: bot.entity.position.clone(), radius: 9, timeoutMs: Math.max(1500, until - Date.now()), hostilesOk: true }); }
           catch (err) { task.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err; }
           if (ARMS.test(name)) await wearRecovered(bot);

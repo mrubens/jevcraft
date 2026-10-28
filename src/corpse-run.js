@@ -673,6 +673,16 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
   if (!run.announced) {
     run.announced = true;
     bot.chat?.(`Going back for what I dropped when I died, ${Math.round(flat(bot.entity.position, spot))} blocks off: ${listed(run.items)}.`);
+    // Room made before setting out, for the first things to be taken up (note 2403): full-22 (25590, 2026-10-28 17:18 to
+    // 17:21Z) walked 175 blocks back into the Nether with no free slot and stood among 29 of its drops, the fight there
+    // taking every turn and nothing taken up, then died beside them.
+    if ((bot.inventory?.emptySlotCount?.() ?? 9) < 4) {
+      const keep = new Set(Object.keys(run.items || {}));
+      for (const name of Object.keys(run.items || {}).sort((a, b) => rank(a) - rank(b)).slice(0, 4)) {
+        try { await (room || (n => require('./inventory-tidy').makeRoom(bot, task, n, { keep, purpose: 'the things dropped at the death, to be taken up', goal })))(name); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      }
+    }
   }
   goal.step = { action: 'corpse_run', to: { ...run.position }, items: { ...run.items } }; save();
   const before = flat(bot.entity.position, spot);

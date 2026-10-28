@@ -32,3 +32,22 @@ test('a drop floating in water is swum to, not walked to along the floor (note 2
   assert.equal(got, true);
   assert(controls.some(([k, v]) => k === 'jump' && v), 'jump held to stay at the surface');
 });
+
+test('with no room in the pockets for a drop worth carrying, room is made before it is walked to (note 2403)', async () => {
+  const tidy = require('../src/inventory-tidy');
+  const calls = [];
+  const was = { roomFor: tidy.roomFor, makeRoom: tidy.makeRoom };
+  tidy.roomFor = () => false; tidy.makeRoom = async (b, t, name) => { calls.push(name); return true; };
+  try {
+    const drop = { id: 9, name: 'item', isValid: true, position: new Vec3(3.5, 64, 0.5), getDroppedItem: () => ({ name: 'raw_iron', count: 1 }) };
+    const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, entities: { 9: drop }, oxygenLevel: 20, game: { dimension: 'overworld' },
+      blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', position: p, boundingBox: p.y < 64 ? 'block' : 'empty' }),
+      inventory: { items: () => [], slots: [] }, pathfinder: { movements: { scafoldingBlocks: [] }, getPathTo: () => ({ status: 'noPath', path: [] }), setGoal() {} } };
+    await collectNearbyDrops(bot, { check() {} }, 'raw_iron', { origin: bot.entity.position.clone(), radius: 8, timeoutMs: 300, hostilesOk: true, move: async () => {} });
+    assert.deepEqual(calls, ['raw_iron']);
+    calls.length = 0;
+    drop.getDroppedItem = () => ({ name: 'dirt', count: 1 });
+    await collectNearbyDrops(bot, { check() {} }, 'dirt', { origin: bot.entity.position.clone(), radius: 8, timeoutMs: 300, hostilesOk: true, move: async () => {} });
+    assert.deepEqual(calls, [], 'not for dirt');
+  } finally { Object.assign(tidy, was); }
+});

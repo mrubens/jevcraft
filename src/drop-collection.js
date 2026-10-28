@@ -135,6 +135,17 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
   const gained = () => countOf(bot, item) > before;
   if (gained()) return true;
   if (!waitForSpawnMs && !nearbyDrops(bot, item, origin, radius, { hostilesOk }).length) return false;
+  // No room in the pockets, none is taken up however near (note 2403): room is made first, the tidy's own rule and then
+  // Jev's, as the walk back does at its spot; only for what is worth carrying (corpse-run.js worth), not a block of dirt. full-22 (25590, 2026-10-28) had no free slot for an hour, 'raw iron not
+  // taken ... the nearest 0.2 from the bot' at its own mining, and stood among 29 of its kit's drops taking none.
+  try {
+    const tidy = require('./inventory-tidy');
+    const worthIt = Object.keys(require('./corpse-run').worth({ [item]: 1 })).length > 0;
+    if (worthIt && typeof tidy.roomFor === 'function' && !tidy.roomFor(bot, item, 1)) {
+      const made = await tidy.makeRoom(bot, task, item, { purpose: `the ${item.replaceAll('_', ' ')} lying here`, goal: bot._goal || null });
+      if (!made) console.log(`[drops] no room in the pockets for the ${item.replaceAll('_', ' ')} lying here, and none made`);
+    }
+  } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err; }
   const deadline = Date.now() + timeoutMs, spawnDeadline = Date.now() + waitForSpawnMs;
   const movement = bot.pathfinder.movements, policy = miningMovement(bot), start = bot.entity.position.clone();
   const previous = { allow1by1towers: movement.allow1by1towers, scafoldingBlocks: movement.scafoldingBlocks, allowSprinting: movement.allowSprinting, hostilesOk: movement.hostilesOk,
