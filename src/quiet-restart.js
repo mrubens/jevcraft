@@ -137,6 +137,26 @@ function watchRestartRequest(bot, file, { startedAt = Date.now(), every = 2000, 
   return () => clearInterval(timer);
 }
 
+// A pass of the turns that never ends (note 2367): the arbiter marks each pass done (bot._arbiterShadow.at, arbiter.js),
+// and none done in ten minutes outside the End is a run stopped on an await that never returns. full-18 (25586,
+// 2026-10-28 10:30:18 to 10:45Z) answered encounter_stance take_cover, logged 'gave work step', and wrote nothing for
+// fifteen minutes, connected, at 1.8% CPU, until its process was killed by hand. Quit with a supervisor to start it
+// again, as the restart for a new build does.
+const STUCK_MS = 10 * 60000;
+function watchStuck(bot, { every = 30000, exit = () => process.exit(0), now = () => Date.now(), port = null, watched = supervised, startedAt = Date.now() } = {}) {
+  const timer = setInterval(() => {
+    const last = Math.max(bot._arbiterShadow?.at || 0, startedAt);
+    if (!bot.entity || /end$/.test(String(bot.game?.dimension || '')) || now() - last < STUCK_MS) return;
+    if (!watched(port)) return;
+    clearInterval(timer);
+    console.log(`[stuck] no pass of the turns has ended in ${Math.round((now() - last) / 60000)} minutes (the last: ${bot._arbiterShadow?.gave || 'none'}): quitting for the supervisor to start the bot again`);
+    try { bot.quit('stuck'); } catch (_) { /* gone already */ }
+    setTimeout(exit, 500);
+  }, every);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+
 // A new build asked for since this process began, with a supervisor to
 // start it (note 1994): taken at a death, where the bot reconnects anyway
 // and nothing is cut. full-1 (2026-10-21 07:30 to 07:35Z), its bed among a
@@ -149,4 +169,4 @@ function pendingRestart(file, { startedAt = PROCESS_STARTED, port = null, watche
   return mtime > startedAt && watched(port);
 }
 
-module.exports = { pendingRestart, PROCESS_STARTED, watchRestartRequest, quiet, calm, spun, supervised, WAIT_MS, LAST_MS };
+module.exports = { watchStuck, STUCK_MS, pendingRestart, PROCESS_STARTED, watchRestartRequest, quiet, calm, spun, supervised, WAIT_MS, LAST_MS };
