@@ -834,7 +834,23 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
       const origin = seenAt ? new Vec3(seenAt.x, seenAt.y, seenAt.z) : spot;
       try { await collect(bot, task, name, { origin, radius: searchReach(bot, spot), timeoutMs: 12000, allowExcavation: true, hostilesOk: true }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
-      const gained = countOf(bot, name) - had;
+      let gained = countOf(bot, name) - had;
+      // Below the bot and not reached, a staircase dug down to where it lies, and taken up from there (note 2432):
+      // full-29 (25592, 2026-10-28 21:15 to 21:20Z), blown up 2 blocks from its bed, had 3 iron chestplates, its
+      // helmet, boots and bed thrown into a cave 8 below; 'the passage came to nothing: navigation timed out' each of
+      // 8 passes, and they were gone in the five minutes.
+      if (gained <= 0 && (run.stairsDown || 0) < 3) {
+        const below = lying(bot, spot, name, run.drops || []).map(e => e.position || e).filter(p => p && bot.entity.position.y - p.y >= 3).sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0];
+        if (below) {
+          run.stairsDown = (run.stairsDown || 0) + 1; save();
+          console.log(`[corpse run] the ${name.replaceAll('_', ' ')} lies ${Math.round(bot.entity.position.y - below.y)} below at (${Math.round(below.x)}, ${Math.round(below.y)}, ${Math.round(below.z)}): stairs dug down to it`);
+          try { await require('./bridging').tunnelStraight(bot, task, new Vec3(Math.floor(below.x), Math.floor(below.y), Math.floor(below.z)), { maxSteps: handSteps(bot), navigate: move, down: true }); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[corpse run] the stairs down stopped: ${String(err.message || err).slice(0, 120)}`); }
+          try { await collect(bot, task, name, { origin: below, radius: 6, timeoutMs: 8000, allowExcavation: true, hostilesOk: true }); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+          gained = countOf(bot, name) - had;
+        }
+      }
       if (gained <= 0) break;
       got += gained;
       // Armour worn as it is taken up, not left in the pockets as spare gear for the next room made (note 2416).
