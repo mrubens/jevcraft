@@ -2642,7 +2642,10 @@ const darkNow = bot => { const t = bot.time?.timeOfDay ?? 0; return t >= 13000 &
 // staying up, and of its last ten deaths eight came 148 to 363 blocks off.
 // After dark the short walk only, as before.
 function homeBedReach(bot) {
-  if (darkNow(bot)) return NIGHT_BED_WALK;
+  // After dark the bed within the loaded ground too, the walk in the dark said on the option instead of a short reach
+  // that hid it (note 2336): the live critic of 2026-10-28 04:36Z saw full-13 (25587) 70 blocks from the bed it sleeps
+  // in at 04:31Z offered saved_shelter, seal_here, shaft_pocket and night_mine, no bed, and mine through the night.
+  if (darkNow(bot)) return HOME_BED_WALK;
   const t = bot.time?.timeOfDay;
   const { DAY } = require('./day');
   if (!Number.isFinite(t) || t < DAY.DUSK) return HOME_BED_WALK;
@@ -12472,7 +12475,7 @@ class Survival {
       // its bed down at (1353, -8, 1169) under rock, told only of the mobs about; it died seven times after, the last
       // three in 35 seconds at 11:27Z, two blocks from the bed, and a creeper took the bed: the world spawn 1500 blocks off.
       const caveBedSays = (!(homeBed && !bed) ? caveBedSaysFor(bot) : '') + mobsMetHereSays(bot, this.state, homeBed && !bed ? homeBed.foot : null);
-      tree.sleep_in_bed = { description: homeBed && !bed ? `Walk to the bed ${walk} blocks away (about ${Math.round(walk / 4.3)} seconds) and sleep in it. The night passes in seconds and the request resumes at dawn.${nowAbout}${sleepRuleSays}${refused}${creeperRaceSays}${safety.says}${(() => { try { const b = homeBed.position || homeBed.foot || homeBed.at || homeBed; return require('./death-places').deathsNearSays(bot, b, { what: 'that bed' }); } catch (_) { return ''; } })()}` : `Put the carried bed down here and sleep. The night passes in seconds and the request resumes at dawn.${' On waking, the bed is left standing as the respawn point (a death comes back to it, another bed made to carry, three wool and three planks) or taken up and carried (the respawn back at the world spawn), as chosen then.'}${caveBedSays}${nowAbout}${sleepRuleSays}${refused}${creeperRaceSays}${safety.says}`, run: () => this.sleepStep(task, goal, save) };
+      tree.sleep_in_bed = { description: homeBed && !bed ? `Walk to the bed ${walk} blocks away (about ${Math.round(walk / 4.3)} seconds) and sleep in it.${darkNow(bot) && walk > NIGHT_BED_WALK ? ' The walk is in the dark: monsters spawn on open ground all the way, they follow a walker, and a bed with one within eight blocks cannot be slept in (a clean run walked 130 blocks to its bed in the dark, came at three health with three mobs beside it and died there twice).' : ''} The night passes in seconds and the request resumes at dawn.${nowAbout}${sleepRuleSays}${refused}${creeperRaceSays}${safety.says}${(() => { try { const b = homeBed.position || homeBed.foot || homeBed.at || homeBed; return require('./death-places').deathsNearSays(bot, b, { what: 'that bed' }); } catch (_) { return ''; } })()}` : `Put the carried bed down here and sleep. The night passes in seconds and the request resumes at dawn.${' On waking, the bed is left standing as the respawn point (a death comes back to it, another bed made to carry, three wool and three planks) or taken up and carried (the respawn back at the world spawn), as chosen then.'}${caveBedSays}${nowAbout}${sleepRuleSays}${refused}${creeperRaceSays}${safety.says}`, run: () => this.sleepStep(task, goal, save) };
     }
     // Where the carried bed does not fit (a staircase, a shaft), a nook dug
     // for it beside the bot: the bed that went down in the midgame trials
