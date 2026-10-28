@@ -4877,6 +4877,8 @@ function fortressInView(bot, goal, save, state, bricks, { stay, map = null, plan
 // way there is Jev's (fortress_approach, the walk's failure said), leaving
 // that way among the ways. How it ended is said with the next offer.
 const GO_TO_NEAR = 8;
+// How far above or below its cage the bot can be and still be at it: a cage's room is a few blocks high (note 2418).
+const CAGE_LEVEL = 6;
 const GO_TO_SAYS = { blazes: 'where blazes were seen', blazes_about: 'the blazes about now', unwalked: 'unwalked floors of the fortress, seen across a gap' };
 // A way chosen runs until it ends, and how it ended is kept and said with
 // the next offer, a stall raised from inside it among the ends: the stall
@@ -4974,7 +4976,11 @@ async function findFortressStep(bot, task, goal, save, actions) {
   const fa = state.fortressAt;
   const cageExtent = atCage && fa && Math.hypot(atCage.cage.x - fa.x, atCage.cage.z - fa.z) <= Math.max(fa.extent || 0, GO_TO_NEAR)
     ? Math.hypot(bot.entity.position.x - fa.x, bot.entity.position.z - fa.z) <= Math.max(fa.extent || 0, GO_TO_NEAR) : false;
-  if (atCage && (atCage.off <= GO_TO_NEAR || cageExtent)) {
+  // At the cage's own level, not under it (note 2418): the extent is flat, and full-21 (25589, 2026-10-28 18:58 to
+  // 19:05Z), 15 blocks under its cage in the rock below the fortress, was held 'at the spawner' with no approach asked;
+  // every walk up ended 'no route', and fortress_approach and way_down were asked ten times in 46 seconds from outside.
+  const atCageLevel = atCage && Math.abs(bot.entity.position.y - atCage.cage.y) <= CAGE_LEVEL;
+  if (atCage && atCageLevel && (atCage.off <= GO_TO_NEAR || cageExtent)) {
     if (goal.step?.action !== 'at_spawner') console.log(`[fortress] at the spawner at (${atCage.cage.x}, ${atCage.cage.y}, ${atCage.cage.z}), ${atCage.off} blocks off${cageExtent ? `, within the fortress's own ${Math.max(fa.extent || 0, GO_TO_NEAR)} blocks` : ''}, ${atCage.need} rods wanted: no visit, approach or leg asked from here`);
     goal.step = { action: 'at_spawner', target: { x: atCage.cage.x, y: atCage.cage.y, z: atCage.cage.z }, off: atCage.off, legs: state.legs || 0 }; save();
     await sleep(1000); task.check(); return;
