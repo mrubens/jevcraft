@@ -30,3 +30,13 @@ test('by day underground the depth is said with the coming night, and after dawn
   assert.match(nightAheadSays(botAt(2000, 84), {}), /^Dusk in about 6\.3 real minutes.*under open sky/);
   assert.match(nightAheadSays(botAt(23500, 84), {}), /^Dusk in about 8\.3 real minutes/);
 });
+
+test('underground, the light where the bot stands and the armour worn are said (note 2323)', () => {
+  const bot = botAt(15000, 84);
+  bot.blockAt = p => ({ name: p.y >= 84 ? 'air' : (p.y === 30 ? 'cave_air' : 'stone'), boundingBox: p.y >= 84 || p.y === 30 ? 'empty' : 'block', position: p, light: 0 });
+  bot.inventory.slots = [];
+  assert.match(nightAheadSays(bot, {}), /The block light here is 0: monsters spawn here, by day as by night\. Nothing is worn: every hit lands whole\./);
+  bot.blockAt = p => ({ name: p.y >= 84 ? 'air' : (p.y === 30 ? 'cave_air' : 'stone'), boundingBox: p.y >= 84 || p.y === 30 ? 'empty' : 'block', position: p, light: 12 });
+  bot.inventory.slots = { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' } };
+  assert.match(nightAheadSays(bot, {}), /The block light here is 12: monsters spawn only where it is 0, in the dark about it\. 2 of 4 armour pieces worn\./);
+});

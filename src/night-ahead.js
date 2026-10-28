@@ -41,7 +41,15 @@ function pickaxeSays(items) {
 function underSays(bot) {
   let up = null; try { up = require('./levels').depthHere(bot); } catch (_) { up = null; }
   if (!Number.isFinite(up) || up < 4) return '';
-  return ` The bot is ${up} blocks under open sky: down here the night changes nothing, a cave is as dark and its mobs the same by day, and the mining goes on through it; the night costs time at the surface, where mobs spawn on the open ground and a night awake there is waited out sealed in or fought.`;
+  // The light here and what is worn (note 2323): monsters spawn where the block light is 0, by day as by night, so the
+  // cave is not safer than the surface for being under rock. full-12 (25588, 2026-10-27 21:22Z), told 'down here the
+  // night changes nothing', was shot dead at y 26 in the dark with nothing worn, two skeletons and two creepers about.
+  let light = null;
+  try { const b = bot.blockAt?.(bot.entity.position.floored()); light = Number.isFinite(b?.light) ? b.light : null; } catch (_) { light = null; }
+  const worn = (() => { try { return [5, 6, 7, 8].map(i => bot.inventory?.slots?.[i]).filter(Boolean).length; } catch (_) { return null; } })();
+  const lightSays = light === null ? '' : light === 0 ? ' The block light here is 0: monsters spawn here, by day as by night.' : ` The block light here is ${light}: monsters spawn only where it is 0, in the dark about it.`;
+  const wornSays = worn === null ? '' : worn === 0 ? ' Nothing is worn: every hit lands whole.' : ` ${worn} of 4 armour pieces worn.`;
+  return ` The bot is ${up} blocks under open sky: down here the night changes nothing, a cave is as dark and its mobs the same by day, and the mining goes on through it; the night costs time at the surface, where mobs spawn on the open ground and a night awake there is waited out sealed in or fought.${lightSays}${wornSays}`;
 }
 // The spawn point's distance, where a bed slept in is it.
 function spawnSays(bot) {
