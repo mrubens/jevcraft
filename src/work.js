@@ -7239,9 +7239,12 @@ async function portalStep(bot, task, goal, save, client) {
     // 76, 283), 60 blocks off; every bucket after was a two-minute trip.
     // Out of its reach, the climb's hold is let go and the next pass walks
     // back to the lava (the walk above), where a site is dug or asked for.
-    let site = dug || selectPortalSite(bot, { avoid, cast });
     const lavaOff = p => near ? Math.hypot(p.x - near.x, p.y - near.y, p.z - near.z) : 0;
-    if (site && !dug && lavaOff(site) > SITE_NEAR_LAVA) site = null;
+    // A site dug for an earlier plan is not the site beside this lava (note 2366): full-17 (25587, 2026-10-28 10:01 to
+    // 10:20Z) chose beside_sight, its lava at (-208, 7, -34), and the frame went down at the site dug before at (-79,
+    // -54, -10), 145 blocks off, every bucket a walk there and back; 39 minutes on the Nether and nothing cast.
+    let site = (dug && !(near && lavaOff(dug) > SITE_NEAR_LAVA) ? dug : null) || selectPortalSite(bot, { avoid, cast });
+    if (site && site !== dug && lavaOff(site) > SITE_NEAR_LAVA) site = null;
     if (!site && near && lavaOff(bot.entity.position) > SITE_NEAR_LAVA) {
       if (/^a portal site/.test(goal.surfaceTrip?.need || '')) { delete goal.surfaceTrip; save(); }
       goal.step = { action: 'to_lava_for_portal', at: { ...near }, distance: Math.round(lavaOff(bot.entity.position)), siteFar: true }; save();

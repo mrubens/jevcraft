@@ -93,7 +93,7 @@ test('25589: a frame begun far from the lava its trips go to: the route beside t
 test('25589: a cast beside the lava does not take a site more than 32 blocks from it, and walks back to the lava', () => {
   const work = fs.readFileSync(require.resolve('../src/work'), 'utf8');
   assert.match(work, /const SITE_NEAR_LAVA = 32;/);
-  assert.match(work, /if \(site && !dug && lavaOff\(site\) > SITE_NEAR_LAVA\) site = null;/);
+  assert.match(work, /if \(site && site !== dug && lavaOff\(site\) > SITE_NEAR_LAVA\) site = null;/);
   assert.match(work, /action: 'to_lava_for_portal', at: \{ \.\.\.near \}, distance: Math\.round\(lavaOff\(bot\.entity\.position\)\), siteFar: true/);
 });
 
