@@ -622,6 +622,9 @@ async function walkTo(bot, task, goal, { timeoutMs, stallMs, stopWhen, sprint, b
   // back into them. 25584 (mid-244-gc, 2026-09-30 15:21:15-17Z) filled a
   // bucket from (162, 19, 95), and the walk on stepped down into the pool
   // at (162, 18, 96): 20 health to 9.4 (note 753c).
+  // And the cells over them (note 2441): a body stood on the cell over a scooped source has the flow for a floor.
+  // full-38 (25589, 2026-10-28 22:36:35 to 22:36:51Z), its bucket filled at (-129.5, -22, -338.5), walked on over the
+  // pool's cells a level up and dropped into the lava at (-125.5, -24.5, -338.3), and burned from 18 health to none.
   const scooped = (bot._scoopedLava || []).filter(e => Date.now() - e.at < 20000);
   if (movements && scooped.length) bad.push(...scooped.map(e => ({ x: e.x, y: e.y, z: e.z, lava: true })));
   // And where the ground hurt the bot or its air ran low (noteHazard).
@@ -634,7 +637,7 @@ async function walkTo(bot, task, goal, { timeoutMs, stallMs, stopWhen, sprint, b
     // on 2026-10-03 (25594, 25589), and the walk ended there (note 1105).
     if (!block?.position) return 0;
     const near = bad.filter(s => Math.abs(block.position.x - s.x) <= 1 && Math.abs(block.position.y - s.y) <= 1 && Math.abs(block.position.z - s.z) <= 1);
-    return near.some(s => s.lava && block.position.y === s.y) ? SCOOPED_COST : near.some(s => s.hazard) ? HAZARD_COST : near.some(s => !s.lava) ? STALL_SPOT_COST : 0;
+    return near.some(s => s.lava && (block.position.y === s.y || (block.position.y === s.y + 1 && block.position.x === s.x && block.position.z === s.z))) ? SCOOPED_COST : near.some(s => s.hazard) ? HAZARD_COST : near.some(s => !s.lava) ? STALL_SPOT_COST : 0;
   }];
   // The goal's height, for the climb rule (movement.js climbOverFall).
   const hadGoalY = !!movements && Object.hasOwn(movements, 'walkGoalY'), walkGoalY = hadGoalY ? movements.walkGoalY : undefined;
