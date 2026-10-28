@@ -2994,6 +2994,12 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
   // step is met, or to a stack for ore, as long as the next block is close.
   const here0 = bot.entity.position.clone();
   candidates.sort((a, b) => tierOf(a) - tierOf(b) || a.distanceTo(here0) - b.distanceTo(here0));
+  // The ore a tunnel is being dug to stays first while it is there and not set aside (note 2353), as the ore tunnelled
+  // to out of view is kept (oreToTunnel's held): the nearest changes with each stair, and full-14 (25588, 2026-10-28
+  // 06:55Z) turned between two iron ores 37 blocks off, (-1014, 17, 164) and (-1050, 16, 133), a stair toward each in
+  // turn, 4 times in 4 seconds.
+  const heldOre = goal.tunnelOre && candidates.findIndex(c => c.x === goal.tunnelOre.x && c.y === goal.tunnelOre.y && c.z === goal.tunnelOre.z);
+  if (heldOre > 0 && !isSetAside(goal, 'reach', candidates[heldOre])) candidates.unshift(...candidates.splice(heldOre, 1));
   const ore = /_ore$/.test(step.block || '') || step.block === 'ancient_debris';
   const startCount = countOf(bot, step.drops);
   const satisfied = () => ore ? countOf(bot, step.drops) >= Math.max(startCount + (step.count || 1), 32) || countOf(bot, step.drops) >= 32 : countOf(bot, step.drops) >= startCount + (step.count || 1);
