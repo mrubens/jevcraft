@@ -368,7 +368,9 @@ async function bank(bot, task, goal, save, actions = {}) {
     offer = { site, making, what, rods };
   }
   const stored = await rs().stashRods(bot, task, goal, save, actions, offer, { step: 'bank_rods', rest: ['rod_bank', 'store'],
-    chat: (list, place) => `Banked ${list} in a chest at ${place}. Back to the Nether for the rest.` });
+    // Said as the rods stand (note 2433): full-29 (25592, 2026-10-28 20:49Z) banked its seventh of 7 wanted and said
+    // 'Back to the Nether for the rest', the pearls all that was left.
+    chat: (list, place) => { let left = 1; try { left = require('./eye-need').need(bot, goal).rodsLeft; } catch (_) { left = 1; } return `Banked ${list} in a chest at ${place}. ${left > 0 ? 'Back to the Nether for the rest.' : 'Every rod wanted is banked: the pearls next.'}`; } });
   // Stored: the next coming out with rods banks again at once. The half
   // hour's rest (bankOnArrival) is for a bank that failed; kept after one
   // that stored, 25597 came out again fourteen minutes later with two rods
