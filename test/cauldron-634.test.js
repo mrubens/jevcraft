@@ -221,8 +221,12 @@ test('on the trip chosen for the kit a death left in the Nether, the crossing is
   const client = { systemOne: async ({ questions }) => { asked++; return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'cross_now', confidence: 0.7 }])) }; } };
   const goal = { kind: 'win', errand: { dimension: 'nether', items: [], for: require('../src/corpse-run').KIT_ERRAND, at: Date.now() },
     corpseRun: { status: 'open', dimension: 'nether', items: { iron_chestplate: 1 }, trip: { pick: 'go_now', at: Date.now() } } };
-  assert.equal(await crossingKitReady(b, { check() {}, opportunityClient: client }, goal, () => {}, client), true);
-  assert.equal(asked, 0);
+  let text = '';
+  const client2 = { systemOne: async ({ questions }) => { asked++; text = JSON.stringify(questions); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'cross_now', confidence: 0.7 }])) }; } };
+  await crossingKitReady(b, { check() {}, opportunityClient: client2 }, goal, () => {}, client2);
+  // Asked still of what the drops do not hold, the food above all (note 2337): nothing to eat carried here.
+  assert.equal(asked, 1);
+  assert.match(text, /on its way through a portal into the Nether/);
 });
 
 test('a crossing short of food is asked with what such crossings came to (note 1257)', async () => {
