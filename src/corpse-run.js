@@ -826,6 +826,21 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
   // 'spare gear', the keep holding only what was still lying.
   const keepNow = () => new Set([...Object.keys(run.items), ...(bot.inventory?.items?.() || []).map(i => i.name).filter(n => Object.keys(worth({ [n]: 1 })).length)]);
   const makeRoom = room || (async name => require('./inventory-tidy').makeRoom(bot, task, name, { keep: keepNow(), purpose: 'the things dropped at the death, lying here', goal }));
+  // Room for every stack worth carrying that lies here, made at once before the first is taken up (note 2440): a slot
+  // made for one is filled by whatever of the pile the body stands in is picked up first. full-31 (25587, 2026-10-28
+  // 22:3xZ), back at its kit 2 h 40 min after an enderman killed it, its 36 slots full, made room a slot at a time and
+  // stood on its iron helmet, chestplate, leggings, boots, pickaxe and flint and steel, 0.1 to 2.3 blocks off, while
+  // the warped planks and cobblestone of the same pile took each slot.
+  {
+    const worthLying = [...new Set(lying(bot, spot, null, run.drops || []).map(e => { try { return e.getDroppedItem?.()?.name; } catch (_) { return null; } }).filter(n => n && Object.keys(worth({ [n]: 1 })).length))];
+    const need = Math.min(8, worthLying.length), empty = () => bot.inventory?.emptySlotCount?.() ?? need;
+    for (let i = 0; i < need + 2 && need > 1 && empty() < need; i++) {
+      task.check();
+      try { if (!await require('./inventory-tidy').makeRoom(bot, task, worthLying[0], { keep: keepNow(), purpose: `the ${need} stacks dropped at the death, lying here`, goal, room: () => empty() >= need })) break; }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; break; }
+    }
+    if (need > 1) console.log(`[corpse run] room for the ${need} stacks lying here: ${empty()} slots free`);
+  }
   let got = 0, full = false;
   for (const name of Object.keys(run.items).sort((a, b) => rank(a) - rank(b))) {
     for (let tries = 0; tries < 4 && run.items[name] > 0; tries++) {
