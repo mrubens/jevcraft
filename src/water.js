@@ -146,7 +146,18 @@ async function collectWater(bot, task, goal, save, { navigate, explore, digTo = 
       try {
         console.log(`[water] the water at ${p} is behind the ${wall.name} at ${wall.position}: digging it and filling from here`);
         await require('./skills').digWithTool(bot, wall, true);
-        await fillWaterBucket(bot, task, p, { guard: () => checkThreats(bot) });
+        // The wall's block is gone a moment after the dig on the bot's side, and the water runs into the cell (note 2383):
+        // waited for, and every source then in reach and sight tried, the one aimed at first. full-20 (25588,
+        // 2026-10-28 14:5xZ): 'Water source is outside visible interaction reach' after each wall dug.
+        await sleep(400);
+        const eye2 = bot.entity.position.offset(0, 1.62, 0);
+        const inReach = [p, ...bot.findBlocks({ matching: bot.registry.blocksByName.water.id, maxDistance: 5, count: 12, useExtraInfo: sourceWater }).filter(q => !q.equals(p) && eye2.distanceTo(q.offset(0.5, 0.5, 0.5)) <= 4.5)];
+        let filled = false, lastErr = null;
+        for (const q of inReach) {
+          try { await fillWaterBucket(bot, task, q, { guard: () => checkThreats(bot) }); filled = true; break; }
+          catch (e) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(e.name)) throw e; lastErr = e; }
+        }
+        if (!filled) throw lastErr || new Error('no water source in reach after the wall was dug');
         if (goal.search?.water) goal.search.water.attempts = 0;
         goal.step = { action: 'fill_bucket', position: { ...p }, item: 'water_bucket', confirmed: true, throughWall: true }; save(); return;
       } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[water] through the wall to ${p}: ${String(err.message || err).slice(0, 120)}`); }
