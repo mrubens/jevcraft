@@ -84,7 +84,10 @@ const material = (bot, { whole = false } = {}) => {
     // against no blast, so it is laid only when nothing else is carried. 25590 (2026-10-04 13:51 to 15:11Z) stood eighty
     // minutes at 1 health on its own span over a lava sea, three blocks
     // gone from it behind and no rock in reach, with five wool in its pack.
-    || items.find(i => LAST_RESORT.test(i.name))
+    // Not where lava lights it (note 2437, the shelter's rule of note 1376): full-29 (25592, 2026-10-28 22:06:50 to
+    // 22:07:15Z), out of rock on its walk to a warped forest, laid brown wool over the lava at y 31; the fire took the
+    // floor from under it 16 seconds later, and the bot died in the lava with its iron kit.
+    || items.find(i => LAST_RESORT.test(i.name) && !(/_wool$/.test(i.name) && /nether/.test(String(bot?.game?.dimension || '')) && require('./shelter').lavaInReach?.(bot)))
     // And on the way back from a cut span (unstuck.js bridge_back, note
     // 1242), a whole block carried for its use: a furnace, a chest, a table.
     || (whole ? items.find(i => WHOLE_BLOCKS.includes(i.name)) : undefined);
