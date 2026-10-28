@@ -796,7 +796,11 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
   // sword and its iron armor lay there, no stack of them went in, the pass
   // said 'nothing left where I died', and they were gone at 08:07:52
   // (note 1192).
-  const makeRoom = room || (async name => require('./inventory-tidy').makeRoom(bot, task, name, { keep: new Set(Object.keys(run.items)), purpose: 'the things dropped at the death, lying here', goal }));
+  // What is worth carrying in the pockets is kept too, the kit already taken up among it (note 2416): full-22 (25590,
+  // 2026-10-28 19:0xZ) took up its iron leggings, and the room made for its chestplate a moment after dropped them as
+  // 'spare gear', the keep holding only what was still lying.
+  const keepNow = () => new Set([...Object.keys(run.items), ...(bot.inventory?.items?.() || []).map(i => i.name).filter(n => Object.keys(worth({ [n]: 1 })).length)]);
+  const makeRoom = room || (async name => require('./inventory-tidy').makeRoom(bot, task, name, { keep: keepNow(), purpose: 'the things dropped at the death, lying here', goal }));
   let got = 0, full = false;
   for (const name of Object.keys(run.items).sort((a, b) => rank(a) - rank(b))) {
     for (let tries = 0; tries < 4 && run.items[name] > 0; tries++) {
@@ -814,6 +818,8 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
       const gained = countOf(bot, name) - had;
       if (gained <= 0) break;
       got += gained;
+      // Armour worn as it is taken up, not left in the pockets as spare gear for the next room made (note 2416).
+      if (ARMOUR[name.split('_').pop()]) await wearRecovered(bot);
       if ((run.items[name] -= gained) <= 0) delete run.items[name];
     }
   }

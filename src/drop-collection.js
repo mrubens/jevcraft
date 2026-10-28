@@ -145,7 +145,9 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
     const tidy = require('./inventory-tidy');
     const worthIt = Object.keys(require('./corpse-run').worth({ [item]: 1 })).length > 0;
     if (worthIt && typeof tidy.roomFor === 'function' && !tidy.roomFor(bot, item, 1)) {
-      const made = await tidy.makeRoom(bot, task, item, { purpose: `the ${item.replaceAll('_', ' ')} lying here`, goal: bot._goal || null });
+      const worthOf = require('./corpse-run').worth;
+      const keep = new Set([item, ...(bot.inventory?.items?.() || []).map(i => i.name).filter(n => Object.keys(worthOf({ [n]: 1 })).length)]);
+      const made = await tidy.makeRoom(bot, task, item, { keep, purpose: `the ${item.replaceAll('_', ' ')} lying here`, goal: bot._goal || null });
       if (!made) console.log(`[drops] no room in the pockets for the ${item.replaceAll('_', ' ')} lying here, and none made`);
     }
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err; }
