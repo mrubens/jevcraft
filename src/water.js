@@ -152,6 +152,27 @@ async function collectWater(bot, task, goal, save, { navigate, explore, digTo = 
       } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[water] through the wall to ${p}: ${String(err.message || err).slice(0, 120)}`); }
     }
   }
+  // Water close above, out of an arm's reach: built up to, a block put under the feet at a time from what is carried,
+  // then filled from there through the wall as above (note 2382). The staircase toward it does not open a cell with
+  // water behind it, and the walk with no towering found none: full-23 (25592, 2026-10-28 14:4xZ) stood at y -30
+  // under water at y -25, 'no walk reaches the water ... digging to it' a dozen times, 21 minutes on its portal.
+  {
+    const here = bot.entity.position, mv = bot.pathfinder?.movements;
+    const above = sources.filter(q => q.y > here.y + 1 && q.distanceTo(here) <= 9).sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
+    const scaffold = (mv?.scafoldingBlocks || []).length || bot.inventory.items().some(i => /^(cobblestone|cobbled_deepslate|dirt|netherrack|stone|andesite|diorite|granite)$/.test(i.name));
+    if (above && mv && scaffold && !goal.waterClimbAt?.[`${above}`]) {
+      (goal.waterClimbAt ||= {})[`${above}`] = Date.now(); save();
+      const saved = { allow1by1towers: mv.allow1by1towers, canDig: mv.canDig, scafoldingBlocks: mv.scafoldingBlocks };
+      const ids = bot.inventory.items().filter(i => /^(cobblestone|cobbled_deepslate|dirt|netherrack|stone|andesite|diorite|granite)$/.test(i.name)).map(i => i.type);
+      Object.assign(mv, { allow1by1towers: true, canDig: true, scafoldingBlocks: [...new Set([...(mv.scafoldingBlocks || []), ...ids])] });
+      try {
+        console.log(`[water] the water at ${above} is ${Math.round(above.y - here.y)} above: building up toward it`);
+        await navigate(bot, task, new goals.GoalNear(above.x, above.y - 1, above.z, 3), { timeoutMs: 30000, stallMs: 6000 });
+      } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[water] the climb toward ${above}: ${String(err.message || err).slice(0, 120)}`); }
+      finally { Object.assign(mv, saved); }
+      return;
+    }
+  }
   if (sources.length && digTo) {
     const near = sources.slice().sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0];
     goal.step = { action: 'fill_bucket', position: { x: near.x, y: near.y, z: near.z }, item: 'water_bucket', dig: true }; save();
