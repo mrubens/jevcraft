@@ -648,7 +648,16 @@ async function castFrame(bot, task, goal, save, actions) {
     const top = p.plus(UP);
     if (w.solidAt(top) && !/obsidian|bedrock/.test(w.name(top) || '')) {
       stepIs(p, 'clear_top', { block: w.name(top) });
-      await dig(bot, task, top, { requireDrops: false }); untrack(top); save();
+      // The block over the slot that cannot be dug from here is the slot's failure, counted as the stand's is (note
+      // 2377), not the same dig again each pass: full-18 (25586, 2026-10-28 13:52 to 13:55Z) stood at (544, 50, 775)
+      // three minutes, 'No route from here to (545, 57, 774)' six times and more, the plan flipping nine times after.
+      try { await dig(bot, task, top, { requireDrops: false }); }
+      catch (err) {
+        task.check(); if (fatal(err)) throw err;
+        triedAt(p, []);
+        throw new Error(`Nowhere to stand to pour into the frame slot at ${p}: the ${w.name(top) || 'block'} over it at ${top} cannot be dug from here (${String(err.message || err).slice(0, 100)})`);
+      }
+      untrack(top); save();
       return false;
     }
     // The blockers Jev chose to clear at this slot (portal_method's
