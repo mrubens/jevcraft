@@ -4009,6 +4009,11 @@ function stairBeside(bot, goal, target) {
 async function fortressApproaches(bot, task, goal, save, actions, state, nearest, bricks = [], record = state.approach) {
   const here = bot.entity.position.clone(), flat = Math.round(flatTo(nearest, here)), dy = Math.round(nearest.y + 1 - here.y);
   const where = `${flat} blocks off${Math.abs(dy) >= 2 ? ` and ${Math.abs(dy)} blocks ${dy > 0 ? 'up' : 'down'}` : ''}`;
+  // A floor overhead is not reached by a staircase from under it (note 2362): it rises a block for each block across,
+  // so it goes about as far out as it goes up and ends that far from the bricks. full-16 (25591, 2026-10-28 09:12Z),
+  // under its fortress with the floor 20 up, no pickaxe and no blocks, took the tunnel offered as '0 blocks off and 20
+  // blocks up'; the step aimed level, ended at once, and the fortress was left for another.
+  const overhead = flat <= 2 && dy >= 4 ? ` From under it the staircase cannot go straight up: it rises a block for each block across, about ${dy} blocks out from here to come level with it, and ends that far from the bricks with open air between.` : '';
   const inView = threatsInView(bot);
   const options = {};
   let noRoute = null, handDig = null, noStair = null, noPillar = null;
@@ -4201,7 +4206,7 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
   if (actions.tunnel && !stairByHand.offered && !stairFrom) noStair = `the staircase is not offered: ${stairByHand.says}`;
   if (stairFrom) {
     const c = stairFrom.cell, rest = require('./tunneling').restingSays(goal, nearest, c);
-    options.tunnel = { description: `Dig a staircase through the rock toward the fortress, ${where}, from (${c.x}, ${c.y}, ${c.z}), a step back onto the floor beside the bot (from where it stands no step toward it has a floor: ${stair?.blocked || 'nothing nearer can be dug'}): a step at a time with rock round the bot, no block dug with lava or water behind it, and it stops where every step nearer would be one; about ${stairFrom.stair.steps} steps, about ${stairFrom.stair.seconds} seconds.${rest ? ` ${capital(rest)}: taken now, it digs nothing until then.` : ''}${stairDigs(bot, goal, nearest)}`,
+    options.tunnel = { description: `Dig a staircase through the rock toward the fortress, ${where}, from (${c.x}, ${c.y}, ${c.z}), a step back onto the floor beside the bot (from where it stands no step toward it has a floor: ${stair?.blocked || 'nothing nearer can be dug'}): a step at a time with rock round the bot, no block dug with lava or water behind it, and it stops where every step nearer would be one; about ${stairFrom.stair.steps} steps, about ${stairFrom.stair.seconds} seconds.${rest ? ` ${capital(rest)}: taken now, it digs nothing until then.` : ''}${stairDigs(bot, goal, nearest)}${overhead}`,
       run: async () => {
         if (actions.navigate) {
           try { await actions.navigate(bot, task, new goals.GoalBlock(c.x, c.y, c.z), { timeoutMs: 8000, stallMs: 3000, onFoot: true }); }
@@ -4212,7 +4217,7 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
   }
   if (actions.tunnel && stairByHand.offered) {
     const rest = require('./tunneling').restingSays(goal, nearest, here);
-    options.tunnel = { description: `Dig a staircase through the rock toward the fortress, ${where}, a step at a time with rock round the bot: no block is dug with lava or water behind it, and it stops where every step nearer would be one.${rest ? ` ${capital(rest)}: taken now, it digs nothing until then.` : ''}${stairByHand.says}${stairDigs(bot, goal, nearest)}`,
+    options.tunnel = { description: `Dig a staircase through the rock toward the fortress, ${where}, a step at a time with rock round the bot: no block is dug with lava or water behind it, and it stops where every step nearer would be one.${rest ? ` ${capital(rest)}: taken now, it digs nothing until then.` : ''}${stairByHand.says}${stairDigs(bot, goal, nearest)}${overhead}`,
       run: async () => { await actions.tunnel(bot, task, goal, save, nearest, 'fortress'); return null; } };
   }
   // A way that already came to nothing from where the bot stands, with the
