@@ -1981,8 +1981,20 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
       const what = healable
         ? `${eat ? `eat the ${words(food.name)} (about 1.6 seconds) and ` : ''}stay until the health is full${again}: at hunger 20 with saturation a point comes back each half second, at 18 or 19 one each four seconds${setup.damage >= hp ? `; but the health runs out before it is out of their sight` : `, so from about ${round(after)} to 20 takes about ${heal} seconds${food ? '' : ' (nothing carried to eat)'}`}.`
         : `${food ? `eat the ${words(food.name)} (it brings hunger only to ${eatenTo}) and ` : ''}stay only until the fire on the body is out: at hunger ${hunger}, under eighteen, no health comes back (${food ? `eating all that is carried leaves hunger at ${eatenTo}` : 'nothing carried is food'}), so healing there would take never. It gets the bot out of the fire and the volleys and no health back${setup.damage >= hp ? '; and the health runs out before it is out of their sight' : `: it stays at about ${round(after)} health`}, and each point lost from here on stays lost until the bot has eaten to eighteen.`;
-      options.leave_and_heal = { kind: 'heal', site, expects: { damage: round(setup.damage + Math.max(0, burning - Math.max(setup.wall, proof))), seconds: round(setup.wall + heal), oneHit: fireHit, heals: healable ? round(20 - after) : 0 },
-        description: `Go out of their sight${healable ? ' to heal and come back' : ' (no health comes back at this hunger)'}: ${where}${what} ${stays}` + m.says };
+      // The mobs at arm's length bite on the way out of the blazes' sight, priced with it (note 2364): it was the
+      // fire alone, over the walk's two seconds. full-15 (25586, 2026-10-28 09:33:36 to 48Z), at 3.8 health with
+      // hoglins at 2 to 4 blocks, was offered leave_and_heal at the least damage of any way and took it twice, then
+      // corner_ambush, and a hoglin killed it; box_here, priced at about 5, was not taken.
+      let bites = 0, bitesSays = '';
+      try {
+        const b = require('./vitals').blowsAtBody(bot), secs = Math.max(1, setup.wall || 0);
+        if (b?.mobs?.length) {
+          bites = round(b.mobs.reduce((n, k) => n + (k.blow || 0) * Math.max(1, Math.ceil(secs / Math.max(0.5, k.every || 1))), 0));
+          bitesSays = ` At arm's length now: ${b.mobs.map(k => `the ${words(k.name)} ${k.distance} blocks off, about ${k.blow} a blow`).join(', ')}; they follow and bite on the way, about ${bites} over its ${round(secs)} seconds, and the blazes' sight is not theirs.`;
+        }
+      } catch (_) { bites = 0; }
+      options.leave_and_heal = { kind: 'heal', site, expects: { damage: round(setup.damage + bites + Math.max(0, burning - Math.max(setup.wall, proof))), seconds: round(setup.wall + heal), oneHit: fireHit, heals: healable ? round(20 - after) : 0 },
+        description: `Go out of their sight${healable ? ' to heal and come back' : ' (no health comes back at this hunger)'}: ${where}${what} ${stays}${bitesSays}` + m.says };
     }
   }
 
