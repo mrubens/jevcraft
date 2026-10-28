@@ -248,6 +248,7 @@ function biomeTrips(bot, { min = 24, limit = 4 } = {}) {
     .map(b => { let h = ''; try { const H = require('./height-says'), y = Number.isFinite(b.x) ? H.groundAt(bot, b.x, b.z) : null; h = y == null ? '' : H.heightSays(bot, { y }); } catch (_) { h = ''; } return { ...b, says: `the ${b.biome.replaceAll('_', ' ')} ${b.distance} blocks ${b.direction}${h}${b.has ? ` (${b.has})` : ''}` }; });
 }
 
+const BASTION_WALLS = ['polished_blackstone_bricks', 'cracked_polished_blackstone_bricks'], BASTION_WALL_BLOCKS = 160;
 const DETECTORS = [
   // An igloo always has a bed in it: in the snowy plains and taiga, where
   // there are no sheep, it is the bed (trial 107 found none, the user asked
@@ -326,6 +327,13 @@ const DETECTORS = [
   { kind: 'bastion', dimension: 'nether', same: 64, detect: bot => {
     const gilded = find(bot, ['gilded_blackstone', 'gold_block'], 48, 16).filter(p => near(bot, p, ['polished_blackstone_bricks', 'blackstone', 'cracked_polished_blackstone_bricks'], 3));
     if (gilded.length) return at(gilded[0], { gold: gilded.length });
+    // Polished blackstone bricks in the hundreds are a bastion's walls: a
+    // nether ruined portal has some tens, and none grow in the Nether.
+    // full-18 (25586, 2026-10-28) searched 86 minutes for a fortress with a
+    // bastion 140 blocks from its portal never known, its gold out of sight,
+    // so the region facts said nothing of a fortress or bastion known there.
+    const walls = find(bot, BASTION_WALLS, 64, BASTION_WALL_BLOCKS);
+    if (walls.length >= BASTION_WALL_BLOCKS) { const here = bot.entity.position; return at(walls.sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0], { walls: walls.length }); }
     // A piglin brute spawns only in a bastion, once, with it (note 750d):
     // 25589 was told "3 piglin brutes" at the bricks of what it read as a
     // fortress, 16 blocks from a bastion.

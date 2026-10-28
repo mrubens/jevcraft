@@ -198,3 +198,13 @@ test('an igloo is a bed among snow blocks, remembered with its bed, and the bed 
   noticeLandmarks(plain, g2, () => {}, { force: true });
   assert.equal(knownLandmarks(plain, g2, 'igloo').length, 0);
 });
+
+test('a bastion is known by its walls too, hundreds of polished blackstone bricks with no gold in sight; a few tens are not one (note 2387)', () => {
+  const few = {}; for (let i = 0; i < 40; i++) few[`${i},70,40`] = 'polished_blackstone_bricks';
+  const g1 = {}; noticeLandmarks(world(few, 'the_nether'), g1, () => {}, { force: true });
+  assert.equal((g1.landmarks || []).length, 0);
+  const walls = {}; for (let i = 0; i < 200; i++) walls[`${20 + (i % 20)},${60 + Math.floor(i / 20)},40`] = i % 3 ? 'polished_blackstone_bricks' : 'cracked_polished_blackstone_bricks';
+  const g2 = {}; noticeLandmarks(world(walls, 'the_nether'), g2, () => {}, { force: true });
+  assert.deepEqual(g2.landmarks.map(l => l.kind), ['bastion']);
+  assert.equal(g2.landmarks[0].walls, 160);
+});
