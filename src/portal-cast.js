@@ -771,6 +771,19 @@ async function castFrame(bot, task, goal, save, actions) {
       } finally { Object.assign(movements, saved); }
       if (!atStand(standing)) {
         triedAt(p, [standing]);
+        // What lies between, for the walk that found no path a block or two off (note 2355): full-16 (25591,
+        // 2026-10-28 07:2xZ) failed the stand at (215, -50, -179) from (213, -49, -180) six times running, 'No path',
+        // 14 minutes on its frame, and the line said nothing of the cells.
+        let between = '';
+        try {
+          if (from.distanceTo(standing) <= 4) {
+            const cells = [];
+            for (const c of [standing, standing.plus(UP), standing.plus(DOWN), from.offset(Math.sign(standing.x - from.x), 0, Math.sign(standing.z - from.z)), from.offset(Math.sign(standing.x - from.x), 1, Math.sign(standing.z - from.z))])
+              cells.push(`${c.x},${c.y},${c.z} ${bot.blockAt(c)?.name || '?'}`);
+            between = `; cells: ${cells.join('; ')}`;
+          }
+        } catch (_) { between = ''; }
+        console.log(`[cast] the stand ${standing} not reached from ${from}: ${why || 'the walk ended short of it'}${between}`);
         throw new Error(`Nowhere to stand to pour into the frame slot at ${p}: the stand made for it at ${standing} could not be walked to from ${from} (${why || 'the walk ended short of it'}${walks > 1 ? `, ${walks} walks, ${Math.round(away())} blocks from it at the last` : ''})`);
       }
       stand = stands.find(s => s.feet.equals(standing));
