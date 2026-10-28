@@ -489,6 +489,18 @@ function diamondPickaxeOption(bot, goal) {
 // ingots and the deaths' record, and was taken 13 times of 91 offered on the fresh runs of 2026-10-27; full-12 spent
 // 71% of its run after deaths before the kit was back. The user: 'Worth it to make spares you mean?', then 'check the
 // spare kit wording'.
+// What the Nether still owes, said on the way into it (note 2333): the rods and pearls carried against those wanted,
+// so a bot back out with the rods is not told the Nether is for blaze rods. The live critic's report of 2026-10-28
+// 03:53Z: 25600 came out of the Nether with 13 rods and was offered 'go for the Nether now ... for a fortress, blaze
+// rods and ender pearls', and answered none good on top twice.
+function netherOwesSays(bot, goal) {
+  try {
+    const w = require('./eye-need').need(bot, goal);
+    const rods = w.rodsLeft > 0 ? `${w.rodsLeft} of ${w.rodsWanted} blaze rods still wanted` : `the ${w.rodsWanted} blaze rods wanted are in hand`;
+    const pearls = w.pearlsLeft > 0 ? `${w.pearlsLeft} of ${w.pearlsWanted} ender pearls still wanted` : `the ${w.pearlsWanted} ender pearls wanted are in hand`;
+    return ` What the Nether still owes: ${rods}; ${pearls}.${w.rodsLeft <= 0 ? ' The fortress is not needed again: the pearls are left, from endermen (thick in a warped forest) or bartered from piglins.' : ''}`;
+  } catch (_) { return ''; }
+}
 function spareCostSays(goal, iron, ingots, raw) {
   try {
     const { IRON_MINUTES } = require('./corpse-run');
@@ -616,7 +628,7 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
       // Entered with the kit carried now, each rung left priced (note 763):
       // what it would take from here (its level, the climb) and what the
       // trials that chose it spent and the stays that had it came to.
-      description: `Leave ${left.map(label).join(', ')} for later and go for the Nether now, with the kit carried now: the portal, and through it for a fortress, blaze rods and ender pearls.${netherNightSays(bot)}${netherAside ? ` ${netherAside}` : ''} ${[...new Set(left.map(p => /^iron_(helmet|chestplate|leggings|boots)$/.test(p) ? 'iron_armour' : p))].map(p => `Without ${label(p)} for now: ${without(p)}.${priced(p)}`).join(' ')}${clock ? ` The ${label(stage.phase)} has been worked on for ${Math.round(clock.activeMs / 60000)} minutes.` : ''} The steps left are set aside for half an hour, then offered again.${require('./crossing-kit').kitSummary(bot, goal)}${cameOutSays(bot, goal)}${require('./leave-for-kit').cameOutForKitSays(goal)}`,
+      description: `Leave ${left.map(label).join(', ')} for later and go for the Nether now, with the kit carried now: the portal, and through it for a fortress, blaze rods and ender pearls.${netherOwesSays(bot, goal)}${netherNightSays(bot)}${netherAside ? ` ${netherAside}` : ''} ${[...new Set(left.map(p => /^iron_(helmet|chestplate|leggings|boots)$/.test(p) ? 'iron_armour' : p))].map(p => `Without ${label(p)} for now: ${without(p)}.${priced(p)}`).join(' ')}${clock ? ` The ${label(stage.phase)} has been worked on for ${Math.round(clock.activeMs / 60000)} minutes.` : ''} The steps left are set aside for half an hour, then offered again.${require('./crossing-kit').kitSummary(bot, goal)}${cameOutSays(bot, goal)}${require('./leave-for-kit').cameOutForKitSays(goal)}`,
       says: `I'll leave the ${left.map(label).join(' and the ')} for later`,
       // Said whole: "Before the diamond sword, I'll leave the diamond sword
       // for later" named the rung skipped as the one done first (25592
@@ -1166,4 +1178,4 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
   return { ran: true };
 }
 
-module.exports = { spareCostSays, diamondPickaxeOption, woolStockOption, WOOL_STOCK, enderChestOption, bareChainSays, spareArmourOption, SPARE_ORDER, bareDeathsSays, cameOutSays, errandUnderWay, woolTrip, WOOL_HUNTS, oreFacts, carryBedOption, homeOption, strategyTree, pickaxeLeft, planSpends, HAND_BLOCKS_PER_MINUTE, rungTakes, WITHOUT, RUNG_WHY, rungOption, strategyOptions, strategyStep, HOLD_MS, SIDE_REST_MS, SIDE_FAIL_MS, rungStatus, lastStrategyFact };
+module.exports = { netherOwesSays, spareCostSays, diamondPickaxeOption, woolStockOption, WOOL_STOCK, enderChestOption, bareChainSays, spareArmourOption, SPARE_ORDER, bareDeathsSays, cameOutSays, errandUnderWay, woolTrip, WOOL_HUNTS, oreFacts, carryBedOption, homeOption, strategyTree, pickaxeLeft, planSpends, HAND_BLOCKS_PER_MINUTE, rungTakes, WITHOUT, RUNG_WHY, rungOption, strategyOptions, strategyStep, HOLD_MS, SIDE_REST_MS, SIDE_FAIL_MS, rungStatus, lastStrategyFact };

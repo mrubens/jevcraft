@@ -6236,6 +6236,15 @@ class Survival {
     if (bot.game?.dimension === 'overworld' && danger.some(t => t.entity.name === 'skeleton' && t.visible)) {
       const sr = require('./skeleton-record'), carried = bot.inventory.items().some(i => i.name === 'shield') || bot.inventory.slots?.[45]?.name === 'shield';
       for (const k of ['retreat', 'take_cover', 'out_of_sight']) if (options[k] && typeof options[k].description === 'string') options[k].description += sr.says(k, carried);
+      // At a live spawner a wait waits for no lull (note 2333): the spawner keeps making blazes while a player is within
+      // sixteen blocks of it, and the rods come only from blazes killed. The live critic of 2026-10-28 03:53Z saw 25599
+      // spend twenty minutes at a spawner with sixteen blazes in sight and none of its 7 rods, choosing await_in_reach,
+      // take_cover and out_of_sight, and seal at 20 health 'for the mobs to lose interest'.
+      try {
+        const live = require('./cage-hold').cageFight(bot, goal);
+        if (live) for (const k of ['seal', 'dig_down', 'take_cover', 'out_of_sight', 'nook', 'bunker']) if (options[k] && typeof options[k].description === 'string')
+          options[k].description += ' At a live spawner the blazes do not let up: it makes more while the bot is within sixteen blocks of it, so a wait here waits for no lull, and the rods come only from blazes killed.';
+      } catch (_) { /* no spawner read */ }
     }
     // The blazes behind the wall are in the fight the moment it is opened
     // or stepped past (note 1260): 25584 (2026-10-04 21:53:55Z), in a pit
