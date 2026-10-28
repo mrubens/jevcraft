@@ -136,7 +136,11 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
       task.check(); checkAir(bot);
       const drops = nearbyDrops(bot, item, origin, radius, { hostilesOk });
       seen ||= drops.length > 0;
-      if (!drops.length && (seen || Date.now() >= spawnDeadline)) break;
+      // An item lying near whose stack is not yet known (its metadata comes after the entity under load) is waited
+      // for to the deadline, not taken for none (note 2359): full-15 and full-16 (2026-10-28 06:2x to 08:2xZ) left
+      // raw iron 1.6 blocks off with every count at 0, no spot tried, the drop known by the line written after.
+      const unread = !drops.length && !seen && Object.values(bot.entities || {}).some(e => e.name === 'item' && e.isValid !== false && e.position && e.position.distanceTo(origin) <= radius && !e.getDroppedItem?.());
+      if (!drops.length && (seen || (Date.now() >= spawnDeadline && !unread))) break;
       for (const drop of drops) {
         for (const point of pickupPositions(bot, drop).slice(0, 5)) {
           task.check();
