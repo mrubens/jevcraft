@@ -5963,7 +5963,10 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
     }
     for (const k of ['climb_here', 'around_left', 'around_right', 'floor_way', 'blocks_then_cross', 'dig_across']) if (tree[k]) tree[k].description += fresh;
   }
-  if (until) tree.wait_rest = { description: `Other work until the staircase's rest ends in ${minutes} minute${minutes === 1 ? '' : 's'}, then the way to the portal again from wherever the bot is; the work is asked then.`,
+  // A rest about over is nothing to wait for (note 2428): full-29 (25592, 2026-10-28 20:38 to 20:42Z), its 7 rods carried
+  // 104 blocks from its portal, chose wait_rest at 0.27 told 'in about 1 second', and the step failed and asked
+  // again, 847 times, a second a turn.
+  if (until && until - now > 15000) tree.wait_rest = { description: `Other work until the staircase's rest ends in ${minutes} minute${minutes === 1 ? '' : 's'}, then the way to the portal again from wherever the bot is; the work is asked then.`,
     // Not idle: the work is asked then (the stall's until_rest_ends says whether any is on offer, note 698).
     waits: require('./waits').restEnds(bot, { what: 'the staircase\'s rest', until, cause: stairsWhy, idle: false, now }) };
   const triedSays = Object.entries(tried).map(([k, t]) => `${k.replaceAll('_', ' ')}: ended ${t.moved} block${t.moved === 1 ? '' : 's'} from here and no nearer, ${Math.max(1, Math.round((now - t.at) / 1000))} seconds ago${t.why ? ` (${t.why})` : ''}`);
