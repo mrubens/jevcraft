@@ -4130,6 +4130,16 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
           const placed = await bridgeTo(bot, task, nearest, { maxBlocks: survey.bridge, maxSteps: survey.cells });
           const here = bot.entity.position, gain = Math.round((from.distanceTo(nearest) - here.distanceTo(nearest)) * 10) / 10;
           const dx = nearest.x - Math.floor(here.x), dz = nearest.z - Math.floor(here.z), dy = nearest.y - Math.floor(here.y);
+          // Over it at its column, the crossing goes on down to it by the stairs of laid blocks (note 2427): full-28 (25589,
+          // 2026-10-28 20:33 to 20:38Z) crossed its bridge four times to the column over the blazes' hall 5 below,
+          // 'no level step leads to it', and each time the turn went elsewhere and walked it back, the user watching it
+          // pace the bridge.
+          if (Math.abs(dx) <= 1 && Math.abs(dz) <= 1 && dy <= -2 && typeof bot.placeBlock === 'function') {
+            const before = bot.entity.position.y;
+            try { await require('./bridging').stairsDown(bot, task, nearest, { maxSteps: -dy + 4 }); }
+            catch (err) { task.check(); if (!retryable(err)) throw err; return `the span ended over the target's column ${-dy} up, and the stairs down from there ended ${Math.round(before - bot.entity.position.y)} blocks lower: ${err.message}`; }
+            if (bot.entity.position.y <= nearest.y + 1.6) return null;
+          }
           if (Math.abs(dx) <= 1 && Math.abs(dz) <= 1 && Math.abs(dy) >= 1) return `the span ended at the target's column with the target ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'} from the feet: no level step leads to it (${placed || 0} laid, ${gain} blocks gained)`;
           if (!placed && gain < 1) return `the span laid nothing and the body came no nearer (${survey.stoppedBy || 'no stop named by the survey'})`;
           return `${placed || 0} laid, ${gain} blocks gained; ${survey.stoppedBy || 'the span ran its cells'}`;
