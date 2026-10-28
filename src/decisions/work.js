@@ -609,6 +609,19 @@ define({
   instructions: workInstructions('The bot carries eyes of ender, what the End portal is opened with, and is about to go on an errand for its kit. A death drops everything carried; a chest keeps what is in it. Choose whether the eyes go in a chest first. Each option says its record.'),
 });
 
+// Mobs in sight at the lava the bucket is filled from: scoop now or wait for quiet (src/obsidian.js lavaWithMobs, note 2436).
+define({
+  id: 'lava_mobs', area: 'resources', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'low', tree: true,
+  question: 'Hostile mobs are in sight within 16 blocks of the lava the bucket is to be filled from: fill it now with them about, or wait until none is in sight?',
+  trigger: 'At the lava for a portal\'s bucket with a hostile mob in sight within 16 blocks; the answer held half a minute.',
+  source: 'src/obsidian.js (lavaWithMobs)',
+  options: [
+    { key: 'scoop_now', label: 'fill the bucket now with them about', when: 'always here; said with the mobs and their distances', level: 'root' },
+    { key: 'wait_for_quiet', label: 'stand off until none is in sight, asked again in half a minute', when: 'always here; said with the wait so far', level: 'root' },
+  ],
+  instructions: workInstructions('The bot is at lava to fill a bucket for its portal, and hostile mobs are in sight. Choose whether it fills the bucket now with them about or waits until none is in sight. Each option says what is about and how long it has waited.'),
+});
+
 // A death in the Nether, back to life in the Overworld: straight back for
 // the kit, or a kit made again first (src/corpse-run.js kitTrip, note 1233).
 define({

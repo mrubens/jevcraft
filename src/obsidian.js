@@ -460,9 +460,33 @@ async function walkKnownStairs(bot, task, goal, save, lava, navigate) {
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; s.failedAt = Date.now(); save(); return false; }
   finally { if (movements && previous) movements.canDig = previous.canDig; }
 }
+// Mobs in sight at the lava: scoop with them about or wait for quiet is Jev's (note 2436), asked with the mobs and the
+// wait so far, and held half a minute. It was a code rule: full-37 (25591, 2026-10-28 21:58 to 22:03Z) stood at its lava
+// 'wait_for_quiet' through two of the step's turns with mobs in sight, the fill failing 'No measurable progress' each.
+async function lavaWithMobs(bot, task, goal, save, step) {
+  const about = threats(bot).filter(t => t.visible && t.distance < 16);
+  if (!about.length) { delete goal.lavaQuiet; return true; }
+  const now = Date.now(), held = goal.lavaQuiet;
+  if (held?.pick === 'scoop_now' && now - held.at < 30000) return true;
+  if (held?.pick === 'wait_for_quiet' && now - held.at < 30000) return false;
+  const since = held?.since || now;
+  const client = task.opportunityClient;
+  if (!client) return false;
+  const mobs = about.slice(0, 5).map(t => `a ${String(t.entity?.name || 'mob').replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`).join(', ');
+  const waited = Math.round((now - since) / 1000);
+  const tree = {
+    scoop_now: { description: `Fill the bucket now with them about: ${mobs}. The scoop is a second or two at the lava's edge; the fight or the flight is asked if one comes on.` },
+    wait_for_quiet: { description: `Stand off and wait until none is in sight within 16 blocks, asked again in half a minute${waited ? `; waited ${waited} seconds so far` : ''}.` },
+  };
+  const decision = await require('./decisions').decide('lava_mobs', { client, bot, task, goal, save, tree, state: { mobs, waitedSeconds: waited, health: bot.health } });
+  if (decision.stale) return false;
+  const pick = decision.path.at(-1);
+  goal.lavaQuiet = { pick, at: now, since }; save();
+  return pick === 'scoop_now';
+}
 async function collectLava(bot, task, step, goal, save, { navigate, dig, resourceTunnelStep }) {
   task.check(); checkAir(bot); checkThreats(bot);
-  if (threats(bot).some(t => t.visible && t.distance < 16)) { goal.step = { ...step, phase: 'wait_for_quiet' }; save(); await sleep(1000); return; }
+  if (threats(bot).some(t => t.visible && t.distance < 16) && !await lavaWithMobs(bot, task, goal, save, step)) { goal.step = { ...step, phase: 'wait_for_quiet' }; save(); await sleep(1000); return; }
   const target = countOf(bot, 'lava_bucket') + (step.count || 1);
   const surface = poolSurface(bot);
   // Lava in a bucket's reach from where the bot stands is scooped, open air
