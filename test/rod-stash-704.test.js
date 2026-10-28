@@ -317,3 +317,16 @@ test('a pearl in a Nether chest whose take rests is not had meanwhile: the pearl
   assert.notEqual(stage.phase, 'return_with_blaze_supplies', JSON.stringify(stage));
   assert.equal(stage.phase, 'obtain_ender_pearls');
 });
+
+test('a blaze rod lying near the blazes is a way of the stance too, said with the seconds it has left, its walk past the blazes (note 2325)', () => {
+  const { Task } = require('../src/skills');
+  const { Survival } = require('../src/survival');
+  const bot = frameBot({ blazes: [...rec.blazes, { id: 9, position: { x: -151.5, y: 81, z: 162.5 } }] });
+  const rodAt = bot.entity.position.offset(5, 0, 0);
+  bot.entities[77] = { id: 77, name: 'item', isValid: true, position: rodAt, getDroppedItem: () => ({ name: 'blaze_rod', count: 1 }) };
+  const survival = new Survival(bot, { navigate: async () => {}, place: async () => {}, dig: async () => {}, acquireStep: async () => {} }, { state: { shelters: [] } });
+  const o = survival.stanceOptions(new Task('x'), huntGoal(), () => {}, require('../src/danger').threats(bot, 24), false);
+  assert.ok(o.fetch_rod_77, Object.keys(o).join(', '));
+  assert.match(o.fetch_rod_77.description, /^Fetch the blaze rod lying 5 blocks off at .*, about \d+ seconds there and back, the walk going past the blazes about it\. It vanishes at most 300 seconds from now \(seen 0 seconds ago; a drop lasts five minutes from when it lands while the bot is near\)\./);
+  assert.ok(Number.isFinite(o.fetch_rod_77.expects.seconds));
+});

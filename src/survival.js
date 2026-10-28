@@ -4839,6 +4839,32 @@ class Survival {
       // some blaze always sees the bot, and 25588 died carrying 5 of 7 among
       // eight with it never on offer. What a death does to the rods is the
       // question's own fact (rodsAtRisk, rod-risk.js), not said again here.
+      // A rod already on the ground, fetched from the fight too, not the hunt's question alone (note 2325), with the
+      // seconds it has left: a drop vanishes five minutes after it lands while a player is within the loaded ground, and
+      // the bot beside it keeps that clock running. The walk there passes the blazes it names (hostilesOk), its cost
+      // priced as a stance's is. full-13 (25587, 2026-10-28 02:43Z), 2 rods short at 10 health, had one lying 7 blocks
+      // off past the spawner's blazes: the pickup refused the walk ('no short clear route', its route kept from
+      // hostiles) and the stance offered no fetch; the user, spectating: 'There is a blaze rod floating', 'There is a
+      // walk, there's just a blaze spawner on the way', 'how long does the rod stick around?'.
+      try {
+        const seen = bot._rodSeenAt ||= new Map(), nowMs = Date.now();
+        const rods = Object.values(bot.entities).filter(e => e.getDroppedItem?.()?.name === 'blaze_rod' && e.isValid !== false && e.position && e.position.distanceTo(bot.entity.position) <= 24)
+          .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position)).slice(0, 2);
+        for (const e of rods) if (!seen.has(e.id)) seen.set(e.id, nowMs);
+        for (const drop of rods) {
+          const distance = drop.position.distanceTo(bot.entity.position), p = drop.position.floored();
+          const secs = Math.max(2, Math.round(2 * distance / 4.3 + 1.5));
+          const left = Math.max(0, Math.round((300000 - (nowMs - seen.get(drop.id))) / 1000));
+          const cost = stanceCost({ mobs, seconds: secs, shield: shielded, health: bot.health });
+          const blazesSay = (() => { try { return require('./mob-hunt').rodBlazesSays(bot, drop.position); } catch (_) { return ''; } })();
+          options[`fetch_rod_${drop.id}`] = { expects: { damage: cost?.damage ?? 0, seconds: secs, oneHit },
+            description: `Fetch the blaze rod lying ${Math.round(distance)} blocks off at (${p.x}, ${p.y}, ${p.z}), about ${secs} seconds there and back, the walk going past the blazes about it. It vanishes at most ${left} seconds from now (seen ${Math.round((nowMs - seen.get(drop.id)) / 1000)} seconds ago; a drop lasts five minutes from when it lands while the bot is near).${blazesSay}` + (cost ? costSays(cost, bot.health, mobs, { over: `in the ${secs} seconds it takes` }) + hitsLeft : ''),
+            run: async () => {
+              this.report(goal, save, { action: `fetch_rod_${drop.id}`, threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
+              return require('./drop-collection').collectNearbyDrops(bot, task, 'blaze_rod', { radius: 10, origin: drop.position.clone(), timeoutMs: Math.max(6000, secs * 1000 + 3000), move: this.actions.navigate, hostilesOk: true });
+            } };
+        }
+      } catch (_) { /* no rods read */ }
       const stash = require('./rod-stash').stashOffer(bot, goal, { underFire: true });
       const stashCost = stash?.seenBy?.length ? stanceCost({ mobs, seconds: stash.seconds, shield: shielded, health: bot.health }) : null;
       if (stash) options.stash_rods = { expects: { damage: stashCost?.damage ?? 0, seconds: stash.seconds, ...(stashCost ? { oneHit } : {}) },

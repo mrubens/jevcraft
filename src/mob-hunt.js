@@ -1286,7 +1286,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
     const blazesSay = rodBlazesSays(bot, drop.position);
     tree[`fetch_rod_${drop.id}`] = { description: `Fetch the ${state.item.replaceAll('_', ' ')} lying on the ground ${Math.round(distance)} blocks off at (${p.x}, ${p.y}, ${p.z}), from an earlier kill.` +
       `${nearLava ? ' Lava is within two blocks of it: the walk there stands that close.' : ''}${reachable ? '' : ' No standing spot near it reads as dry and safe right now; the walk there may fail and find nothing changed.'}${blazesSay}`,
-      run: () => collectNearbyDrops(bot, task, state.item, { radius: 10, origin: drop.position.clone(), timeoutMs: 6000, move: actions.navigate }) };
+      run: () => collectNearbyDrops(bot, task, state.item, { radius: 10, origin: drop.position.clone(), timeoutMs: 6000, move: actions.navigate, hostilesOk: true }) }; // the walk past the blazes it names, Jev's choice (note 2325)
   }
   // The rods got so far out through the portal to a chest on the Overworld
   // side, and back for the rest (rod-bank.js, note 760).
