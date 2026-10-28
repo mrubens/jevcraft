@@ -2944,7 +2944,11 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
       const pick = await miningDepthChoice(bot, task, goal, save, step, candidates);
       if (pick === 'down_to_depth') candidates = [];
       // Food first (note 2165): the turn goes to the food the mark asks for; the step waits where it is.
-      if (pick === 'stock_first') { goal.step = { action: 'stock_food_first', item: step.drops, points: goal.survival?.foodKeepTo?.points }; save(); return; }
+      // Food first as the food reserve's own answer is (note 2351): the survival layer's food search, by goal.stockFood
+      // and the food mark. The step it set, stock_food_first, had no handler: 'Unknown action', the mine replanned and
+      // the cached answer set it again. full-16 (25591, 2026-10-28 06:3xZ) turned between mine and stock food first 4
+      // times in 5 seconds on its iron armour, nothing gained.
+      if (pick === 'stock_first') { goal.stockFood = true; save(); return; }
     } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
   }
   if (!candidates.length) {
