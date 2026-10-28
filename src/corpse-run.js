@@ -555,7 +555,11 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     // Offered whenever less is carried than the walk (and a Nether stay) wants, not past 300 blocks alone (note 2335):
     // full-10 (25586, 2026-10-28 04:09:41Z) went back 205 blocks into the Nether with 0 food, offered go_back and
     // leave_them only, charged a blaze at 20 health and sat at 1.1 with no healing; the live critic's report of 04:15Z.
-    if (gatherFood && foodCarried < foodWant) tree.food_first = { description: `Get food for the walk first, here: hunted, cooked or taken from a chest, toward ${foodWant} food points carried (${foodCarried} now), then set out for them; the drops do not age meanwhile. Twenty minutes at most on the food; then the walk with what there is.` };
+    // Not in the Nether (note 2375): the food got 'here' is the Overworld's animal search, which finds no ground there.
+    // full-17 (25587, 2026-10-28 13:33 to 13:40Z) chose food_first in the Nether at food 13, its kit 689 blocks off in
+    // the Overworld, and the search failed 22 times running ('No reachable surveyed ground while searching for
+    // animals'), four health lost to a piglin meanwhile.
+    if (gatherFood && foodCarried < foodWant && !/nether/.test(String(bot.game?.dimension || ''))) tree.food_first = { description: `Get food for the walk first, here: hunted, cooked or taken from a chest, toward ${foodWant} food points carried (${foodCarried} now), then set out for them; the drops do not age meanwhile. Twenty minutes at most on the food; then the walk with what there is.` };
     if (toDawn !== null && (night || minutes > until) && !run.loadedAt && /overworld/.test(run.dimension)) tree.wait_for_day = { description: `Set out for them at ${night ? 'dawn' : 'the next dawn'}, about ${toDawn} real minute${toDawn === 1 ? '' : 's'} off, with the day ahead for the walk${night ? '' : ` (the day left now, about ${until}, is shorter than the walk, about ${minutes})`}, and go on with other things until then: the drops do not age while the bot is not within ${TICKING} blocks of them.${night ? ' From dawn the zombies and skeletons on open ground burn in the sun (not under a roof or in water, not husks or a zombie with a helmet, and never spiders or creepers), and no more spawn there in the light.' : ''} Asked again at dawn.` };
     // Through the Nether, where the drop lies far off in the Overworld and a
     // portal the bot knows stands within 600 blocks of it and another within
