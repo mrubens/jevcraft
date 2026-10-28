@@ -155,10 +155,18 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
           attempted.add(attempt);
           const target = new PickupGoal(point), observed = drop.position.clone();
           const changed = () => bot.entities[drop.id] !== drop || drop.isValid === false || drop.position.distanceTo(observed) > .65;
-          const route = await surveyRoute(bot, task, movement, target, Math.min(250, deadline - Date.now()));
+          // A drop two blocks or more over the bot may be climbed to, a block or two put under the feet from what is
+          // carried (note 2379): full-18 (25586, 2026-10-28 14:2xZ) left an ender pearl on warped nylium 4 above it, every
+          // pickup spot 'no short clear route' with towering not allowed.
+          const climb = drop.position.y - bot.entity.position.y >= 2 && (previous.scafoldingBlocks || []).length > 0;
+          if (climb) Object.assign(movement, { allow1by1towers: true, scafoldingBlocks: previous.scafoldingBlocks });
+          let route;
+          try { route = await surveyRoute(bot, task, movement, target, Math.min(250, deadline - Date.now())); }
+          finally { if (climb) Object.assign(movement, { allow1by1towers: false, scafoldingBlocks: [] }); }
           if (changed()) { why.moved++; continue; }
           if (route.status !== 'success' || (route.path || []).length > 32 ||
-              !(route.path || []).every(p => allowed(p) && !p.toBreak?.length && !p.toPlace?.some(p => !p.useOne))) { why.route++; continue; }
+              !(route.path || []).every(p => allowed(p) && !p.toBreak?.length && (climb || !p.toPlace?.some(p => !p.useOne)))) { why.route++; continue; }
+          if (climb) Object.assign(movement, { allow1by1towers: true, scafoldingBlocks: previous.scafoldingBlocks });
           why.walked++;
           onTarget({ item, position: { ...drop.position.floored() } });
           try {
@@ -167,6 +175,7 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
           } catch (error) {
             task.check(); if (['NeedsAir', 'NeedsSafety'].includes(error.name)) throw error;
           }
+          if (climb) Object.assign(movement, { allow1by1towers: false, scafoldingBlocks: [] });
           // Arrival or entity disappearance is not proof that we received it.
           const pickupDeadline = Math.min(deadline, Date.now() + 450);
           while (!gained() && !changed() && Date.now() < pickupDeadline) { task.check(); await sleep(50); }
