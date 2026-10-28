@@ -11044,7 +11044,13 @@ class Survival {
         run: async () => { report('pour_water', feet); return this.pourWaterInLava(task, bucket); } };
     }
     const ORDER = ['pour_water', 'to_water', 'to_dry_ground', 'pillar_out', 'back_the_way_came'];
-    const exitFirst = ORDER.filter(k => ways[k]).sort((a, b) => ((ways[a].seconds ?? Infinity) - (ways[b].seconds ?? Infinity)) || (ORDER.indexOf(a) - ORDER.indexOf(b)))[0];
+    // Ranked by the seconds each way takes over how often it got the body out (note 2410), from the full runs' own
+    // lava escapes (2026-10-24 to 10-28, first-days-full-*.log): to dry ground 8 of 8, pillar out 3 of 7, pour water 3
+    // of 7, back the way it came 1 of 5. Ranked by seconds alone, full-23 (25592, 2026-10-28 18:21:00Z) at 20 health
+    // took pillar_out, was still in the lava 6.5 seconds later at 1 health, and died; to dry ground was on offer.
+    const OUT_RATE = { to_dry_ground: 8 / 8, to_water: 1, pillar_out: 3 / 7, pour_water: 3 / 7, back_the_way_came: 1 / 5 };
+    const cost = k => (ways[k].seconds ?? Infinity) / (OUT_RATE[k] || 0.5);
+    const exitFirst = ORDER.filter(k => ways[k]).sort((a, b) => (cost(a) - cost(b)) || (ORDER.indexOf(a) - ORDER.indexOf(b)))[0];
     // Up first where the way out is many times longer than the rise to the top (note 2098): there the next
     // question has the ways the top reaches. full-7 (2026-10-25 10:55Z), 17.9 health in a lava pool, was taken
     // back the way it came, 31 blocks and 'about 77.5 seconds' by its own count, beside a rise of 4.7, and burned.
@@ -11090,7 +11096,9 @@ class Survival {
     const clear = () => bot.entity.position.y >= fill.cell.y + 1.02;
     const place = bot._placeBlockWithOptions ? () => bot._placeBlockWithOptions(fill.ref, fill.face, { swingArm: 'right', forceLook: true }) : () => bot.placeBlock(fill.ref, fill.face);
     const wall = fill.ref.position.offset(0.5, 0.5, 0.5);
-    const until = Date.now() + 4000;
+    // A second and a half, not four (note 2410): a body not lifted to the lava's top by then is not going to be, and the
+    // seconds in lava are a health and more each; the next way is taken after it.
+    const until = Date.now() + 1500;
     while (!landed() && Date.now() < until) {
       task.check();
       await move(bot, task, { label: 'out_of_lava', keys: ['forward', 'jump'], sneak: false, why: 'in lava: pressed against the block beside, the push out of the lava lifts the body over the cell a block goes into', look: wall,
