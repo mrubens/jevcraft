@@ -111,7 +111,7 @@ function askAgainBecause(bot, goal, kinds, now = Date.now()) {
   if (now >= h.until) return `the answer held (${h.pick.replaceAll('_', ' ')}, ${Math.round((now - h.at) / 60000)} minutes ago) has run its time`;
   if (deathsSince(goal, h.at, now)) return 'the bot has died since the answer';
   const fresh = kinds.filter(k => !(h.offered || []).includes(k));
-  if (fresh.length) return `a way to the pearls that was not on offer at the answer is real now: ${fresh.map(k => ({ enderman: 'an enderman in reach', forest: 'a warped forest known and open', barter: 'gold to throw with a piglin in reach', bastion: 'a bastion known, its gold to barter with' })[k]).join(', ')}`;
+  if (fresh.length) return `a way to the pearls that was not on offer at the answer is real now: ${fresh.map(k => ({ enderman: 'an enderman in reach', forest: 'a warped forest known and open', barter: 'gold to throw with a piglin in reach', bastion: 'a bastion known, its gold to barter with', 'gold ore': 'nether gold ore within reach to mine and barter' })[k] || k).join(', ')}`;
   return null;
 }
 
@@ -294,7 +294,7 @@ async function ask(bot, task, goal, save, actions = {}, { now = Date.now() } = {
   const pick = decision.path.at(-1);
   const at = Date.now();
   goal.pearlOrder = { pick, at, until: at + (decision.noneGood ? NONE_GOOD_MS : HOLD_MS), ...(decision.noneGood ? { noneGood: true } : {}), offered: kinds, pearlsAt: count(bot, 'ender_pearl'), deathsAt: 0, because: because || null };
-  if (KIND[pick]) bot.chat?.(({ hunt_enderman: 'An enderman in reach: its pearl first, the rods after.', warped_forest: 'To the warped forest for pearls, then the rods.', barter_gold: 'Bartering for pearls, then the rods.', bastion_gold: 'To the bastion for gold, then a barter for pearls, then the rods.' })[pick]);
+  if (KIND[pick]) bot.chat?.(({ hunt_enderman: 'An enderman in reach: its pearl first, the rods after.', warped_forest: 'To the warped forest for pearls, then the rods.', barter_gold: 'Bartering for pearls, then the rods.', bastion_gold: 'To the bastion for gold, then a barter for pearls, then the rods.', mine_gold_for_barter: 'Mining nether gold to barter for pearls, then the rods.' })[pick]);
   save();
   return pick;
 }
