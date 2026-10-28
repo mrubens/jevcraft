@@ -277,27 +277,50 @@ function passingSays(bot, c) {
 // climbs too'; full-9 pillared up past iron at 15:5xZ). A pillar's top or a staircase's step is no place to walk off
 // from, so only what is in the arm's reach and in sight is dug, nothing walked to: the kinds the walks take in passing
 // (passingKinds), no lava against the block, never the block under the feet or the column's cells. -> blocks dug
-async function mineWithinReach(bot, task, { now = Date.now() } = {}) {
+async function mineWithinReach(bot, task, { now = Date.now(), label = 'from where the climb stands' } = {}) {
   if (!bot?.entity?.position || !bot.inventory?.items || now - (bot._climbLookAt || 0) < 800) return 0;
   bot._climbLookAt = now;
   const ids = passingKinds(bot, bot._goal).map(n => bot.registry?.blocksByName?.[n]?.id).filter(id => id !== undefined);
   if (!ids.length) return 0;
   const eye = bot.entity.position.offset(0, 1.62, 0), feet = bot.entity.position.floored();
+  // Why ore within five was passed over, said now and then (note 2402), so the next miss says what stopped it.
+  const passed = [];
   const found = (bot.findBlocks?.({ matching: ids, maxDistance: 5, count: 8 }) || []).filter(p => {
     const c = p.offset(0.5, 0.5, 0.5);
     if (c.distanceTo(eye) > 4.3) return false;
-    if (p.x === feet.x && p.z === feet.z) return false;
-    if (FACES.some(([x, y, z]) => /lava/.test(bot.blockAt(p.offset(x, y, z))?.name || ''))) return false;
-    try { const hit = bot.world?.raycast?.(eye, c.minus(eye).normalize(), c.distanceTo(eye) + 0.5); if (hit && !(hit.position.x === p.x && hit.position.y === p.y && hit.position.z === p.z)) return false; } catch (_) { return false; }
+    if (p.x === feet.x && p.z === feet.z) { passed.push([p, 'under the feet']); return false; }
+    if (FACES.some(([x, y, z]) => /lava/.test(bot.blockAt(p.offset(x, y, z))?.name || ''))) { passed.push([p, 'lava against it']); return false; }
+    try { const hit = bot.world?.raycast?.(eye, c.minus(eye).normalize(), c.distanceTo(eye) + 0.5); if (hit && !(hit.position.x === p.x && hit.position.y === p.y && hit.position.z === p.z)) { passed.push([p, `out of sight, the ${hit.name || 'block'} at (${hit.position.x}, ${hit.position.y}, ${hit.position.z}) between`, hit.position]); return false; } } catch (_) { return false; }
     const b = bot.blockAt(p);
     return !!b && bot.canDigBlock?.(b) !== false && (!b.harvestTools || Object.keys(b.harvestTools).some(id => bot.inventory.items().some(i => String(i.type) === id)));
   });
+  if (passed.length && now - (bot._passedOreSaidAt || 0) >= 30000) {
+    bot._passedOreSaidAt = now;
+    console.log(`[passing ore] within reach and passed over: ${passed.slice(0, 4).map(([p, why]) => `${bot.blockAt(p)?.name?.replaceAll('_', ' ') || 'ore'} at (${p.x}, ${p.y}, ${p.z}), ${why}`).join('; ')}`);
+  }
   let dug = 0;
+  // One block between the eye and the ore, safe to dig (nothing liquid behind it, not the floor underfoot), is dug
+  // and the ore after it (note 2402): the stairs and the mine step passed iron open to the air on its far side.
+  for (const [p, why, hit] of passed.filter(x => x[2]).slice(0, 2)) {
+    task?.check?.();
+    const block = bot.blockAt(hit), ore = bot.blockAt(p);
+    if (!block || !ore || !ids.includes(ore.type) || block.boundingBox !== 'block' || ids.includes(block.type)) continue;
+    if (hit.y < feet.y || (hit.x === feet.x && hit.z === feet.z)) continue;
+    if (!require('./tunneling').safeExcavation(bot, hit)) continue;
+    const c = p.offset(0.5, 0.5, 0.5);
+    try {
+      const again = bot.world?.raycast?.(eye, c.minus(eye).normalize(), c.distanceTo(eye) + 0.5);
+      if (again && !(again.position.x === hit.x && again.position.y === hit.y && again.position.z === hit.z)) continue;
+      await require('./skills').digWithTool(bot, block, false);
+      await require('./skills').digWithTool(bot, bot.blockAt(p), true); dug++;
+      console.log(`[climb ore] ${ore.name.replaceAll('_', ' ')} at (${p.x}, ${p.y}, ${p.z}) dug ${label}, the ${block.name.replaceAll('_', ' ')} before it first`);
+    } catch (err) { if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
+  }
   for (const p of found.slice(0, 4)) {
     task?.check?.();
     const b = bot.blockAt(p);
     if (!b || !ids.includes(b.type)) continue;
-    try { await require('./skills').digWithTool(bot, b, true); dug++; console.log(`[climb ore] ${b.name.replaceAll('_', ' ')} at (${p.x}, ${p.y}, ${p.z}) dug from where the climb stands`); }
+    try { await require('./skills').digWithTool(bot, b, true); dug++; console.log(`[climb ore] ${b.name.replaceAll('_', ' ')} at (${p.x}, ${p.y}, ${p.z}) dug ${label}`); }
     catch (err) { if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
   }
   return dug;

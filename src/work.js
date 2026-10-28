@@ -3075,7 +3075,15 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
       await dig(bot, task, p, { done: () => countOf(bot, step.drops) > before, requiredTool: step.tool, enchantment: step.enchantment,
         minimumToolDurability: step.minimumToolDurability });
       access.restore(); access = undefined;
-      if (await collectNearbyDrops(bot, task, step.drops, { before, origin: p, radius: 8, waitForSpawnMs: 1000, allowExcavation: true })) { mined++; if (!ore || satisfied()) return; continue; }
+      if (await collectNearbyDrops(bot, task, step.drops, { before, origin: p, radius: 8, waitForSpawnMs: 1000, allowExcavation: true })) {
+        mined++;
+        // Other ore within the arm's reach where this one was dug, taken while here as the walks and stairs take it
+        // (note 2402): full-22 (25590, 2026-10-28 16:58Z) mined gold at y 4 to 8 with three iron ores 2.4 to 3.4 blocks
+        // off, open to the air, and left them; the user, watching: 'leaving a lot of iron behind'.
+        try { if (await require('./opportunistic-mining').mineWithinReach(bot, task, { label: 'beside the ore dug' })) await collectNearbyDrops(bot, task, 'raw_iron', { origin: bot.entity.position.clone(), radius: 6, waitForSpawnMs: 500, allowExcavation: true }); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err; }
+        if (!ore || satisfied()) return; continue;
+      }
     } catch (e) {
       task.check();
       // Running out of air at a block says something about the block. A
