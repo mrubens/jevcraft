@@ -12314,7 +12314,12 @@ class Survival {
       // again on every tick until the rest is up (note 723).
       if (isSetAside(this, 'refuge', 'anywhere')) delete this.state.nightPlan;
     }
-    if (!needsShelter && this.state.recovery?.status === 'pending') {
+    // A death in another dimension needs no walk here to close its recovery, so a night does not hold it (note 2434): the
+    // walk back's own question waits on it. full-30 (25588, 2026-10-28 21:42 to 21:49Z), slain by a blaze at its fortress
+    // and back at its bed in the Overworld at night, kept its recovery 'pending' seven minutes and more, never asked
+    // about its iron kit in the Nether, and made stone tools.
+    const elsewhere = this.state.recovery?.status === 'pending' && this.state.recovery.dimension && this.state.recovery.dimension !== bot.game?.dimension;
+    if ((!needsShelter || elsewhere) && this.state.recovery?.status === 'pending') {
       this.report(goal, save, { action: 'recover_items', origin: this.state.recovery.position });
       if (await recoverItems(bot, task, this.state.recovery, save, this.actions.navigate)) { onStep(goal); return true; }
     }
