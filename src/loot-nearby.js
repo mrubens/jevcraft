@@ -35,7 +35,10 @@ function lootOption(bot) {
       const took = [];
       for (const name of byName.keys()) {
         t?.check?.();
-        try { if (await collectNearbyDrops(b, t, name, { radius: SCAN, timeoutMs: 6000 })) took.push(name); }
+        // The block between dug as the other pickups may (note 2424, as 2419): full-34 (25591, 2026-10-28 20:1xZ) chose
+        // this pickup for 1 raw iron 2.1 blocks off, lying in a one-high gap in air over stone under dirt, '0 spots, 1
+        // dug', and picked up nothing; full-33 the same.
+        try { if (await collectNearbyDrops(b, t, name, { radius: SCAN, timeoutMs: 6000, allowExcavation: true })) took.push(name); }
         catch (err) { if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
       }
       console.log(`[loot] picked up ${took.length ? took.map(words).join(', ') : 'nothing'} of what lay in view`);
