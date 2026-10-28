@@ -15,7 +15,11 @@ const { goals } = require('mineflayer-pathfinder');
 const { navigate, countOf } = require('./skills');
 const { collectNearbyDrops } = require('./drop-collection');
 
-const WORTH = /^(diamond|emerald|iron_ingot|gold_ingot|raw_iron|raw_gold|blaze_rod|blaze_powder|ender_pearl|ender_eye|obsidian|shield|bow|crossbow|arrow|bucket|water_bucket|lava_bucket|flint_and_steel|golden_apple|enchanted_golden_apple|trial_key|ominous_trial_key|ancient_debris|netherite_ingot|netherite_scrap|diamond_block|iron_block|gold_block|golden_carrot|cooked_beef|cooked_porkchop|cooked_mutton|bread)$|_(helmet|chestplate|leggings|boots|sword|pickaxe|axe)$/;
+// Beds, wool, wood, raw meat and coal are on the list too (note 2338): whether a walk back is worth it is Jev's, told
+// what is there and how far. full-14 (25588, 2026-10-28 04:47Z) died 135 blocks from where it came back to life with
+// a bed, 9 mutton, 8 spruce logs, coal and wool, none on the list; the walk back was never asked. The user, watching:
+// 'The jev I'm watching is just hiding instead of trying to recover loot'.
+const WORTH = /^(diamond|emerald|iron_ingot|gold_ingot|raw_iron|raw_gold|blaze_rod|blaze_powder|ender_pearl|ender_eye|obsidian|shield|bow|crossbow|arrow|bucket|water_bucket|lava_bucket|flint_and_steel|golden_apple|enchanted_golden_apple|trial_key|ominous_trial_key|ancient_debris|netherite_ingot|netherite_scrap|diamond_block|iron_block|gold_block|golden_carrot|cooked_beef|cooked_porkchop|cooked_mutton|bread|cooked_chicken|cooked_cod|cooked_salmon|cooked_rabbit|beef|porkchop|mutton|chicken|rabbit|cod|salmon|coal|charcoal|crafting_table|furnace|chest)$|_(helmet|chestplate|leggings|boots|sword|pickaxe|axe|bed|wool|log|stem|planks)$/;
 const CHEAP = /^(wooden|stone)_(sword|pickaxe|axe)$/;
 // Drops age while their chunk ticks: within the server's simulation distance
 // of a player, 10 chunks on the trial servers (server.properties), so up to
