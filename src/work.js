@@ -4053,7 +4053,12 @@ async function smelt(bot, task, step, goal, save = () => {}) {
       // A saved batch finished first by other work may be left to cook
       // while that work goes on; not when the work in hand is this batch's.
       const inHand = goal?.step;
-      const ownWork = !inHand || inHand.action === 'smelt' || [inHand.item, inHand.from].some(n => n && (n === step.item || n === step.from));
+      // Work whose item is made of this batch's ingot is the batch's own too (note 2420): leave_cooking said 'go on with
+      // the acquire set (iron helmet) now' for a batch of iron ingots the helmet waited on, and full-29, 31, 32 and 33
+      // (2026-10-28 19:2xZ) stood still at once each time, none good at 0.6 on the stillness question after.
+      const metal = /^(\w+)_ingot$/.exec(step.item || '')?.[1];
+      const madeOfIt = n => !!metal && typeof n === 'string' && n.startsWith(`${metal}_`) && n !== step.from;
+      const ownWork = !inHand || inHand.action === 'smelt' || [inHand.item, inHand.from].some(n => n && (n === step.item || n === step.from || madeOfIt(n)));
       const leave = pending && goal && !ownWork ? {
         work: `the ${String(inHand.action).replace(/_/g, ' ')}${inHand.item ? ` (${String(inHand.item).replace(/_/g, ' ')})` : ''}`,
         carried: `${countOf(bot, step.item)} ${String(step.item).replace(/_/g, ' ')}${countOf(bot, step.item) === 1 ? '' : 's'} carried now, besides the batch.`,
