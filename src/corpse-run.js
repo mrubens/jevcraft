@@ -250,7 +250,19 @@ const FIRST = [/^ender_eye$/, /^(ender_pearl|blaze_rod|blaze_powder)$/, /^diamon
 // cobblestone at (48, 39, 175), 2 cobblestone ..., and more'.
 const rank = name => { const i = FIRST.findIndex(r => r.test(name)); return i < 0 ? (Object.keys(worth({ [name]: 1 })).length ? FIRST.length : FIRST.length + 1) : i; };
 const byRank = drops => [...drops].sort((a, b) => rank(a.name) - rank(b.name));
-const lying = (bot, spot, name = null, seen = []) => Object.values(bot.entities || {}).filter(e => { const it = e?.position && e.isValid !== false ? e.getDroppedItem?.() : null; return it && (!name || it.name === name) && (e.position.distanceTo(spot) <= 12 || seen.some(d => Math.hypot(d.x - e.position.x, d.y - e.position.y, d.z - e.position.z) <= 6)); });
+// How far from the death cell its drops are looked for (note 2401): twelve blocks, or thirty-two where the bot died in
+// water, whose current carries them off. full-22 (25590, 2026-10-28 16:49:35Z) died in a river with its iron armour,
+// came back 75 seconds later, saw nothing within twelve ('Nothing left where I died'), while its drops floated
+// fourteen blocks downstream.
+const WET = /^(water|bubble_column|seagrass|tall_seagrass|kelp|kelp_plant)$/;
+function searchReach(bot, spot) {
+  try {
+    const p = new Vec3(Math.floor(spot.x), Math.floor(spot.y), Math.floor(spot.z));
+    if ([0, 1, -1].some(dy => WET.test(bot.blockAt?.(p.offset(0, dy, 0))?.name || ''))) return 32;
+  } catch (_) { /* unread ground: the usual reach */ }
+  return 12;
+}
+const lying = (bot, spot, name = null, seen = []) => Object.values(bot.entities || {}).filter(e => { const it = e?.position && e.isValid !== false ? e.getDroppedItem?.() : null; return it && (!name || it.name === name) && (e.position.distanceTo(spot) <= searchReach(bot, spot) || seen.some(d => Math.hypot(d.x - e.position.x, d.y - e.position.y, d.z - e.position.z) <= 6)); });
 // What the dying client saw of its drops, said on the way back (note 2117).
 function dropsSeenSays(run) {
   if (!Array.isArray(run?.drops)) return '';
@@ -757,7 +769,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
   // record had it.
   for (const e of Object.values(bot.entities || {})) {
     const it = e?.position && e.isValid !== false ? e.getDroppedItem?.() : null;
-    if (!it || e.position.distanceTo(spot) > 12 || run.items[it.name] || !Object.keys(worth({ [it.name]: it.count || 1 })).length) continue;
+    if (!it || e.position.distanceTo(spot) > searchReach(bot, spot) || run.items[it.name] || !Object.keys(worth({ [it.name]: it.count || 1 })).length) continue;
     run.items[it.name] = it.count || 1;
   }
   // The eyes and the kit before the rest, and room made for each: walking
@@ -781,7 +793,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
       // Searched where the stack was seen to land as the bot died (note 2117), else at the death cell.
       const seenAt = (run.drops || []).find(d => d.name === name);
       const origin = seenAt ? new Vec3(seenAt.x, seenAt.y, seenAt.z) : spot;
-      try { await collect(bot, task, name, { origin, radius: 12, timeoutMs: 12000, allowExcavation: true, hostilesOk: true }); }
+      try { await collect(bot, task, name, { origin, radius: searchReach(bot, spot), timeoutMs: 12000, allowExcavation: true, hostilesOk: true }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
       const gained = countOf(bot, name) - had;
       if (gained <= 0) break;
@@ -847,4 +859,4 @@ function dropsWaitSays(bot, goal, now = Date.now()) {
   if (off > TICKING) return ` Given the turn, the work asks first about going back for what the last death dropped, ${off} blocks off: ${what}. Drops age only while their ground is loaded, so they keep until the bot comes near.`;
   return '';
 }
-module.exports = { ageingHere, wearRecovered, armsFirstWant, dropsSeenSays, byRank, recordSays, FLEET_RECORD, TICKING, triedDeathsSays, dropsWaitSays, quickDeathsSays, TOLD, tripCameToNothing, KIT_ERRAND, kitTrip, corpseRun, corpseRunStep, worth, madeAgain, ironRemakeSays, IRON_MINUTES, underWay };
+module.exports = { searchReach, ageingHere, wearRecovered, armsFirstWant, dropsSeenSays, byRank, recordSays, FLEET_RECORD, TICKING, triedDeathsSays, dropsWaitSays, quickDeathsSays, TOLD, tripCameToNothing, KIT_ERRAND, kitTrip, corpseRun, corpseRunStep, worth, madeAgain, ironRemakeSays, IRON_MINUTES, underWay };
