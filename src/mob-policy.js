@@ -126,7 +126,7 @@ async function wearBestArmour(bot) {
     const best = bot.inventory.items().filter(i => tier(i.name, slot) >= 0 && durable(bot.registry, i))
       .sort((a, b) => tier(b.name, slot) - tier(a.name, slot))[0];
     if (!best || (worn && tier(worn.name, slot) >= tier(best.name, slot))) continue;
-    try { await bot.equip(best, slot); changed++; } catch (_) { /* worn at the next step */ }
+    try { await bot.equip(best, slot); changed++; } catch (err) { console.log(`[armour] the ${best.name.replaceAll('_', ' ')} was not put on: ${String(err?.message || err).slice(0, 100)}`); }
   }
   // The shield with the most uses left, whatever is left of it (note
   // 1259): a tenth of its uses kept back is a pickaxe's rule, and a shield

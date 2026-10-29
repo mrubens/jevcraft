@@ -10748,7 +10748,13 @@ class Survival {
         const sw = require('./shield-wear').state(this.bot);
         const lastVolley = sw.held && sw.spare && sw.fireballs < require('./shield-wear').LAST ? `|shield:${sw.left}` : '';
         const carried = (this.bot.inventory?.items?.() || []).filter(i => /_(helmet|chestplate|leggings|boots)$/.test(i.name)).map(i => i.name).sort().join(',') + lastVolley;
-        if (carried && carried !== this._armourSeen) { this._armourSeen = carried; await require('./mob-policy').wearBestArmour(this.bot); }
+        // And again every fifteen seconds while a piece carried has its slot empty (note 2444): an equip that failed once
+        // was not tried again until what was carried changed. full-48 (25586, 2026-10-29 02:2xZ) took up its iron helmet,
+        // chestplate, leggings and golden boots at its kit in the Nether and walked on with 0 armour points, all four in
+        // its pack.
+        const slotOf = { helmet: 5, chestplate: 6, leggings: 7, boots: 8 };
+        const unworn = carried && (this.bot.inventory?.items?.() || []).some(i => { const k = /_(helmet|chestplate|leggings|boots)$/.exec(i.name)?.[1]; return k && !this.bot.inventory.slots?.[slotOf[k]]; });
+        if (carried && (carried !== this._armourSeen || (unworn && !(this._armourTriedAt > Date.now() - 15000)))) { this._armourSeen = carried; this._armourTriedAt = Date.now(); const n = await require('./mob-policy').wearBestArmour(this.bot); if (unworn && !n) console.log('[armour] a piece carried with its slot empty was not put on'); }
         else if (!carried) this._armourSeen = '';
       } catch (err) { task.check(); }
       const acted = await this.stepOnce(task, goal, save, onStep);
