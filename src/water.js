@@ -135,17 +135,29 @@ async function collectWater(bot, task, goal, save, { navigate, explore, digTo = 
   // measurable progress' four times, and left without the bucket; full-14 spent 9 minutes on a cast with no water.
   if (sources.length && dryStanding(bot, bot.entity.position)) {
     const eye = bot.entity.position.offset(0, 1.62, 0);
-    for (const p of sources.filter(q => eye.distanceTo(q.offset(0.5, 0.5, 0.5)) <= 4.2).sort((a, b) => eye.distanceTo(a) - eye.distanceTo(b)).slice(0, 3)) {
+    // Up to three blocks of wall on the line to it, within the game's reach of 4.5 (note 2489): the staircase stopped 4
+    // blocks off and the one-block wall test, at 4.2, let it go, the dig to it run again and again. full-88 (25591,
+    // 2026-10-29 12:10 to 12:13Z) stood 4 blocks from the water at (430, -21, -295) for its portal, 'no walk reaches
+    // the water ... 4 blocks off: digging to it' over and over, turning between tunnel and fill bucket.
+    for (const p of sources.filter(q => eye.distanceTo(q.offset(0.5, 0.5, 0.5)) <= 4.5).sort((a, b) => eye.distanceTo(a) - eye.distanceTo(b)).slice(0, 3)) {
       task.check(); checkThreats(bot);
-      const to = p.offset(0.5, 0.5, 0.5), dir = to.minus(eye), hit = bot.world?.raycast?.(eye, dir.unit(), dir.norm());
-      const wall = hit?.position && !hit.position.equals(p) ? bot.blockAt(hit.position) : null;
-      if (!wall || !wall.diggable || /water|lava/.test(wall.name) || wall.position.distanceTo(p) > 1.5) continue;
+      const to = p.offset(0.5, 0.5, 0.5), dir = to.minus(eye), cells = [];
+      for (let t = 0; t <= dir.norm(); t += 0.1) {
+        const c = eye.plus(dir.scaled(t / dir.norm())).floored();
+        if (c.equals(p) || cells.some(q => q.equals(c))) continue;
+        const b = bot.blockAt(c);
+        if (b && b.boundingBox === 'block') cells.push(c);
+      }
+      const walls = cells.map(c => bot.blockAt(c));
+      if (!walls.length || walls.length > 3 || walls.some(w => !w?.diggable || /water|lava/.test(w.name))) continue;
+      if (walls[walls.length - 1].position.distanceTo(p) > 1.5) continue;
       // Not where the wall holds back lava, nor under the bot's own feet.
-      if ([[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].some(([x, y, z]) => /lava/.test(bot.blockAt(wall.position.offset(x, y, z))?.name || ''))) continue;
-      if (wall.position.equals(bot.entity.position.floored().offset(0, -1, 0))) continue;
+      if (walls.some(w => [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].some(([x, y, z]) => /lava/.test(bot.blockAt(w.position.offset(x, y, z))?.name || '')))) continue;
+      if (walls.some(w => w.position.equals(bot.entity.position.floored().offset(0, -1, 0)))) continue;
+      const wall = walls[walls.length - 1];
       try {
-        console.log(`[water] the water at ${p} is behind the ${wall.name} at ${wall.position}: digging it and filling from here`);
-        await require('./skills').digWithTool(bot, wall, true);
+        console.log(`[water] the water at ${p} is behind ${walls.map(w => `the ${w.name} at ${w.position}`).join(', ')}: digging ${walls.length > 1 ? 'them' : 'it'} and filling from here`);
+        for (const w of walls) { const now = bot.blockAt(w.position); if (now && now.boundingBox === 'block') await require('./skills').digWithTool(bot, now, true); }
         // The wall's block is gone a moment after the dig on the bot's side, and the water runs into the cell (note 2383):
         // waited for, and every source then in reach and sight tried, the one aimed at first. full-20 (25588,
         // 2026-10-28 14:5xZ): 'Water source is outside visible interaction reach' after each wall dug.
