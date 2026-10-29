@@ -17,10 +17,27 @@ function install(bot) {
   const m = memory(bot);
   if (m.installed) return;
   m.installed = true;
+  // What the bot throws itself (the tidy's drops, a barter's ingots) is not a find (note 2518): the tidy dropped a golden
+  // chestplate as no rung's and the memory offered it back, nine times over on full-98 (25589, 2026-10-29 16:2xZ). The
+  // item of each toss is kept a few seconds and its entity, coming out at the bot, is not remembered.
+  const tossed = [];
+  for (const fn of ['tossStack', 'toss']) {
+    const orig = typeof bot[fn] === 'function' ? bot[fn].bind(bot) : null;
+    if (!orig) continue;
+    bot[fn] = async (...args) => {
+      let name = null;
+      try { name = fn === 'tossStack' ? args[0]?.name : bot.registry?.items?.[args[0]]?.name; } catch (_) { name = null; }
+      if (name) tossed.push({ name, at: Date.now() });
+      while (tossed.length > 40) tossed.shift();
+      return orig(...args);
+    };
+  }
+  const ownToss = (name, p) => tossed.some(t => t.name === name && Date.now() - t.at < 4000) && bot.entity?.position && p.distanceTo(bot.entity.position) <= 4;
   const look = e => {
     let it = null; try { it = e?.name === 'item' || e?.entityType === bot.registry?.entitiesByName?.item?.id ? e.getDroppedItem?.() : null; } catch (_) { it = null; }
     if (!it || !VALUABLE.test(it.name) || !e.position) return;
     const known = m.drops.get(e.id);
+    if (!known && ownToss(it.name, e.position)) return;
     if (known) { known.at = e.position.clone(); known.count = it.count || known.count; return; }
     m.drops.set(e.id, { id: e.id, name: it.name, count: it.count || 1, at: e.position.clone(), dimension: bot.game?.dimension, seenAt: Date.now(), tries: 0 });
     while (m.drops.size > KEEP) m.drops.delete(m.drops.keys().next().value);
@@ -61,7 +78,7 @@ function fetchOption(bot) {
     run: async (b, t) => {
       const { goals } = require('mineflayer-pathfinder'), { navigate } = require('./skills'), { collectNearbyDrops } = require('./drop-collection');
       const before = new Map(lying.map(d => [d.name, (b.inventory?.items?.() || []).filter(i => i.name === d.name).reduce((s, i) => s + i.count, 0)]));
-      const took = [];
+      const took = [], misses = [];
       for (const d of lying.slice(0, 8)) {
         t?.check?.();
         const m = memory(b).drops.get(d.id);
@@ -75,8 +92,10 @@ function fetchOption(bot) {
         const now = (b.inventory?.items?.() || []).filter(i => i.name === d.name).reduce((s, i) => s + i.count, 0);
         if (now > (before.get(d.name) || 0)) { took.push(`${now - before.get(d.name)} ${words(d.name)}`); before.set(d.name, now); memory(b).drops.delete(d.id); }
         else if (memory(b).drops.has(d.id)) { m.tries++; m.lastWhy = why || 'reached, not picked up'; }
+        if (!took.some(t => t.endsWith(words(d.name)))) misses.push(`${words(d.name)} at (${Math.floor(d.at.x)}, ${Math.floor(d.at.y)}, ${Math.floor(d.at.z)}) from ${b.entity.position.floored()}: ${why || (memory(b).drops.has(d.id) ? 'reached, not picked up' : 'gone when the walk came')}`);
       }
-      console.log(`[drops] the walk for what was seen lying: ${took.length ? `took ${took.join(', ')}` : 'took nothing'}`);
+      // Each miss said (note 2518): twelve of the day's walks 'took nothing' with no word of why.
+      console.log(`[drops] the walk for what was seen lying: ${took.length ? `took ${took.join(', ')}` : 'took nothing'}${misses.length ? `; not taken: ${misses.slice(0, 3).join('; ')}` : ''}`);
       return took.length > 0;
     },
   };
