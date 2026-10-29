@@ -3646,14 +3646,17 @@ async function loadSideFurnaces(bot, task, goal, save, main, { item, from, fuelI
   const furnaces = Math.min(3, Math.floor(total / 3)), extra = furnaces - 1;
   if (extra < 1) return 0;
   const fuel = [fuelItem, ...CARRIED_FUELS].find(n => isFuel(n) && countOf(bot, n) >= fuelUnits(n, total));
-  if (!fuel) return 0;
+  // Each way out said (note 2488): full-87 (2026-10-29 12:02Z) cooked 20 raw iron in one furnace, 200 seconds, no side one
+  // loaded and nothing said why.
+  const none = why => { console.log(`[smelt] no side furnace for ${total} ${from}: ${why}`); return 0; };
+  if (!fuel) return none(`no fuel carried for ${total} beside the main furnace's`);
   const share = Math.floor(total / furnaces);
   const stone = countOf(bot, 'cobblestone') + countOf(bot, 'cobbled_deepslate') + countOf(bot, 'blackstone');
-  if (countOf(bot, 'furnace') < extra && stone < 8 * (extra - countOf(bot, 'furnace'))) return 0;
+  if (countOf(bot, 'furnace') < extra && stone < 8 * (extra - countOf(bot, 'furnace'))) return none(`${stone} cobblestone carried, ${8 * (extra - countOf(bot, 'furnace'))} wanted for ${extra - countOf(bot, 'furnace')} furnaces`);
   const step = goal.step;
   try {
     if (countOf(bot, 'furnace') < extra) await acquireStep(bot, task, 'furnace', extra, goal, save);
-  } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return 0; }
+  } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return none(`the furnaces not made: ${err.message}`); }
   finally { goal.step = step; }
   let loaded = 0;
   const o = bot.entity.position.floored(), taken = [main.position];
@@ -3663,7 +3666,7 @@ async function loadSideFurnaces(bot, task, goal, save, main, { item, from, fuelI
       const q = o.offset(dx, dy, dz);
       if ((dx || dz) && !taken.some(t => t.equals(q)) && stationCellOk(bot, goal, q)) cell = q;
     }
-    if (!cell) break;
+    if (!cell) { console.log(`[smelt] no cell for a side furnace within 2 of ${o}`); break; }
     try {
       try { await place(bot, task, cell, 'furnace'); }
       catch (err) { task.check(); if (!STATION_FATAL.has(err.name)) restStationCell(goal, cell, 'furnace', err); throw err; }
@@ -4116,10 +4119,18 @@ async function smelt(bot, task, step, goal, save = () => {}) {
           furnace.close();
           bot.chat?.(`Leaving the ${needed - taken} ${what} to cook, about ${Math.max(1, Math.round(cooking() / 1000))} seconds; working nearby meanwhile and coming back for them.`);
           let worked = true;
+          const own = goal.smelting;
           bot._cookHold = { until, item: step.item, leftAt };
           try {
             worked = await holdForRest(bot, task, goal, save, { client: task.opportunityClient, survival: null, reason: `smelt:${step.item}`, until, why: `${needed - taken} ${what} cooking in the furnace at (${block.position.x}, ${block.position.y}, ${block.position.z}), taken out when done`, idle: false });
-          } finally { goal.step = step0; delete bot._cookHold; save(); }
+          } finally {
+            goal.step = step0; delete bot._cookHold;
+            // A batch cooked within the hold (its own smelt, done and its record let go) took this batch's record with it
+            // (note 2488): full-85 (25590, 2026-10-29 11:34:37Z) came back to its furnace with no record and threw 'Cannot set
+            // properties of undefined (setting left)' where the way back was not found, the copper in it given up.
+            if (!goal.smelting && own) goal.smelting = own;
+            save();
+          }
           // Left and back within ten seconds with nothing worked (note 2212): leave_cooking is not offered again for this batch.
           // It was kept on offer after being spent (note 692), and the audit of 2026-10-26 12:00 to 13:20Z had while_cooking asked
           // again within sixty seconds of leave_cooking 39 times of 47 ('leave cooking was chosen 1 second ago and changed nothing').
@@ -4136,7 +4147,10 @@ async function smelt(bot, task, step, goal, save = () => {}) {
             const fp = block.position, from = bot.entity.position.floored();
             try { await navigate(bot, task, new goals.GoalNear(fp.x, fp.y, fp.z, 2), { timeoutMs: 45000, stallMs: 8000 }); back = await approachWorkstation(bot, task, 'furnace', [fp]); }
             catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; back = null; }
-            console.log(`[cook] back to the furnace at ${fp} from ${from} with digging allowed: ${back ? 'there' : 'not there either'}`);
+            // Why not, where not (note 2488): full-85 and full-90 (2026-10-29 11:34 and 12:03Z) were a block from the furnace and
+            // found no way back to it.
+            const why = back ? '' : (() => { try { const b = bot.blockAt(fp), d = bot.entity.position.distanceTo(fp.offset(.5, .5, .5)), face = new (require('./construction-access').ConstructionGoal)(bot, fp, 'interact').reachable(bot.entity.position, .2); return ` (the block there ${b?.name ?? 'unloaded'}, ${d.toFixed(1)} off, a face in reach ${face})`; } catch (e) { return ` (unread: ${e.message})`; } })();
+            console.log(`[cook] back to the furnace at ${fp} from ${from} with digging allowed: ${back ? 'there' : 'not there either'}${why}`);
           }
           // No way back from where the work led: the batch is left where it
           // is, asked about at upkeep (fetch_batch or leave_batch, note 775),
@@ -4146,7 +4160,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
           // starting the batch again", the iron in it given up).
           if (!back) {
             const f = bot.entity.position.floored(), now = Date.now();
-            goal.smelting.left = { at: now, doneAt: until, lapsed: now, away: true, noRoute: { at: now, from: { x: f.x, y: f.y, z: f.z }, why: 'no way back to it from where the work meanwhile led' } }; save();
+            if (goal.smelting) goal.smelting.left = { at: now, doneAt: until, lapsed: now, away: true, noRoute: { at: now, from: { x: f.x, y: f.y, z: f.z }, why: 'no way back to it from where the work meanwhile led' } }; save();
             bot.chat?.(`I can't get back to the furnace with the ${what} from here; I'll leave it there for now.`);
             left = true; break;
           }
@@ -4157,7 +4171,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
           continue;
         }
         if (plan === 'leave_cooking') {
-          goal.smelting.left = { at: Date.now(), doneAt: Date.now() + cooking() }; save();
+          if (goal.smelting) goal.smelting.left = { at: Date.now(), doneAt: Date.now() + cooking() }; save();
           bot.chat?.(`Leaving the ${needed - taken} ${String(step.from || step.item).replace(/_/g, ' ')} to cook and getting on; I'll take them out when I'm back by the furnace.`);
           left = true; break;
         }
