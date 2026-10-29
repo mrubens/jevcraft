@@ -370,9 +370,9 @@ async function span(bot, task, target, maxBlocks, maxSteps, { wall = false, whol
       const centre = here.offset(0.5, 0, 0.5), p = bot.entity.position;
       if (Math.hypot(p.x - centre.x, p.z - centre.z) > 0.3) await creepTo(bot, task, here, 1200);
       guardFloor(bot, next.offset(0, -1, 0), 'laid');
-      await bot.equip(item, 'hand'); task.check();
+      await stairBound(bot, bot.equip(item, 'hand'), 'equip of the block to lay'); task.check();
       await bot.lookAt(support.position.offset(0.5 + step.x * 0.5, 0.5, 0.5 + step.z * 0.5), true);
-      await bot.placeBlock(support, step);
+      await stairBound(bot, bot.placeBlock(support, step), 'block laid');
       if (!solid(bot.blockAt(next.offset(0, -1, 0)))) throw new Error('The span block did not land');
       placed++;
     }
@@ -391,9 +391,9 @@ async function span(bot, task, target, maxBlocks, maxSteps, { wall = false, whol
           const refBlock = bot.blockAt(ref);
           if (!solid(refBlock)) throw new Error(`Nothing to lay the span's wall against at ${p}`);
           task.check();
-          await bot.equip(item, 'hand'); task.check();
+          await stairBound(bot, bot.equip(item, 'hand'), 'equip of the block to lay'); task.check();
           await bot.lookAt(ref.offset(0.5 + face.x * 0.5, 0.5 + face.y * 0.5, 0.5 + face.z * 0.5), true);
-          await bot.placeBlock(refBlock, face);
+          await stairBound(bot, bot.placeBlock(refBlock, face), 'block laid');
           if (!solid(bot.blockAt(p))) throw new Error(`The span's wall block at ${p} did not land`);
         }
       }
@@ -421,6 +421,9 @@ async function span(bot, task, target, maxBlocks, maxSteps, { wall = false, whol
 // An equip or a place on the stairs given up after ten seconds, said with which it was (note 2443b): full-53 (25589,
 // 2026-10-29 02:5xZ and 03:3xZ) and full-42 went silent mid-stairs after '[stairs] laid step down ... stepped', the dig
 // already bounded, five minutes and more each time until the bot was killed.
+// Every equip and block laid in the span, the tunnel and the bridge bounded too (note 2463), not only the stairs':
+// full-66 (25590, 2026-10-29 07:25 and 07:3xZ) went silent twice, five minutes and more, on the corpse run's way down
+// (tunnelStraight) to its kit 110 blocks under it.
 function stairBound(bot, promise, what, ms = 10000) {
   let timer;
   const guard = new Promise((_, reject) => { timer = setTimeout(() => { console.log(`[stairs] the ${what} did not end in ${ms / 1000} seconds: given up`); reject(new Error(`The stairs' ${what} did not end in ${ms / 1000} seconds`)); }, ms); });
@@ -558,9 +561,9 @@ async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4, navi
       if (!item) throw new Error('no blocks carried to lay the tunnel\'s floor over open air');
       const centre = here.offset(0.5, 0, 0.5), p = bot.entity.position;
       if (Math.hypot(p.x - centre.x, p.z - centre.z) > 0.3) await creepTo(bot, task, here, 1200);
-      await bot.equip(item, 'hand'); task.check();
+      await stairBound(bot, bot.equip(item, 'hand'), 'equip of the block to lay'); task.check();
       await bot.lookAt(support.position.offset(0.5 + d.x * 0.5, 0.5, 0.5 + d.z * 0.5), true);
-      await bot.placeBlock(support, d);
+      await stairBound(bot, bot.placeBlock(support, d), 'block laid');
       if (!solid(bot.blockAt(floor))) throw new Error(`the floor block at ${floor} did not land`);
       laid++; laidHere = true;
     }
@@ -756,9 +759,9 @@ async function crossAlong(bot, task, crossing, { navigate = null, scoop = false 
     const item = material(bot);
     if (!item) throw new Error(`No blocks left to lay ${what}`);
     guardFloor(bot, ref.position.plus(face), `laid ${what}`);
-    await bot.equip(item, 'hand'); task.check();
+    await stairBound(bot, bot.equip(item, 'hand'), 'equip of the block to lay'); task.check();
     await bot.lookAt(ref.position.offset(0.5 + face.x * 0.5, 0.5 + face.y * 0.5, 0.5 + face.z * 0.5), true);
-    await bot.placeBlock(ref, face);
+    await stairBound(bot, bot.placeBlock(ref, face), 'block laid');
     if (!solid(bot.blockAt(ref.position.plus(face)))) throw new Error(`The block laid ${what} did not land`);
     done.laid++;
   };
