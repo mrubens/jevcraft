@@ -56,8 +56,11 @@ function reservedForConstruction(goal, p, { from = null, bot = null } = {}) {
   // staircase down toward the lava 43 below set aside for 'a building in the way' from a landing beside the frame.
   const cells = [...(goal.portalFrame.blocks || []), ...(goal.portalFrame.castTemp || [])];
   if (p.y < portal.y && cells.length) return cells.some(c => c.x === p.x && c.z === p.z && p.y >= c.y - 2 && p.y < c.y);
+  // Up to a block over the frame's top, not without end (note 2547): the frame is five tall, and every cell over it to the
+  // sky was kept from digging, the way up from beside a frame cast deep under the rock refused at each try, 'dig up
+  // changed nothing' on full-109 (25592), full-118 (25590) and full-126 (25589) on 2026-10-29, each beside its frame.
   return p[along] >= portal[along] - 1 && p[along] <= portal[along] + 4 &&
-    Math.abs(p[acrossAxis] - portal[acrossAxis]) <= 2 && p.y >= portal.y - 4;
+    Math.abs(p[acrossAxis] - portal[acrossAxis]) <= 2 && p.y >= portal.y - 4 && p.y <= portal.y + 5;
 }
 
 function portalSiteClear(bot, origin) {
