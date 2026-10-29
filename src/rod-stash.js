@@ -531,7 +531,10 @@ async function collect(bot, task, goal, save, actions = {}) {
     // portal and back for it.
     if (entry.lostAt) bot.chat?.(`The chest at ${key} is gone, and ${listed(entry.contents)} with it.`);
     // A chest stood at whose things would not come out is not written off: it rests, and is tried again.
-    else if (entry.takeFails >= TAKE_TRIES && !eyesIn(entry) && !/^Still in the chest/.test(String(err.message || ''))) { entry.unreachable = new Date().toISOString(); bot.chat?.(`I can't get back to the chest at ${key}; going on without ${listed(entry.contents)}.`); }
+    // Pearls and rods are the goal's as the eyes are (note 2445): their chest rests and is tried again, still counted, and is
+    // not written off. full-29 (25592, 2026-10-29 03:05Z) wrote off 9 pearls in its Nether chest after 6 walks 'along a drop
+    // that would kill', counted 5 still wanted with 17 in all (7 carried, 1 in the Overworld), and hunted on.
+    else if (entry.takeFails >= TAKE_TRIES && !eyesIn(entry) && !((entry.contents?.ender_pearl || 0) + (entry.contents?.blaze_rod || 0) > 0) && !/^Still in the chest/.test(String(err.message || ''))) { entry.unreachable = new Date().toISOString(); bot.chat?.(`I can't get back to the chest at ${key}; going on without ${listed(entry.contents)}.`); }
     else setAside(goal, 'rod_stash_take', key, err, TAKE_REST_MS);
     save?.();
     return false;
