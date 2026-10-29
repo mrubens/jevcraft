@@ -3639,8 +3639,11 @@ async function whileCooking(bot, task, goal, save, { cooking, oreInReach, walkTa
 // left to cook, recorded on the goal so a restart still collects them; the
 // main furnace takes the rest as before.
 async function loadSideFurnaces(bot, task, goal, save, main, { item, from, fuelItem, total }) {
-  if (!goal || total < 16 || bot.game?.gameMode === 'creative') return 0;
-  const furnaces = Math.min(3, Math.floor(total / 8)), extra = furnaces - 1;
+  // From six, three a furnace at least (note 2471, the user: 'should it create multiple furnaces at a time?'): the batches
+  // before the Nether are three to nine raw iron or gold, 30 to 90 seconds in one furnace, and a furnace is 8 cobblestone
+  // and a few seconds; on 2026-10-29's full runs no side furnace was loaded at all, the floor being sixteen.
+  if (!goal || total < 6 || bot.game?.gameMode === 'creative') return 0;
+  const furnaces = Math.min(3, Math.floor(total / 3)), extra = furnaces - 1;
   if (extra < 1) return 0;
   const fuel = [fuelItem, ...CARRIED_FUELS].find(n => isFuel(n) && countOf(bot, n) >= fuelUnits(n, total));
   if (!fuel) return 0;
