@@ -413,6 +413,15 @@ async function span(bot, task, target, maxBlocks, maxSteps, { wall = false, whol
 // refused (no rock to dig, a drop over lava), and it left the fortress each
 // time. Stops level with `target` (its top, stood on at target.y + 1), at
 // lava in the way, or after maxSteps. -> steps taken
+// An equip or a place on the stairs given up after ten seconds, said with which it was (note 2443b): full-53 (25589,
+// 2026-10-29 02:5xZ and 03:3xZ) and full-42 went silent mid-stairs after '[stairs] laid step down ... stepped', the dig
+// already bounded, five minutes and more each time until the bot was killed.
+function stairBound(bot, promise, what, ms = 10000) {
+  let timer;
+  const guard = new Promise((_, reject) => { timer = setTimeout(() => { console.log(`[stairs] the ${what} did not end in ${ms / 1000} seconds: given up`); reject(new Error(`The stairs' ${what} did not end in ${ms / 1000} seconds`)); }, ms); });
+  guard.catch(() => {});
+  return Promise.race([promise, guard]).finally(() => clearTimeout(timer));
+}
 async function stairsDown(bot, task, target, { maxSteps = 40 } = {}) {
   let steps = 0, last = null;
   const molten = b => /lava|water|fire/.test(b?.name || '');
@@ -442,17 +451,17 @@ async function stairsDown(bot, task, target, { maxSteps = 40 } = {}) {
       const centre = here.offset(0.5, 0, 0.5), p = bot.entity.position;
       if (Math.hypot(p.x - centre.x, p.z - centre.z) > 0.3) await creepTo(bot, task, here, 1200);
       if (!solid(bot.blockAt(a))) {
-        await bot.equip(item, 'hand'); task.check();
+        await stairBound(bot, bot.equip(item, 'hand'), 'equip'); task.check();
         await bot.lookAt(support.position.offset(0.5 + d.x * 0.5, 0.5, 0.5 + d.z * 0.5), true);
-        await bot.placeBlock(support, d);
+        await stairBound(bot, bot.placeBlock(support, d), 'place');
         if (!solid(bot.blockAt(a))) throw new Error('The block ahead did not land');
       }
       const again = material(bot);
       if (!again) throw new Error('No blocks to lay the stairs down with');
-      await bot.equip(again, 'hand'); task.check();
+      await stairBound(bot, bot.equip(again, 'hand'), 'equip'); task.check();
       const above = bot.blockAt(a);
       await bot.lookAt(a.offset(0.5, 0, 0.5), true);
-      await bot.placeBlock(above, new Vec3(0, -1, 0));
+      await stairBound(bot, bot.placeBlock(above, new Vec3(0, -1, 0)), 'place');
       if (!solid(bot.blockAt(b))) throw new Error('The step down did not land');
     }
     // A guard beyond the step, level with it: the step down is taken
@@ -464,9 +473,9 @@ async function stairsDown(bot, task, target, { maxSteps = 40 } = {}) {
       const item = material(bot);
       if (!item) throw new Error('No blocks to lay the stairs down with');
       if (molten(bot.blockAt(guard))) throw new Error(`Lava or water beyond the step at ${guard}`);
-      await bot.equip(item, 'hand'); task.check();
+      await stairBound(bot, bot.equip(item, 'hand'), 'equip'); task.check();
       await bot.lookAt(a.offset(0.5 + d.x * 0.5, 0.5, 0.5 + d.z * 0.5), true);
-      await bot.placeBlock(bot.blockAt(a), d);
+      await stairBound(bot, bot.placeBlock(bot.blockAt(a), d), 'place');
       if (!solid(bot.blockAt(guard))) throw new Error('The guard beyond the step did not land');
     }
     await clear(bot, task, a);
