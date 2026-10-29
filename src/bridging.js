@@ -189,7 +189,10 @@ async function clear(bot, task, p, { wall = false } = {}) {
     guardFloor(bot, p, 'dug');
     const column = FALLS.test(bot.blockAt(p.offset(0, 1, 0))?.name || '');
     await equipBestTool(bot, block); task.check();
-    await bot.dig(block, true);
+    // The guarded dig (note 2443, as note 2422's): the library's own never settles when the block's update does not come.
+    // full-42 (25591, 2026-10-29 00:18 and 00:3xZ) and full-33 (25590, 2026-10-28 20:25Z) went silent mid-stairs, the work
+    // waiting five minutes and more after '[stairs] laid step down ... stepped' until the bot was killed.
+    await require('./vitals').digWithAirGuard(bot, task, block);
     if (!column) return;
     // The column comes down into the cell: waited for, and dug again.
     for (let t = 0; t < 30 && passable(bot.blockAt(p)); t++) { task.check(); await sleep(50); }

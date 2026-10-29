@@ -126,6 +126,26 @@ function compatibilityPlugin(bot) {
     };
     bot._client.on('respawn', () => { delete bot.lastSentRotation; });
   }
+  // Every dig bounded (note 2443): the library's dig waits on the block's update once its finish is sent, and settles
+  // never when that update does not come (a world changed under it, a block already gone); its stopDigging does nothing
+  // then. Given up at three times what the dig takes and three seconds more. The guarded digs (vitals.js
+  // digWithAirGuard, note 2422) had it; a dozen callers digging with the library's own did not, and full-42 (25591,
+  // 2026-10-29 00:18 and 00:3xZ) and full-33 (25590, 2026-10-28 20:25Z) waited five minutes and more mid-stairs.
+  const boundDig = () => {
+    if (typeof bot.dig !== 'function' || bot.dig._bounded) return;
+    const dig = bot.dig;
+    const bounded = function (block, ...rest) {
+      let ms = 10000;
+      try { const t = block?.digTime?.(bot.heldItem?.type ?? null, false, !!bot.entity?.isInWater, !bot.entity?.onGround, [], bot.entity?.effects || {}); if (Number.isFinite(t)) ms = Math.max(3000, 3 * t + 3000); } catch (_) { ms = 10000; }
+      let timer;
+      const guard = new Promise((_, reject) => { timer = setTimeout(() => { try { bot.stopDigging?.(); } catch (_) { /* nothing to stop */ } reject(Object.assign(new Error(`The dig of the ${String(block?.name || 'block').replaceAll('_', ' ')} did not end in ${Math.round(ms / 1000)} seconds: given up`), { name: 'DigStalled' })); }, ms); });
+      guard.catch(() => {});
+      return Promise.race([dig.call(this, block, ...rest), guard]).finally(() => clearTimeout(timer));
+    };
+    bounded._bounded = true;
+    bot.dig = bounded;
+  };
+  if (typeof bot.on === 'function') bot.on('spawn', boundDig);
   // lpVec3 is already decoded to blocks/tick. Mineflayer 4.39 still divides
   // these packets by 8000, as though they carried the older integer vector.
   // Select by the actual installed packet schema so old protocols are intact.
