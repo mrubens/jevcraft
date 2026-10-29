@@ -12992,6 +12992,23 @@ class Survival {
     // 03:44:03 to 13Z) woke at its bed among zombies, chose rest_to_heal at 17 with one at it, and died twice in ten
     // seconds; the meal's own question says it since note 2331.
     if (tree.rest_to_heal) Object.assign(state, require('./vitals').mealThreatSays(bot, { what: 'Resting here or eating is standing still, about two seconds a meal and four a health point', key: 'inReachStandingStill' }));
+    // What a death's drops come to against what is carried, said for every way here (note 2506, shared facts in the
+    // state): full-97 (25592, 2026-10-29 14:51Z) died with 12 iron ingots, a bucket and its tools, came back with nothing,
+    // waited for dawn and cut wood, and the drops vanished 500 blocks behind it. The user: 'it seems like nothing to lose'.
+    try {
+      const rec = this.state.recovery;
+      let cr = null; try { cr = require('./corpse-run').corpseRun(bot, goal); } catch (_) { cr = null; }
+      const at = rec?.status === 'pending' ? rec : cr?.position ? { position: cr.position, dimension: cr.dimension, inventoryBeforeDeath: cr.items, at: cr.at } : null;
+      const here = bot.entity?.position;
+      if (at?.position && here && !(at.dimension && at.dimension !== bot.game?.dimension)) {
+        const off = Math.round(Math.hypot(at.position.x - here.x, at.position.z - here.z));
+        const inv = at.inventoryBeforeDeath || {}, names = Object.keys(inv);
+        const diedAt = Date.parse(at.at || rec?.at || '') || null, age = diedAt ? (Date.now() - diedAt) / 1000 : null;
+        const VALUE = /_(pickaxe|sword|axe|helmet|chestplate|leggings|boots)$|^(diamond|iron_ingot|gold_ingot|raw_iron|raw_gold|obsidian|ender_pearl|blaze_rod|bucket|water_bucket|lava_bucket|shield|bow|flint_and_steel)$/;
+        const worth = (bot.inventory?.items?.() || []).filter(i => VALUE.test(i.name)).map(i => `${i.count} ${i.name.replaceAll('_', ' ')}`);
+        state.deathDrops = `What was dropped at the death lies ${off} blocks off: ${names.slice(0, 8).map(n => `${inv[n]} ${n.replaceAll('_', ' ')}`).join(', ') || 'unknown'}. Dropped things vanish five minutes after they fall while a player is within 176 blocks of them${age !== null ? `; they fell ${Math.round(age / 60 * 10) / 10} minutes ago` : ''}, and every minute spent elsewhere near them is one of those five. Carried now: ${worth.length ? worth.join(', ') : 'nothing a death would lose (no tool, armour, ore or ingot)'}${worth.length ? '' : ', so a death on the way back costs only the walk from the bed'}.`;
+      }
+    } catch (_) { /* not said */ }
     const decision = await this.decide(task, goal, save, { id: 'survival_priority', state, tree, interrupt: () => checkThreats(bot),
       isFresh: () => bot.health === state.health && bot.food === state.food && !immediateThreat(bot) });
     onStep(goal);
