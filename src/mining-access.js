@@ -103,6 +103,21 @@ async function approachDryMining(bot, task, p, { navigate, dig }) {
   // replayed in the arena's Nether (scripts/stem-drill.js) were reached from the same stand every time.
   const tried = [], stands = dryMiningPositions(bot, p);
   try {
+    // The stands searched together first, given time by how far off they are (note 2537): each searched alone for 300
+    // ms, every stand 20 and 30 blocks off came to 'timeout' and the block was given up. full-112 (25590, 2026-10-29
+    // 18:4xZ) gave up four coal ores so, 'stands looked at: (-4, 23, -25): timeout; ...', and full-105 its crimson stems.
+    const far = bot.entity.position.distanceTo(p);
+    if (stands.length && far > 6) {
+      const any = new goals.GoalCompositeAny(stands.slice(0, 8).map(t => new goals.GoalBlock(t.x, t.y, t.z)));
+      const route = await surveyRoute(bot, task, movement, any, Math.min(3000, 300 + 60 * far));
+      const end = (route.path || []).at(-1), at = end && stands.find(t => t.x === Math.floor(end.x) && t.y === Math.floor(end.y) && t.z === Math.floor(end.z));
+      if (route.status === 'success' && at && (route.path || []).every(policy.allowed)) {
+        await navigate(bot, task, new goals.GoalBlock(at.x, at.y, at.z), { timeoutMs: Math.max(15000, far * 1500), stallMs: 4000 });
+        if (!standingOk(bot, bot.entity.position) || !miningReach(bot, bot.entity.position, p)) throw new Error('Dry mining access changed during the approach');
+        return;
+      }
+      tried.push(`all ${Math.min(8, stands.length)} together: ${route.status !== 'success' ? route.status : !at ? 'the way ends elsewhere' : 'the way wades or digs'}`);
+    }
     for (const target of stands.slice(0, 8)) {
       task.check();
       const destination = new goals.GoalBlock(target.x, target.y, target.z);
