@@ -1171,6 +1171,7 @@ function watchOnce(bot, { live = mode() === 'live', now = Date.now(), look = pro
   if (!live) { if (holder?.layer === 'work') said(bot, `[arbiter] would preempt ${over}: ${p.why}`, now, log, `preempt ${over} ${p.by}`); return null; }
   if (wayOutHolds(bot, p.by, now)) { said(bot, `[arbiter] held off preempting the run out of fire: ${p.why}`, now, log, `wayout ${p.by}`); return null; }
   bot._preempt = { ...p, at: now, over };
+  if (over.startsWith('work')) bot._workPreemptedAt = now;
   const was = require('./turn').stopForTurn(bot, p.why);
   log(`[arbiter] preempted ${over}: ${JSON.stringify(was)}`);
   return bot._preempt;

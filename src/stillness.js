@@ -565,6 +565,10 @@ function flipWatch(bot, goal, now = Date.now()) {
   const waitingByChoice = !!stepWait(bot, goal, now);
   for (const [layer, a] of [['work', workName(goal)], ['survival', recent]]) {
     if (!a || (layer === 'work' && waitingByChoice)) continue;
+    // The work stopped by the survival layer is not the work trading turns (note 2538): full-114 (25587, 2026-10-29
+    // 18:5xZ) had its smelt stopped by a spider within reach four times in sixteen seconds, the craft and the smelt read
+    // as a flip with nothing gained, and the iron armour rested four and a half minutes.
+    if (layer === 'work' && bot._workPreemptedAt && now - bot._workPreemptedAt < 10000) continue;
     const changes = (stalls.changes ||= {})[layer] ||= [];
     const changed = changes.at(-1)?.a !== a;
     if (changed) changes.push({ a, t: now, p: here.clone ? here.clone() : { ...here }, worth: worth(bot), kinds: kinds(bot), blocks: stalls.marked || 0, count: goal.step?.count, countKey: countKey(goal.step), ...(layer === 'work' ? { m: rungMeasure(bot, goal, now) } : {}) });
