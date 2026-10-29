@@ -971,6 +971,10 @@ const huntTarget = (bot, goal) => goal.mobHunt?.entity === 'blaze' ? require('./
 // carried of the thirteen wanted, was told at each enderman that leaving it
 // "gains nothing toward the 12 ender pearls still needed", where five were
 // (note 1137).
+// The hunt is done when what it is for is had (note 2446): for the ladder's pearls that is eye-need.js's count, the pearls
+// kept in chests counted as held, not those carried against the count the hunt began with. full-29 (25592, 2026-10-29
+// 03:1xZ) carried 11 pearls with 10 more in its chests, 13 wanted, and stalked endermen on.
+const huntDone = (bot, goal) => { const state = goal?.mobHunt; if (!state) return true; return countOf(bot, state.item) >= huntTarget(bot, goal) || (state.item === 'ender_pearl' && goal.kind === 'win' && huntLeft(bot, goal) <= 0); };
 const huntLeft = (bot, goal) => {
   const state = goal?.mobHunt;
   if (!state) return 0;
@@ -983,7 +987,7 @@ const ladderRods = goal => goal.kind === 'win' && goal.gameProgress?.phase === '
 const rodsFact = (bot, goal, opts = { brief: true }) => ladderRods(goal) ? { rodsTheGoalWants: require('./eye-need').says(bot, goal, opts) } : {};
 function stakeHunt(bot, goal) {
   const state = goal?.mobHunt;
-  if (!state || countOf(bot, state.item) >= huntTarget(bot, goal)) return false;
+  if (!state || huntDone(bot, goal)) return false;
   bot._huntingEntity = { name: state.entity, until: Date.now() + 5000 };
   return true;
 }
@@ -1053,7 +1057,7 @@ async function pearlsNow(bot, task, goal, save, actions, client, { any = false }
 async function huntObserved(bot, task, goal, save, actions, client) {
   const state = goal.mobHunt;
   if (!state) return false;
-  if (countOf(bot, state.item) >= huntTarget(bot, goal)) { delete goal.mobHunt; save(); return false; }
+  if (huntDone(bot, goal)) { delete goal.mobHunt; save(); return false; }
   // Not while the rods are being banked (rod-bank.js, note 760).
   if (dimension(bot) === 'nether' && require('./rod-bank').pending(goal)) return false;
   // The pearls carried, on their own, before the next enderman (note 1142).
@@ -5519,7 +5523,7 @@ function noWaySays(state, then) {
 // on its kind staked: that is huntObserved's, as it runs.
 function claim(bot, goal = {}) {
   const state = goal.mobHunt;
-  if (!state || !bot?.entity?.position || countOf(bot, state.item) >= huntTarget(bot, goal)) return null;
+  if (!state || !bot?.entity?.position || huntDone(bot, goal)) return null;
   // The rods being banked hold the hunt (huntObserved), so no claim is made meanwhile (note 2425): full-28 (25589,
   // 2026-10-28 20:22 to 20:25Z), walking its rod out to the portal, gave the hunt the turn fourteen times in a row for a
   // blaze 21.6 blocks off and out of sight; the hunt did nothing each time, and the walk to the portal stood still.
