@@ -372,6 +372,12 @@ function huntsSays(goal, now = Date.now()) {
 function restockFoodOption(bot, task, goal, save, { actions = {}, survival = null, client = null } = {}) {
   const need = foodNeed(bot, goal);
   if (!need) return null;
+  // Going on without food chosen at the kit is asked again as it said, in an hour or when health and hunger say so, not
+  // at once by this upkeep for the same short stock (note 2543): full-118 (25590, 2026-10-29 20:54Z) chose go_on at its
+  // crossing with no food carried, hunger and health full, and twelve seconds later this question offered the ways to
+  // food for the same '0 food points carried' and took it back through the portal, seventeen minutes in the Overworld.
+  const kit = goal?.netherFoodKit;
+  if (kit?.pick === 'go_on' && Date.now() - (kit.at || 0) < 60 * 60000 && !need.hurt) return null;
   let found; try { found = foodRoutes(bot, task, goal, save, { actions, survival }); } catch (_) { return null; }
   const keys = Object.keys(found.routes);
   if (!keys.length) return null;
