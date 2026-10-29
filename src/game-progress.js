@@ -480,7 +480,10 @@ function ladderRung(bot, goal, waiting, { allOptional = false } = {}) {
   // the caves, and a skeleton there is blocked by a shield. Of the 8 Overworld deaths in a run's first 40 minutes from
   // full-40 to full-66 (2026-10-28 22:38Z to 10-29 06:17Z), 7 were with no shield, shot or struck in a cave mining iron:
   // full-66 (25590, 06:17:51Z) was shot from 19 to dead by a skeleton 9 minutes in, its one raw iron cooking.
-  if (!carried.includes('shield') && ingots >= 1 && ingots < 4 && best('pickaxe') >= 1 && best('pickaxe') < 3 && beforeNether(goal) && ready({ phase: 'shield' })) return { phase: 'shield', action: 'acquire', item: 'shield', count: 1 };
+  // Asked before any ingot is carried (note 2455): the iron pickaxe's step, once begun, mines, smelts and crafts in one
+  // run, and the ladder was not looked at again between; full-68 (25591, 2026-10-29 06:33Z) made its iron pickaxe from
+  // its first three ingots with no shield. The shield's own step mines its ingot first.
+  if (!carried.includes('shield') && ingots < 4 && best('pickaxe') >= 1 && best('pickaxe') < 3 && beforeNether(goal) && ready({ phase: 'shield' })) return { phase: 'shield', action: 'acquire', item: 'shield', count: 1 };
   const pickAfterArmour = best('pickaxe') < 3 && !spare('iron_pickaxe', 3) && best('pickaxe') >= 2 && !beforeNether(goal) && armourOwed();
   if (best('pickaxe') < 3 && !spare('iron_pickaxe', 3) && !pickAfterArmour) return headed(another('iron_pickaxe'));
   if (!carried.includes('shield') && ready({ phase: 'shield' })) return { phase: 'shield', action: 'acquire', item: 'shield', count: 1 };
