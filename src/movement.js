@@ -733,7 +733,11 @@ function configureMovements(bot) {
   // it. Any plain stone the bot carries will do for scaffolding.
   // The wart blocks as well, as a span is laid with them (bridging.js
   // LAID, note 622).
-  for (const name of ['netherrack', 'cobbled_deepslate', 'stone', 'andesite', 'diorite', 'granite', 'tuff', 'blackstone', 'basalt', 'deepslate', 'end_stone', 'nether_wart_block', 'warped_wart_block']) {
+  // And the badlands' own ground, its terracotta of every colour and the desert's sandstone (note 2548): full-128 (25586,
+  // 2026-10-29 22:4xZ) stood at the foot of a shaft it had dug with 177 terracotta and 7 sandstone carried and no other
+  // block, and every pillar, step and climb out came to nothing; full-115 (25592) lost an hour on the same ground.
+  const BADLANDS = ['terracotta', ...['white', 'orange', 'magenta', 'light_blue', 'yellow', 'lime', 'pink', 'gray', 'light_gray', 'cyan', 'purple', 'blue', 'brown', 'green', 'red', 'black'].map(c => `${c}_terracotta`), 'sandstone', 'red_sandstone'];
+  for (const name of ['netherrack', 'cobbled_deepslate', 'stone', 'andesite', 'diorite', 'granite', 'tuff', 'blackstone', 'basalt', 'deepslate', 'end_stone', 'nether_wart_block', 'warped_wart_block', ...BADLANDS]) {
     const id = bot.registry.itemsByName[name]?.id;
     if (id !== undefined && !movement.scafoldingBlocks.includes(id)) movement.scafoldingBlocks.push(id);
   }
