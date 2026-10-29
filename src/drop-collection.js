@@ -270,6 +270,28 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
         try { await require('./skills').digWithTool(bot, over, true); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[drops] the ${over.name} over the ${item.replaceAll('_', ' ')} not dug: ${String(err.message || err).slice(0, 120)}`); }
       }
     }
+    // A drop lying in a fence, a wall, bars or a pane (note 2456): no stand is offered in its cell, and one beside it is
+    // more than a pickup's reach from where it lies at the far side of the post. The block it lies in is dug, and the
+    // one over it where that is of the same kind, from within reach, a walk there first, and the straight walk below
+    // takes it up. full-63 (25586, 2026-10-29 06:42Z), its first blaze rod lying in a nether brick fence at a fortress
+    // 6.4 blocks off, '0 spots, 1 dug', left it.
+    if (!gained() && allowExcavation) {
+      const THIN = /(_fence|_wall|_bars|_pane)$/;
+      for (const drop of nearbyDrops(bot, item, origin, radius, { hostilesOk }).filter(d => d.position.distanceTo(bot.entity.position) <= 10).slice(0, 2)) {
+        task.check(); checkAir(bot);
+        const cell = drop.position.floored(), inIt = bot.blockAt(cell);
+        if (!inIt || !THIN.test(inIt.name) || !inIt.diggable) continue;
+        if ([[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 0, -1]].some(([x, y, z]) => /lava|water/.test(bot.blockAt(cell.offset(x, y, z))?.name || ''))) continue;
+        try {
+          if (bot.entity.position.offset(0, 1.62, 0).distanceTo(cell.offset(0.5, 0.5, 0.5)) > 4) await move(bot, task, new goals.GoalNear(cell.x, cell.y, cell.z, 2), { timeoutMs: 10000, stallMs: 4000, hostilesOk });
+          for (const c of [cell, cell.offset(0, 1, 0)]) {
+            const b = bot.blockAt(c);
+            if (b && THIN.test(b.name) && b.diggable && bot.entity.position.offset(0, 1.62, 0).distanceTo(c.offset(0.5, 0.5, 0.5)) <= 4.5) await require('./vitals').digWithAirGuard(bot, task, b);
+          }
+          console.log(`[drops] the ${inIt.name.replaceAll('_', ' ')} the ${item.replaceAll('_', ' ')} lay in at ${cell} dug`);
+        } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[drops] the ${inIt.name.replaceAll('_', ' ')} the ${item.replaceAll('_', ' ')} lay in not dug: ${String(err.message || err).slice(0, 120)}`); }
+      }
+    }
     // A drop within arm's reach that no routed pickup spot could claim: walk
     // straight at it. Pickup is proximity, not a path. Four raw iron lay a
     // block from the bot while the router turned every spot down.
