@@ -170,7 +170,10 @@ async function recoverItems(bot, task, recovery, save, navigate) {
         danger.some(t => t.entity.position.distanceTo(pos(p)) < 12));
       if (route.status === 'success' && !unsafe) { target = destination; selected = candidate; break; }
     }
-    if (!target) return finish('I cannot safely reach the items that are left');
+    // No straight walk there in three seconds, with no digging or towers, is not the kit out of reach (note 2477): the walk
+    // back that digs and asks (corpse-run.js) is next, and said so. full-85 (25590, 2026-10-29 11:08Z) said 'I cannot
+    // safely reach the items that are left. Continuing from my current inventory' of its iron kit 30 blocks off in a cave.
+    if (!target) return finish('no plain walk to the items reaches them; the walk back that digs its way is next');
     recovery.startedAt ||= new Date().toISOString(); recovery.attempts++; save();
     await navigate(bot, task, target, { timeoutMs: Math.min(12000, 30000 - (Date.now() - Date.parse(recovery.startedAt))), stallMs: 4000 });
     await sleep(600); task.check(); checkAir(bot);

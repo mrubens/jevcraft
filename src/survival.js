@@ -12295,7 +12295,7 @@ class Survival {
     // Before bedtime, a bed anywhere in reach (a walk that just failed
     // included) means no sealing in yet: the walk is retried in two minutes
     // and the shelter thirty blocks from the bed was the worse night.
-    const needsShelter = nightNow && !stayingUp && plan?.plan !== 'hunt';
+    const needsShelter = nightNow && !stayingUp && plan?.plan !== 'hunt' && !(this.state.nightRecover?.until > Date.now());
     // A shelter once chosen is a plan, not a question for every tick: the
     // second run climbed its shaft for a shelter, was asked again at the
     // top, went back down to the mine, and was asked again at the bottom.
@@ -12699,6 +12699,28 @@ class Survival {
       : `${underground ? 'Prepare and enter a sealed shelter here under the rock.' : 'Prepare and enter a sealed shelter before hostile mobs spawn at night.'} Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved. ${(() => { const off = this.nightMineOff(); return off ? `In the shelter it can only wait: ${off}.` : 'In the shelter it can mine or wait.'; })()}${underground ? (sealWhy.none ? BELOW_NIGHT_SURFACE : ` ${BELOW_NIGHT}${BELOW_NIGHT_SURFACE}`) : ''} Health ${Math.round(bot.health * 10) / 10} of 20, ${kitSaysNow}.${nowAbout}${threatFightSays}`) + shelterWaySays + comingNow + creeperRaceSays + (this.placeAbout(goal)?.says || '') + (bedReady ? ` A bed is in reach: sleeping in it (possible from ${SLEEP_FROM}) passes the night in seconds, and a shelter spends the night awake.` : ''),
       run: async () => { this.state.nightPlan = { plan: 'shelter', until: Date.now() + 120000 }; require('./seal-reason').noteSeal(this.state, sealWhy, { how: 'secure_shelter', health: bot.health }); await this.refugeStep(task, goal, save); } };
     if (failedSays) for (const k of ['continue_request', 'secure_shelter']) if (tree[k]) tree[k].description += failedSays;
+    // The walk back for the things dropped at the death, offered at night too (note 2477, the user: 'Now jev is just
+    // hiding and waiting instead of trying to get the kit back ... Seems dumb to hide with nothing to lose'): it was
+    // offered only with no shelter wanted. full-85 (25590, 2026-10-29 11:05Z), shot dead at y 16 in a cave with its iron
+    // pickaxe, iron sword and 49 raw copper, came back 30 blocks off at night, was asked to seal or hunt, and sealed,
+    // its drops ageing.
+    {
+      const rec = this.state.recovery, here = bot.entity?.position;
+      let cr = null; try { cr = require('./corpse-run').corpseRun(bot, goal); } catch (_) { cr = null; }
+      const at = rec?.status === 'pending' ? rec : cr?.position ? { position: cr.position, dimension: cr.dimension, inventoryBeforeDeath: cr.items } : null;
+      if (needsShelter && at?.position && here && !(at.dimension && at.dimension !== bot.game?.dimension)) {
+        const off = Math.round(Math.hypot(at.position.x - here.x, at.position.z - here.z)), dy = Math.round(at.position.y - here.y);
+        const ageing = off <= 176;
+        const lostSays = (() => { try { const inv = at.inventoryBeforeDeath || {}; const names = Object.keys(inv); return names.length ? ` They are: ${names.slice(0, 8).map(n => `${inv[n]} ${n.replaceAll('_', ' ')}`).join(', ')}${names.length > 8 ? ', and more' : ''}.` : ''; } catch (_) { return ''; } })();
+        const self = this;
+        tree.recover_items = { description: `Go back now for what was dropped at the death, ${off} blocks off${Math.abs(dy) >= 3 ? ` and ${Math.abs(dy)} ${dy < 0 ? 'down' : 'up'}` : ''}${at.position.y < 50 ? ', under the rock, where the night changes nothing' : ''}.${lostSays} ${ageing ? 'The bot is within 176 blocks of them, so they are ageing now: dropped things vanish 5 minutes after a player comes that near, and a night sealed in here outlasts them.' : 'They are not ageing while the bot is more than 176 blocks off; once it comes that near they last 5 minutes.'} The walk is through the night's mobs on the surface; carried now: ${(bot.inventory?.items?.() || []).filter(i => /_(sword|axe|helmet|chestplate|leggings|boots)$|^shield$/.test(i.name)).map(i => i.name.replaceAll('_', ' ')).join(', ') || 'no weapon or armour'}.`,
+          run: async () => {
+            // The night held off ten minutes for the walk back: the corpse run's own question and legs, its stairs and digs.
+            self.state.nightRecover = { until: Date.now() + 10 * 60000 }; save(); self.report(goal, save, { action: 'recover_items', origin: at.position, night: true });
+            if (rec?.status === 'pending') await recoverItems(bot, task, rec, save, self.actions.navigate);
+          } };
+      }
+    }
     // The bed carried, said on the night's two ways (note 2292): sleeping is offered only from inside the pocket, so the
     // choice at nightfall read as walk on or wall in. full-9 (25587, 2026-10-27 15:44Z) carried a white bed, was asked
     // continue_request against secure_shelter, answered none_good 0.47, took continue_request at 0.28, and walked on in
@@ -13410,7 +13432,7 @@ function claim(bot, goal = {}, survival = null) {
   // sleepDebt() without its first-look write of sleptAtAge.
   const debt = Number.isFinite(worldAge(bot)) && Number.isFinite(state.sleptAtAge) && worldAge(bot) - state.sleptAtAge > SLEEP_DEBT_TICKS;
   const nightFree = nightFreeBelow(bot, goal, state, { underground, debt, now });
-  const needsShelter = shelterNeeded(bot) && !nightFree && nightPlan?.plan !== 'stay_up' && nightPlan?.plan !== 'hunt';
+  const needsShelter = shelterNeeded(bot) && !nightFree && nightPlan?.plan !== 'stay_up' && nightPlan?.plan !== 'hunt' && !(state.nightRecover?.until > now);
   if (!needsShelter && state.recovery?.status === 'pending' && !(state.recovery.dimension && state.recovery.dimension !== bot.game?.dimension)) return make('recover_items', 'routine', { dropsAt: state.recovery.position || null });
   const expeditionFood = ((goal.preparingExpedition && goal.kind !== 'win') || goal.preparingEnd || goal.preparingNether) && bot.game?.difficulty !== 'peaceful';
   const reserve = require('./food-reserve');
