@@ -285,11 +285,17 @@ async function mineWithinReach(bot, task, { now = Date.now(), label = 'from wher
   const eye = bot.entity.position.offset(0, 1.62, 0), feet = bot.entity.position.floored();
   // Why ore within five was passed over, said now and then (note 2402), so the next miss says what stopped it.
   const passed = [];
+  // Gold not broken in a piglin's sight (note 2516, the game's rule as bartering.js keeps it, note 2507): full-98 (25589,
+  // 2026-10-29 16:1xZ) dug nether gold ore 'beside the ore dug' with piglins about and was set on; the user, watching:
+  // 'tried to mine right by a piglin and got attacked'.
+  const GOLD = /gold_ore$|^gilded_blackstone$|^gold_block$/;
+  const piglinSees = (() => { let v; return () => v ??= (() => { try { return Object.values(bot.entities || {}).some(e => /^piglin(_brute)?$/.test(e.name || '') && e.position.distanceTo(bot.entity.position) <= 16 && require('./danger').lineClear(bot, e.position.offset(0, 1.7, 0), eye)); } catch (_) { return false; } })(); })();
   const found = (bot.findBlocks?.({ matching: ids, maxDistance: 5, count: 64 }) || []).filter(p => {
     const c = p.offset(0.5, 0.5, 0.5);
     if (c.distanceTo(eye) > 4.3) return false;
     if (p.x === feet.x && p.z === feet.z) { passed.push([p, 'under the feet']); return false; }
     if (FACES.some(([x, y, z]) => /lava/.test(bot.blockAt(p.offset(x, y, z))?.name || ''))) { passed.push([p, 'lava against it']); return false; }
+    if (GOLD.test(bot.blockAt(p)?.name || '') && piglinSees()) { passed.push([p, 'gold in a piglin\'s sight']); return false; }
     try { const hit = bot.world?.raycast?.(eye, c.minus(eye).normalize(), c.distanceTo(eye) + 0.5); if (hit && !(hit.position.x === p.x && hit.position.y === p.y && hit.position.z === p.z)) { passed.push([p, `out of sight, the ${hit.name || 'block'} at (${hit.position.x}, ${hit.position.y}, ${hit.position.z}) between`, hit.position]); return false; } } catch (_) { return false; }
     const b = bot.blockAt(p);
     return !!b && bot.canDigBlock?.(b) !== false && (!b.harvestTools || Object.keys(b.harvestTools).some(id => bot.inventory.items().some(i => String(i.type) === id)));
