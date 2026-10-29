@@ -1973,7 +1973,7 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
       // that, the threat check saw the blaze at sixteen blocks and the bot
       // fled the thing it was hunting.
       const restore = encounter(bot, task, near, Date.now() + 20000);
-      try { await actions.navigate(bot, task, new goals.GoalNear(near.position.x, near.position.y, near.position.z, comesNot ? 2 : 8), { timeoutMs: 20000, stallMs: 5000 }); }
+      try { await actions.navigate(bot, task, new goals.GoalNear(near.position.x, near.position.y, near.position.z, comesNot ? 2 : 8), { timeoutMs: 20000, stallMs: 5000, hostilesOk: near.name === 'blaze' }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
       finally { restore(); }
       // No way to it (a blaze on a wall across the lava): set it aside and
@@ -2094,7 +2094,11 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     goal.step = { action: 'return_to_blazes', target: { x: spot.x, y: spot.y, z: spot.z }, seen: spot.seen }; save();
     const from = bot.entity.position.clone();
     // Gold passed on the way is mined and the walk goes on (note 653).
-    try { await actions.navigate(bot, task, new goals.GoalNear(spot.x, spot.y, spot.z, 6), { timeoutMs: 60000, stallMs: 10000, passing: true }); delete spot.why; }
+  // The walk to blazes goes by the mobs (note 2459): it is the walk to the fight, and the route that keeps out of every
+  // hostile's sight found none down a fortress corridor the blazes were in. full-63 (25586, 2026-10-29 06:51 to 07:05Z)
+  // stood 3 blocks wide and clear in a corridor of nether bricks 16 blocks from its blazes, 1 rod of 6, and every walk
+  // to them ended 'No route from here', 15 minutes; the threat check still answers what comes on.
+    try { await actions.navigate(bot, task, new goals.GoalNear(spot.x, spot.y, spot.z, 6), { timeoutMs: 60000, stallMs: 10000, passing: true, hostilesOk: true }); delete spot.why; }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; spot.why = String(err.message || err).slice(0, 160); }
     if (bot.entity.position.distanceTo(from) < 2 && actions.tunnel) {
       try { await actions.tunnel(bot, task, goal, save, new Vec3(spot.x, spot.y, spot.z), 'fortress'); }
@@ -4940,7 +4944,7 @@ async function goToWay(bot, task, goal, save, actions, state) {
     : () => target.distanceTo(bot.entity.position) <= GO_TO_NEAR;
   let why = null;
   if (!close() && actions.navigate) {
-    try { await actions.navigate(bot, task, new goals.GoalNear(g.x, g.y, g.z, g.kind === 'unwalked' ? 1 : 4), { timeoutMs: 60000, stallMs: 8000, passing: true, onFoot: true }); }
+    try { await actions.navigate(bot, task, new goals.GoalNear(g.x, g.y, g.z, g.kind === 'unwalked' ? 1 : 4), { timeoutMs: 60000, stallMs: 8000, passing: true, onFoot: true, hostilesOk: /^(blazes|blazes_about|spawner)$/.test(g.kind) }); }
     catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
   }
   if (!close()) {
