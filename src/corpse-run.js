@@ -746,7 +746,19 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
       // Within a leg's own reach of the start the way down begins from here (note 2438): the leg to a point within four
       // blocks ends where it began. full-35 (25586, 2026-10-28 22:08 to 22:12Z), 233 blocks across and 29 over its drops
       // (the start 229 off), had legs of 4 blocks that ended at once, 21 passes a second, 'No measurable progress'.
-      if (across <= start + 6) {
+      // Not from the water (note 2451): a way down dug there ends at once and the swim for shore takes the bot back the
+      // way it came. full-61 (25588, 2026-10-29 05:42 to 05:44Z), its 19 iron ingots and iron pickaxe 233 blocks off and
+      // 27 under it, came to the start of the way down in a lake, and the dig and the swim back turned 14 times in a
+      // minute. In the water the walk goes on toward the drops, across it, to as near as the edge of the ground that ticks.
+      const wet = (() => { try { const b = bot.blockAt(here.floored()); return /water/.test(b?.name || '') || !!b?.getProperties?.().waterlogged; } catch (_) { return false; } })();
+      if (wet && across > edge + 2 && across <= start + 6) {
+        const go = Math.max(edge + 2, across - LEG), to = { x: spot.x + (here.x - spot.x) / across * go, z: spot.z + (here.z - spot.z) / across * go };
+        goal.step = { action: 'corpse_run', to: { ...run.position }, items: { ...run.items }, way: `across the water toward them, the way down to their level (y ${Math.round(spot.y)}) begun from dry ground` }; save();
+        try { await move(bot, task, new goals.GoalNearXZ(Math.round(to.x), Math.round(to.z), 3), { timeoutMs: LEG_MS, stallMs: 8000, sprint: true, hostilesOk: true }); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[corpse run] the way across the water stopped: ${String(err.message || err).slice(0, 120)}`); }
+        return true;
+      }
+      if (across <= start + 6 && !wet) {
         const unit = { x: (here.x - spot.x) / across, z: (here.z - spot.z) / across };
         const target = new Vec3(Math.round(spot.x + unit.x * edge), Math.round(spot.y + 1), Math.round(spot.z + unit.z * edge));
         goal.step = { action: 'corpse_run', to: { ...run.position }, items: { ...run.items }, way: `down to their level (y ${Math.round(spot.y)}) before coming within ${TICKING} blocks` }; save();
@@ -755,7 +767,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
         return true;
       }
       // A leg that would end inside the edge ends at the start of the way down.
-      if (across - LEG < start) {
+      if (across - LEG < start && !wet) {
         const to = { x: here.x + (spot.x - here.x) / across * (across - start), z: here.z + (spot.z - here.z) / across * (across - start) };
         try { await move(bot, task, new goals.GoalNearXZ(Math.round(to.x), Math.round(to.z), 4), { timeoutMs: LEG_MS, stallMs: 8000, sprint: true, hostilesOk: true }); }
         catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
