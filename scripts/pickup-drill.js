@@ -37,6 +37,10 @@ const CASES = {
   walled_in: () => ({ at: [3, 0, 0], fill: [[2, -1, -1, 4, 2, 1, 'stone'], [3, 0, 0, 3, 1, 0, 'air']] }),
   in_water: () => ({ at: [2, 0, 0], fill: [[1, -1, -1, 3, 0, 1, 'water']] }),
   deep_water: () => ({ at: [3, -2, 0], fill: [[2, -3, -1, 4, 0, 1, 'water']] }),
+  // A dug ore's cells flooded, one wide and two deep, beside the bot (full-123, 2026-10-29 21:3xZ: 'the raw iron lies in
+  // water 1 under the bot: swum down to', then 'No route', 'reached, not picked up').
+  water_shaft: () => ({ at: [1, -1, 0], fill: [[1, -1, 0, 1, 0, 0, 'water']] }),
+  water_shaft_deep: () => ({ at: [1, -2, 0], fill: [[1, -2, 0, 1, 0, 0, 'water']] }),
   tunnel_corner: () => ({ at: [3, 0, 3], fill: [[-1, -1, -1, 4, 3, 4, 'stone'], [0, 0, 0, 3, 1, 0, 'air'], [3, 0, 0, 3, 1, 3, 'air']] }),
   full_inventory: () => ({ at: [2, 0, 0], full: true }),
   on_gravel_pillar: () => ({ at: [2, 2, 0], fill: [[2, 0, 0, 2, 1, 0, 'gravel']] }),
