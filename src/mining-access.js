@@ -98,12 +98,16 @@ async function dryRouteNow(bot, task, p, { budgetMs = 400 } = {}) {
 async function approachDryMining(bot, task, p, { navigate, dig }) {
   if (standingOk(bot, bot.entity.position) && miningReach(bot, bot.entity.position, p) && bot.canDigBlock(bot.blockAt(p))) return;
   const movement = bot.pathfinder.movements, policy = miningMovement(bot);
+  // Each stand looked at and why it was not taken, said with the failure (note 2534): full-105 (25587, 2026-10-29
+  // 18:1xZ) failed nine crimson stems 2 to 7 blocks off, 'No reachable dry standing position', and the same blocks
+  // replayed in the arena's Nether (scripts/stem-drill.js) were reached from the same stand every time.
+  const tried = [], stands = dryMiningPositions(bot, p);
   try {
-    for (const target of dryMiningPositions(bot, p).slice(0, 8)) {
+    for (const target of stands.slice(0, 8)) {
       task.check();
       const destination = new goals.GoalBlock(target.x, target.y, target.z);
       const route = await surveyRoute(bot, task, movement, destination, 300);
-      if (route.status !== 'success' || !(route.path || []).every(policy.allowed)) continue;
+      if (route.status !== 'success' || !(route.path || []).every(policy.allowed)) { tried.push(`${target}: ${route.status !== 'success' ? route.status : 'the way wades or digs'}`); continue; }
       await navigate(bot, task, destination, { timeoutMs: 15000, stallMs: 4000 });
       if (!standingOk(bot, bot.entity.position) || !miningReach(bot, bot.entity.position, p)) throw new Error('Dry mining access changed during the approach');
       return;
@@ -115,7 +119,9 @@ async function approachDryMining(bot, task, p, { navigate, dig }) {
       throw new Error('Mining passage access changed during the approach');
     return;
   }
-  throw new Error(`No reachable dry standing position for mining at ${p}`);
+  let unsafe = 0;
+  try { const { safeFromHostiles } = require('./danger'); unsafe = stands.length ? 0 : [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]].filter(([dx, dy, dz]) => !safeFromHostiles(bot, p.offset(dx + 0.5, dy, dz + 0.5))).length; } catch (_) { unsafe = 0; }
+  throw new Error(`No reachable dry standing position for mining at ${p} (${stands.length ? `stands looked at: ${tried.join('; ') || 'none walked'}` : `no stand within 3 blocks${unsafe ? `, ${unsafe} of its four sides too near a hostile` : ''}`})`);
 }
 
 // A covered resource can have no already-clear mining stance. Keep nearby
