@@ -312,16 +312,23 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
   const collect = async () => {
       const safety = err => { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; };
       const drops = () => Object.values(bot.entities || {}).filter(x => x.getDroppedItem?.()?.name === item && x.position.distanceTo(fell) <= 6);
+      // The times out and back as the load has them (note 2494): with the event loop held 2 to 5 s at a time on every run,
+      // a walk of five seconds and a look for the drop of two and a half came to nothing; full-86, full-88 and full-89
+      // (2026-10-29 13:0x to 13:1xZ) killed 13 endermen from their slots and carried 2 pearls, where about half drop one.
       while (Date.now() - fellAt < 1200) { task.check(); await sleep(100); }
-      try { await navigate(bot, task, new goals.GoalNear(fell.x, fell.y, fell.z, 1), { timeoutMs: 5000, stallMs: 1500 }); } catch (err) { safety(err); }
-      for (const until = Date.now() + 4000; Date.now() < until;) {
+      const had0 = count(); let walkErr = null;
+      try { await navigate(bot, task, new goals.GoalNear(fell.x, fell.y, fell.z, 1), { timeoutMs: 12000, stallMs: 4000 }); } catch (err) { safety(err); walkErr = err; }
+      let seen = 0;
+      for (const until = Date.now() + 10000; Date.now() < until;) {
         task.check();
         const drop = drops()[0];
-        if (!drop) { if (Date.now() - fellAt > 2500) break; await sleep(150); continue; }
+        if (!drop) { if (Date.now() - fellAt > 8000) break; await sleep(150); continue; }
+        seen++;
         const p = drop.position;
-        try { await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 0), { timeoutMs: 2500, stallMs: 1000 }); } catch (err) { safety(err); }
+        try { await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 0), { timeoutMs: 8000, stallMs: 3000 }); } catch (err) { safety(err); walkErr = err; }
         await sleep(250);
       }
+      console.log(`[slot] out for the drops where the last fell at ${fell.floored()}: ${count() - had0} ${item.replaceAll('_', ' ')} taken, ${drops().length} lying there now${seen ? '' : ', none seen'}${walkErr ? `; the walk: ${String(walkErr.message || walkErr).slice(0, 100)}` : ''}`);
   };
   try {
     while (Date.now() < deadline) {
@@ -468,6 +475,12 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
     // kills 7 pearls were carried, where about half drop one; the walk had
     // come and gone before the pearl lay there).
     if (fell && !endermen(bot, 8).some(x => angry(x) || x.position.distanceTo(bot.entity.position) <= 3)) await collect();
+    // And what still lies within sixteen of the slot, by the collector every other pickup uses, walking over and digging
+    // to it (note 2494): the slot's own walk goes only where the last fell.
+    if (fell && !endermen(bot, 8).some(x => angry(x))) {
+      try { await require('./drop-collection').collectNearbyDrops(bot, task, item, { origin: site.mouth.offset(0.5, 0, 0.5), radius: 16, timeoutMs: 20000, waitForSpawnMs: 0, allowExcavation: true }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    }
   } finally { bot.removeListener('entityDead', onDead); bot.removeListener('health', onHealth); delete bot._stareMeant; }
   out.kills = dead; out.pearls = count() - had; out.hurt = Math.max(0, hp0 - (bot.health ?? hp0));
   console.log(`[slot] ${out.kills} endermen killed from the slot, ${out.pearls} pearls, ${Math.round(out.hurt * 10) / 10} health lost: ${out.ended}`);
