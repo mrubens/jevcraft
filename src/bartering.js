@@ -146,6 +146,11 @@ async function barterStep(bot, task, goal, save, actions = {}) {
           if (block?.name !== 'nether_gold_ore' || block.position.distanceTo(bot.entity.position) > 5) continue;
           const pick = bot.inventory.items().find(i => /_pickaxe$/.test(i.name));
           if (!pick) break;
+          // The game's rule (note 2507): a piglin that sees the player break gold ore turns on it, and so does every piglin
+          // about it. Not dug while one within sixteen blocks has a line to the bot; the next ore is tried. full-93 (25587,
+          // 2026-10-29 15:12Z) dug nether gold ore for a barter at health 20 among piglins and was slain by them.
+          const watching = (() => { try { const eye = bot.entity.position.offset(0, 1.62, 0); return Object.values(bot.entities || {}).filter(e => /^piglin(_brute)?$/.test(e.name || '') && e.position.distanceTo(bot.entity.position) <= 16 && require('./danger').lineClear(bot, e.position.offset(0, 1.7, 0), eye)); } catch (_) { return []; } })();
+          if (watching.length) { console.log(`[barter] the gold ore at ${ore} not dug: ${watching.length} piglin${watching.length === 1 ? '' : 's'} within 16 blocks see${watching.length === 1 ? 's' : ''} the bot, and breaking gold ore in a piglin's sight turns every piglin about on it`); continue; }
           await bot.equip(pick, 'hand');
           try { await bot.dig(block); dug++; } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; continue; }
           await sleep(700);
