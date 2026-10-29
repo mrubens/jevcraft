@@ -3666,6 +3666,19 @@ async function loadSideFurnaces(bot, task, goal, save, main, { item, from, fuelI
       const q = o.offset(dx, dy, dz);
       if ((dx || dz) && !taken.some(t => t.equals(q)) && stationCellOk(bot, goal, q)) cell = q;
     }
+    // None open: a cell dug out of the wall beside the feet, as a player makes room in a tunnel (note 2493). The open cells
+    // asked for were none in a staircase or a one-wide tunnel: '[smelt] no cell for a side furnace within 2 of (-58, 4,
+    // -31)' on full-90 and full-86 (2026-10-29 12:4x to 13:0xZ), the batch cooked in one furnace.
+    if (!cell) {
+      const liquid = q => [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 0, -1]].some(([x, y, z]) => /water|lava/.test(bot.blockAt(q.offset(x, y, z))?.name || ''));
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const q = o.offset(dx, 0, dz), b = bot.blockAt(q);
+        if (!b || taken.some(t => t.equals(q)) || !/^(stone|deepslate|tuff|andesite|diorite|granite|dirt|cobblestone|cobbled_deepslate|netherrack|calcite)$/.test(b.name)) continue;
+        if (bot.blockAt(q.offset(0, -1, 0))?.boundingBox !== 'block' || liquid(q)) continue;
+        try { await dig(bot, task, q, { requireDrops: false }); } catch (err) { task.check(); if (STATION_FATAL.has(err.name)) throw err; continue; }
+        if (stationCellOk(bot, goal, q)) { cell = q; console.log(`[smelt] a cell dug for a side furnace at ${q}`); break; }
+      }
+    }
     if (!cell) { console.log(`[smelt] no cell for a side furnace within 2 of ${o}`); break; }
     try {
       try { await place(bot, task, cell, 'furnace'); }
