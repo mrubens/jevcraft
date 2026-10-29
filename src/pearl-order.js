@@ -223,6 +223,10 @@ function fightSays(bot, n) {
 // 'seems like jev should look for a fortress').
 // Away from a warped forest only: in one, where endermen come many at a time, the slot's record is 16 to 21 pearls an
 // hour (the user: 'it should depend what it finds ... a forest with a ton of endermen, it should get pearls').
+// The day's mining for a barter across the runs (note 2523, Fable's Nether review): mine_gold_for_barter answered 15, 29, 13
+// and 22 times on full-86, -89, -92 and -93 for 0 pearls, 'No piglin free to barter with' 55 times on full-92; the
+// runners' way to the barter is a bastion's gold blocks.
+const MINE_GOLD_RECORD = ' Across 2026-10-29\'s full runs this way was chosen 79 times on four bots and came to 0 pearls; a piglin free to barter with was missing 55 times on one of them. Bartering on a bastion\'s gold blocks is the speedrunners\' way to it.';
 const DAY_PEARLS_FIRST = ' On 2026-10-29\'s full runs six bots in the Nether took a pearl way first away from a warped forest (slot fights on open ground, stalking, a barter) and got 0 to 4 pearls in 30 to 100 minutes there, none of them fighting a blaze; the one that went to its fortress got its first rod in its first minute at it (full-93). In a warped forest, endermen many at a time, the slot\'s record is 16 to 21 pearls an hour.';
 function tree(bot, goal, r, now = Date.now()) {
   const o = overlap(bot, goal, r), out = {};
@@ -251,7 +255,7 @@ function tree(bot, goal, r, now = Date.now()) {
     // Bartering wants a piglin in view (note 2407): said, with how many are, so the mining is chosen knowing it.
     const piglinsNow = Object.values(bot.entities || {}).filter(e => e?.name === 'piglin' && e.position && bot.entity?.position && e.position.distanceTo(bot.entity.position) <= 32).length;
     const piglinSays = piglinsNow ? ` ${piglinsNow} piglin${piglinsNow === 1 ? '' : 's'} within 32 blocks now; an ore is passed over while a piglin within sixteen blocks sees the bot, breaking gold ore in a piglin's sight turning every piglin about on it.` : ' No piglin is within 32 blocks now: the gold is mined and carried, and the barter waits until one is in view.';
-    out.mine_gold_for_barter = { description: `Mine the ${g.count} nether gold ore${g.count === 1 ? '' : 's'} within 32 blocks (the nearest ${g.nearest} off) and barter the gold with the piglins: an ore drops two to six nuggets (about four), nine nuggets make an ingot, so about ${ingots} ingot${ingots === 1 ? '' : 's'} from these, and the measured barter is nine ingots a pearl (every throw a roll: a pearl drop is four to eight), about ${pearls} pearl${pearls === 1 ? '' : 's'}' worth; an ore is a few seconds with any pickaxe, the first ingots go on a gold piece if none is worn (four for boots). ${g.piglinsNear ? `${g.piglinsNear} piglin${g.piglinsNear === 1 ? '' : 's'} within 32 now.` : 'No piglin within 32 now: the gold is carried until one is, and the barter is asked then.'} Pearls ${o.pearls}.${rec}${piglinSays}${minedSays(goal, bot)}` };
+    out.mine_gold_for_barter = { description: `Mine the ${g.count} nether gold ore${g.count === 1 ? '' : 's'} within 32 blocks (the nearest ${g.nearest} off) and barter the gold with the piglins: an ore drops two to six nuggets (about four), nine nuggets make an ingot, so about ${ingots} ingot${ingots === 1 ? '' : 's'} from these, and the measured barter is nine ingots a pearl (every throw a roll: a pearl drop is four to eight), about ${pearls} pearl${pearls === 1 ? '' : 's'}' worth; an ore is a few seconds with any pickaxe, the first ingots go on a gold piece if none is worn (four for boots). ${g.piglinsNear ? `${g.piglinsNear} piglin${g.piglinsNear === 1 ? '' : 's'} within 32 now.` : 'No piglin within 32 now: the gold is carried until one is, and the barter is asked then.'} Pearls ${o.pearls}.${rec}${piglinSays}${minedSays(goal, bot)}${MINE_GOLD_RECORD}` };
   }
   if (r.bastion) {
     const l = r.bastion.landmark;
