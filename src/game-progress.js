@@ -1224,6 +1224,13 @@ function nextGameStage(bot, goal, skip = new Set()) {
   if (where === 'nether' && collect) return collect;
   if (where === 'nether') return { phase: 'return_with_blaze_supplies', action: 'home_with_rods' };
   if (where !== 'overworld') return { phase: 'unknown_dimension', action: 'unsupported_dimension' };
+  // Short of pearls carried and the chests here make up the rest: the chest first, not a hunt (note 2448). full-29 (25592,
+  // 2026-10-29 03:3xZ), 12 pearls carried, 1 in a chest in the Overworld and 9 in the Nether, 13 wanted, hunted endermen
+  // for its thirteenth.
+  if (count(bot, 'ender_pearl') < target - eyes && count(bot, 'ender_pearl') + (require('./rod-stash').stashed(goal).ender_pearl || 0) >= target - eyes) {
+    let col = null; try { col = require('./rod-stash').collectStage(bot, goal); } catch (_) { col = null; }
+    if (col) return col;
+  }
   // A cleric's pearls, when a village is remembered and a pearl trade has
   // been read there (trading.js): a walk and some emeralds instead of an
   // enderman hunt. Set aside like any rung when it stops paying.
