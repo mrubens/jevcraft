@@ -95,6 +95,17 @@ async function dryRouteNow(bot, task, p, { budgetMs = 400 } = {}) {
   } finally { policy.restore(); }
   return false;
 }
+// The stand reached is judged as it was chosen, from its cell's middle, as well as from where the body stopped in it
+// (note 2550): the walk ends anywhere in the cell, a few tenths off the middle, and the reach from there came short or
+// its line grazed an edge. 130 'Dry mining access changed during the approach' on the day's full runs (2026-10-29), and
+// each turned the mine step and the pickup or tunnel beside it into a flip: full-134 (25592, 23:2xZ) traded mine and
+// collect nearby resource four times in six seconds at iron ore five blocks off; full-131 (25586) the same.
+function reachedAt(bot, stand, p) {
+  const here = bot.entity.position;
+  if (miningReach(bot, here, p)) return true;
+  const f = here.floored();
+  return !!stand && f.x === stand.x && f.y === stand.y && f.z === stand.z && miningReach(bot, stand.offset(0.5, 0, 0.5), p);
+}
 async function approachDryMining(bot, task, p, { navigate, dig }) {
   if (standingOk(bot, bot.entity.position) && miningReach(bot, bot.entity.position, p) && bot.canDigBlock(bot.blockAt(p))) return;
   const movement = bot.pathfinder.movements, policy = miningMovement(bot);
@@ -113,7 +124,7 @@ async function approachDryMining(bot, task, p, { navigate, dig }) {
       const end = (route.path || []).at(-1), at = end && stands.find(t => t.x === Math.floor(end.x) && t.y === Math.floor(end.y) && t.z === Math.floor(end.z));
       if (route.status === 'success' && at && (route.path || []).every(policy.allowed)) {
         await navigate(bot, task, new goals.GoalBlock(at.x, at.y, at.z), { timeoutMs: Math.max(15000, far * 1500), stallMs: 4000 });
-        if (!standingOk(bot, bot.entity.position) || !miningReach(bot, bot.entity.position, p)) throw new Error('Dry mining access changed during the approach');
+        if (!standingOk(bot, bot.entity.position) || !reachedAt(bot, at, p)) throw new Error('Dry mining access changed during the approach');
         return;
       }
       tried.push(`all ${Math.min(8, stands.length)} together: ${route.status !== 'success' ? route.status : !at ? 'the way ends elsewhere' : 'the way wades or digs'}`);
@@ -124,7 +135,7 @@ async function approachDryMining(bot, task, p, { navigate, dig }) {
       const route = await surveyRoute(bot, task, movement, destination, 300);
       if (route.status !== 'success' || !(route.path || []).every(policy.allowed)) { tried.push(`${target}: ${route.status !== 'success' ? route.status : 'the way wades or digs'}`); continue; }
       await navigate(bot, task, destination, { timeoutMs: 15000, stallMs: 4000 });
-      if (!standingOk(bot, bot.entity.position) || !miningReach(bot, bot.entity.position, p)) throw new Error('Dry mining access changed during the approach');
+      if (!standingOk(bot, bot.entity.position) || !reachedAt(bot, target, p)) throw new Error('Dry mining access changed during the approach');
       return;
     }
   } finally { policy.restore(); }
