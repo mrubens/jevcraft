@@ -117,6 +117,13 @@ function askAgainBecause(bot, goal, kinds, now = Date.now()) {
   // Each way news once in the answer's time (note 2504): a piglin, an enderman or a forest coming in and out of reach as
   // the bot walks was news each time it came back. full-93 (2026-10-29 14:5xZ) was asked six times in three minutes,
   // rods_first answered four times, walking 255 blocks meanwhile.
+  // Endermen in reach while another way is held: asked again, once in five minutes (note 2522, the user: 'Is it even
+  // considering all the endermen it keeps walking by ... I think so yeah'). A way seen once in the answer's time was not
+  // news again (note 2504), and a bot walked by endermen for half an hour on a barter or a fortress search unasked.
+  if (kinds.includes('enderman') && h.pick !== 'hunt_enderman' && h.pick !== 'warped_forest' && now - (h.endermanAskedAt || h.at) >= 5 * 60000) {
+    h.endermanAskedAt = now;
+    return `endermen in reach now, the pearls still wanted, while ${h.pick.replaceAll('_', ' ')} holds`;
+  }
   const fresh = kinds.filter(k => !(h.offered || []).includes(k) && !(h.seenSince || []).includes(k));
   h.seenSince = [...new Set([...(h.seenSince || []), ...kinds])];
   if (fresh.length) return `a way to the pearls that was not on offer at the answer is real now: ${fresh.map(k => ({ enderman: 'an enderman in reach', forest: 'a warped forest known and open', barter: 'gold to throw with a piglin in reach', bastion: 'a bastion known, its gold to barter with', 'gold ore': 'nether gold ore within reach to mine and barter' })[k] || k).join(', ')}`;
