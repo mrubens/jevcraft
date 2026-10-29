@@ -19,3 +19,13 @@ test('the fight with the blazes here is said: begun, killed since and under what
   assert.match(s, /1 about within 24 now/);
   bot.emit('end');
 });
+
+test('a crowd of six or more is told how blazes despawn (note 2542)', () => {
+  const bf = require('../src/blaze-fight');
+  const bot = new EventEmitter();
+  const ents = {}; for (let i = 1; i <= 7; i++) ents[i] = { id: i, name: 'blaze', position: new Vec3(5, 64, i), isValid: true };
+  Object.assign(bot, { entity: { position: new Vec3(0, 64, 0) }, game: { dimension: 'the_nether' }, entities: ents, _goal: {} });
+  bf.install(bot);
+  assert.match(bf.says(bot), /more than 128 blocks off/);
+  bot.emit('end');
+});
