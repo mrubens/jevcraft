@@ -299,6 +299,11 @@ async function mineWithinReach(bot, task, { now = Date.now(), label = 'from wher
     console.log(`[passing ore] within reach and passed over: ${passed.slice(0, 4).map(([p, why]) => `${bot.blockAt(p)?.name?.replaceAll('_', ' ') || 'ore'} at (${p.x}, ${p.y}, ${p.z}), ${why}`).join('; ')}`);
   }
   let dug = 0;
+  // Each dig watched as the other digs are (vitals.js digWithAirGuard, note 2452): the threat and air checks every tenth
+  // of a second, and a dig that never settles bounded. Dug one after another unwatched, up to six blocks, a mob came on
+  // unanswered: full-58 (25587, 2026-10-29 05:54:4xZ), tunnelling to iron ore at y 23, its climb digging iron ore in
+  // passing, was hit from 20 to 12 with 4.8 s since the last check, and was killed by the zombie.
+  const digOne = (b, look) => task?.check ? require('./vitals').digWithAirGuard(bot, task, b) : require('./skills').digWithTool(bot, b, look);
   // One block between the eye and the ore, safe to dig (nothing liquid behind it, not the floor underfoot), is dug
   // and the ore after it (note 2402): the stairs and the mine step passed iron open to the air on its far side.
   for (const [p, why, hit] of passed.filter(x => x[2]).slice(0, 2)) {
@@ -311,8 +316,8 @@ async function mineWithinReach(bot, task, { now = Date.now(), label = 'from wher
     try {
       const again = bot.world?.raycast?.(eye, c.minus(eye).normalize(), c.distanceTo(eye) + 0.5);
       if (again && !(again.position.x === hit.x && again.position.y === hit.y && again.position.z === hit.z)) continue;
-      await require('./skills').digWithTool(bot, block, false);
-      await require('./skills').digWithTool(bot, bot.blockAt(p), true); dug++;
+      await digOne(block, false);
+      await digOne(bot.blockAt(p), true); dug++;
       console.log(`[climb ore] ${ore.name.replaceAll('_', ' ')} at (${p.x}, ${p.y}, ${p.z}) dug ${label}, the ${block.name.replaceAll('_', ' ')} before it first`);
     } catch (err) { if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
   }
@@ -320,7 +325,7 @@ async function mineWithinReach(bot, task, { now = Date.now(), label = 'from wher
     task?.check?.();
     const b = bot.blockAt(p);
     if (!b || !ids.includes(b.type)) continue;
-    try { await require('./skills').digWithTool(bot, b, true); dug++; console.log(`[climb ore] ${b.name.replaceAll('_', ' ')} at (${p.x}, ${p.y}, ${p.z}) dug ${label}`); }
+    try { await digOne(b, true); dug++; console.log(`[climb ore] ${b.name.replaceAll('_', ' ')} at (${p.x}, ${p.y}, ${p.z}) dug ${label}`); }
     catch (err) { if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
   }
   return dug;
