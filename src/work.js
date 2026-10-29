@@ -7376,6 +7376,17 @@ async function portalStep(bot, task, goal, save, client) {
         try { await tunnelToward(bot, task, goal, save, at, 'lava_for_portal'); }
         catch (err) { if (err.name === 'StaircaseStalled') { tries.error = `the staircase set aside: ${err.why}`.slice(0, 80); save(); } throw err; }
       };
+      // The way already dug walked first (note 2512): each trip to the lava for the cast dug a tunnel of its own, the
+      // one before standing open beside it. full-98 (25589, 2026-10-29 15:4xZ) went between its frame and its lava at
+      // (-172, 52, 447) by a new tunnel each bucket; the user, watching: 'Why is it digging a new path down to the lava
+      // when it already has one'.
+      if (goal.portalMethod.nearByStairs && d > 4) {
+        const before = bot.entity.position.distanceTo(at);
+        try { await navigate(bot, task, new goals.GoalNear(at.x, at.y, at.z, 3), { timeoutMs: Math.max(10000, Math.round(d * 1500)), stallMs: 4000 }); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
+        const after = bot.entity.position.distanceTo(at);
+        if (after <= 4.5) { console.log(`[lava] walked to the lava at (${at.x}, ${at.y}, ${at.z}) by the way there, ${Math.round(before)} blocks`); return false; }
+      }
       if (goal.portalMethod.nearByStairs) {
         // The tunnel dug straight at the lava first (bridging.js
         // tunnelStraight, note 914), the staircase where it makes no
