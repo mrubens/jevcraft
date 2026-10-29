@@ -49,6 +49,10 @@ function install(bot) {
     if (!bot.entity?.position || d.dimension !== bot.game?.dimension || bot.entity.position.distanceTo(d.at) <= SEEN_GONE) m.drops.delete(e.id);
   };
   bot.on('entitySpawn', look); bot.on('entityUpdate', look); bot.on('entityGone', gone);
+  // Where the bot died, kept as long as its drops last (note 2536): the corpse run's own record is gone once that run
+  // ends or is given up, and full-106 (25588, 2026-10-29 18:3xZ) was offered its death's diamond and iron chestplate
+  // 75 blocks under it, 'No route from here'.
+  bot.on('death', () => { const p = bot.entity?.position; if (p) { m.deaths = [...(m.deaths || []).filter(d => Date.now() - d.at < LIFE_MS), { x: p.x, y: p.y, z: p.z, dimension: bot.game?.dimension, at: Date.now() }]; } });
 }
 
 // The remembered drops still lying in this dimension, with the time each has left.
@@ -84,10 +88,12 @@ function deathAt(bot) {
 }
 function fetchOption(bot) {
   const dead = deathAt(bot);
+  const deaths = (memory(bot).deaths || []).filter(d => Date.now() - d.at < LIFE_MS && d.dimension === bot.game?.dimension);
+  const byDeath = d => deaths.some(x => Math.hypot(d.at.x - x.x, d.at.y - x.y, d.at.z - x.z) <= 8);
   // Not a drop a few seconds old (note 2532): the dig that made it takes it up itself, and the memory's walk sent at once
   // found its item not yet read and took nothing, 'reached, not picked up' (full-109, 25592, 2026-10-29 17:5xZ, raw iron
   // 2 blocks off from an ore just dug through five blocks).
-  const lying = remembered(bot).filter(d => d.distance <= 96 && d.secondsLeft >= 15 && Date.now() - d.seenAt >= 3000 && !(dead && Math.hypot(d.at.x - dead.x, d.at.y - dead.y, d.at.z - dead.z) <= 8));
+  const lying = remembered(bot).filter(d => d.distance <= 96 && d.secondsLeft >= 15 && Date.now() - d.seenAt >= 3000 && !(dead && Math.hypot(d.at.x - dead.x, d.at.y - dead.y, d.at.z - dead.z) <= 8) && !byDeath(d));
   if (!lying.length) return null;
   const list = lying.slice(0, 8).map(d => `${d.count} ${words(d.name)} ${d.distance} blocks off${Math.abs(d.dy) >= 3 ? ` (${Math.abs(d.dy)} ${d.dy < 0 ? 'down' : 'up'})` : ''}, about ${d.secondsLeft >= 90 ? `${Math.round(d.secondsLeft / 60)} minutes` : `${d.secondsLeft} seconds`} before it vanishes${d.tries ? `, tried ${d.tries} time${d.tries > 1 ? 's' : ''} (last: ${d.lastWhy})` : ''}`).join('; ');
   const far = Math.max(...lying.slice(0, 8).map(d => d.distance));

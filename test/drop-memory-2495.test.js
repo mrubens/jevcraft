@@ -40,3 +40,18 @@ test('a drop past its five minutes is not offered (note 2495)', () => {
   assert.equal(dm.remembered(bot, Date.now() + 5 * 60000 + 1).length, 0);
   assert.equal(dm.fetchOption(bot), null);
 });
+
+test('drops lying where the bot died are left to the corpse run even once its record is gone (note 2536)', () => {
+  const { EventEmitter } = require('events');
+  const { Vec3 } = require('vec3');
+  const dm = require('../src/drop-memory');
+  const bot = new EventEmitter();
+  Object.assign(bot, { entity: { position: new Vec3(0, -13, 0) }, game: { dimension: 'overworld' }, entities: {}, registry: { entitiesByName: { item: { id: 1 } }, items: {} }, inventory: { items: () => [] } });
+  dm.install(bot);
+  bot.emit('death');
+  const e = { id: 7, name: 'item', position: new Vec3(1, -13, 1), getDroppedItem: () => ({ name: 'diamond', count: 1 }) };
+  bot.entities[7] = e; bot.emit('entitySpawn', e);
+  for (const d of bot._dropMemory.drops.values()) d.seenAt -= 5000;
+  bot.entity.position = new Vec3(0, 62, 0);
+  assert.strictEqual(dm.fetchOption(bot), null);
+});
