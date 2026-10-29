@@ -9552,9 +9552,21 @@ class Survival {
         // shorter one 16 and 19 (block_creeper 75 or 76 of 80 as recorded).
         return ` A standoff: ${standoffSays(standoff)}. Behind the block it neither lights nor leaves, so staying ends nothing and the work waits. It ends with the creeper dead,${fightSays}; or with the bot more than ${fr} blocks from it, past the range a creeper follows a player from: about ${Math.round(away)} blocks more, about ${awaySeconds} seconds at a sprint (it walks after the bot at about ${ce.APPROACH} blocks a second, and lights only within ${ce.LIGHTS_AT} blocks with the bot in its sight)${noRun ? '; but the run has found no way from here (said on it), so of the two only the fight is open now' : ''}.`;
       })() : '';
+    // The shooters in sight, which this block does not stop (note 2496): full-94 (25586, 2026-10-29 13:27Z) chose
+    // block_creeper again and again for a creeper 3 blocks off out of sight, each held a second or three, while a skeleton
+    // in sight 13 blocks off shot it from 14.2 to none; take_cover was offered and not chosen. full-92 the same at 12:56Z.
+    let shootersSays = '';
+    try {
+      const { shooter } = require('./mob-policy');
+      const sh = require('./danger').threats(bot, 32).filter(t => t.visible && t.entity.id !== c.entity.id && shooter(t.entity));
+      if (sh.length) {
+        const hitBy = n => Date.now() - (bot._hurtBy?.[n] || 0) < 6000;
+        shootersSays = ` This block is in the creeper's line only: ${sh.slice(0, 3).map(t => `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off${hitBy(t.entity.name) ? ', hitting the bot now,' : ''}`).join(' and ')} in sight ${sh.length === 1 ? 'shoots' : 'shoot'} on past it; a block in a shooter's own line (take_cover) or out of its sight is the way out of its shots.`;
+      }
+    } catch (_) { shootersSays = ''; }
     const description = behind
-      ? `Stay behind the ${plan.stoppedBy.name.replaceAll('_', ' ')} at ${plan.stoppedBy.cell}, in the line from the eyes of ${what} to the bot's.${rule}${fuse}${next}${othersSays}${standoffNow}${recSays}` + costSays(cost, bot.health, rest, { done: 'Behind it' }) + edge
-      : `Put ${n === 1 ? 'a block' : `${n} blocks, two high,`} in the line from the eyes of ${what} to the bot's, ${whereSays(bot, plan.cuts)}: about ${Math.round(cutSeconds * 10) / 10} seconds until the line is cut${n > 1 ? ` (the ${plan.cutAfter === 1 ? 'first' : 'second'} block), ${Math.round(total * 10) / 10} for both` : ''}, and stay behind it.${rule}${fuse}${verdict}${next}${othersSays}${standoffNow}${recSays}` + costSays(cost, bot.health, rest, { doing: 'placing', done: 'Behind it' }) + edge;
+      ? `Stay behind the ${plan.stoppedBy.name.replaceAll('_', ' ')} at ${plan.stoppedBy.cell}, in the line from the eyes of ${what} to the bot's: it does not see the bot now.${shootersSays}${rule}${fuse}${next}${othersSays}${standoffNow}${recSays}` + costSays(cost, bot.health, rest, { done: 'Behind it' }) + edge
+      : `Put ${n === 1 ? 'a block' : `${n} blocks, two high,`} in the line from the eyes of ${what} to the bot's, ${whereSays(bot, plan.cuts)}: about ${Math.round(cutSeconds * 10) / 10} seconds until the line is cut${n > 1 ? ` (the ${plan.cutAfter === 1 ? 'first' : 'second'} block), ${Math.round(total * 10) / 10} for both` : ''}, and stay behind it.${shootersSays}${rule}${fuse}${verdict}${next}${othersSays}${standoffNow}${recSays}` + costSays(cost, bot.health, rest, { doing: 'placing', done: 'Behind it' }) + edge;
     return { expects: { damage, seconds: cost.seconds, oneHit }, description, ...(standoffNow ? { standoff: ` This ends the standoff with the creeper (${standoffSays(standoff)}).` } : {}),
       run: async () => {
         const e = bot.entities?.[c.entity.id] || c.entity;

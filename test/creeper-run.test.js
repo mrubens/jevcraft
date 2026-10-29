@@ -298,7 +298,7 @@ test('on the bridge over the creeper, out of its sight, staying behind the bridg
   const survival = new Survival(bot, { navigate: async () => {}, place: async () => {} }, { state: { shelters: [] } });
   const stay = survival.stanceOptions(new Task('x'), {}, () => {}, threats(bot, 24), false).block_creeper;
   assert.ok(stay, 'offered');
-  assert.match(saidAs(survival, stay), /^The creeper [^]*?\. Stay behind the netherrack at \(-40, 13, -5\), in the line from the eyes of the creeper \(3\.1 blocks off\) to the bot's\./);
+  assert.match(saidAs(survival, stay), /^The creeper [^]*?\. Stay behind the netherrack at \(-40, 13, -5\), in the line from the eyes of the creeper \(3\.1 blocks off\) to the bot's: it does not see the bot now\./);
   assert.match(stay.description, /within 3 blocks of the bot the creeper stands where it is, lit or not, and out of its sight it does not light/);
   assert.equal(stay.expects.damage, 0.5, "out of sight, the record's 4 blasts in 160 (note 2016)");
 });
