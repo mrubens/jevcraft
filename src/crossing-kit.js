@@ -149,6 +149,11 @@ function portalDeathsSays(bot, goal, now = Date.now()) {
   const near = Math.round(Math.min(...deaths.map(d => Math.hypot(d.position.x - exit.x, d.position.z - exit.z))));
   return ` Where this crossing comes out, the Nether portal at (${exit.x}, ${exit.y}, ${exit.z}): ${deaths.length} death${deaths.length === 1 ? '' : 's'} within ${PORTAL_DEATH_REACH} blocks of it in the last 24 hours (${Object.entries(by).map(([c, n]) => `${n} ${c}`).join(', ')}), the nearest ${near} blocks from the portal, the last ${ago < 120 ? `${ago} minutes` : `${Math.round(ago / 60)} hours`} ago; each came back to life in the Overworld with nothing carried. A portal made elsewhere in the Overworld comes out elsewhere in the Nether: 128 blocks from this one, about 16 blocks from its Nether side.`;
 }
+// What crossing short of food came to on the full runs of 2026-10-29 (note 2500): of four crossings with 4 to 24 food
+// points carried, three went back through the portal for food 0 to 13 minutes after crossing (full-88, full-89,
+// full-91), and full-88 never got back into the Nether: it hunted in the Overworld at 2 health for an hour and was shot
+// dead. The one with 91 points (full-92) has not gone back.
+const CROSSED_SHORT = ' The record of the full runs of 2026-10-29: of four crossings made with 4 to 24 food points, three went back through the portal for food within 0 to 13 minutes of crossing, the walk back, the food and the walk in again each time, and one of them never got back into the Nether (it hunted at 2 health and died); the crossing made with 91 points did not go back.';
 function kitItems(bot) {
   if (bot.game?.gameMode !== 'survival') return [];
   const items = [];
@@ -159,6 +164,7 @@ function kitItems(bot) {
     const stay = netherStay(bot), want = require('./food-reserve').crossingWant(bot, null, stay);
     items.push({ key: 'food', rung: 'nether_food', short: food < want, carried: food, wants: want,
       says: `Food: ${food} food points carried (${meals || 'nothing to eat'}); the code would take ${want}, food for the whole stay${want > stay.points ? ` (the stay's ${stay.points}, raised to the ${want} the record keeps in the Nether: under it, health fell under 8 with nothing that heals within half an hour 7% to 70% of the time, food-reserve.js)` : ''}. ${staySays(stay)} ${require('./food-facts').regenSays(bot)} ${require('./food-facts').clockSays(bot)} ${require('./food-facts').recordSays(bot)} A fortress trip is fighting and running; in the Nether, hoglins are the meat (a mushroom stew and a bastion's chests are the only other food there, note 639), and a hoglin hits for three to eight and has forty health, so a hurt bot with nothing to eat is left to go back through the portal for food or fight one at the health it has.${lastSays}` });
+    if (food < want) items.at(-1).says += CROSSED_SHORT;
     const health = Math.round(bot.health ?? 20), hunger = bot.food ?? 20;
     const back = health >= NETHER_HEALTH ? '' : hunger >= 18
       ? ` At hunger ${hunger} it comes back about a point every four seconds: about ${(NETHER_HEALTH - health) * 4} seconds to ${NETHER_HEALTH}.`
