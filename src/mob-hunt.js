@@ -2665,6 +2665,7 @@ async function mineThenCross(bot, task, goal, save, actions, state, cross) {
   // Unmade, the crossing goes on as surveyed, by hand.
   await makePickaxe(bot, task, goal, save, actions);
   const survey = surveyCrossing(bot, target, { cells: FORTRESS_CROSS });
+  if (!survey.cells || survey.gain < 1) { console.log(`[restock] no crossing to make after the mining: ${blocksCarried(bot)} blocks carried${survey.stoppedBy ? `, ${survey.stoppedBy}` : ''}`); }
   if (!survey.cells || survey.gain < 1) return `no crossing to make after the mining (${blocksCarried(bot)} blocks carried${state.lastRestock?.why ? `; the mining ended: ${state.lastRestock.why}` : ''})${survey.stoppedBy ? `: ${survey.stoppedBy}` : ''}`;
   goal.step = { action: 'cross_toward', what: 'the fortress', target: { x: target.x, y: target.y, z: target.z }, cells: survey.cells, dig: survey.dig, bridge: survey.bridge, carried: survey.carried }; save();
   try { await bridgeTo(bot, task, target, { maxBlocks: survey.bridge, maxSteps: survey.cells }); }
@@ -3689,6 +3690,9 @@ async function restockStep(bot, task, goal, save, actions, state) {
     result = { gained: blocksCarried(bot) - have, why: err.message };
   }
   state.lastRestock = { at: Date.now(), from: r.from || { x: Math.round(bot.entity.position.x), z: Math.round(bot.entity.position.z) }, gained: result.gained, why: result.why };
+  // Said in the log (note 2460): full-68 (25591, 2026-10-29 07:1xZ) chose blocks_then_cross three times, 0 blocks
+  // carried, and each 'changed nothing within 66 seconds' with no word of what the mining found.
+  console.log(`[restock] ${result.gained || 0} of ${r.want} blocks gained (${blocksCarried(bot)} carried)${result.why ? `: ${String(result.why).slice(0, 160)}` : ''}`);
   delete state.restock; save();
   return true;
 }
