@@ -2504,11 +2504,15 @@ const swapTo = (step, name) => name === step.block ? step : { ...step, block: na
 function logInView(bot, step) {
   const family = LOG.test(step.block || '') ? LOG : NETHER_STEM.test(step.block || '') ? NETHER_STEM : null;
   if (!family || typeof bot.findBlocks !== 'function') return step;
+  // In view and not set aside as out of reach (note 2530): one oak across a river, each of its logs set aside 'No reachable
+  // dry standing position', held the step to oak while a jungle stood beside the bot. full-107 (25589, 2026-10-29
+  // 17:2xZ) walked 113 blocks for wood past it; the user: 'Look at these trees'.
+  const open = names => find(bot, names, 32, 16).filter(p => !isSetAside(bot._goal || {}, 'reach', p));
   const kept = bot._logKind && Date.now() - bot._logKind.at < LOG_KIND_MS && family.test(bot._logKind.name) ? bot._logKind.name : null;
-  if (kept && find(bot, [kept], 32, 1).length) { bot._logKind = { name: kept, at: Date.now() }; return swapTo(step, kept); }
-  if (find(bot, [step.block], 32, 1).length) { bot._logKind = { name: step.block, at: Date.now() }; return step; }
+  if (kept && open([kept]).length) { bot._logKind = { name: kept, at: Date.now() }; return swapTo(step, kept); }
+  if (open([step.block]).length) { bot._logKind = { name: step.block, at: Date.now() }; return step; }
   const names = Object.keys(bot.registry?.blocksByName || {}).filter(n => family.test(n) && n !== step.block);
-  const other = find(bot, names, 32, 1)[0];
+  const other = open(names)[0];
   const name = other && bot.blockAt(other)?.name;
   if (!name) return step;
   bot._logKind = { name, at: Date.now() };

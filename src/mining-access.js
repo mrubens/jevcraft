@@ -18,6 +18,15 @@ function dryStanding(bot, point) {
   return solid(bot.blockAt(supportCell(point)));
 }
 
+// Shallow water stood in to dig, as a player stands at a river's edge to chop the tree in it (note 2530): the feet in a
+// water cell over solid ground, the head in the air. full-107 (25589, 2026-10-29 17:2xZ) walked 113 blocks looking for
+// wood past oaks at (96 to 99, 63 to 66, 640) by the water, 'No reachable dry standing position' at each; the user,
+// watching: 'There are trees'.
+function wadingStanding(bot, point) {
+  const feet = point.floored(), at = n => bot.blockAt(feet.offset(0, n, 0));
+  return ['water', 'bubble_column'].includes(at(0)?.name) && solid(at(-1)) && clear(at(1));
+}
+const standingOk = (bot, point) => dryStanding(bot, point) || wadingStanding(bot, point);
 function miningReach(bot, point, blockPosition) {
   const feet = point.floored();
   // Underfoot is reachable only as a one-block drop onto something solid.
@@ -38,7 +47,7 @@ function dryMiningPositions(bot, blockPosition, limit = 12) {
     if (seen.has(key)) return;
     seen.add(key);
     const standing = p.offset(0.5, 0, 0.5);
-    if (dryStanding(bot, p) && miningReach(bot, standing, blockPosition) && safeFromHostiles(bot, standing)) positions.push(p);
+    if (standingOk(bot, p) && miningReach(bot, standing, blockPosition) && safeFromHostiles(bot, standing)) positions.push(p);
   };
   add(current);
   for (let distance = 1; distance <= 3 && positions.length < limit; distance++) {
@@ -87,7 +96,7 @@ async function dryRouteNow(bot, task, p, { budgetMs = 400 } = {}) {
   return false;
 }
 async function approachDryMining(bot, task, p, { navigate, dig }) {
-  if (dryStanding(bot, bot.entity.position) && miningReach(bot, bot.entity.position, p) && bot.canDigBlock(bot.blockAt(p))) return;
+  if (standingOk(bot, bot.entity.position) && miningReach(bot, bot.entity.position, p) && bot.canDigBlock(bot.blockAt(p))) return;
   const movement = bot.pathfinder.movements, policy = miningMovement(bot);
   try {
     for (const target of dryMiningPositions(bot, p).slice(0, 8)) {
@@ -96,7 +105,7 @@ async function approachDryMining(bot, task, p, { navigate, dig }) {
       const route = await surveyRoute(bot, task, movement, destination, 300);
       if (route.status !== 'success' || !(route.path || []).every(policy.allowed)) continue;
       await navigate(bot, task, destination, { timeoutMs: 15000, stallMs: 4000 });
-      if (!dryStanding(bot, bot.entity.position) || !miningReach(bot, bot.entity.position, p)) throw new Error('Dry mining access changed during the approach');
+      if (!standingOk(bot, bot.entity.position) || !miningReach(bot, bot.entity.position, p)) throw new Error('Dry mining access changed during the approach');
       return;
     }
   } finally { policy.restore(); }
