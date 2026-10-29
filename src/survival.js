@@ -6805,6 +6805,8 @@ class Survival {
         : (held.ids ? newcomer : held.kinds !== kinds) ? `a newcomer within ${STANCE_NEWCOMER}: ${newcomer?.entity?.name || kinds}` : hitSince ? 'hit while leaving them be' : offSpot ? 'off its spot' : lineAgain.length ? 'a shooter has its line again' : shotThrough ? 'shot through' : blockAgain ? 'the creeper block is due again' : pushedOpen ? 'pushed open' : held.lethalAgain ? 'lethal again'
         : damageOver ? `more damage than priced (${Math.round((held.health - (bot.health ?? 0)) * 10) / 10} of ${held.health} gone in ${Math.round(elapsed * 10) / 10} s)` : !inTime ? 'its time is up' : 'no reason named';
       console.log(`[stance] ${String(held.choice).replaceAll('_', ' ')} let go after ${Math.round((Date.now() - held.at) / 100) / 10} s: ${why}`);
+      // Kept for the next stance question (note 2549): each stance's time held and why it ended.
+      this.state.stanceEnds = [...(this.state.stanceEnds || []).filter(e => Date.now() - e.at < 60000), { at: Date.now(), choice: held.choice, seconds: Math.round((Date.now() - held.at) / 100) / 10, why, health: Math.round((bot.health ?? 0) * 10) / 10 }].slice(-8);
     }
     // At the end of its time, a hold with nothing new is not a question
     // (holds.js, note 599): held on, 15, 30, then 60 seconds at a time, while
@@ -7180,6 +7182,15 @@ class Survival {
       // what cover gives up at full health (cage-yield.js, note 702).
       const cageSoFar = (() => { try { return require('./cage-yield').annotate(bot, goal, options); } catch (_) { return null; } })();
       if (cageSoFar) state.cageSoFar = cageSoFar;
+      // The stances of the last minute, each with how long it held and why it ended (note 2549): Fable's audit of the
+      // day's 25 skeleton and zombie deaths (2026-10-29) found about ten in crowds of 7 to 19 mobs where the stance was
+      // let go and asked again every 0 to 5 seconds, nothing ever carried out while the arrows landed: full-92 let shield
+      // guard go eight times in twenty seconds, 'the crowd grew', full-113 chose pillar six times, each let go after 0.3
+      // to 7 seconds. The counts were said; how short each had been was not.
+      try {
+        const ends = (this.state.stanceEnds || []).filter(e => Date.now() - e.at < 60000);
+        if (ends.length >= 2) state.stancesJustNow = `the last minute's stances, oldest first: ${ends.map(e => `${String(e.choice).replaceAll('_', ' ')} held ${e.seconds} s, ended '${e.why}' at ${e.health} health`).join('; ')}. ${ends.filter(e => e.seconds < 3).length} of ${ends.length} held under three seconds; a stance let go before it is under way does nothing for the bot.`;
+      } catch (_) { /* none said */ }
       try { const bf = require('./blaze-fight').says(bot); if (bf) state.blazeFight = bf; } catch (_) { /* no record */ }
       // A hoglin about when food is what the bot lacks: killed, it is the
       // food (fortress-away.js, note 702; 25590 was held by one at 10 health,
