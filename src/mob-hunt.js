@@ -1295,7 +1295,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
     const blazesSay = rodBlazesSays(bot, drop.position);
     tree[`fetch_rod_${drop.id}`] = { description: `Fetch the ${state.item.replaceAll('_', ' ')} lying on the ground ${Math.round(distance)} blocks off at (${p.x}, ${p.y}, ${p.z}), from an earlier kill.` +
       `${nearLava ? ' Lava is within two blocks of it: the walk there stands that close.' : ''}${reachable ? '' : ' No standing spot near it reads as dry and safe right now; the walk there may fail and find nothing changed.'}${blazesSay}`,
-      run: () => collectNearbyDrops(bot, task, state.item, { radius: 10, origin: drop.position.clone(), timeoutMs: 6000, move: actions.navigate, hostilesOk: true }) }; // the walk past the blazes it names, Jev's choice (note 2325)
+      run: () => collectNearbyDrops(bot, task, state.item, { radius: 10, origin: drop.position.clone(), timeoutMs: 6000, move: actions.navigate, hostilesOk: true, allowExcavation: true }) }; // the walk past the blazes it names, Jev's choice (note 2325)
   }
   // The rods got so far out through the portal to a chest on the Overworld
   // side, and back for the rest (rod-bank.js, note 760).
@@ -1673,7 +1673,10 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   // A drop on the floor is a drop not carried. The arena killed a blaze and
   // scored nothing three times over because the rod lay where it fell: the
   // fight's own pickup only runs when the fight's own code did the killing.
-  if (await collectNearbyDrops(bot, task, step.item, { radius: 12, timeoutMs: 5000, move: actions.navigate })) {
+  // The block between dug as the other pickups may (note 2450, as 2419): the hunt's kill in a box or a slit drops outside
+  // its wall. full-60 (25591, 2026-10-29 05:4xZ) held its box by the spawner and left a blaze rod 2 blocks off, 'no
+  // short clear route' from both spots, 7 still wanted.
+  if (await collectNearbyDrops(bot, task, step.item, { radius: 12, timeoutMs: 5000, move: actions.navigate, allowExcavation: true })) {
     goal.step = { action: 'collect_drop', item: step.item, carried: countOf(bot, step.item) }; save(); return;
   }
   // A rod on a floor the bot is standing on top of cannot be walked to. The
