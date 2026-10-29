@@ -26,8 +26,11 @@ while :; do
     LAST=$(ls -t "$ROOT/.bot-state/flight/$ID"-*.jsonl 2>/dev/null | head -1)
     [ -n "$LAST" ] || continue
     AGE=$(( $(date +%s) - $(stat -f %m "$LAST") ))
-    [ "$AGE" -lt 60 ] && continue
-    log "flight record quiet ${AGE}s; restarting bot $BOT"
+    # The bot's own log quiet five minutes is a work loop waiting on something that never comes, though the flight
+    # record's heartbeat goes on (full-91, full-89, full-88 on 2026-10-29, each killed by hand at low CPU).
+    LAGE=$(( $(date +%s) - $(stat -f %m "$OUT") ))
+    if [ "$AGE" -lt 60 ] && [ "$LAGE" -lt 300 ]; then continue; fi
+    log "flight record quiet ${AGE}s, log quiet ${LAGE}s; restarting bot $BOT"
     kill "$BOT" 2>/dev/null; sleep 5; kill -9 "$BOT" 2>/dev/null
   else
     log "no bot; starting one"
