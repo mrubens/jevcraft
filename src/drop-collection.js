@@ -362,7 +362,9 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
         let failedWalk = null;
         // Fifteen seconds (note 2493): with the event loop held 2 to 5 s at a time on every run, six timed out on a dig of a
         // few blocks: full-90 (25586, 2026-10-29 13:0xZ), the raw gold 3.6 off, 'navigation timed out (dig true, towers true)'.
-        try { await move(bot, task, new goals.GoalNear(c.x, c.y, c.z, 1), { timeoutMs: 15000, stallMs: 5000, hostilesOk, stopWhen: () => gained() }); }
+        // Into the drop's own cell, not beside it (note 2508): a cell off is the edge of a player's pickup reach, and full-98
+        // (25589, 2026-10-29 15:2xZ) 'arrived, not picked up' 1.4 blocks from two raw iron, the walk done one cell short.
+        try { await move(bot, task, new goals.GoalNear(c.x, c.y, c.z, 0), { timeoutMs: 15000, stallMs: 5000, hostilesOk, stopWhen: () => gained() }); }
         catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; failedWalk = err; }
         for (const until = Date.now() + 500; !gained() && Date.now() < until;) { task.check(); await sleep(50); }
         if (gained()) { console.log(`[drops] the ${item.replaceAll('_', ' ')} at ${c} taken by a walk over to it`); break; }
