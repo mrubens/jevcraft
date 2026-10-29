@@ -180,6 +180,16 @@ function overlap(bot, goal, r) {
     fortress: fortress ? `a fortress known ${fortress.distance} blocks off at (${fortress.landmark.x}, ${fortress.landmark.z})${forestToFortress != null ? `, ${forestToFortress} blocks from the warped forest known` : ''}` : 'no fortress known yet: the rods\' step is searching for one',
     gold: gold.total ? `gold for ${plural(gold.total, 'ingot')} carried, ${gold.throwable} to throw once a gold piece is worn (${gold.dressed ? 'one is worn or carried' : 'golden boots take four first'}): about ${Math.floor(gold.throwable / record.BARTER_TABLE.perPearl * 10) / 10} pearls at about ${record.BARTER_TABLE.perPearl} ingots a pearl (the game's barter table)` : 'no gold carried',
     portalBack: portal != null ? `the portal back ${portal} blocks off` : 'no portal back known',
+    // The barter's whole bill for what is still wanted (note 2519, the user: 'why is this jev trying to barter with
+    // piglins?' ... 'Yeah'): the options said the price a pearl, not the pearls left times it. full-98 (25589, 2026-10-29)
+    // chose mine_gold_for_barter twice for 13 pearls, about 117 ingots, with 7 carried.
+    barterBill: (() => {
+      if (!n.pearlsLeft) return undefined;
+      const per = require('./pearl-record').BARTER_TABLE?.perPearl || 9, ingots = Math.ceil(n.pearlsLeft * per), have = gold.total || 0;
+      const ores = Math.ceil(Math.max(0, ingots - have) * 9 / 4);
+      const goes = (goal?.barterMineGoes || []), dug = goes.reduce((a, g) => a + (g.dug || 0), 0);
+      return `By barter alone the ${n.pearlsLeft} pearls still wanted are about ${ingots} gold ingots at the game's ${per} a pearl (${have} carried), so about ${ores} nether gold ore more to mine at about four nuggets an ore, nine nuggets an ingot${goes.length ? `; this run's mining for the barter so far: ${dug} ore in ${goes.length} go${goes.length === 1 ? '' : 'es'}` : ''}.`;
+    })(),
     // What a pearl way costs the rods (note 2502): chosen, it holds the fortress search and the blazes up to half an hour,
     // asked again sooner only at a named change. full-86 (2026-10-29) was asked ten times and never chose rods_first,
     // 36 minutes of slot fights for 2 pearls, 0.5 minutes of fortress search in an hour.
@@ -202,10 +212,15 @@ function fightSays(bot, n) {
   } catch (_) { return 'no fight figure (the estimate could not be worked out).'; }
 }
 
+// What a pearl way first came to on 2026-10-29's full runs (note 2519; Fable's measure of the day's Nether, and the user:
+// 'seems like jev should look for a fortress').
+// Away from a warped forest only: in one, where endermen come many at a time, the slot's record is 16 to 21 pearls an
+// hour (the user: 'it should depend what it finds ... a forest with a ton of endermen, it should get pearls').
+const DAY_PEARLS_FIRST = ' On 2026-10-29\'s full runs six bots in the Nether took a pearl way first away from a warped forest (slot fights on open ground, stalking, a barter) and got 0 to 4 pearls in 30 to 100 minutes there, none of them fighting a blaze; the one that went to its fortress got its first rod in its first minute at it (full-93). In a warped forest, endermen many at a time, the slot\'s record is 16 to 21 pearls an hour.';
 function tree(bot, goal, r, now = Date.now()) {
   const o = overlap(bot, goal, r), out = {};
   out.rods_first = { ladderNext: true, description: inNether(bot)
-    ? `Go on with the rods now: ${o.fortress}; rods ${o.rods}. The pearls then, or while the rods rest: a warped forest's endermen, a barter, or the Overworld's night hunt. ${record.routeSays('rods_first', goal)}`
+    ? `Go on with the rods now: ${o.fortress}; rods ${o.rods}. The pearls then, or while the rods rest: a warped forest's endermen, a barter, or the Overworld's night hunt. ${record.routeSays('rods_first', goal)}${DAY_PEARLS_FIRST}`
     : `Go on to the Nether for the rods now: rods ${o.rods}. The pearls then, or while the rods rest: a warped forest's endermen, a barter, or the Overworld's night hunt. ${record.routeSays('rods_first', goal)}` };
   if (r.enderman) {
     const e = r.enderman.nearest.e, p = e.position;
