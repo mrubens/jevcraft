@@ -178,6 +178,39 @@ async function forageChoices(bot, task, goal, save, actions, state, { target = 1
         finally { task.interruptCheck = outerCheck; }
       } };
   }
+  // Melons and pumpkin pie (note 2474, the user: 'Jev doesn't seem interested in pumpkin. Can he eat it?'): only cooking,
+  // bread, the hunts, fishing and farms were offered. A melon block broken drops three to seven slices, two points each,
+  // no furnace; a pumpkin, a sugar (one sugar cane) and an egg make a pie of eight points at a crafting table.
+  const near = name => { const id = bot.registry?.blocksByName?.[name]?.id; if (id === undefined || typeof bot.findBlocks !== 'function') return []; try { return bot.findBlocks({ matching: id, maxDistance: 32, count: 8 }) || []; } catch (_) { return []; } };
+  const here = bot.entity?.position;
+  const melons = /overworld/.test(String(bot.game?.dimension || 'overworld')) ? near('melon') : [];
+  if (melons.length && bot.registry.itemsByName.melon_slice) {
+    const off = here ? Math.round(Math.min(...melons.map(p => p.distanceTo(here)))) : null;
+    const blocks = Math.min(melons.length, Math.max(1, Math.ceil((target - foodSupply(bot)) / 10)));
+    choices.harvest_melons = { description: { action: `Break ${blocks} of the ${melons.length} melon block${melons.length === 1 ? '' : 's'} within 32 blocks${off === null ? '' : `, the nearest ${off} blocks off`}: each drops 3 to 7 melon slices, 2 food points a slice, eaten as they are, no furnace or fuel; a slice fills little, so it is many bites for a meal.`,
+      melonBlocks: melons.length, pointsAdded: blocks * 10 },
+      run: async () => {
+        goal.survivalAction = { action: 'harvest_melons', at: new Date().toISOString() }; save();
+        const outerCheck = task.interruptCheck; task.interruptCheck = () => checkThreats(bot);
+        try { await actions.acquireStep(bot, task, 'melon_slice', count(bot, 'melon_slice') + blocks * 3, goal, save); }
+        finally { task.interruptCheck = outerCheck; }
+      } };
+  }
+  const pumpkins = count(bot, 'pumpkin') + (/overworld/.test(String(bot.game?.dimension || 'overworld')) ? near('pumpkin').length : 0);
+  const sweet = count(bot, 'sugar') + count(bot, 'sugar_cane') + (/overworld/.test(String(bot.game?.dimension || 'overworld')) ? near('sugar_cane').length : 0);
+  const eggs = count(bot, 'egg');
+  if (pumpkins > 0 && eggs > 0 && sweet > 0 && bot.registry.itemsByName.pumpkin_pie) {
+    const pies = Math.min(pumpkins, eggs, sweet, Math.max(1, Math.ceil((target - foodSupply(bot)) / 8)));
+    choices.bake_pumpkin_pie = { description: { action: `Make ${pies} pumpkin pie${pies === 1 ? '' : 's'}: each is a pumpkin (${count(bot, 'pumpkin')} carried, ${pumpkins - count(bot, 'pumpkin')} within 32 blocks), a sugar from a sugar cane (${count(bot, 'sugar') + count(bot, 'sugar_cane')} carried, ${sweet - count(bot, 'sugar') - count(bot, 'sugar_cane')} within 32) and an egg (${eggs} carried), crafted at a crafting table, no furnace; 8 food points a pie.`,
+      pies, pointsAdded: pies * 8 },
+      valid: () => count(bot, 'egg') >= 1,
+      run: async () => {
+        goal.survivalAction = { action: 'bake_pumpkin_pie', amount: pies, at: new Date().toISOString() }; save();
+        const outerCheck = task.interruptCheck; task.interruptCheck = () => checkThreats(bot);
+        try { await actions.acquireStep(bot, task, 'pumpkin_pie', count(bot, 'pumpkin_pie') + pies, goal, save); }
+        finally { task.interruptCheck = outerCheck; }
+      } };
+  }
   const landPreyInView = await candidates(bot, task, state);
   // Cod and salmon in open water beside them (fishing.js, note 1203): on
   // 25588's map of ocean and shore (2026-10-04 07:29 to 08:27Z) no land
