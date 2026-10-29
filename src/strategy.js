@@ -306,7 +306,15 @@ function rungOption(rung, first, bot, goal, planFor = null) {
   // came to, the same facts the Nether now says of going without it.
   const level = bot && goal ? require('./levels').rungLevelSays(bot, goal, rung.phase) : '';
   const record = require('./kit-record').rungRecordSays(rung.phase, bot?.entity?.position?.y);
-  return { description: `Get ${what}${why ? ` (${why})` : ''}.${kit}${rung.kit ? '' : spareSays(bot, goal, rung)}${bot && goal ? searchSoFar(bot, goal, rung) : ''}${bot && goal ? woolTrip(bot, goal, rung) : ''}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}${spent}${without}${bareRate}${bareBelow}${belowSays}${level}${record}${netherCost}`, rung, ladderNext: first };
+  // The shield said with the early deaths of the full runs (note 2457): its record is of the first Nether stays, and
+  // the deaths before the Nether went unsaid. Of the 8 Overworld deaths in a run's first 40 minutes from full-40 to
+  // full-66 (2026-10-28 22:38Z to 10-29 06:17Z), 7 were with no shield, 6 of them with the iron pickaxe made, shot or
+  // struck in the caves mining iron (full-65 at 8 minutes, full-66 at 9, full-67 at 10). Said, not ruled: notes 2453
+  // and 2455 put the shield before the iron pickaxe in code, and the ladder's optional rungs before the Nether are
+  // Jev's to take up here, so neither changed a run.
+  const earlySays = rung.phase === 'shield' && goal && !goal.gameProgress?.milestones?.nether_entered
+    ? ' On the full runs of 2026-10-28 to 10-29, 7 of the 8 deaths in the Overworld in a run\'s first 40 minutes were with no shield, 6 of them with the iron pickaxe already made, shot by skeletons or struck by zombies in the caves while mining iron; a shield takes one iron ingot and six planks.' : '';
+  return { description: `Get ${what}${why ? ` (${why})` : ''}.${kit}${rung.kit ? '' : spareSays(bot, goal, rung)}${bot && goal ? searchSoFar(bot, goal, rung) : ''}${bot && goal ? woolTrip(bot, goal, rung) : ''}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}${spent}${without}${bareRate}${bareBelow}${belowSays}${level}${record}${earlySays}${netherCost}`, rung, ladderNext: first };
 }
 // A pickaxe rung with a pickaxe still carried is a spare: the ladder counts
 // one under a fifth of its uses (or sixty-four) as worn, and said only
