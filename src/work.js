@@ -3027,7 +3027,21 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
       // turned between iron ores all round it for two minutes.
       const found = find(bot, names, 64, 16).filter(p => safeFromHostiles(bot, p) && !isSetAside(goal, 'reach', p));
       const held = goal.tunnelOre && found.find(p => p.x === goal.tunnelOre.x && p.y === goal.tunnelOre.y && p.z === goal.tunnelOre.z);
-      const ore = held || oreToTunnel(found, bot.entity.position, step.depth, step.count ?? 1);
+      // The nearest found through the rock or one down at the ore's depth is Jev's (mining_depth, note 2510), as it is
+      // for ore in view: the rule passed a vein 20 blocks off for one 38 off at the depth. full-102 (25592, 2026-10-29
+      // 15:3xZ) tunnelled to deepslate iron at y -11 and -13 past iron nearer; the user: 'Jev keeps walking by iron ...
+      // Yes to jev'.
+      let ore = held || null;
+      if (!ore && found.length) {
+        const deep = oreToTunnel(found, bot.entity.position, step.depth, step.count ?? 1);
+        if (deep && deep.equals(found[0])) ore = deep;
+        else {
+          let pick = 'nearest_ore';
+          try { pick = await miningDepthChoice(bot, task, goal, save, step, found); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+          if (pick === 'stock_first') { goal.stockFood = true; save(); return; }
+          ore = pick === 'down_to_depth' ? deep : found[0];
+        }
+      }
       if (ore) goal.tunnelOre = { x: ore.x, y: ore.y, z: ore.z }; else delete goal.tunnelOre;
       // With no ore in view, down toward the depth along a heading whose
       // staircase is not resting. Always east, a resting staircase threw at
