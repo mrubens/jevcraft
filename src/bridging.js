@@ -342,9 +342,23 @@ async function bridgeTo(bot, task, target, { maxBlocks = 64, maxSteps = maxBlock
     if (bot._spanning === spanning) bot._spanning = null;
   }
 }
-async function span(bot, task, target, maxBlocks, maxSteps, { wall = false, whole = false } = {}) {
+// Where a span's seconds go, said at its end (note 2467): full-73 (25586, 2026-10-29 08:4x to 09:4xZ) crossed 123 blocks
+// in 1,171 seconds of cross_toward, 6 blocks a minute, its largest bucket of time; which of the clearing, the laying,
+// the centring and the step took them was not said.
+async function span(bot, task, target, maxBlocks, maxSteps, opts = {}) {
+  const ms = { clear: 0, lay: 0, wall: 0, centre: 0, step: 0 }, began = Date.now();
+  const timed = async (k, f) => { const t = Date.now(); try { return await f(); } finally { ms[k] += Date.now() - t; } };
+  let steps = 0, out = 0;
+  try { out = await spanSteps(bot, task, target, maxBlocks, maxSteps, opts, timed, n => { steps = n; }); return out; }
+  finally {
+    const total = Date.now() - began;
+    if (steps >= 3 || total > 20000) console.log(`[span] ${steps} steps, ${out} laid in ${Math.round(total / 100) / 10} s: clear ${Math.round(ms.clear / 100) / 10}, lay ${Math.round(ms.lay / 100) / 10}, wall ${Math.round(ms.wall / 100) / 10}, centre ${Math.round(ms.centre / 100) / 10}, step ${Math.round(ms.step / 100) / 10}, other ${Math.round((total - ms.clear - ms.lay - ms.wall - ms.centre - ms.step) / 100) / 10}`);
+  }
+}
+async function spanSteps(bot, task, target, maxBlocks, maxSteps, { wall = false, whole = false } = {}, timed, onStep) {
   let placed = 0;
   for (let steps = 0; steps < maxSteps; steps++) {
+    onStep(steps);
     task.check();
     const refused = spanRefused(bot);
     if (refused) throw new Error(`Not bridging with a ${refused.fire.entity.name} ${Math.round(refused.fire.distance)} blocks off able to see me`);
@@ -362,17 +376,19 @@ async function span(bot, task, target, maxBlocks, maxSteps, { wall = false, whol
       if (!rest || rest.equals(here) || !await creepTo(bot, task, rest, 1500)) throw new Error('Nothing solid underfoot to bridge from');
       continue;
     }
-    await clear(bot, task, next, { wall }); await clear(bot, task, next.offset(0, 1, 0), { wall });
+    await timed('clear', async () => { await clear(bot, task, next, { wall }); await clear(bot, task, next.offset(0, 1, 0), { wall }); });
     if (!solid(bot.blockAt(next.offset(0, -1, 0)))) {
       if (placed >= maxBlocks) return placed;
       const item = material(bot, { whole });
       if (!item) throw new Error('No blocks to bridge with');
       const centre = here.offset(0.5, 0, 0.5), p = bot.entity.position;
-      if (Math.hypot(p.x - centre.x, p.z - centre.z) > 0.3) await creepTo(bot, task, here, 1200);
+      if (Math.hypot(p.x - centre.x, p.z - centre.z) > 0.3) await timed('centre', () => creepTo(bot, task, here, 1200));
       guardFloor(bot, next.offset(0, -1, 0), 'laid');
-      await stairBound(bot, bot.equip(item, 'hand'), 'equip of the block to lay'); task.check();
-      await bot.lookAt(support.position.offset(0.5 + step.x * 0.5, 0.5, 0.5 + step.z * 0.5), true);
-      await stairBound(bot, bot.placeBlock(support, step), 'block laid');
+      await timed('lay', async () => {
+        await stairBound(bot, bot.equip(item, 'hand'), 'equip of the block to lay'); task.check();
+        await bot.lookAt(support.position.offset(0.5 + step.x * 0.5, 0.5, 0.5 + step.z * 0.5), true);
+        await stairBound(bot, bot.placeBlock(support, step), 'block laid');
+      });
       if (!solid(bot.blockAt(next.offset(0, -1, 0)))) throw new Error('The span block did not land');
       placed++;
     }
@@ -391,9 +407,11 @@ async function span(bot, task, target, maxBlocks, maxSteps, { wall = false, whol
           const refBlock = bot.blockAt(ref);
           if (!solid(refBlock)) throw new Error(`Nothing to lay the span's wall against at ${p}`);
           task.check();
-          await stairBound(bot, bot.equip(item, 'hand'), 'equip of the block to lay'); task.check();
-          await bot.lookAt(ref.offset(0.5 + face.x * 0.5, 0.5 + face.y * 0.5, 0.5 + face.z * 0.5), true);
-          await stairBound(bot, bot.placeBlock(refBlock, face), 'block laid');
+          await timed('wall', async () => {
+            await stairBound(bot, bot.equip(item, 'hand'), 'equip of the block to lay'); task.check();
+            await bot.lookAt(ref.offset(0.5 + face.x * 0.5, 0.5 + face.y * 0.5, 0.5 + face.z * 0.5), true);
+            await stairBound(bot, bot.placeBlock(refBlock, face), 'block laid');
+          });
           if (!solid(bot.blockAt(p))) throw new Error(`The span's wall block at ${p} did not land`);
         }
       }
@@ -402,8 +420,8 @@ async function span(bot, task, target, maxBlocks, maxSteps, { wall = false, whol
     // along a span already standing it went for the next cell's middle from wherever the body was, across the air at a
     // turn. full-62 (25590, 2026-10-29 05:29:18 to 23Z), at 20 health on its span at y 47, turned from z to x and went
     // diagonally from (-34.5, 110.6) toward (-31.9, 113.7), off the span 16 blocks into the lava.
-    { const centre = here.offset(0.5, 0, 0.5), p = bot.entity.position; if (Math.hypot(p.x - centre.x, p.z - centre.z) > 0.3) await creepTo(bot, task, here, 1200); }
-    if (!await creepTo(bot, task, next)) throw new Error('Could not step onto the span');
+    { const centre = here.offset(0.5, 0, 0.5), p = bot.entity.position; if (Math.hypot(p.x - centre.x, p.z - centre.z) > 0.3) await timed('centre', () => creepTo(bot, task, here, 1200)); }
+    if (!await timed('step', () => creepTo(bot, task, next))) throw new Error('Could not step onto the span');
     if (bot.entity.position.y < here.y - 0.5) throw new Error('Fell off the span');
   }
   return placed;
