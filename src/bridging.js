@@ -386,7 +386,7 @@ async function spanSteps(bot, task, target, maxBlocks, maxSteps, { wall = false,
       guardFloor(bot, next.offset(0, -1, 0), 'laid');
       await timed('lay', async () => {
         await stairBound(bot, bot.equip(item, 'hand'), 'equip of the block to lay'); task.check();
-        await bot.lookAt(support.position.offset(0.5 + step.x * 0.5, 0.5, 0.5 + step.z * 0.5), true);
+        await stairBound(bot, bot.lookAt(support.position.offset(0.5 + step.x * 0.5, 0.5, 0.5 + step.z * 0.5), true), 'look');
         await stairBound(bot, bot.placeBlock(support, step), 'block laid');
       });
       if (!solid(bot.blockAt(next.offset(0, -1, 0)))) throw new Error('The span block did not land');
@@ -409,7 +409,7 @@ async function spanSteps(bot, task, target, maxBlocks, maxSteps, { wall = false,
           task.check();
           await timed('wall', async () => {
             await stairBound(bot, bot.equip(item, 'hand'), 'equip of the block to lay'); task.check();
-            await bot.lookAt(ref.offset(0.5 + face.x * 0.5, 0.5 + face.y * 0.5, 0.5 + face.z * 0.5), true);
+            await stairBound(bot, bot.lookAt(ref.offset(0.5 + face.x * 0.5, 0.5 + face.y * 0.5, 0.5 + face.z * 0.5), true), 'look');
             await stairBound(bot, bot.placeBlock(refBlock, face), 'block laid');
           });
           if (!solid(bot.blockAt(p))) throw new Error(`The span's wall block at ${p} did not land`);
@@ -439,6 +439,9 @@ async function spanSteps(bot, task, target, maxBlocks, maxSteps, { wall = false,
 // An equip or a place on the stairs given up after ten seconds, said with which it was (note 2443b): full-53 (25589,
 // 2026-10-29 02:5xZ and 03:3xZ) and full-42 went silent mid-stairs after '[stairs] laid step down ... stepped', the dig
 // already bounded, five minutes and more each time until the bot was killed.
+// Every look too (note 2473): a look resolves on the next physics tick, and with none coming (the body dead or between
+// worlds) it waited for ever. full-78 (25590, 2026-10-29 10:4x and 10:5xZ) went silent twice on the corpse run's way
+// down (tunnelStraight), five minutes each, after 2463 bounded the equips and the blocks laid.
 // Every equip and block laid in the span, the tunnel and the bridge bounded too (note 2463), not only the stairs':
 // full-66 (25590, 2026-10-29 07:25 and 07:3xZ) went silent twice, five minutes and more, on the corpse run's way down
 // (tunnelStraight) to its kit 110 blocks under it.
@@ -478,7 +481,7 @@ async function stairsDown(bot, task, target, { maxSteps = 40 } = {}) {
       if (Math.hypot(p.x - centre.x, p.z - centre.z) > 0.3) await creepTo(bot, task, here, 1200);
       if (!solid(bot.blockAt(a))) {
         await stairBound(bot, bot.equip(item, 'hand'), 'equip'); task.check();
-        await bot.lookAt(support.position.offset(0.5 + d.x * 0.5, 0.5, 0.5 + d.z * 0.5), true);
+        await stairBound(bot, bot.lookAt(support.position.offset(0.5 + d.x * 0.5, 0.5, 0.5 + d.z * 0.5), true), 'look');
         await stairBound(bot, bot.placeBlock(support, d), 'place');
         if (!solid(bot.blockAt(a))) throw new Error('The block ahead did not land');
       }
@@ -486,7 +489,7 @@ async function stairsDown(bot, task, target, { maxSteps = 40 } = {}) {
       if (!again) throw new Error('No blocks to lay the stairs down with');
       await stairBound(bot, bot.equip(again, 'hand'), 'equip'); task.check();
       const above = bot.blockAt(a);
-      await bot.lookAt(a.offset(0.5, 0, 0.5), true);
+      await stairBound(bot, bot.lookAt(a.offset(0.5, 0, 0.5), true), 'look');
       await stairBound(bot, bot.placeBlock(above, new Vec3(0, -1, 0)), 'place');
       if (!solid(bot.blockAt(b))) throw new Error('The step down did not land');
     }
@@ -500,7 +503,7 @@ async function stairsDown(bot, task, target, { maxSteps = 40 } = {}) {
       if (!item) throw new Error('No blocks to lay the stairs down with');
       if (molten(bot.blockAt(guard))) throw new Error(`Lava or water beyond the step at ${guard}`);
       await stairBound(bot, bot.equip(item, 'hand'), 'equip'); task.check();
-      await bot.lookAt(a.offset(0.5 + d.x * 0.5, 0.5, 0.5 + d.z * 0.5), true);
+      await stairBound(bot, bot.lookAt(a.offset(0.5 + d.x * 0.5, 0.5, 0.5 + d.z * 0.5), true), 'look');
       await stairBound(bot, bot.placeBlock(bot.blockAt(a), d), 'place');
       if (!solid(bot.blockAt(guard))) throw new Error('The guard beyond the step did not land');
     }
@@ -580,7 +583,7 @@ async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4, navi
       const centre = here.offset(0.5, 0, 0.5), p = bot.entity.position;
       if (Math.hypot(p.x - centre.x, p.z - centre.z) > 0.3) await creepTo(bot, task, here, 1200);
       await stairBound(bot, bot.equip(item, 'hand'), 'equip of the block to lay'); task.check();
-      await bot.lookAt(support.position.offset(0.5 + d.x * 0.5, 0.5, 0.5 + d.z * 0.5), true);
+      await stairBound(bot, bot.lookAt(support.position.offset(0.5 + d.x * 0.5, 0.5, 0.5 + d.z * 0.5), true), 'look');
       await stairBound(bot, bot.placeBlock(support, d), 'block laid');
       if (!solid(bot.blockAt(floor))) throw new Error(`the floor block at ${floor} did not land`);
       laid++; laidHere = true;
@@ -778,7 +781,7 @@ async function crossAlong(bot, task, crossing, { navigate = null, scoop = false 
     if (!item) throw new Error(`No blocks left to lay ${what}`);
     guardFloor(bot, ref.position.plus(face), `laid ${what}`);
     await stairBound(bot, bot.equip(item, 'hand'), 'equip of the block to lay'); task.check();
-    await bot.lookAt(ref.position.offset(0.5 + face.x * 0.5, 0.5 + face.y * 0.5, 0.5 + face.z * 0.5), true);
+    await stairBound(bot, bot.lookAt(ref.position.offset(0.5 + face.x * 0.5, 0.5 + face.y * 0.5, 0.5 + face.z * 0.5), true), 'look');
     await stairBound(bot, bot.placeBlock(ref, face), 'block laid');
     if (!solid(bot.blockAt(ref.position.plus(face)))) throw new Error(`The block laid ${what} did not land`);
     done.laid++;
