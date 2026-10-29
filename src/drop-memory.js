@@ -84,7 +84,10 @@ function deathAt(bot) {
 }
 function fetchOption(bot) {
   const dead = deathAt(bot);
-  const lying = remembered(bot).filter(d => d.distance <= 96 && d.secondsLeft >= 15 && !(dead && Math.hypot(d.at.x - dead.x, d.at.y - dead.y, d.at.z - dead.z) <= 8));
+  // Not a drop a few seconds old (note 2532): the dig that made it takes it up itself, and the memory's walk sent at once
+  // found its item not yet read and took nothing, 'reached, not picked up' (full-109, 25592, 2026-10-29 17:5xZ, raw iron
+  // 2 blocks off from an ore just dug through five blocks).
+  const lying = remembered(bot).filter(d => d.distance <= 96 && d.secondsLeft >= 15 && Date.now() - d.seenAt >= 3000 && !(dead && Math.hypot(d.at.x - dead.x, d.at.y - dead.y, d.at.z - dead.z) <= 8));
   if (!lying.length) return null;
   const list = lying.slice(0, 8).map(d => `${d.count} ${words(d.name)} ${d.distance} blocks off${Math.abs(d.dy) >= 3 ? ` (${Math.abs(d.dy)} ${d.dy < 0 ? 'down' : 'up'})` : ''}, about ${d.secondsLeft >= 90 ? `${Math.round(d.secondsLeft / 60)} minutes` : `${d.secondsLeft} seconds`} before it vanishes${d.tries ? `, tried ${d.tries} time${d.tries > 1 ? 's' : ''} (last: ${d.lastWhy})` : ''}`).join('; ');
   const far = Math.max(...lying.slice(0, 8).map(d => d.distance));
@@ -104,7 +107,7 @@ function fetchOption(bot) {
           // The walk's time by the distance, not a fixed few seconds: twelve at the least, three a block beyond.
           if (b.entity.position.distanceTo(d.at) > 4) await navigate(b, t, new goals.GoalNear(d.at.x, d.at.y, d.at.z, 2), { timeoutMs: Math.max(12000, d.distance * 3000), stallMs: 8000 });
           require('./drop-collection').forgetRest(b, d.name, d.at.clone ? d.at.clone() : new Vec3(d.at.x, d.at.y, d.at.z), 6);
-          await collectNearbyDrops(b, t, d.name, { origin: d.at.clone ? d.at.clone() : new Vec3(d.at.x, d.at.y, d.at.z), radius: 6, timeoutMs: 15000, waitForSpawnMs: 0, allowExcavation: true });
+          await collectNearbyDrops(b, t, d.name, { origin: d.at.clone ? d.at.clone() : new Vec3(d.at.x, d.at.y, d.at.z), radius: 6, timeoutMs: 15000, waitForSpawnMs: 1500, allowExcavation: true });
         } catch (err) { if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; why = String(err.message || err).slice(0, 100); }
         const now = (b.inventory?.items?.() || []).filter(i => i.name === d.name).reduce((s, i) => s + i.count, 0);
         if (now > (before.get(d.name) || 0)) { took.push(`${now - before.get(d.name)} ${words(d.name)}`); before.set(d.name, now); memory(b).drops.delete(d.id); }

@@ -21,6 +21,7 @@ test('a valuable drop seen is remembered and offered with its distance and time 
   bot.emit('entitySpawn', item(8, 'dirt', new Vec3(3, 64, 0)));
   const r = dm.remembered(bot);
   assert.deepEqual(r.map(d => [d.name, d.count, d.distance]), [['diamond', 2, 30]]);
+  for (const d of bot._dropMemory.drops.values()) d.seenAt -= 5000; // a few seconds old (note 2532)
   const o = dm.fetchOption(bot);
   assert.match(o.description, /2 diamond 30 blocks off, about 5 minutes before it vanishes/);
 });
