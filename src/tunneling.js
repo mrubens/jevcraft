@@ -565,7 +565,19 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, place 
     if (tunnel.pickaxe === true && !carried) { tunnel.pickaxe = false; save(); throw Object.assign(new Error('The last pickaxe broke on the stairs: the rest is by hand until another is made'), { name: 'PickaxeGone' }); }
     tunnel.pickaxe = carried; }
   // Ore in the walls the stairs pass, dug from the step (note 2295).
-  try { await require('./opportunistic-mining').mineWithinReach(bot, task); } catch (err) { if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
+  // And what it drops taken up from the stairs (note 2475): the dig left it lying in the wall. The user, watching full-85
+  // (25590, 2026-10-29 11:0xZ): 'Jev just didn't pick up some iron that he mined'; '[climb ore] iron ore at (41, 39, 32)
+  // dug from where the climb stands', no pickup tried.
+  try {
+    const om = require('./opportunistic-mining'), had = ['raw_iron', 'raw_gold', 'diamond', 'emerald'].map(n => [n, require('./skills').countOf(bot, n)]);
+    if (await om.mineWithinReach(bot, task)) {
+      const { collectNearbyDrops } = require('./drop-collection');
+      for (const [name] of had) {
+        const lying = Object.values(bot.entities || {}).some(e => { try { return e?.position && e.position.distanceTo(bot.entity.position) <= 6 && e.getDroppedItem?.()?.name === name; } catch (_) { return false; } });
+        if (lying) await collectNearbyDrops(bot, task, name, { origin: bot.entity.position.clone(), radius: 6, timeoutMs: 5000, waitForSpawnMs: 400, allowExcavation: true });
+      }
+    }
+  } catch (err) { if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
   // Where a way down began at the surface, remembered: the way back up is
   // the stairs already dug (surface.js returnToSurface). mid-207-k spent
   // forty-four of its minutes climbing, each time digging a new staircase
