@@ -67,6 +67,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   // The bot's own hit on a neutral of a group angers the group (anger.js,
   // note 703).
   require('./anger').install(bot);
+  try { require('./drop-memory').install(bot); } catch (_) { /* not remembered */ }
   bot._client.on('damage_event', packet => {
     if (!bot.entity || packet.entityId !== bot.entity.id) return;
     const type = bot._damageTypeNames?.[packet.sourceTypeId];

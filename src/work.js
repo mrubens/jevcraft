@@ -1144,7 +1144,7 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   // was carried on from before.
   // The shield's wear band is part of what is due: a carry-on at two-thirds
   // is asked again at a third (note 791).
-  const keys = due.sort().join(',') + (budget?.short ? ':short' : '') + (options.spare_shield ? `:shield${options.spare_shield.band}` : '');
+  const keys = due.sort().join(',') + (budget?.short ? ':short' : '') + (options.spare_shield ? `:shield${options.spare_shield.band}` : '') + (options.fetch_drops ? `:drops${options.fetch_drops.band}` : '');
   if (goal.upkeepHold?.keys === keys && goal.upkeepHold.until > Date.now()) return false;
   // The route to the stems surveyed only for a question asked.
   if (options.fetch_stems?.describe) options.fetch_stems.description = await options.fetch_stems.describe();
@@ -1436,6 +1436,13 @@ async function upkeepOffers(bot, task, goal, save) {
   // the walk back is Jev's, priced, or the batch is left for good (note
   // 775). Taken back unasked, it was a walk of 207 to 657 blocks that found
   // no route, retried at every step.
+  // What of value was seen lying, remembered until it vanishes (drop-memory.js, note 2495): offered here, between work
+  // steps, every time until it is taken or gone, the last try's failure said on it.
+  try {
+    const dm = require('./drop-memory'); dm.install(bot);
+    const fd = dm.fetchOption(bot);
+    if (fd) options.fetch_drops = { description: fd.description, band: dm.remembered(bot).map(d => d.id).sort().join('.'), run: async () => { await fd.run(bot, task); } };
+  } catch (_) { /* not offered */ }
   const lb = leftBatch(bot, goal);
   if (lb) {
     const w = leftBatchSays(bot, lb);
