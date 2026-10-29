@@ -76,6 +76,7 @@ async function candidates(bot, task, state) {
 }
 
 async function hunt(bot, task, target, actions, goal, save) {
+  let climbAllowed = false;
   const surface = surfaceMovement(bot);
   try {
     const item = preyFood(bot, target);
@@ -106,6 +107,11 @@ async function hunt(bot, task, target, actions, goal, save) {
           // of its own stone pit for the whole forty-five seconds, walking
           // at a sheep every five (2026-09-24).
           const gap = bot.entity.position.distanceTo(target.position);
+          // No walking way there: once, as a player climbs a terraced hill, with a block dug or put under the feet (note
+          // 2481, the surface's no-dig, no-tower walk let go). The user, watching full-85 (25590, 2026-10-29 11:2xZ): 'it's
+          // missing ones that are easily visible'; sheep on the hill before it were set aside 'Cannot get to the sheep from
+          // here: No path to the goal!' and it walked 92 blocks north to an old sighting.
+          if (/no path/i.test(String(err.message)) && !climbAllowed) { climbAllowed = true; surface.restore(); console.log(`[hunt] no walking way to the ${target.name} ${Math.round(gap)} blocks off: dug or stepped up to`); continue; }
           if (gap < nearest - 1) { nearest = gap; missed = 0; } else if (++missed >= 2) throw new Error(`Cannot get to the ${target.name} from here: ${err.message}`);
         }
         continue;
