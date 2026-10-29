@@ -63,7 +63,11 @@ async function candidates(bot, task, state) {
     // Bound the whole survey by checking at most eight nearby candidates.
     for (const target of observed.slice(0, 8)) {
       const route = await surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalFollow(target, 2), 500);
-      if (route.status === 'success' && bot.entities[target.id] === target && target.isValid !== false && preyFood(bot, target) &&
+      // A route still being found counts as one (note 2478), as the comment above says: the search is half a second, and
+      // on a loaded machine it came back partial for animals in plain view. The user, watching full-85 (25590, 2026-10-29
+      // 11:10Z): 'Jev is also asking for anything to eat while walking by chicken'; offered only sheep 58 blocks off and
+      // cows 89. A hunt that cannot reach the animal sets it aside two minutes (failedPrey).
+      if ((route.status === 'success' || (route.status === 'partial' && (route.path || []).length)) && bot.entities[target.id] === target && target.isValid !== false && preyFood(bot, target) &&
         surface.isSurface(target.position) && (route.path || []).every(p => surface.allowed(p))) reachable.push(target);
       if (reachable.length === 3) break;
     }
