@@ -3135,7 +3135,10 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
       // The same ore tried again from where the last try began: the tunnel got nowhere, so it is set aside as before.
       const again = goal.tunnelOre && goal.tunnelOre.x === p.x && goal.tunnelOre.y === p.y && goal.tunnelOre.z === p.z && goal.tunnelOre.from &&
         bot.entity.position.distanceTo(new Vec3(goal.tunnelOre.from.x, goal.tunnelOre.from.y, goal.tunnelOre.from.z)) < 1.5;
-      if (!mined && /^No reachable dry standing position/.test(e.message) && /_ore$/.test(step.block || '') && !isSetAside(goal, 'reach', p) && !again) {
+      // Gravel too (note 2514): flint's gravel seen through the rock was set aside one block after another, 'No reachable
+      // dry standing position', never dug toward. full-99 (25588, 2026-10-29 15:5xZ), on its flint for the portal, turned
+      // between mine and tunnel five times in a second over gravel 15 to 40 blocks off.
+      if (!mined && /^No reachable dry standing position/.test(e.message) && /_ore$|^gravel$/.test(step.block || '') && !isSetAside(goal, 'reach', p) && !again) {
         access?.restore(); access = undefined;
         console.log(`[mine] no stand beside the ${wasBlock} at ${p}, ${Math.round(bot.entity.position.distanceTo(p))} blocks off: tunnelling to it`);
         goal.tunnelOre = { x: p.x, y: p.y, z: p.z, from: { x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z } }; save();
@@ -4037,8 +4040,18 @@ async function smelt(bot, task, step, goal, save = () => {}) {
       // Another batch's input comes back out to the pockets the same way.
       if (existing && existing.name !== step.from && typeof furnace.takeInput === 'function' && roomInWindow()) { await furnace.takeInput(); existing = furnace.inputItem(); }
       if (existing && existing.name !== step.from) throw new Error('Furnace contains another input');
-      const amount = needed - taken;
-      const missingInput = Math.max(0, amount - (existing?.count || 0));
+      let amount = needed - taken;
+      let missingInput = Math.max(0, amount - (existing?.count || 0));
+      // Short of input with some in hand or in the furnace: the batch is what there is (note 2515), not a fetch of its
+      // own for the rest. The fetch ('refuel furnace') went for the same ore the rung's step was mining, and the two
+      // turned seven times in 81 seconds: full-102 (25592, 2026-10-29 15:5xZ), raw iron for its armour.
+      if (missingInput > carried(step.from) && (carried(step.from) > 0 || existing?.count > 0)) {
+        const was = needed;
+        needed = taken + (existing?.count || 0) + carried(step.from);
+        if (goal?.smelting) { goal.smelting.targetInventory = before + needed; goal.smelting.count = needed; save(); }
+        amount = needed - taken; missingInput = Math.max(0, amount - (existing?.count || 0));
+        console.log(`[smelt] ${step.item}: the batch is the ${needed} there are, not the ${was} planned; the rest is the step's own to mine`);
+      }
       // A saved batch with nothing in the furnace and nothing carried is
       // not a batch: finishing it meant getting the raw food all over again,
       // which the dream run tried for good ("no supported method for beef").
