@@ -22,7 +22,7 @@
 // facts (quickBefore), which the same facts never meet.
 
 // What changes with time alone: never part of the facts compared.
-const CLOCK = /^(at|askedAt|since|until|t0|stages|secondsAgo|minutesAgo|timeOfDay|time|age|runClock|recentPositions|recentDeaths|daylight|daylightTicksRemaining|lastHalfHourBy|minutesBy|minutesPlayed|minutesSinceStart|hasHadTheTurnSeconds|didNothingWithItSeconds|sameAnswerAgain|lastAnswersCameToNothing|answersThatCameToNothing|workWaits)$/i;
+const CLOCK = /^(at|askedAt|since|until|t0|stages|secondsAgo|minutesAgo|timeOfDay|time|age|runClock|theClock|recentPositions|recentDeaths|daylight|daylightTicksRemaining|lastHalfHourBy|minutesBy|minutesPlayed|minutesSinceStart|hasHadTheTurnSeconds|didNothingWithItSeconds|sameAnswerAgain|lastAnswersCameToNothing|answersThatCameToNothing|workWaits)$/i;
 const TIMELY = /(Seconds|Minutes|Ms|Ago|Ticks)$|^(minutes|seconds)[A-Z]/;
 function fingerprint(state, tree) {
   const seen = new WeakSet();

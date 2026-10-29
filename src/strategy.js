@@ -930,6 +930,11 @@ function strategyState(bot, goal, stage, extra = {}) {
     // it, and mid-207-a chose the arrows (only from skeletons here) a
     // hundred and ninety-six times over three hours and never went
     // (2026-09-26).
+    // The goal's clock beside the steps (note 2470): the steps were priced in old trial medians ('a median 1.4 minutes
+    // each'), and the time the run has and the record of today's runs were not said; Nether first was taken 18 times of
+    // 247 offered on full-60 to full-83 (2026-10-29), the runs' flint and steel a median 46 minutes in and the Nether 54.
+    ...((() => { try { const c = goal?.gameProgress?.clock; if (!c?.playedMs || goal?.gameProgress?.milestones?.nether_entered) return {}; const m = Math.round(c.playedMs / 60000);
+      return { theClock: `The goal is the ender dragon dead in under 10 hours of play from a fresh world; the run's own budget: the Nether by about 60 minutes, the eyes of ender by 4 to 5 hours, the End by about 7. This run has played ${m} minute${m === 1 ? '' : 's'}. On the 24 full runs of 2026-10-29 (full-60 to full-83): the iron pickaxe came a median 11 minutes in, flint and steel 46, the Nether 54 for the 8 that got there; the only 2 runs with a blaze rod entered the Nether at 32 and 91 minutes; of the 9 with flint and steel by 40 minutes, 5 entered the Nether 4 to 56 minutes after it and 4 had not by 48 to 91 minutes played, on the kit's steps and the portal's lava.` }; } catch (_) { return {}; } })()),
     beforeTheNether: (() => { const { DEFERRABLE, asideRungs } = require('./game-progress'); const left = openRungs(bot, goal).map(r => r.phase);
       const { KIT_PHASES } = require('./crossing-kit');
       const needed = left.filter(p => !DEFERRABLE.has(p)), may = left.filter(p => DEFERRABLE.has(p) && !KIT_PHASES.has(p)), kit = left.filter(p => KIT_PHASES.has(p));
