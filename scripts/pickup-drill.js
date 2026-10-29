@@ -101,6 +101,9 @@ async function trial(name, n) {
   return r;
 }
 
+// PICKUP_LAG=1: the event loop held 2 to 5 s at random every few seconds, as the live bots' were on 2026-10-29 with seven
+// runs and the ship suites on the machine (stall-profiler's '[lag] event loop held').
+if (process.env.PICKUP_LAG === '1') setInterval(() => { if (Math.random() < 0.5) { const until = Date.now() + 2000 + Math.random() * 3000; while (Date.now() < until) { /* held */ } } }, 4000).unref();
 bot.once('spawn', async () => {
   configureMovements(bot);
   await sleep(1500);

@@ -6,7 +6,7 @@
 // that fails ends that try only, and is said on the next offer.
 const { Vec3 } = require('vec3');
 
-const VALUABLE = /^(diamond|emerald|raw_iron|raw_gold|raw_copper|iron_ingot|gold_ingot|copper_ingot|ender_pearl|blaze_rod|ender_eye|obsidian|flint|ancient_debris|netherite_scrap|netherite_ingot|bow|crossbow|shield|bucket|water_bucket|lava_bucket|golden_apple|bed|[a-z_]*_bed|(diamond|iron|golden|stone|netherite|copper)_(pickaxe|sword|axe|shovel|helmet|chestplate|leggings|boots))$/;
+const VALUABLE = /^(diamond|emerald|raw_iron|raw_gold|raw_copper|iron_ingot|gold_ingot|copper_ingot|ender_pearl|blaze_rod|ender_eye|obsidian|flint|ancient_debris|netherite_scrap|netherite_ingot|bow|crossbow|shield|bucket|water_bucket|lava_bucket|golden_apple|bed|[a-z_]*_bed|(diamond|iron|netherite)_(pickaxe|sword|axe|shovel|helmet|chestplate|leggings|boots)|golden_boots|copper_(helmet|chestplate|leggings|boots))$/;
 // An item entity lasts five minutes in loaded ground (6000 ticks), its clock running only while a player is near enough
 // to keep the chunk ticking (about 176 blocks with this server's view).
 const LIFE_MS = 5 * 60000, TICKING = 176, SEEN_GONE = 24, KEEP = 40;
