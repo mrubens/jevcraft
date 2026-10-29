@@ -296,8 +296,20 @@ async function askBank(bot, task, goal, save, actions, client, { now = Date.now(
     ...(ownChest ? { own_chest: ownChest } : {}),
     stay_for_more: { description: `${offer.complete ? `Go on to the pearls (${offer.pearlsLeft} still wanted)` : `Stay and hunt on for the ${plural(offer.left, 'rod')} still needed`} with the ${plural(offer.rods, 'rod')} in the pack: no walk out now, and every rod carried is lost with a death here.${last} ${staying}${own ? '' : ` ${today} ${bankWalksSays()}`} Asked again when another rod is carried, or in ten minutes.` },
   };
+  // The rods' own rate here, beside the walk out (note 2524, Fable's Nether review): full-100 (25590, 2026-10-29
+  // 16:32 to 16:41Z) stood nine minutes for two rods and left at four of seven; the walk home was priced, the staying not.
+  let rodRate = null;
+  try {
+    const times = (goal.rodTimes ||= []);
+    if (offer.rods > (goal.rodSeen || 0)) { for (let i = goal.rodSeen || 0; i < offer.rods; i++) times.push(Date.now()); goal.rodSeen = offer.rods; goal.rodTimes = times.slice(-12); save?.(); }
+    if (offer.rods < (goal.rodSeen || 0)) goal.rodSeen = offer.rods;
+    if (times.length >= 2) {
+      const mins = (times.at(-1) - times[0]) / 60000, per = mins / (times.length - 1);
+      rodRate = `${times.length} rods in ${Math.round(mins * 10) / 10} minutes here, about ${Math.round(per * 10) / 10} minutes a rod${offer.left ? `; the ${offer.left} still needed at that rate about ${Math.round(per * offer.left)} minutes` : ''}`;
+    }
+  } catch (_) { rodRate = null; }
   let decision;
-  try { decision = await require('./decisions').decide('rods_now', { client, bot, task, goal, save, tree, state: { rodsCarried: offer.rods, rodsWanted: offer.wanted, rodsStillNeeded: offer.left, portalBlocks: offer.d, health: bot.health, food: bot.food } }); }
+  try { decision = await require('./decisions').decide('rods_now', { client, bot, task, goal, save, tree, state: { rodsCarried: offer.rods, rodsWanted: offer.wanted, rodsStillNeeded: offer.left, portalBlocks: offer.d, health: bot.health, food: bot.food, ...(rodRate ? { rodRateHere: rodRate } : {}) } }); }
   catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[rods_now] not asked: ${String(err.message || err).slice(0, 900)}`); return null; }
   if (decision.stale) return null;
   if (decision.path?.at(-1) === 'keep_here') { await tree.keep_here.run(); return 'kept'; }
