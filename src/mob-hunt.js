@@ -3194,7 +3194,12 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   // A place Jev left is not offered until its ten minutes are up (said
   // in waysLeft). The blazes about now are a way of their own.
   const spots = blazeSpots(bot, goal).filter(s => s.off > 12 && !wayLeft(state, s.spot));
-  const about = blazesAbout(bot).filter(b => b.off > 12 && !wayLeft(state, b.entity.position.floored()));
+  // The blazes about within twelve too, past a blow's reach (note 2458): the hunt's own look takes those it can walk to,
+  // and when it cannot (a blaze over a wall, up a floor) this way is the one that asks for a pillar or a staircase.
+  // full-63 (25586, 2026-10-29 06:51Z), in its fortress in a full iron set with 1 rod and 5 wanted, 3 blazes in sight 6
+  // blocks off and 3 up, its walks to them ending 'No path to the goal!', was offered staying in the fortress or leaving
+  // it for kit, none good 0.55, and left for its portal 93 blocks off.
+  const about = blazesAbout(bot).filter(b => b.off > 4 && !wayLeft(state, b.entity.position.floored()));
   if (about.length && !(spots[0] && spots[0].spot.at > Date.now() - 60000 && Math.hypot(spots[0].spot.x - about[0].entity.position.x, spots[0].spot.y - about[0].entity.position.y, spots[0].spot.z - about[0].entity.position.z) <= 16)) {
     const b = about[0], p = b.entity.position.floored(), ended = state.goToEnded?.blazes_about;
     options.go_to_blazes_about = { description: `Go to the blazes about now: ${blazesAboutSays(about)}. The hunt takes each one as it comes into view within its reach. The walk there is on foot first, digging and laying nothing; where it finds no way, the way there is asked (fortress_approach: a span, a pillar, a drop or a staircase, each with what it meets).${ended ? ` The last try at blazes about ended: ${ended.why}.` : ''}`,
