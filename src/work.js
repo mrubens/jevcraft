@@ -8947,7 +8947,11 @@ async function holdForRest(bot, task, goal, save, { client, survival, onStep = (
       // minutes', and the detour question offered mine_nearby or the wait;
       // Jev answered none good 18 of 39 times (2026-10-26 04:52-05:28Z). The
       // smelt step takes the batch out.
-      if (/^smelt:/.test(String(reason)) && goal.smelting?.startedAt && Date.now() >= goal.smelting.startedAt + (goal.smelting.count || 1) * 10000) {
+      // Not the hold of a batch left to cook (leave_cooking, note 2454): its end is the furnace's own, read when it was left,
+      // and the start's clock had run out on a batch topped up or slowed for fuel. full-64, full-61 and full-66 (2026-10-29
+      // 06:0x to 06:2xZ) left their batch, were back in under a second, and were asked while_cooking again, leave cooking,
+      // mine nearby and dig stone each 'changed nothing within 1 second', up to 30 s a question.
+      if (/^smelt:/.test(String(reason)) && !(bot._cookHold?.until > Date.now()) && goal.smelting?.startedAt && Date.now() >= goal.smelting.startedAt + (goal.smelting.count || 1) * 10000) {
         console.log(`[wait] the batch in the furnace is done by its clock: the hold on ${String(reason).replace(/^\w+:/, '')} ends`);
         if (goal.restHeld?.until === until) { delete goal.restHeld; save(); }
         return true;
