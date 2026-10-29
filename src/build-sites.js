@@ -1,6 +1,10 @@
 'use strict';
 const { Vec3 } = require('vec3');
 const air = block => block && ['air', 'cave_air', 'void_air'].includes(block.name);
+// What a frame is built through as the builder does (work.js buildPortalFrame places over plants and a snow layer):
+// counted as open for a site (note 2490, Fable's audit of 2026-10-29). In a snowy biome every cell on the ground holds a
+// snow layer, and with air alone asked for no site was ever found there.
+const open = block => air(block) || /^(short_grass|tall_grass|fern|large_fern|dead_bush|vine|snow|short_dry_grass|tall_dry_grass|bush|firefly_bush|leaf_litter|dandelion|poppy|blue_orchid|allium|azure_bluet|(red|orange|white|pink)_tulip|oxeye_daisy|cornflower|lily_of_the_valley|wildflowers|pink_petals)$/.test(block?.name || '');
 
 function reservedForConstruction(goal, p, { from = null, bot = null } = {}) {
   // A dug-in pocket is one night's stop, not construction: reserving its
@@ -61,7 +65,7 @@ function portalSiteClear(bot, origin) {
   // Check the entire frame and both walking approaches at one ground level.
   for (let x = 0; x < 4; x++) for (let z = -1; z <= 1; z++) {
     if (bot.blockAt(o.offset(x, -1, z))?.boundingBox !== 'block') return false;
-    for (let y = 0; y < (z === 0 ? 5 : 2); y++) if (!air(bot.blockAt(o.offset(x, y, z)))) return false;
+    for (let y = 0; y < (z === 0 ? 5 : 2); y++) if (!(y === 0 ? open : air)(bot.blockAt(o.offset(x, y, z)))) return false;
   }
   return true;
 }
@@ -89,10 +93,11 @@ function selectPortalSite(bot, { avoid = [], cast = null } = {}) {
   const feet = bot.entity.position.floored();
   // A portal can stand on deepslate beside the lava lake the obsidian came
   // from; climbing sixty blocks to find grass is a wasted hour.
-  const ids = ['grass_block', 'dirt', 'stone', 'sand', 'deepslate', 'tuff', 'cobbled_deepslate', 'cobblestone', 'andesite', 'diorite', 'granite', 'netherrack']
+  const ids = ['grass_block', 'dirt', 'stone', 'sand', 'deepslate', 'tuff', 'cobbled_deepslate', 'cobblestone', 'andesite', 'diorite', 'granite', 'netherrack',
+    'snow_block', 'podzol', 'coarse_dirt', 'mycelium', 'red_sand', 'sandstone', 'red_sandstone', 'terracotta', 'calcite', 'mud', 'moss_block', 'clay']
     .map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined);
   const surfaces = bot.findBlocks({ matching: ids, maxDistance: 24, count: 128,
-    useExtraInfo: b => air(bot.blockAt(b.position.offset(0, 1, 0))) && air(bot.blockAt(b.position.offset(0, 2, 0))),
+    useExtraInfo: b => open(bot.blockAt(b.position.offset(0, 1, 0))) && air(bot.blockAt(b.position.offset(0, 2, 0))),
   }).map(p => p.offset(0, 1, 0)).sort((a, b) => siteCost(feet, a, cast) - siteCost(feet, b, cast));
   // Not within six of a site left for failing (work.js buildPortalFrame).
   return surfaces.find(p => portalSiteClear(bot, p) && !avoid.some(q => q.distanceTo(p) < 6)) || null;
