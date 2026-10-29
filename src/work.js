@@ -7078,10 +7078,18 @@ async function netherStep(bot, task, goal, save, client = task.opportunityClient
   // for ten minutes of it, not of nights sat out between passes.
   return timed(save, ms => { if (goal.crossingKit) goal.crossingKit.workedMs = (goal.crossingKit.workedMs || 0) + ms; }, () => crossing(bot, task, goal, save, client));
 }
+// The portal made first, the kit for the crossing gathered before it is entered (note 2472, the user: 'Does Jev need
+// the full kit before it can build the portal? Maybe it should build the portal as soon as it can without going
+// through.'): the kit's question stood before the portal's making, and each failure of the making (the lava cast, the
+// pool) came after the kit's minutes were spent. On the full runs of 2026-10-29, of 9 with flint and steel by 40
+// minutes, 4 had not entered the Nether by 48 to 91 minutes played, on the kit's steps and the portal's lava.
 async function crossing(bot, task, goal, save, client) {
-  if (!await crossingKitReady(bot, task, goal, save, client)) return false;
+  const kitReady = () => crossingKitReady(bot, task, goal, save, client);
+  // Healed first even so, below the crossing's health: the portal's making is lava work.
+  if ((bot.health ?? 20) < require('./crossing-kit').NETHER_HEALTH && !await kitReady()) return false;
   const portal = lowestPortalBlock(bot);
   if (portal) {
+    if (!await kitReady()) return false;
     goal.portal = { ...portal }; rememberPortal(goal, save, portal, 'overworld'); save();
     // A cast frame lit with its water still standing (a scoop that failed,
     // a restart between the pour and the scoop) has it taken back first: it
@@ -7100,6 +7108,8 @@ async function crossing(bot, task, goal, save, client) {
       return false;
     }
   }
+  const known = (goal.portals || []).some(p => /overworld/.test(String(p.dimension || '')) && !isSetAside(goal, 'portal_passed', { x: p.x, y: p.y, z: p.z }));
+  if (known && !await kitReady()) return false;
   if (await walkToKnownPortal(bot, task, goal, save, 'overworld')) {
     // At the portal's place and no sheet in its frame, as in the Nether
     // (note 896): lit again with what is carried, or, not to be lit, passed

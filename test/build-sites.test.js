@@ -47,7 +47,10 @@ test('portal resume preserves owned anchors and an unloaded frame before any obs
       findBlocks: () => [], chat() {}, clearControlStates() {} };
     const goal = { kind: 'nether', request: 'find a way to the Nether', expeditionReady: true, portalFrame: structuredClone(frame) };
     await runGoal(bot, new Task('resume'), goal, { save() {} }, { maxSteps: 1, survival: { state: {}, step: async () => false } });
-    assert.deepEqual(goal.portalFrame, frame, loaded ? 'Owned temporary anchor is construction progress' : 'Unloaded cells are not evidence of an empty frame');
+    // The frame kept where it was (the build may go on with it since note 2472, the portal before the crossing's kit):
+    // its origin, blocks and owned anchors, whatever the build has noted on it since.
+    const kept = goal.portalFrame && { origin: goal.portalFrame.origin, blocks: goal.portalFrame.blocks, supports: goal.portalFrame.supports };
+    assert.deepEqual(kept, { origin: frame.origin, blocks: frame.blocks, supports: frame.supports }, loaded ? 'Owned temporary anchor is construction progress' : 'Unloaded cells are not evidence of an empty frame');
   }
 });
 
