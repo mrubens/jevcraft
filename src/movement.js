@@ -697,6 +697,11 @@ function installToolPolicy(bot) {
 }
 
 function configureMovements(bot) {
+  // Ten seconds of route search, not the plugin's five (note 2517): the event loop held 2 to 5 s at a time on every run
+  // ate the search's wall-clock time, and walks a few blocks up came back 'no route' or 'the search for a route ran out
+  // of time' ten times in two minutes (full-98, 25589, 2026-10-29 16:2xZ, gold ore 5 to 7 up); the pickup drill
+  // (scripts/pickup-drill.js) took every drop of 21 cases on an unloaded arena. Three callers already raised it by hand.
+  if (bot.pathfinder && !(bot.pathfinder.thinkTimeout > 10000)) bot.pathfinder.thinkTimeout = 10000;
   fixMiningMaterials(bot.registry);
   fixPathfinderResults();
   installToolPolicy(bot);
