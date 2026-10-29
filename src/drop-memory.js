@@ -99,6 +99,7 @@ function fetchOption(bot) {
         try {
           // The walk's time by the distance, not a fixed few seconds: twelve at the least, three a block beyond.
           if (b.entity.position.distanceTo(d.at) > 4) await navigate(b, t, new goals.GoalNear(d.at.x, d.at.y, d.at.z, 2), { timeoutMs: Math.max(12000, d.distance * 3000), stallMs: 8000 });
+          require('./drop-collection').forgetRest(b, d.name, d.at.clone ? d.at.clone() : new Vec3(d.at.x, d.at.y, d.at.z), 6);
           await collectNearbyDrops(b, t, d.name, { origin: d.at.clone ? d.at.clone() : new Vec3(d.at.x, d.at.y, d.at.z), radius: 6, timeoutMs: 15000, waitForSpawnMs: 0, allowExcavation: true });
         } catch (err) { if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; why = String(err.message || err).slice(0, 100); }
         const now = (b.inventory?.items?.() || []).filter(i => i.name === d.name).reduce((s, i) => s + i.count, 0);

@@ -17,6 +17,14 @@ const key = (bot, entity) => `${bot.game?.dimension}:${entity.uuid || entity.id}
 
 // Entity IDs are connection-local. Retry a blocked stack after it moves, or
 // after a short cooldown; neither persist stale IDs nor let one stack monopolize work.
+// The rest a failed pickup gives a drop, let go of where the drop is gone back for on purpose (note 2525): the memory's
+// walk back (drop-memory.js) came within the thirty seconds the failed pickup had rested it, and was told nothing lay
+// there: 'reached, not picked up' 1.4 blocks from raw iron on full-106 and full-105 (2026-10-29 17:0xZ).
+function forgetRest(bot, item, origin, radius = 6) {
+  const failed = failures.get(bot);
+  if (!failed) return;
+  for (const e of Object.values(bot.entities || {})) if (e?.position && e.getDroppedItem?.()?.name === item && e.position.distanceTo(origin) <= radius) failed.delete(key(bot, e));
+}
 function nearbyDrops(bot, item, origin, radius, { hostilesOk = false } = {}) {
   const failed = failures.get(bot);
   if (failed) for (const [id, until] of failed) if (until <= Date.now()) failed.delete(id);
@@ -405,4 +413,4 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
   }
 }
 
-module.exports = { dugStand, nearbyDrops, collectNearbyDrops, pickupPositions, hotOnTheWay, edgeOnTheWay };
+module.exports = { dugStand, nearbyDrops, collectNearbyDrops, pickupPositions, hotOnTheWay, edgeOnTheWay, forgetRest };
