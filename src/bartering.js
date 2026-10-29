@@ -164,7 +164,15 @@ async function barterStep(bot, task, goal, save, actions = {}) {
   if (!await wearGold(bot, task, goal, save, actions)) throw new Error('No gold to wear: piglins will not barter with a player in no gold');
   const pearlsBefore = countOf(bot, 'ender_pearl'), potionsBefore = firePotions(bot);
   const round = piglins(bot, goal).slice(0, PER_ROUND);
-  if (!round.length) throw new Error(`No adult piglin in view to barter with: ${ingots(bot)} gold ingot${ingots(bot) === 1 ? '' : 's'} carried for when one is`);
+  // The piglins in view and set aside said with it (note 2461): 'no adult piglin in view' was said with piglins in view
+  // whose walk had failed or who were admiring an ingot, and the barter was chosen again on it. full-64 (25587,
+  // 2026-10-29 07:2xZ) failed the barter step 24 times running so, down from 10 ingots to 1, no pearl gained.
+  if (!round.length) {
+    const here = bot.entity.position;
+    const aside = Object.values(bot.entities || {}).filter(e => e.name === 'piglin' && e.isValid !== false && e.position && e.position.distanceTo(here) <= SEARCH && !baby(bot, e) && isSetAside(goal, 'barter_piglin', e.id));
+    const asideSays = aside.length ? `${aside.length} adult piglin${aside.length === 1 ? '' : 's'} in view, each set aside for up to a minute (admiring an ingot thrown, or the walk to it failed: no way to it from here), the nearest ${Math.round(aside[0].position.distanceTo(here))} blocks off` : 'no adult piglin in view';
+    throw new Error(`No piglin free to barter with: ${asideSays}; ${ingots(bot)} gold ingot${ingots(bot) === 1 ? '' : 's'} carried`);
+  }
   const state = goal.barter ||= { thrown: 0, pearls: 0 };
   const ingot = bot.registry.itemsByName.gold_ingot.id;
   const thrownAt = [];
