@@ -398,6 +398,11 @@ async function span(bot, task, target, maxBlocks, maxSteps, { wall = false, whol
         }
       }
     }
+    // From the middle of this cell, every step (note 2449): the step was centred only where a block was laid, and walked
+    // along a span already standing it went for the next cell's middle from wherever the body was, across the air at a
+    // turn. full-62 (25590, 2026-10-29 05:29:18 to 23Z), at 20 health on its span at y 47, turned from z to x and went
+    // diagonally from (-34.5, 110.6) toward (-31.9, 113.7), off the span 16 blocks into the lava.
+    { const centre = here.offset(0.5, 0, 0.5), p = bot.entity.position; if (Math.hypot(p.x - centre.x, p.z - centre.z) > 0.3) await creepTo(bot, task, here, 1200); }
     if (!await creepTo(bot, task, next)) throw new Error('Could not step onto the span');
     if (bot.entity.position.y < here.y - 0.5) throw new Error('Fell off the span');
   }
