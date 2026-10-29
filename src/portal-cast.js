@@ -801,7 +801,16 @@ async function castFrame(bot, task, goal, save, actions) {
             between = `; cells: ${cells.join('; ')}`;
           }
         } catch (_) { between = ''; }
-        console.log(`[cast] the stand ${standing} not reached from ${from}: ${why || 'the walk ended short of it'}${between}`);
+        // The walk's own search said with the body's movement as it stood (note 2539): full-110 (25589, 2026-10-29
+        // 18:5x to 19:16Z) failed a stand two up 25 minutes, 'noPath', and the same walk in the arena from the same
+        // blocks arrived; full-116 (25588, 19:4xZ) the same three up. What the live search refused was not said.
+        let search = '';
+        try {
+          const m = movements, route = await surveyRoute(bot, task, m, new goals.GoalBlock(standing.x, standing.y, standing.z), 1500);
+          const scaffold = (bot.inventory?.items?.() || []).filter(i => (m.scafoldingBlocks || []).includes(i.type)).reduce((n, i) => n + i.count, 0);
+          search = `; the search now: ${route.status}, ${(route.path || []).length} cells${route.path?.length ? ` ending ${route.path.at(-1).x},${route.path.at(-1).y},${route.path.at(-1).z}` : ''}; movement: canDig ${m.canDig}, towers ${m.allow1by1towers}, scaffold carried ${scaffold}, maxDropDown ${m.maxDropDown}, parkour ${m.allowParkour}, allowedPosition ${m.allowedPosition ? 'set' : 'none'}, exclusions ${(m.exclusionAreasStep || []).length}/${(m.exclusionAreasBreak || []).length}/${(m.exclusionAreasPlace || []).length}, lavaWhy ${m._lavaWhy || '-'}, edgeRefusals ${m.edgeRefusals || 0}`;
+        } catch (err) { search = `; the search now: ${String(err.message || err).slice(0, 80)}`; }
+        console.log(`[cast] the stand ${standing} not reached from ${from}: ${why || 'the walk ended short of it'}${between}${search}`);
         throw new Error(`Nowhere to stand to pour into the frame slot at ${p}: the stand made for it at ${standing} could not be walked to from ${from} (${why || 'the walk ended short of it'}${walks > 1 ? `, ${walks} walks, ${Math.round(away())} blocks from it at the last` : ''})`);
       }
       stand = stands.find(s => s.feet.equals(standing));
