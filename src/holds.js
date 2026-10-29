@@ -64,6 +64,8 @@ const secs = ms => { const s = Math.round(ms / 1000); return s < 90 ? `${s} seco
 // option keys on offer.
 // The health a stance with no price may cost before it is asked again (note 952).
 const UNPRICED_LOSS = 4;
+// An arrow as it lands on a bare bot: 4 the most often, 5 at the most in the flight records of 2026-10-29 (note 2501).
+const ONE_ARROW = 5;
 // A shield's uses blocked away are a cost the hold's price does not carry (note 1955): a hold is asked again once the shield has spent this share of the uses it had at the choice.
 const SHIELD_SPENT = 0.25;
 function begin({ choice, at = Date.now(), health, expects = null, mobs = [], offered = [], shield = null }) {
@@ -93,6 +95,10 @@ function diverged(hold, { now = Date.now(), health, mobs = [], offered = [], sho
   const e = hold.expects;
   const elapsed = (now - hold.at) / 1000;
   const lost = (hold.health ?? health) - (health ?? hold.health);
+  // Hit at a health one arrow ends (note 2501, the body's floor): whatever the stance and its price, it is asked again.
+  // full-92, full-95 and full-88 (2026-10-29) held on through hits at 7, 5 and 2 health, the lone shooter's
+  // nearer-and-sight triggers dropped and the price not yet spent, and the next arrow ended each.
+  if (lost > 0 && Number.isFinite(health) && health <= ONE_ARROW) return `hit while at ${Math.round(health * 10) / 10} health, which one arrow that lands ends (${Math.round(lost * 10) / 10} lost since it was chosen)`;
   if (e && Number.isFinite(e.damage) && e.seconds > 0) {
     const priced = e.damage * elapsed / e.seconds;
     if (lost > priced + (e.oneHit || 0)) return `${Math.round(lost * 10) / 10} health lost in ${secs(now - hold.at)}, more than the ${Math.round(priced * 10) / 10} it was priced at by then`;

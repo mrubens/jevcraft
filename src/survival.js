@@ -671,7 +671,9 @@ const HIDING_STANCES = new Set(['out_of_sight', 'nook', 'take_cover']);
 const SHIELD_STANCES = new Set(['shield_guard', 'shield_the_charge', 'shield_the_blast', 'shield_the_tridents']);
 const TRIDENT_RANGE = 24;
 // The runs, and how long one may stand still before it has failed (note 752h).
-const RUN_STANCES = new Set(['retreat', 'leave_reach']), RUN_STUCK_MS = 2000;
+// run_from too (note 2501): full-95 (14:22:12 to 14:22:21Z) stood still nine seconds in a run_from whose route search
+// stalled, at 5 health in a skeleton's line, and the arrow ended it.
+const RUN_STANCES = new Set(['retreat', 'leave_reach', 'run_from']), RUN_STUCK_MS = 2000;
 // How long a held stance's mobs may stay unseen and no nearer before it ends (note 752j).
 const UNSEEN_HOLD_MS = 30000;
 // A standoff with one creeper behind blocks (note 778, the critic's ~02:54Z
@@ -6575,7 +6577,10 @@ class Survival {
       const plan = e.isValid === false ? { cells: [] } : blockPlan(bot, e);
       for (const c of plan.cells) {
         task.check();
-        try { await this.actions.place(bot, task, c, material, { stay: true }); placed++; }
+        // The block picked for each cell, as take_cover does (note 2501): full-94 (13:27Z) failed 'Need more spruce_planks'
+        // with 73 blocks carried, the one kind picked first spent.
+        const kind = countOf(bot, material) > 0 ? material : shelter.buildingItem(bot, 1)?.name || material;
+        try { await this.actions.place(bot, task, c, kind, { stay: true }); placed++; }
         catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; if (blockPlan(bot, e).stoppedBy) break; return fail(`a block in the ${e.name.replaceAll('_', ' ')}'s line at ${c} did not go down: ${String(err.message || err).slice(0, 120)}`); }
       }
     }
@@ -6804,14 +6809,17 @@ class Survival {
     // A rod picked up is noted when it is first seen (after-rod.js, note 659).
     require('./after-rod').noteRods(bot);
     const striking = STRIKING_STANCES.has(held?.choice);
-    const extendable = physical && !damageOver && !!held?.hold && (!inTime || extendedHold) && !['keep_working', 'eat', 'eat_golden_apple', 'drink_fire_resistance', 'retreat', 'leave_reach'].includes(held.choice) && !(striking && held.start && !stanceActed(bot, held.start));
+    const extendable = physical && !damageOver && !!held?.hold && (!inTime || extendedHold) && !['keep_working', 'eat', 'step_out_and_eat', 'eat_golden_apple', 'drink_fire_resistance', 'retreat', 'leave_reach', 'run_from'].includes(held.choice) && !(striking && held.start && !stanceActed(bot, held.start));
     if (extendable) holding = false;
     // One shot that lands ends the bot, and a shooter has a line to it: out
     // of every line first, then the stance is asked (lethal-line.js, note
     // 701). Not while a stance chosen with this said holds.
     const lethalNow = require('./lethal-line').lethal(bot, danger, feet);
     if (!lethalNow && this.state.lethalLine && Date.now() - this.state.lethalLine.at > LETHAL_SAID_MS) delete this.state.lethalLine;
-    if (lethalNow && !(held?.lethalKnown && (holding || extendable)) && await this.breakLethalLine(task, goal, save, danger, lethalNow)) {
+    // Not skipped for a hold whose time is up and would only be extended (note 2501): full-88 (13:57:19Z) at 2 health had
+    // its take_cover end 'its time is up' and the stance asked again with the bot still in the line; an arrow landed
+    // between the choice and the move.
+    if (lethalNow && !(held?.lethalKnown && holding) && await this.breakLethalLine(task, goal, save, danger, lethalNow)) {
       if (held) held.lethalAgain = true;
       return true;
     }

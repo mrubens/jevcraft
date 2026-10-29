@@ -25,6 +25,7 @@ const r1 = n => Math.round(n * 10) / 10;
 // One landing's end: the shooters with a line to `cell` whose one shot that
 // lands ends the bot from its health now.
 // -> { health, alight, lined: [{ e, hit, fire, cost }], worst, says } or null.
+const ARROW = /^(skeleton|stray|bogged|parched)$/, ARROW_LANDS = 5;
 function lethal(bot, danger, cell, { shooter = require('./mob-policy').shooter } = {}) {
   const ce = require('./combat-estimate');
   const shooters = (danger || []).map(t => t.entity || t).filter(e => e?.position && shooter(e));
@@ -41,7 +42,10 @@ function lethal(bot, danger, cell, { shooter = require('./mob-policy').shooter }
     if (!m?.hit) continue;
     const fireShot = ce.FIRE_SHOTS.has(e.name);
     if (fireShot && proof > 0) continue;
-    const hit = ce.afterArmour(m.hit, worn);
+    // An arrow as it lands, not the table's least (note 2501): the flight records of 2026-10-29's full runs had 116
+    // skeleton arrows on bare bots, 4 the most often (38) and 5 nine times, where the table says 3; at 4 to 7 health the
+    // reflex was silent and four runs were shot dead (full-92 6.9 to 2.0 in one arrow, full-95 5 to 1, full-94 5.2 to 2.2).
+    const hit = ce.afterArmour(ARROW.test(e.name) ? Math.max(m.hit, ARROW_LANDS) : m.hit, worn);
     const fire = fireShot ? Math.max(0, ce.FIRE_TICKS.fireball - alight) : 0;
     const ends = fireShot ? ce.landingsToEnd(health, hit, alight) <= 1 : hit + Math.floor(alight) >= health;
     if (ends) lined.push({ e, hit, fire, cost: hit + fire });
