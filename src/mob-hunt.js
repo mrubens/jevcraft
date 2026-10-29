@@ -3198,7 +3198,11 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   // to the busiest of them, walked on foot first and otherwise asked.
   // A place Jev left is not offered until its ten minutes are up (said
   // in waysLeft). The blazes about now are a way of their own.
-  const spots = blazeSpots(bot, goal).filter(s => s.off > 12 && !wayLeft(state, s.spot));
+  // Within twelve too, past a blow's reach (note 2464, as 2458 for the blazes about): a place blazes were seen minutes ago
+  // with none in sight now is not the hunt's look's to take. full-65 (25589, 2026-10-29 08:02Z), 9 blocks from where
+  // blazes were seen 3 times 4 minutes before, 7 rods wanted, was offered staying in the fortress, fetching stems,
+  // blocks or leaving it for kit, none good 0.47, and took leave for kit as the one way left.
+  const spots = blazeSpots(bot, goal).filter(s => s.off > 4 && !wayLeft(state, s.spot));
   // The blazes about within twelve too, past a blow's reach (note 2458): the hunt's own look takes those it can walk to,
   // and when it cannot (a blaze over a wall, up a floor) this way is the one that asks for a pillar or a staircase.
   // full-63 (25586, 2026-10-29 06:51Z), in its fortress in a full iron set with 1 rod and 5 wanted, 3 blazes in sight 6
