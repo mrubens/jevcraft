@@ -368,6 +368,15 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
         catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; failedWalk = err; }
         for (const until = Date.now() + 500; !gained() && Date.now() < until;) { task.check(); await sleep(50); }
         if (gained()) { console.log(`[drops] the ${item.replaceAll('_', ' ')} at ${c} taken by a walk over to it`); break; }
+        // In water a step or two off, where the route search finds no way into the water's cell (note 2513): stepped
+        // toward straight, as a player does. full-100 (25590, 2026-10-29 15:5xZ) left flint 1 block off in water, 'No
+        // route from here to (-208, 40, 94) (partial)'.
+        if (failedWalk && /water/.test(bot.blockAt(c)?.name || '') && drop.position.distanceTo(bot.entity.position) <= 2.5) {
+          try { await require('./motion').move(bot, task, { label: 'into_water_for_drop', keys: ['forward'], sneak: false, why: `the ${item.replaceAll('_', ' ')} lying in the water beside the bot`, look: drop.position.clone(), maxMs: 1500, tick: 50, until: () => gained() }); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+          for (const until = Date.now() + 500; !gained() && Date.now() < until;) { task.check(); await sleep(50); }
+          if (gained()) { console.log(`[drops] the ${item.replaceAll('_', ' ')} at ${c} taken by a step into the water`); break; }
+        }
         // Why the walk over came to nothing (note 2492): full-90 (25586, 2026-10-29 12:41Z) left raw iron 2.9 off, 2 up on
         // gravel from a tunnel, with no word of the walk.
         console.log(`[drops] the walk over to the ${item.replaceAll('_', ' ')} at ${c} from ${bot.entity.position.floored()}: ${failedWalk ? String(failedWalk.message || failedWalk).slice(0, 140) : 'arrived, not picked up'} (dig ${movement.canDig !== false}, towers ${!!movement.allow1by1towers})`);
