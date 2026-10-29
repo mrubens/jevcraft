@@ -7180,6 +7180,7 @@ class Survival {
       // what cover gives up at full health (cage-yield.js, note 702).
       const cageSoFar = (() => { try { return require('./cage-yield').annotate(bot, goal, options); } catch (_) { return null; } })();
       if (cageSoFar) state.cageSoFar = cageSoFar;
+      try { const bf = require('./blaze-fight').says(bot); if (bf) state.blazeFight = bf; } catch (_) { /* no record */ }
       // A hoglin about when food is what the bot lacks: killed, it is the
       // food (fortress-away.js, note 702; 25590 was held by one at 10 health,
       // hunger 10, nothing to eat, and every word said it only as a threat).

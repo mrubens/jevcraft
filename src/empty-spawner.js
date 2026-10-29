@@ -488,6 +488,7 @@ async function atSpawner(bot, task, goal, save, actions = {}, now = Date.now()) 
   // The rods carried asked on their own first (rod-bank.js askBank, note 871).
   if (await require('./rod-bank').askBank(bot, task, goal, save, actions, client, { now }) === 'banked') return true;
   goal.step = { action: 'at_spawner', target: P(known.cage), off: known.off, health: bot.health, food: bot.food }; save?.();
+  try { const bf = require('./blaze-fight').says(bot); if (bf) state.blazeFight = bf; } catch (_) { /* no record */ }
   const decision = await require('./decisions').decide('empty_spawner', { client, bot, task, goal, save, tree, state, target: P(known.cage) });
   if (decision.stale) return true;
   const pick = decision.path.at(-1);
