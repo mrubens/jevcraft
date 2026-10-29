@@ -114,7 +114,11 @@ function askAgainBecause(bot, goal, kinds, now = Date.now()) {
   // A fortress found since the answer (note 2502): the rods' leg is a walk now, not a search. full-89, -91 and -93
   // (2026-10-29) found theirs while a pearl way held, and none fought a blaze.
   if (!h.fortressKnown && fortressNow(bot, goal)) return `a fortress is known now (${fortressNow(bot, goal).distance} blocks off), where none was at the answer: the rods are a walk there`;
-  const fresh = kinds.filter(k => !(h.offered || []).includes(k));
+  // Each way news once in the answer's time (note 2504): a piglin, an enderman or a forest coming in and out of reach as
+  // the bot walks was news each time it came back. full-93 (2026-10-29 14:5xZ) was asked six times in three minutes,
+  // rods_first answered four times, walking 255 blocks meanwhile.
+  const fresh = kinds.filter(k => !(h.offered || []).includes(k) && !(h.seenSince || []).includes(k));
+  h.seenSince = [...new Set([...(h.seenSince || []), ...kinds])];
   if (fresh.length) return `a way to the pearls that was not on offer at the answer is real now: ${fresh.map(k => ({ enderman: 'an enderman in reach', forest: 'a warped forest known and open', barter: 'gold to throw with a piglin in reach', bastion: 'a bastion known, its gold to barter with', 'gold ore': 'nether gold ore within reach to mine and barter' })[k] || k).join(', ')}`;
   return null;
 }
