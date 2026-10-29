@@ -269,6 +269,19 @@ class SurvivalMovements extends Movements {
     // Nor a block laid or dug beside a floor that falls with it (note 592,
     // dropsFloor below).
     for (let i = kept.length - 1; i >= 0; i--) if (this.dropsFloor(node, kept[i])) kept.splice(i, 1);
+    // Nor a move whose dig the dig guard refuses (note 2466, skills.js digGuardPlugin): planned anyway, the dig was
+    // refused, the route planned again the same, and the refusal said again. full-72 (25590, 2026-10-29 09:0x to 09:2xZ),
+    // at its lava cast at y -48, had 'Not dug: the deepslate ... the floor under the body dug out, it falls 1 block into
+    // lava' dozens of times over, 29 minutes on the reach nether without a new best.
+    if (this.bot?.entity) {
+      try {
+        const terrain = require('./terrain'), at = terrain.atOf(this.bot), health = this.bot.health ?? 20;
+        for (let i = kept.length - 1; i >= 0; i--) {
+          const m = kept[i];
+          if ((m.toBreak || []).some(b => terrain.digExposes(at, { x: node.x + 0.5, y: node.y, z: node.z + 0.5 }, b, { health }))) kept.splice(i, 1);
+        }
+      } catch (_) { /* the dig guard still refuses at the dig */ }
+    }
     for (const next of kept) {
       if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => [0, -1].some(dy => this.getBlock(next, dx, dy, dz)?.name === 'lava')) ||
         (nether && this.deadlyDropBeside(next))) next.cost += LAVA_EDGE_COST;
