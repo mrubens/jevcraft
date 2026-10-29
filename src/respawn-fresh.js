@@ -52,7 +52,8 @@ async function run(bot, task, goal, save, { lava, navigate, move }) {
   goal.deliberateDeath = { at: Date.now(), why: 'Jev chose to come back to life fresh (respawn_fresh)' }; save?.();
   bot.chat?.('Nothing to dig or span with here. Starting over from the bed.');
   const { goals } = require('mineflayer-pathfinder');
-  try { await navigate(bot, task, new goals.GoalNear(lava.at.x, lava.at.y, lava.at.z, 2), { timeoutMs: 60000, stallMs: 8000 }); } catch (err) { task.check(); if (['Cancelled'].includes(err.name)) throw err; }
+  const from = bot.entity?.position?.floored?.();
+  try { await navigate(bot, task, new goals.GoalNear(lava.at.x, lava.at.y, lava.at.z, 2), { timeoutMs: 60000, stallMs: 8000 }); } catch (err) { task.check(); if (['Cancelled'].includes(err.name)) throw err; console.log(`[respawn fresh] the walk to the lava at (${lava.at.x}, ${lava.at.y}, ${lava.at.z}) from ${from}: ${String(err.message || err).slice(0, 140)}`); }
   const began = Date.now();
   while (Date.now() - began < DEATH_WAIT_MS && (bot.health ?? 0) > 0 && bot.isAlive !== false) {
     task.check();

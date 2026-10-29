@@ -137,7 +137,14 @@ function options(bot, task, goal, save, actions, ctx = {}) {
   if (nether && actions?.returnOverworld && (!f.healable || stay?.short > 0) && !tripClosed) {
     let trip = ''; try { trip = require('./game-progress').portalTrip(bot, goal).trim(); } catch (_) { trip = 'the way back to a portal is not known'; }
     let there = ''; try { there = require('./healing').overworldFoodSays(bot, goal) || ''; } catch (_) { /* unknown */ }
-    tree.go_back = { description: `Go back through the portal to the Overworld for food, hunted and cooked there, and come back fed. ${trip}${there ? ` ${there}` : ''} The measured pace is part of the price: the walk back is minutes, not seconds, and of the walks back that began over 60 blocks in the Nether that day most were given up or ended in a death (note 626). ${rowThen(20, 20, { health: f.health, hunger: f.hunger })} It gains no rod while it lasts. ${require('./food-facts').overworldWays(bot)} ${f.healable ? '' : `${require('./food-facts').regenSays(bot)} `}${require('./food-facts').recordSays(bot)}`,
+    // The rods' leg alone against the food carried, and what leaving a fortress's door for food came to (note 2503):
+    // full-89, -91 and -93 (2026-10-29) left theirs at health 20 for food, 17 to 60 minutes away, and fought no blaze.
+    let legSays = '';
+    try {
+      const legs = require('./crossing-kit').stayLegs(bot, goal), food = require('./food-keep').carriedPoints(bot);
+      legSays = ` The rods' leg alone is about ${legs.rods.minutes} minutes and ${legs.rods.points} food points at the Nether's hunger (${food} carried; the pearls' leg after it is about ${legs.pearls.minutes} minutes more). On 2026-10-29's runs three bots that left a fortress's door for food were gone 17 to 60 minutes, and none of them came back to fight a blaze in that time.`;
+    } catch (_) { legSays = ''; }
+    tree.go_back = { description: `Go back through the portal to the Overworld for food, hunted and cooked there, and come back fed. ${trip}${there ? ` ${there}` : ''}${legSays} The measured pace is part of the price: the walk back is minutes, not seconds, and of the walks back that began over 60 blocks in the Nether that day most were given up or ended in a death (note 626). ${rowThen(20, 20, { health: f.health, hunger: f.hunger })} It gains no rod while it lasts. ${require('./food-facts').overworldWays(bot)} ${f.healable ? '' : `${require('./food-facts').regenSays(bot)} `}${require('./food-facts').recordSays(bot)}`,
       run: async () => {
         goal.leaveNether = { reason: 'food', pick: 'go_back', until: 0, at: Date.now() };
         goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; goal.foodTripChosen = Date.now(); save();
