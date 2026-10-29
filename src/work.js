@@ -10260,6 +10260,18 @@ function spinGuard(bot = null) {
       if (bot) bot._spin = { since: bot._spin && now - bot._spin.last < 5000 ? bot._spin.since : now, last: now };
       if (passes.length === 21 || passes.length % 200 === 0) console.log(`[loop] spinning: ${passes.length} passes in a second at ${shown(goal?.step, 200)} survival=${shown(goal?.survivalAction, 160)} error=${goal?.lastError || ''}`);
       await new Promise(resolve => setTimeout(resolve, 250));
+      // A spin of a minute and a half on solid ground, unhurt, ends the process for the supervisor to start again on
+      // the saved state (note 2529), as the restart asked for already does (quiet-restart.js spun): slowed, the loop
+      // still went round. full-100 (25590, 2026-10-29 17:05 to 17:15Z), no pickaxe, its portal way's every answer
+      // resting, spun ten minutes, 490,000 log lines, and walked into lava at the end of it with its four rods.
+      try {
+        if (bot && Date.now() - bot._spin.since >= 90000 && require('./quiet-restart').spun(bot, Date.now()) && !bot._spinExit) {
+          bot._spinExit = true;
+          console.log(`[loop] spun ${Math.round((Date.now() - bot._spin.since) / 1000)} seconds on solid ground, unhurt: quitting for the supervisor to start the bot again`);
+          try { bot.quit('spin'); } catch (_) { /* gone already */ }
+          setTimeout(() => process.exit(0), 500);
+        }
+      } catch (_) { /* not ended */ }
     }
   };
 }
