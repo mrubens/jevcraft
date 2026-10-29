@@ -285,7 +285,7 @@ async function mineWithinReach(bot, task, { now = Date.now(), label = 'from wher
   const eye = bot.entity.position.offset(0, 1.62, 0), feet = bot.entity.position.floored();
   // Why ore within five was passed over, said now and then (note 2402), so the next miss says what stopped it.
   const passed = [];
-  const found = (bot.findBlocks?.({ matching: ids, maxDistance: 5, count: 8 }) || []).filter(p => {
+  const found = (bot.findBlocks?.({ matching: ids, maxDistance: 5, count: 64 }) || []).filter(p => {
     const c = p.offset(0.5, 0.5, 0.5);
     if (c.distanceTo(eye) > 4.3) return false;
     if (p.x === feet.x && p.z === feet.z) { passed.push([p, 'under the feet']); return false; }
@@ -306,22 +306,36 @@ async function mineWithinReach(bot, task, { now = Date.now(), label = 'from wher
   const digOne = (b, look) => task?.check ? require('./vitals').digWithAirGuard(bot, task, b) : require('./skills').digWithTool(bot, b, look);
   // One block between the eye and the ore, safe to dig (nothing liquid behind it, not the floor underfoot), is dug
   // and the ore after it (note 2402): the stairs and the mine step passed iron open to the air on its far side.
-  for (const [p, why, hit] of passed.filter(x => x[2]).slice(0, 2)) {
+  // Four a look, and the block between as low as one under the feet beside the column (note 2509): the climb passed iron
+  // two blocks off behind one stone a block down. full-102 (25592, 2026-10-29 15:3xZ) passed (18, 11, 143) and (19, 9,
+  // 143) behind the stone at (17, 10, 143) while its mine step tunnelled 30 blocks to deepslate iron at y -13; the
+  // user, watching: 'Jev just walked right past iron'.
+  for (const [p, why, hit] of passed.filter(x => x[2])) {
     task?.check?.();
-    const block = bot.blockAt(hit), ore = bot.blockAt(p);
-    if (!block || !ore || !ids.includes(ore.type) || block.boundingBox !== 'block' || ids.includes(block.type)) continue;
-    if (hit.y < feet.y || (hit.x === feet.x && hit.z === feet.z)) continue;
-    if (!require('./tunneling').safeExcavation(bot, hit)) continue;
-    const c = p.offset(0.5, 0.5, 0.5);
+    const ore = bot.blockAt(p);
+    if (!ore || !ids.includes(ore.type)) continue;
+    // Every block on the line from the eye to the ore, each safe to dig (nothing liquid behind it, not the floor under
+    // the feet, not below the feet but one, nothing that falls), dug in turn and the ore after them (note 2509, the user:
+    // 'Why do we limit to 2'): the look took two ores a pass behind one block only, and the climb and the furnace's wait
+    // passed iron two blocks off.
+    const c = p.offset(0.5, 0.5, 0.5), dir = c.minus(eye), cells = [];
+    for (let t = 0; t <= dir.norm(); t += 0.1) {
+      const q = eye.plus(dir.scaled(t / dir.norm())).floored();
+      if (q.equals(p) || cells.some(x => x.equals(q))) continue;
+      const b = bot.blockAt(q);
+      if (b && b.boundingBox === 'block') cells.push(q);
+    }
+    const walls = cells.map(q => bot.blockAt(q));
+    if (!walls.length || walls.some(b => !b || ids.includes(b.type) || b.diggable === false || /^(sand|red_sand|gravel|suspicious_)/.test(b.name))) continue;
+    if (walls.some(b => b.position.y < feet.y - 1 || (b.position.x === feet.x && b.position.z === feet.z))) continue;
+    if (!walls.every(b => require('./tunneling').safeExcavation(bot, b.position))) continue;
     try {
-      const again = bot.world?.raycast?.(eye, c.minus(eye).normalize(), c.distanceTo(eye) + 0.5);
-      if (again && !(again.position.x === hit.x && again.position.y === hit.y && again.position.z === hit.z)) continue;
-      await digOne(block, false);
+      for (const b of walls) { const now = bot.blockAt(b.position); if (now && now.boundingBox === 'block') await digOne(now, false); }
       await digOne(bot.blockAt(p), true); dug++;
-      console.log(`[climb ore] ${ore.name.replaceAll('_', ' ')} at (${p.x}, ${p.y}, ${p.z}) dug ${label}, the ${block.name.replaceAll('_', ' ')} before it first`);
+      console.log(`[climb ore] ${ore.name.replaceAll('_', ' ')} at (${p.x}, ${p.y}, ${p.z}) dug ${label}, ${walls.map(b => `the ${b.name.replaceAll('_', ' ')}`).join(', ')} before it first`);
     } catch (err) { if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
   }
-  for (const p of found.slice(0, 4)) {
+  for (const p of found) {
     task?.check?.();
     const b = bot.blockAt(p);
     if (!b || !ids.includes(b.type)) continue;

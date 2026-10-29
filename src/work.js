@@ -4061,8 +4061,13 @@ async function smelt(bot, task, step, goal, save = () => {}) {
       // gives nothing. mid-243-ga, its pickaxe worn out, walked on to lapis
       // and iron for five minutes digging stone by hand (note 671).
       const harvestable = p => { const b = bot.blockAt(p); return !b?.harvestTools || bot.inventory.items().some(i => b.harvestTools[i.type]); };
-      const oreInReach = () => find(bot, WAIT_ORES, 5, 12).find(p => miningReach(bot, bot.entity.position, p) && bot.canDigBlock?.(bot.blockAt(p)) && harvestable(p) &&
+      const oreInSight = () => find(bot, WAIT_ORES, 5, 12).find(p => miningReach(bot, bot.entity.position, p) && bot.canDigBlock?.(bot.blockAt(p)) && harvestable(p) &&
         !isSetAside(goal || {}, 'reach', p) && safeFromHostiles(bot, p));
+      // Or behind one block in reach of the eye, dug with the block before it as the climb's ore is (note 2509): full-102
+      // (25592, 2026-10-29 15:2xZ) waited out its iron beside its furnace with iron ore a stone's thickness off; the user,
+      // watching: 'Jev just walked right past iron ... Right next to its furnace'.
+      const oreBehindOne = () => { try { const eye = bot.entity.position.offset(0, 1.62, 0); return find(bot, WAIT_ORES, 5, 12).find(p => { const c = p.offset(0.5, 0.5, 0.5); if (c.distanceTo(eye) > 4.3 || isSetAside(goal || {}, 'reach', p) || !harvestable(p)) return false; const hit = bot.world?.raycast?.(eye, c.minus(eye).normalize(), c.distanceTo(eye) + 0.5); return hit?.position && !hit.position.equals(p) && hit.position.distanceTo(p) <= 1.5 && !WAIT_ORES.includes(bot.blockAt(hit.position)?.name); }) || null; } catch (_) { return null; } };
+      const oreInReach = () => oreInSight() || oreBehindOne();
       // Further off, walked to and back while a long batch cooks: an ore
       // within sixteen, else a log while fewer than sixteen are carried.
       // Twenty raw iron at the base is two hundred seconds, and the dream
@@ -4205,7 +4210,10 @@ async function smelt(bot, task, step, goal, save = () => {}) {
         if (ore) {
           done.dig_in_reach++;
           furnace.close();
-          try { await dig(bot, task, ore, { requireDrops: false }); }
+          try {
+            if (oreInSight()) await dig(bot, task, ore, { requireDrops: false });
+            else if (!(await require('./opportunistic-mining').mineWithinReach(bot, task, { label: 'beside the furnace' }))) { if (goal) setAside(goal, 'reach', ore, 'the block before it could not be dug from here', 120000); }
+          }
           catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; if (goal) setAside(goal, 'reach', ore, err.message, 120000); }
           furnace = await openWindow(bot, task, () => bot.openFurnace(block), { block, what: 'the furnace' });
           continue;
