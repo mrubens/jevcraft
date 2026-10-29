@@ -261,11 +261,20 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
     // walk or passage tried.
     if (!gained() && allowExcavation) {
       const eye = bot.entity.position.offset(0, 1.62, 0);
-      for (const drop of nearbyDrops(bot, item, origin, radius, { hostilesOk }).filter(d => d.position.distanceTo(bot.entity.position) <= 4).slice(0, 2)) {
+      // Out to eight, a walk within reach first (note 2468): the ore dug beside the ore dug drops into pockets a few
+      // blocks off. full-80 (25587, 2026-10-29 09:5xZ) left 4 raw iron 7.6 blocks off and full-79 (25588) 2 at 4.4, each
+      // 'in air over stone under stone, 0 spots, 1 dug', every count 0.
+      for (const drop of nearbyDrops(bot, item, origin, radius, { hostilesOk }).filter(d => d.position.distanceTo(bot.entity.position) <= 8).slice(0, 3)) {
         task.check(); checkAir(bot);
         if (!dugStand(bot, drop).length) continue;
         const over = bot.blockAt(drop.position.floored().offset(0, 1, 0));
-        if (!over || !over.diggable || over.boundingBox !== 'block' || eye.distanceTo(over.position.offset(0.5, 0.5, 0.5)) > 4.5) continue;
+        if (!over || !over.diggable || over.boundingBox !== 'block') continue;
+        if (bot.entity.position.offset(0, 1.62, 0).distanceTo(over.position.offset(0.5, 0.5, 0.5)) > 4.5) {
+          const c = over.position;
+          try { await move(bot, task, new goals.GoalNear(c.x, c.y, c.z, 3), { timeoutMs: 8000, stallMs: 3000, hostilesOk }); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; continue; }
+        }
+        if (bot.entity.position.offset(0, 1.62, 0).distanceTo(over.position.offset(0.5, 0.5, 0.5)) > 4.5) continue;
         if ([[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 0, -1]].some(([x, y, z]) => /lava|water/.test(bot.blockAt(over.position.offset(x, y, z))?.name || ''))) continue;
         try { await require('./skills').digWithTool(bot, over, true); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[drops] the ${over.name} over the ${item.replaceAll('_', ' ')} not dug: ${String(err.message || err).slice(0, 120)}`); }
       }
