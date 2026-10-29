@@ -474,10 +474,20 @@ async function askStayKit(bot, task, goal, save, { actions = {}, survival = null
   const gain = cook ? foodStock(bot).cookedGain : 0;
   const cookCovers = cook ? `The raw meat carried, cooked here (cook_meat, about ${Math.round(foodStock(bot).raw.reduce((n, m) => n + m.n, 0) * 10 / 60 * 10) / 10} minutes at a furnace), is ${gain} points more: ${stay.carried + gain} in all, ${stay.carried + gain >= stay.points ? `the stay's ${stay.points} and ${stay.carried + gain - stay.points} over` : `${stay.points - stay.carried - gain} short of the stay's ${stay.points}`}.` : '';
   if (cook) tree.cook_meat = { description: `${cook.description} ${cookCovers}` };
+  // The hunger as it stands, said on going on (note 2526): full-105 (25587, 2026-10-29 17:0xZ), five minutes into the
+  // Nether at hunger 18 and health 20, chose the trip home over going on or a hoglin; the user: 'can't it eat hoglins and
+  // mushrooms in there?'.
+  {
+    const h = bot.food ?? 20, perMin = HUNGER_AN_HOUR / 60;
+    const toRegen = h >= 18 ? Math.round((h - 17) / perMin) : 0, toSix = Math.round(Math.max(0, h - 6) / perMin), toZero = Math.round(h / perMin);
+    tree.go_on.description += ` Hunger is ${h} now: ${h >= 18 ? `health comes back from it for about ${toRegen} minutes more at the stay's pace, ` : 'health does not come back from it now; '}it reaches six (no sprinting) in about ${toSix} minutes and none in about ${toZero}, and the food here (a hoglin, mushroom stew) can be taken when it is wanted.`;
+  }
   if (cook) tree.go_on.description += ` ${cookCovers}`;
   // Food ways only when food is short: a stay with enough is not offered a trip for more.
   if (stay.short) {
-    if (found.routes.return_for_food) tree.return_for_food = { description: `${found.routes.return_for_food.description}${cookCovers ? ` ${cookCovers}` : ''}` };
+    // What the trip home came to on the day's runs (note 2526): 12 to 30 minutes out of the Nether a time, and one of the
+    // four never back in (full-88).
+    if (found.routes.return_for_food) tree.return_for_food = { description: `${found.routes.return_for_food.description}${cookCovers ? ` ${cookCovers}` : ''} On 2026-10-29's full runs a trip home for food took the bot out of the Nether 12 to 30 minutes a time, and one bot of four never got back in.` };
     if (found.routes.raid_bastion) tree.raid_bastion = { description: found.routes.raid_bastion.description };
     const others = Object.keys(found.routes).filter(k => !['return_for_food', 'raid_bastion', ...(cook ? ['cook_meat'] : [])].includes(k));
     if (others.length) {
