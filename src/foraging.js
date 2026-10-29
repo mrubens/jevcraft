@@ -206,6 +206,40 @@ async function forageChoices(bot, task, goal, save, actions, state, { target = 1
         finally { task.interruptCheck = outerCheck; }
       } };
   }
+  // Food under the rock (note 2497): mushroom stew from the mushrooms of the caves, a bowl from three planks, and the
+  // rotten flesh the zombies drop, said with its hunger. The user, 2026-10-29: 'should we fill out more options for food?';
+  // full-89 (25589, 12:4xZ) at y -1 with no food walked for a sheep seen at y 74 and timed out; the stew was offered
+  // only in the Nether (nether-food.js).
+  if (/overworld/.test(String(bot.game?.dimension || 'overworld')) && bot.registry.itemsByName.mushroom_stew) {
+    let seen = { red: 0, brown: 0, nearest: null }; try { seen = require('./nether-food').mushroomsIn(bot); } catch (_) { /* none read */ }
+    const red = count(bot, 'red_mushroom') + seen.red, brown = count(bot, 'brown_mushroom') + seen.brown;
+    const planks = bot.inventory.items().filter(i => /_planks$/.test(i.name)).reduce((n, i) => n + i.count, 0) + 4 * bot.inventory.items().filter(i => /_(log|stem)$/.test(i.name)).reduce((n, i) => n + i.count, 0);
+    const stews = Math.min(red, brown, 4, Math.max(1, Math.ceil((target - foodSupply(bot)) / 6)));
+    if (stews >= 1 && (count(bot, 'bowl') >= stews || planks >= 3)) {
+      choices.mushroom_stew = { description: { action: `Make ${stews} mushroom stew${stews === 1 ? '' : 's'}: each a red and a brown mushroom (${count(bot, 'red_mushroom')} red and ${count(bot, 'brown_mushroom')} brown carried, ${seen.red} red and ${seen.brown} brown within 48 blocks${seen.nearest !== null ? `, the nearest ${seen.nearest} off` : ''}) and a bowl (${count(bot, 'bowl')} carried; three planks make four), 6 food points a stew, eaten as it is, no furnace; a stew does not stack.`,
+        stews, pointsAdded: stews * 6 },
+        run: async () => {
+          goal.survivalAction = { action: 'mushroom_stew', amount: stews, at: new Date().toISOString() }; save();
+          const outerCheck = task.interruptCheck; task.interruptCheck = () => checkThreats(bot);
+          try { await actions.acquireStep(bot, task, 'mushroom_stew', count(bot, 'mushroom_stew') + stews, goal, save); }
+          finally { task.interruptCheck = outerCheck; }
+        } };
+    }
+  }
+  const flesh = count(bot, 'rotten_flesh');
+  if (flesh > 0 && (bot.food ?? 20) < 18) {
+    const bites = Math.min(flesh, Math.max(1, Math.ceil((18 - (bot.food ?? 20)) / 4)));
+    choices.eat_rotten_flesh = { description: { action: `Eat ${bites} of the ${flesh} rotten flesh carried, now: 4 food points each, about 2 seconds a bite; each has 8 in 10 odds of Hunger for 30 seconds, which drains about 0.75 of a food point over that time (and stops health coming back from food while hunger is under 18), so about 3.3 points a bite on the whole. No walk, no furnace.`,
+      bites, pointsAdded: bites * 3 },
+      run: async () => {
+        goal.survivalAction = { action: 'eat_rotten_flesh', amount: bites, at: new Date().toISOString() }; save();
+        for (let i = 0; i < bites && count(bot, 'rotten_flesh') > 0 && (bot.food ?? 20) < 20; i++) {
+          task.check();
+          const item = bot.inventory.items().find(x => x.name === 'rotten_flesh');
+          await bot.equip(item, 'hand'); await bot.consume();
+        }
+      } };
+  }
   const pumpkins = count(bot, 'pumpkin') + (/overworld/.test(String(bot.game?.dimension || 'overworld')) ? near('pumpkin').length : 0);
   const sweet = count(bot, 'sugar') + count(bot, 'sugar_cane') + (/overworld/.test(String(bot.game?.dimension || 'overworld')) ? near('sugar_cane').length : 0);
   const eggs = count(bot, 'egg');

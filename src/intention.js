@@ -330,7 +330,14 @@ function holding(bot, goal, now = Date.now()) {
   end(goal, why, now);
   return null;
 }
+// The way to the portal chosen before a diamond pickaxe was carried (note 2498): the obsidian is then mined from a
+// pool made with the water bucket, ten blocks in a few minutes, and the plan is asked again. full-91 (25592,
+// 2026-10-29) chose to cast its frame beside the lava at 13:01Z, made its diamond pickaxe after, and at 13:4xZ was
+// still casting, under water, a lava lake and a pool of water side by side; the user: 'With water and lava right next to
+// each other it should be able to make a portal'.
+const carriesDiamondPick = bot => { try { return (bot?.inventory?.items?.() || []).some(x => /^(diamond|netherite)_pickaxe$/.test(x.name)); } catch (_) { return false; } };
 function endOf(bot, goal, i, now) {
+  if (i.q === 'portal_plan' && i.diamondPickaxe !== true && i.choice !== 'build_new' && carriesDiamondPick(bot)) return 'a real change: a diamond pickaxe is carried now, and the obsidian can be mined';
   if (now - i.at >= MAX_MS) return `lapsed: held ${ago(now - i.at)} without arriving, failing or finishing`;
   if (i.dimension && dim(bot) && dim(bot) !== i.dimension) return `ended: now in ${words(dim(bot).replace(/^the_/, ''))}`;
   const deaths = goal?.survival?.deaths || [];
@@ -478,7 +485,7 @@ function after(bot, goal, q, pathKeys, { target = null, now = Date.now(), state 
   const viaPortal = THROUGH_PORTAL.test(choice) && /nether/.test(dim(bot)) ? portalBack(bot, goal) : null;
   const to = viaPortal || P(target) || (THROUGH_PORTAL.test(choice) ? portalBack(bot, goal) : null);
   const trip = tripOf(q, choice, node) || (viaPortal ? 'the portal' : null);
-  const next = { q, choice, path, at: now, ...(to ? { target: to } : {}), ...(trip ? { trip } : {}), dimension: dim(bot) || null, health: Number.isFinite(bot?.health) ? bot.health : null, ...(Number.isFinite(bot?.food) ? { food: bot.food } : {}) };
+  const next = { q, choice, path, at: now, ...(to ? { target: to } : {}), ...(trip ? { trip } : {}), dimension: dim(bot) || null, health: Number.isFinite(bot?.health) ? bot.health : null, ...(Number.isFinite(bot?.food) ? { food: bot.food } : {}), ...(q === 'portal_plan' ? { diamondPickaxe: carriesDiamondPick(bot) } : {}) };
   goal.intention = next;
   yieldLook(bot, goal, next, now);
   const line = startSays(bot, goal, next, state);

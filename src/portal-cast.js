@@ -625,6 +625,15 @@ async function castFrame(bot, task, goal, save, actions) {
       }
       const walls = wallsFor(p, w.solidAt);
       if (!walls) throw new Error(`Nothing to build the walls round the frame slot at ${p} against`);
+      // A slot under water is the slot's failure, said and counted as a stand's is, not walled from below the surface
+      // (note 2498): full-91 (25592, 2026-10-29 13:39 to 13:42Z) walled its slot at (-422, -10, -69) in a flooded cave,
+      // ran out of air at each block, swam up, came back and walled again, 'turning between cast portal and reach shore'.
+      // Sources only: the cast's own pours run as flowing water about the slots.
+      const wet = [p, ...walls].filter(c => { const x = bot.blockAt?.(c); return x?.name === 'water' && Number(x.getProperties?.().level ?? x.metadata ?? 0) === 0; }).length;
+      if (wet >= 2 || (wet && bot.entity?.isInWater)) {
+        triedAt(p, []);
+        throw new Error(`The frame slot at ${p} is under water: ${wet} of its cells hold water${bot.entity?.isInWater ? ' and the bot is in it' : ''}; a slot in the dry is needed`);
+      }
       const supplies = portalSupports(bot);
       if (supplies.count < walls.length) {
         const material = require('./work').supportMaterialHere(bot);
