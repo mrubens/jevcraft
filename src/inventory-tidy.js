@@ -743,6 +743,14 @@ async function makeRoom(bot, task, name, { keep = new Set(), away = null, purpos
     const kept = new Set([...keep, name, ...rungNeeds(bot, goal)]);
     const dropped = await tidyInventory(bot, task, { away, keep: kept, ctx: tidyContext(bot, goal) });
     if (dropped.length) console.log(`[room] for ${name}: the tidy dropped ${dropped.map(d => `${d.count} ${d.name} (${d.why})`).join(', ')}`);
+    // The kinds the tidy trimmed, a whole stack of the smallest, where the trim left no slot (note 2505): it drops what
+    // is past a kind's budget, and a part of a stack frees no slot. full-93 (2026-10-29 15:0xZ) dropped 6 tuff and 13
+    // cobbled deepslate for a diamond and left the diamond 0.4 blocks off; full-86 a raw iron the same way.
+    if (!room() && dropped.length) {
+      const trimmed = new Set(dropped.map(d => d.name));
+      const stack = bot.inventory.items().filter(i => trimmed.has(i.name) && !kept.has(i.name)).sort((a, b) => a.count - b.count)[0];
+      if (stack) { await faceAway(bot, away); await bot.tossStack(stack); console.log(`[room] for ${name}: a whole stack of ${stack.count} ${stack.name} dropped as well, the trim having freed no slot`); }
+    }
   } catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
   if (room()) return true;
   await faceAway(bot, away);
