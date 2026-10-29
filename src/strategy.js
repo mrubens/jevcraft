@@ -63,6 +63,7 @@ const RUNG_WHY = {
   home_pen: 'cows kept for steak and leather',
   shield: 'blocks arrows and creeper blasts; the fights ahead are easier behind one',
   leather_armour: 'a leather piece from the leather carried, worn at once while the iron is to come: a chestplate takes about an eighth off a mob\'s blow, the four pieces about a quarter; two thirds of the deaths of 2026-10-05 were with no armour on',
+  copper_armour: 'a copper piece from the copper carried, raw or smelted, worn at once: a full set is 10 armour points against iron\'s 15 and leather\'s 7, 24 ingots (a chestplate 8, leggings 7, a helmet 5, boots 4), and copper is mined beside the iron, the runs of 2026-10-29 carrying 20 to 40 raw copper unused; it wears out sooner than iron (a chestplate 176 blows against 240) and iron replaces it',
   fishing_rod: 'food from any water, standing still on the bank: in the record of 2026-10-05 the bot\'s 13 fishing sessions caught 64 cod and salmon in 33 minutes (about ten food points a minute cooked), where its food errands, hunting and searching, made about 0.3 a minute; three sticks and two string, the string a spider\'s drop',
   iron_sword: 'kills faster than stone',
   bucket: 'water for lava, falls and the End portal room',

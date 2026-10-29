@@ -141,7 +141,7 @@ function spareArmourOwed(bot, goal) {
 }
 const ARMOUR_PIECES = ['iron_armour', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'];
 // The crossing's kit may wait too (crossing-kit.js kitRungs, note 673).
-const DEFERRABLE = new Set(['spare_armour', 'bed', 'home_site', 'home_level', 'home_stash', 'home_bed', 'home_water', 'home_plot', 'home_pen', 'shield', 'leather_armour', 'fishing_rod', 'iron_sword', 'bucket', 'water_bucket', 'golden_boots', 'bow', 'arrows', 'diamond_pickaxe', 'diamond_sword', ...ARMOUR_PIECES, 'nether_pickaxe', 'nether_blocks', 'nether_food', 'nether_chest']);
+const DEFERRABLE = new Set(['spare_armour', 'bed', 'home_site', 'home_level', 'home_stash', 'home_bed', 'home_water', 'home_plot', 'home_pen', 'shield', 'leather_armour', 'copper_armour', 'fishing_rod', 'iron_sword', 'bucket', 'water_bucket', 'golden_boots', 'bow', 'arrows', 'diamond_pickaxe', 'diamond_sword', ...ARMOUR_PIECES, 'nether_pickaxe', 'nether_blocks', 'nether_food', 'nether_chest']);
 const RUNG_BUDGET_MS = 20 * 60 * 1000, RUNG_WAIT_MS = 30 * 60 * 1000;
 function preparationRung(bot, goal = {}, now = Date.now()) {
   const resting = attemptsFor(goal).of('rung', now);
@@ -466,6 +466,16 @@ function ladderRung(bot, goal, waiting, { allOptional = false } = {}) {
     const leather = count(bot, 'leather');
     const piece = !wornAny && [['chestplate', 8], ['leggings', 7], ['helmet', 5], ['boots', 4]].find(([, n]) => leather >= n);
     if (piece && ready({ phase: 'leather_armour' })) return { phase: 'leather_armour', action: 'acquire', item: `leather_${piece[0]}`, count: 1 };
+  }
+  // Copper armour from the copper carried (note 2476, the user: 'Jev seems uninterested in copper armor, is that the
+  // right call?'): a full set is 10 armour points (iron 15, leather 7) for 24 ingots, and the runs of 2026-10-29 carried
+  // 20 to 40 raw copper unused. Optional before the Nether, offered at win_strategy with what it gives; a piece where
+  // no iron, diamond, gold or copper piece of its kind is worn or carried, from the copper carried, raw or smelted.
+  {
+    const copper = count(bot, 'copper_ingot') + count(bot, 'raw_copper');
+    const covered = piece => carried.some(n => /^(iron|diamond|netherite|copper|golden)_/.test(n) && n.endsWith(`_${piece}`));
+    const piece = bot.registry?.itemsByName?.copper_chestplate && [['chestplate', 8], ['leggings', 7], ['helmet', 5], ['boots', 4]].find(([k, n]) => !covered(k) && copper >= n);
+    if (piece && ready({ phase: 'copper_armour' })) return { phase: 'copper_armour', action: 'acquire', item: `copper_${piece[0]}`, count: 1 };
   }
   if (!carried.some(n => /_bed$/.test(n)) && !goal.survival?.home?.bed?.claimedAt && !isSetAside(goal, 'bed_search', 'wool') && ready({ phase: 'bed' })) return bedRung(bot, goal);
   // After the first Nether entry, with a stone pickaxe that works carried
