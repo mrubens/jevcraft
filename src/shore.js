@@ -157,7 +157,7 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
       goal.step = { action: 'reach_shore', from: { ...bot.entity.position }, destination: { ...p } };
       goal.survivalAction = { action: 'reach_shore', at: new Date().toISOString() }; save();
       try {
-        await move(bot, task, destination, { timeoutMs: 30000, stallMs: 5000 });
+        await move(bot, task, destination, { timeoutMs: 30000, stallMs: 5000, passing: false });
         guard();
         if (!safe(bot.entity.position) || bot.entity.onGround === false || !bot.entity.position.floored().equals(p)) throw new Error('Shore travel did not reach its dry landing');
         state.landed = { position: { ...bot.entity.position }, at: new Date().toISOString() }; delete state.lastError; save();
@@ -486,7 +486,11 @@ async function digToShore(bot, task, goal, save, movement, move, failed = {}) {
       if (short) { record.tried.at(-1).breathShort = short; save(); continue; }
       goal.step = { action: 'dig_to_shore', from: { ...bot.entity.position }, destination: { ...p } };
       goal.survivalAction = { action: 'dig_to_shore', at: new Date().toISOString() }; save();
-      try { await move(bot, task, destination, { timeoutMs: 45000, stallMs: 8000 }); }
+      // No look in passing on the way out of the water (note 2469): its digs are made between the walk's legs, outside
+      // the walk's own watch on the air, and a dig under water is slow. full-79 (25588, 2026-10-29 10:29Z), digging to
+      // shore through stone at y 41, went 8 to 16 seconds with no check on its air, 'digging stone, step dig_to_shore',
+      // and drowned from 20 health.
+      try { await move(bot, task, destination, { timeoutMs: 45000, stallMs: 8000, passing: false }); }
       catch (error) { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(error.name)) throw error; continue; }
       if (dryStanding(bot, bot.entity.position)) return true;
     }
