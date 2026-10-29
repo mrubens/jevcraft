@@ -498,7 +498,30 @@ function standWays(bot, frame, p, w, opts = {}) {
   return { stands, make, cut, blocked, says };
 }
 
+// The frame's own blocks kept from the pathfinder's digging while the cast works about it, not the whole box about the
+// frame the other work keeps to (build-sites.js reservedForConstruction, note 2541): the box runs from four under the
+// frame up without end and two to either side, and the stand for a slot stands in it, so a stand reached only by
+// digging a block of rock was 'No route' however near. full-118 (25590, 2026-10-29 20:1xZ), the search said at last by
+// note 2539 ('noPath, 0 cells; canDig true, towers true, scaffold carried 209'), failed the stand at (60, 27, 55) from
+// (63, 25, 54) through two blocks of granite; full-110 (25589, 18:5x to 19:16Z) lost 25 minutes so; the same walks in
+// the arena without the box arrived.
 async function castFrame(bot, task, goal, save, actions) {
+  const movements = bot.pathfinder?.movements, prot = bot._constructionProtection, list = movements?.exclusionAreasBreak;
+  if (!movements || !prot || !Array.isArray(list) || !list.includes(prot)) return castFrameWithin(bot, task, goal, save, actions);
+  const frame = goal.portalFrame || {};
+  const key = c => `${c.x},${c.y},${c.z}`;
+  const own = () => new Set([...(frame.blocks || []), ...(frame.castTemp || [])].map(key));
+  let cells = own(), at = Date.now();
+  const narrow = block => {
+    if (Date.now() - at > 2000) { cells = own(); at = Date.now(); }
+    return block?.position && (cells.has(key(block.position)) || /obsidian/.test(block.name || '')) ? 100 : 0;
+  };
+  movements.exclusionAreasBreak = list.map(f => f === prot ? narrow : f);
+  try { return await castFrameWithin(bot, task, goal, save, actions); }
+  finally { movements.exclusionAreasBreak = movements.exclusionAreasBreak.map(f => f === narrow ? prot : f); }
+}
+
+async function castFrameWithin(bot, task, goal, save, actions) {
   const { navigate, place, dig } = actions;
   // A fetch the cast makes (the water bucket, lava, blocks for its walls)
   // that fails is the trip's failure, not the site's (work.js
