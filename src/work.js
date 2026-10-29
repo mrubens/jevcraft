@@ -3748,6 +3748,14 @@ function ladderSmeltWants(bot, goal, item) {
 function smeltBatch(bot, goal, step, needed, carriedInput, plannedFuel) {
   const { itemsPerFuel } = require('./fuel');
   const { wants, rungs } = ladderSmeltWants(bot, goal, step.item);
+  // The ore carried smelted whole, as a player does (note 2483, Fable's audit of 2026-10-29): the batch was the open
+  // rungs' want, one to three ingots, each its own wait; 82 of 224 while_cooking asks on full-60 to full-85 were for a
+  // single raw iron, and full-63 went into the Nether with 41 raw iron and 22 raw gold. With the side furnaces (note
+  // 2471) a whole pile is about as quick as three.
+  if (goal?.kind === 'win' && /^(iron|gold|copper)_ingot$/.test(String(step.item)) && carriedInput > needed) {
+    const burnsAll = CARRIED_FUELS.reduce((n, f) => n + Math.floor(countOf(bot, f) * itemsPerFuel(f)), 0) + (CARRIED_FUELS.includes(plannedFuel) ? 0 : needed);
+    return { count: Math.max(needed, Math.min(carriedInput, burnsAll, 64)), wants, rungs, fuelFor: burnsAll };
+  }
   if (wants <= needed || carriedInput <= needed) return { count: needed, wants, rungs };
   const burns = CARRIED_FUELS.reduce((n, f) => n + Math.floor(countOf(bot, f) * itemsPerFuel(f)), 0) + (CARRIED_FUELS.includes(plannedFuel) ? 0 : needed);
   const count = Math.max(needed, Math.min(wants, carriedInput, burns, 64));
@@ -4047,7 +4055,10 @@ async function smelt(bot, task, step, goal, save = () => {}) {
         const logs = bot.inventory.items().filter(i => /_log$/.test(i.name)).reduce((n, i) => n + i.count, 0);
         return logs < 16 ? find(bot, LOGS, 16, 16).filter(p => p.y <= bot.entity.position.y + 3).find(ok) : null;
       };
-      const cooking = () => (needed - taken) * 10000;
+      // What is still in this furnace's input, not all the batch untaken (note 2483, Fable's audit): the side furnaces
+      // (note 2471) hold the rest, and a batch cooked through still read as its whole count, 'wait 40 s' beside a job
+      // that said 'N of N done' (full-81 10:23Z, full-71 09:12Z); 405 waits chosen on full-60 to full-85.
+      const cooking = () => { let left = null; try { const i = furnace.inputItem?.(); left = i ? i.count : (furnace.outputItem?.() ? 0 : null); } catch (_) { left = null; } return (Number.isFinite(left) ? Math.min(left, needed - taken) : needed - taken) * 10000; };
       // What to do while it cooks is Jev's, asked once a batch.
       // A choice that has run out (no more ore in walking distance, its
       // turns used) is asked again among what is left, not stood out: trial

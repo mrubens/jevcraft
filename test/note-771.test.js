@@ -178,14 +178,14 @@ test('a batch sized to the rungs still open, up to the raw iron and the fuel car
   await withRungs(rungs, async () => {
     const bot = furnaceBot({ raw: 40, coal: 30 });
     assert.deepEqual(ladderSmeltWants(bot, goal, 'iron_ingot').wants, 3 + 1 + 24);
-    // The step's own three, made the rungs' 28.
-    assert.equal(smeltBatch(bot, goal, { item: 'iron_ingot', from: 'raw_iron', count: 3 }, 3, 40, 'coal').count, 28);
+    // The step's own three, made the whole 40 carried (note 2483: the ore carried smelted whole).
+    assert.equal(smeltBatch(bot, goal, { item: 'iron_ingot', from: 'raw_iron', count: 3 }, 3, 40, 'coal').count, 40);
     // Up to the raw iron carried.
     assert.equal(smeltBatch(furnaceBot({ raw: 10 }), goal, { item: 'iron_ingot', from: 'raw_iron', count: 3 }, 3, 10, 'coal').count, 10);
     // Up to the fuel: two coal smelt sixteen.
     assert.equal(smeltBatch(furnaceBot({ raw: 40, coal: 2 }), goal, { item: 'iron_ingot', from: 'raw_iron', count: 3 }, 3, 40, 'coal').count, 16);
-    // Ingots carried count against the rungs: 25584 carried 70, and its step's 24 stays 24.
-    assert.equal(smeltBatch(furnaceBot({ raw: 86, ingots: 70 }), goal, { item: 'iron_ingot', from: 'raw_iron', count: 24 }, 24, 86, 'coal').count, 24);
+    // Up to a stack (note 2483: the ore carried smelted whole, the rungs' want aside).
+    assert.equal(smeltBatch(furnaceBot({ raw: 86, ingots: 70 }), goal, { item: 'iron_ingot', from: 'raw_iron', count: 24 }, 24, 86, 'coal').count, 64);
   });
   // Not a win goal, or another output: the step's own count.
   assert.equal(smeltBatch(furnaceBot(), {}, { item: 'iron_ingot', from: 'raw_iron', count: 3 }, 3, 86, 'coal').count, 3);
