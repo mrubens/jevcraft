@@ -107,12 +107,12 @@ function kindOf(err) {
 
 // A walk ended: recorded once on the bot, by dimension, and framed in the
 // flight record (walk_end). -> the entry
-function noteWalk(bot, { kind, goal = null, from = null, to = null, startedAt = null, at: when = Date.now(), blocks = null, why = null, walk = null } = {}) {
+function noteWalk(bot, { kind, goal = null, from = null, to = null, startedAt = null, at: when = Date.now(), blocks = null, why = null, walk = null, pickup = false } = {}) {
   if (!bot || !KINDS.includes(kind)) return null;
   const g = P(goal), f = P(from), t = P(to || bot.entity?.position);
   const entry = { kind, dim: dimOf(bot), at: when, ...(Number.isFinite(startedAt) ? { startedAt } : {}), ...(g ? { goal: round1(g) } : {}), ...(f ? { from: round1(f) } : {}), ...(t ? { to: round1(t) } : {}),
     ...(Number.isFinite(blocks) ? { blocks: Math.round(blocks * 10) / 10 } : {}), ...(g && t ? { left: Math.round(dist(g, t) * 10) / 10 } : {}), ...(g && f ? { began: Math.round(dist(g, f) * 10) / 10 } : {}),
-    ...(why ? { why: String(why).slice(0, 160) } : {}), ...(walk != null ? { walk } : {}) };
+    ...(why ? { why: String(why).slice(0, 160) } : {}), ...(walk != null ? { walk } : {}), ...(pickup ? { pickup: true } : {}) };
   bot._walks = [...(bot._walks || []).filter(w => when - w.at < WALK_KEEP_MS), entry].slice(-WALK_KEEP);
   try { bot.emit?.('walk_end', entry); } catch (_) { /* the record only */ }
   return entry;
@@ -124,8 +124,12 @@ function noteWalk(bot, { kind, goal = null, from = null, to = null, startedAt = 
 // -> [{ at, kind, goal, from, to, blocks, left, why, walk }]
 function failedWalks(bot, now = Date.now()) {
   const dim = dimOf(bot), out = [];
-  for (const w of bot?._walks || []) if (FAILED.has(w.kind) && w.dim === dim && now - w.at < WINDOW_MS && w.at <= now) out.push(w);
-  const walks = new Set(out.map(w => w.walk).filter(v => v != null));
+  // A pickup's few steps to a drop are not a way from here failing (note 2533): full-104 (25586, 2026-10-29 18:0xZ),
+  // basalt it had dug lying a block over a fall into lava, failed nine short walks to it, and its walk to the blazes 29
+  // blocks off was refused, 'walks begun from about here failed 9 times', each one to the basalt.
+  const pickups = new Set((bot?._walks || []).filter(w => w.pickup && w.walk != null).map(w => w.walk));
+  for (const w of bot?._walks || []) if (!w.pickup && FAILED.has(w.kind) && w.dim === dim && now - w.at < WINDOW_MS && w.at <= now) out.push(w);
+  const walks = new Set([...out.map(w => w.walk).filter(v => v != null), ...pickups]);
   for (const s of bot?._stallSpots || []) {
     if (s.dim && s.dim.replace(/^minecraft:/, '') !== dim) continue;
     for (const g of s.goals || []) {

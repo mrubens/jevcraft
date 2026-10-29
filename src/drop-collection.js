@@ -229,7 +229,7 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
           why.walked++;
           onTarget({ item, position: { ...drop.position.floored() } });
           try {
-            await move(bot, task, target, { timeoutMs: Math.min(4000, deadline - Date.now()), stallMs: 1500,
+            await move(bot, task, target, { pickup: true, timeoutMs: Math.min(4000, deadline - Date.now()), stallMs: 1500,
               stopWhen: () => gained() || changed() });
           } catch (error) {
             task.check(); if (['NeedsAir', 'NeedsSafety'].includes(error.name)) throw error;
@@ -286,7 +286,7 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
         if (!over || !over.diggable || over.boundingBox !== 'block') continue;
         if (bot.entity.position.offset(0, 1.62, 0).distanceTo(over.position.offset(0.5, 0.5, 0.5)) > 4.5) {
           const c = over.position;
-          try { await move(bot, task, new goals.GoalNear(c.x, c.y, c.z, 3), { timeoutMs: 8000, stallMs: 3000, hostilesOk }); }
+          try { await move(bot, task, new goals.GoalNear(c.x, c.y, c.z, 3), { pickup: true, timeoutMs: 8000, stallMs: 3000, hostilesOk }); }
           catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; continue; }
         }
         if (bot.entity.position.offset(0, 1.62, 0).distanceTo(over.position.offset(0.5, 0.5, 0.5)) > 4.5) continue;
@@ -307,7 +307,7 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
         if (!inIt || !THIN.test(inIt.name) || !inIt.diggable) continue;
         if ([[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 0, -1]].some(([x, y, z]) => /lava|water/.test(bot.blockAt(cell.offset(x, y, z))?.name || ''))) continue;
         try {
-          if (bot.entity.position.offset(0, 1.62, 0).distanceTo(cell.offset(0.5, 0.5, 0.5)) > 4) await move(bot, task, new goals.GoalNear(cell.x, cell.y, cell.z, 2), { timeoutMs: 10000, stallMs: 4000, hostilesOk });
+          if (bot.entity.position.offset(0, 1.62, 0).distanceTo(cell.offset(0.5, 0.5, 0.5)) > 4) await move(bot, task, new goals.GoalNear(cell.x, cell.y, cell.z, 2), { pickup: true, timeoutMs: 10000, stallMs: 4000, hostilesOk });
           for (const c of [cell, cell.offset(0, 1, 0)]) {
             const b = bot.blockAt(c);
             if (b && THIN.test(b.name) && b.diggable && bot.entity.position.offset(0, 1.62, 0).distanceTo(c.offset(0.5, 0.5, 0.5)) <= 4.5) await require('./vitals').digWithAirGuard(bot, task, b);

@@ -526,7 +526,7 @@ async function navigate(bot, task, goal, options = {}) {
 // `quiet`: crouched the whole way, digging and laying nothing, no sprint
 // (note 2036): a crouched step makes no vibration for a sculk sensor or
 // shrieker to hear, in the deep dark's cities.
-async function navigateOnce(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false, shore = false, besideLava, edgeTaken, onFoot = false, passing, quiet = false, hostilesOk = false } = {}) {
+async function navigateOnce(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false, shore = false, besideLava, edgeTaken, onFoot = false, passing, quiet = false, hostilesOk = false, pickup = false } = {}) {
   // Every Overworld walk looks in passing unless its caller says not (note 2289): a walk that is part of a stance, a
   // walk back for drops, or a quiet or on-foot walk does not; the look is throttled and takes only what is in reach.
   // The Nether's walks too (note 2310): its gold ore is what the look was made for, and full-10 (2026-10-27 18:40Z) went
@@ -561,7 +561,7 @@ async function navigateOnce(bot, task, goal, { timeoutMs = 90000, stallMs = 1500
   let blocks = 0, last = bot.entity.position.clone?.() || { ...from };
   const pace = setInterval(() => { const p = bot.entity?.position; if (!p) return; const d = Math.hypot(p.x - last.x, p.y - last.y, p.z - last.z); if (d < 10) blocks += d; last = p.clone?.() || { x: p.x, y: p.y, z: p.z }; }, 250);
   pace.unref?.();
-  const ended = (kind, why = null) => { clearInterval(pace); const p = bot.entity?.position; if (p) blocks += Math.min(10, Math.hypot(p.x - last.x, p.y - last.y, p.z - last.z)); fp.noteWalk(bot, { kind, goal: there, from, startedAt, blocks, why, walk }); };
+  const ended = (kind, why = null) => { clearInterval(pace); const p = bot.entity?.position; if (p) blocks += Math.min(10, Math.hypot(p.x - last.x, p.y - last.y, p.z - last.z)); fp.noteWalk(bot, { kind, goal: there, from, startedAt, blocks, why, walk, pickup }); };
   // A held sneak let go before the walk (note 1845): the End's holds, digs and pockets crouch the body and a cut step can leave the key down; crouched, the pathfinder's walk cannot step off any edge, and 25588's dragon-194, 200 and 206 (2026-10-18) stood on stubs and rims with hundreds of walks 'timed out without reaching new ground' and 'No route from here'. Said when it happens, so the leak's source can be found.
   if (!quiet && bot.controlState?.sneak) { console.log(`[walks] the sneak key was held at the walk's start at ${bot.entity?.position?.floored?.() || '?'}: let go (step ${bot._goal?.step?.action || '-'})`); try { bot.setControlState('sneak', false); } catch (_) { /* no controls */ } }
   try {
