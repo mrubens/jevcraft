@@ -4087,6 +4087,11 @@ async function smelt(bot, task, step, goal, save = () => {}) {
       // copper and left that batch too, three batches in eighteen seconds).
       let leaveCameBackEmpty = false;
       const ownNow = () => !leave && goal?.smelting && !leaveCameBackEmpty && !(bot._cookHold?.until > Date.now()) ? { at: block.position, rungsWant: goal.smelting.rungsWant || 0, forRungs: goal.smelting.forRungs || [] } : null;
+      // The furnace as it stands, said at each asking (note 2480): the waits for a batch of 2 raw iron were set again and
+      // again to 20 seconds on full-84 (25592, 2026-10-29 11:14 to 11:15Z) and on most runs that day, the batch never
+      // coming out, and whether it was cooking (its input, its fuel, the burn, the output) was not said.
+      const furnaceSays = () => { try { const i = furnace.inputItem?.(), f = furnace.fuelItem?.(), o = furnace.outputItem?.(); return `input ${i ? `${i.count} ${i.name}` : 'none'}, fuel ${f ? `${f.count} ${f.name}` : 'none'}, burning ${furnace.fuel ?? '?'}, progress ${furnace.progress ?? '?'}, output ${o ? `${o.count} ${o.name}` : 'none'}`; } catch (_) { return 'unread'; } };
+      console.log(`[smelt] ${step.item} at ${block.position}: ${taken} of ${needed} taken; the furnace: ${furnaceSays()}`);
       const ask = spent => whileCooking(bot, task, goal, save, { cooking: cooking(), oreInReach, walkTarget, what: String(step.from || step.item).replace(/_/g, ' '), count: needed - taken, spent: spent.filter(k => k !== 'leave_cooking' || leaveCameBackEmpty), leave, walks: walks(), sides, own: ownNow(), item: step.item, ...(leaveCameBackEmpty ? { ownWhy: 'left once this batch already, and the work on offer then ran out at once' } : {}) });
       let plan = await ask([]);
       const spent = [];
