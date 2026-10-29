@@ -23,9 +23,9 @@ test('25593 in its mine: 13 raw iron, a furnace, coal and a table carried, nothi
   assert.doesNotMatch(p.says, /blaze|wither/);
 });
 
-test('in the Overworld: no iron boots (the feet are the golden boots\'), nothing with a mob within 24 blocks, and the Nether\'s offer is as it was', () => {
+test('in the Overworld: iron boots too (note 2485), nothing with a mob within 24 blocks, and the Nether\'s offer is as it was', () => {
   const TOP = { 5: 'iron_helmet', 6: 'iron_chestplate', 7: 'iron_leggings' };
-  assert.equal(kit.ironPiece(bot({ iron_ingot: 9, crafting_table: 1 }, TOP)), null);
+  assert.equal(kit.ironPiece(bot({ iron_ingot: 9, crafting_table: 1 }, TOP)).item, 'iron_boots');
   assert.equal(kit.ironPiece(bot({ iron_ingot: 9, crafting_table: 1 }, TOP, { dimension: 'the_nether' })).item, 'iron_boots');
   assert.equal(kit.ironPiece(bot({ iron_ingot: 9, crafting_table: 1 }, {}, { entities: { 1: { type: 'hostile', name: 'zombie', position: new Vec3(138, -34, 160) } } })), null);
   assert.equal(kit.netherPiece(bot({ iron_ingot: 9, crafting_table: 1 })), null, 'netherPiece stays the Nether\'s');

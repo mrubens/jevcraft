@@ -132,7 +132,11 @@ function benefitOf(phase) {
   return { measured: true, benefit, rodGain, deathCut, with: s[0], without: s[1] };
 }
 // Whether a rung that may wait stays on the ladder before the Nether.
-const needBeforeNether = phase => benefitOf(phase).benefit;
+// Not the bed (note 2482, the user, 2026-10-29: 'it doesn't seem like a second bed (or even a first bed) is extremely
+// necessary when jev can mine etc.'): its nights are said where it is offered, and taking it is Jev's, as the other
+// rungs that may wait are. full-85 (25590, 11:2xZ), its slept bed left as its spawn, walked 92 blocks for a sheep for
+// another before the Nether.
+const needBeforeNether = phase => familyOf(phase) !== 'bed' && benefitOf(phase).benefit;
 const ruleSays = `a rung that may wait is made before the Nether unasked only where the first Nether stays with what it makes did better than those without (at least ${BENEFIT_MIN} stays each side; a blaze rod got ${BENEFIT_POINTS} points more often, or a death ${BENEFIT_POINTS} points less often with a rod no more than ${ROD_SLACK} points less often); the bed by the nights it saves before the Nether (note 841), iron armour by the health its blaze fights take (note 1020)`;
 // The record of a rung before the Nether: what it took, whether it was
 // finished, and what the stays with and without it came to; then where the

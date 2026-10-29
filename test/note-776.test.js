@@ -38,8 +38,8 @@ test('the record and its rule: a rung that may wait is the ladder\'s before the 
   // No benefit: the food (67% died against 55%), the bed (rods 26% against
   // 41%), the kit's blocks and pickaxe.
   for (const p of ['nether_food', 'nether_blocks', 'nether_pickaxe', 'nether_chest', 'bow']) assert.equal(record.needBeforeNether(p), false, p);
-  // The bed by the nights it saves (note 841), not the first stays.
-  assert.equal(record.needBeforeNether('bed'), true);
+  // The bed's nights said (note 841), but taking it is Jev's (note 2482, the user, 2026-10-29).
+  assert.equal(record.needBeforeNether('bed'), false);
   assert.match(record.rungRecordSays('bed'), /on the surface at night 1478 bot-minutes awake, 468 of them sealed in a pocket waiting .* A benefit before the Nether, in the nights it saves/);
   // Iron armour by the health its blaze fights take (note 1020), not the first stays.
   for (const p of ['iron_armour', 'iron_helmet', 'iron_leggings']) assert.equal(record.needBeforeNether(p), true, p);
@@ -84,10 +84,13 @@ test('the ladder goes on to the portal past the optional rungs; chosen, one is t
 
 test('a tool that may not wait still comes first, and the golden boots stay on the ladder', () => {
   const { bot, goal } = fixture(['stone_pickaxe', 'stone_sword']);
-  // The bed before the mine again, by the nights it saves (note 841).
-  assert.equal(gp.nextGameStage(bot, goal).phase, 'bed');
+  // The bed Jev's to choose (note 2482): not before the mine unasked.
+  assert.notEqual(gp.nextGameStage(bot, goal).phase, 'bed');
   const g2 = fixture(['diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'white_bed', ...ARMOUR]);
-  assert.equal(gp.nextGameStage(g2.bot, g2.goal).phase, 'golden_boots');
+  // Iron boots first before the Nether, the gold after them (note 2485).
+  assert.equal(gp.nextGameStage(g2.bot, g2.goal).phase, 'iron_boots');
+  const g2b = fixture(['diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'white_bed', ...ARMOUR, 'iron_boots']);
+  assert.equal(gp.nextGameStage(g2b.bot, g2b.goal).phase, 'golden_boots');
   // Short of a piece of iron, the armour is the ladder's before the Nether (note 1020).
   const g3 = fixture([...GEAR, 'iron_helmet', 'iron_chestplate']);
   assert.equal(gp.nextGameStage(g3.bot, g3.goal).phase, 'iron_leggings');
@@ -187,7 +190,7 @@ test('the per-rung measure: what each rung makes, how it came to be worked on, a
   assert.equal(r.nether_food.finished, true);
   assert.deepEqual(r.bed.by, { 'handed by the ladder': 1 });
   const sim = pt.simulateLevels({ rungsPursued: r, height: { climbs: [] } });
-  assert.equal(sim.handed, 0, 'the bed the ladder handed is handed still (note 841: the nights it saves)');
+  assert.equal(sim.handed, 1, 'the bed the ladder handed is not handed now (note 2482: the bed is Jev\'s to choose)');
   assert.equal(sim.chosen, 1);
   assert(sim.chosenSaved > 0 && sim.chosenSaved < 1, 'the food named by Jev, weighed at the probe\'s rate');
 });

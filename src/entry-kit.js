@@ -227,7 +227,7 @@ function ironPiece(bot) {
   const table = countOf(bot, 'crafting_table') > 0, planks = sum(bot, /_planks$/) + 4 * sum(bot, /_(log|stem|wood|hyphae)$/);
   if (!table && planks < 4) return null;
   // The feet are the golden boots' in the ladder's kit (note 1020): no iron boots made on the way to them.
-  const piece = PIECES.find(([, item, need, slot]) => !wornAt(slot) && !countOf(bot, item) && !(item === 'iron_boots' && (countOf(bot, 'golden_boots') || !nether)) && iron >= need);
+  const piece = PIECES.find(([, item, need, slot]) => !wornAt(slot) && !countOf(bot, item) && !(item === 'iron_boots' && nether && countOf(bot, 'golden_boots')) && iron >= need);
   if (!piece) return null;
   const [, item, need] = piece;
   const from = ironFor(bot, need), wood = planksFor(bot, 0);

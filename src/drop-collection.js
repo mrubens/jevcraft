@@ -347,6 +347,25 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
         if (gained()) break;
       }
     }
+    // Last, as a player does: walk over to it, out to six blocks, the walk free to dig its way (note 2486). The spots, the
+    // passage and the straight walk had each a reason to pass it by: full-83 (25586, 2026-10-29 11:3xZ) left 2 raw gold
+    // 4 blocks off at y -2 after making room for them, '1 spots, 1 dug', every count 0; full-86 and full-88 raw iron at
+    // 2.2 and 2.6.
+    if (!gained() && allowExcavation) {
+      // The collector's own restrictions off for this walk, as the passage above has them off; the caller's kept.
+      const keep = { canDig: movement.canDig, allowedPosition: movement.allowedPosition, ...Object.fromEntries(Object.keys(previous).map(k => [k, movement[k]])) };
+      policy.restore(); Object.assign(movement, previous);
+      try {
+      for (const drop of nearbyDrops(bot, item, origin, radius, { hostilesOk }).filter(d => d.position.distanceTo(bot.entity.position) <= 6 && Math.abs(d.position.y - bot.entity.position.y) <= 3).slice(0, 2)) {
+        task.check(); checkAir(bot);
+        const c = drop.position.floored();
+        try { await move(bot, task, new goals.GoalNear(c.x, c.y, c.z, 1), { timeoutMs: 6000, stallMs: 2500, hostilesOk, stopWhen: () => gained() }); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+        for (const until = Date.now() + 500; !gained() && Date.now() < until;) { task.check(); await sleep(50); }
+        if (gained()) { console.log(`[drops] the ${item.replaceAll('_', ' ')} at ${c} taken by a walk over to it`); break; }
+      }
+      } finally { Object.assign(movement, keep); }
+    }
     if (!gained()) {
       const lyingNow = nearbyDrops(bot, item, origin, radius, { hostilesOk });
       if (lyingNow.length) {

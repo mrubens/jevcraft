@@ -518,7 +518,11 @@ function ladderRung(bot, goal, waiting, { allOptional = false } = {}) {
   // The feet are the golden boots' where those are still to be made (the
   // rung below): no iron boots made first to be taken off for them (note 1020).
   const goldFeet = !carried.includes('golden_boots') && ready({ phase: 'golden_boots' });
-  const missing = short.filter(piece => !(piece === 'boots' && goldFeet)).map(piece => `iron_${piece}`);
+  // Iron boots made too, worn in the Overworld and swapped for the golden ones in the Nether (note 2485, Fable's audit of
+  // 2026-10-29): the feet were left bare for golden boots to come, and the runs carried 24 to 47 ingots with nothing on
+  // their feet (full-71, full-75, full-76); the armour code wears golden boots over any other in the Nether
+  // (mob-policy.js), so no swap is lost. Before the first Nether entry only: after it the feet are the gold's.
+  const missing = short.filter(piece => !(piece === 'boots' && goldFeet && !beforeNether(goal))).map(piece => `iron_${piece}`);
   const armourPhase = short.length === 4 ? 'iron_armour' : missing[0];
   if (missing.length && ready({ phase: armourPhase })) return { phase: armourPhase, action: 'acquire_set', item: missing[0], items: missing, count: missing.length };
   // The iron pickaxe that waited for the armour (note 1108).

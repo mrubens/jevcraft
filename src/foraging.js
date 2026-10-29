@@ -369,7 +369,7 @@ async function forageChoices(bot, task, goal, save, actions, state, { target = 1
     goal.foodWalkStops = [...(goal.foodWalkStops || []).filter(x => Date.now() - x.at <= FOOD_STOP_MS), { key, at: Date.now(), why: String(err.message || ''), walked: Math.round(bot.entity.position.distanceTo(from)) }].slice(-10);
     save();
   };
-  const herds = ['cow', 'sheep', 'rabbit'].flatMap(kind => sightings.sighted(bot, goal, kind).filter(s => s.distance > 32 && s.distance <= 192).map(s => ({ kind, s })))
+  const herds = ['cow', 'sheep', 'pig', 'rabbit', 'chicken'].flatMap(kind => sightings.sighted(bot, goal, kind).filter(s => s.distance > 32 && s.distance <= 192).map(s => ({ kind, s })))
     .sort((a, b) => a.s.distance - b.s.distance).slice(0, 3);
   // Each herd keyed by the number it was given when first offered (keys.js,
   // note 749), not its place in this list: the ledger's tries and the least

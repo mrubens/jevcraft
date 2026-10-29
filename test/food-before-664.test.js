@@ -55,14 +55,14 @@ test('food carried: points, the minutes it holds at the measured spend as an upp
   assert.match(s.healthRegen, /hunger 19: health is full|hunger 19: health comes back now/);
 });
 
-test('the ways say the Overworld food without pigs or chickens, and that barter gives no food and a hoglin has forty health', () => {
+test('the ways say the Overworld food with pigs and chickens (note 2484), and that barter gives no food and a hoglin has forty health', () => {
   const nether = ff.waysSays(bot(), goalOf(), { trip: 'a trip of 300 blocks' });
   assert.match(nether, /Piglin barter gives no food at all/);
   assert.match(nether, /a hoglin drops 2 to 4 raw porkchops \(3 each raw, 8 cooked\) but has forty health/);
   assert.match(nether, /a trip of 300 blocks/);
   assert.match(nether, /cows \(1 to 3 raw beef, 3 each, 8 cooked\), sheep \(1 to 2 raw mutton, 2 each, 6 cooked\), rabbits/);
-  assert.match(nether, /this bot never hurts pigs or chickens, so those are not on the list/);
-  assert.doesNotMatch(nether, /pigs are|kill a pig|chicken \(/);
+  assert.match(nether, /pigs \(1 to 3 raw porkchop/);
+  assert.match(nether, /chickens \(1 raw chicken/);
 });
 
 test('fortress_visit carries the food facts in its state and, with nothing carried, prices the way home and the ways to food here at any hunger', () => {
@@ -74,7 +74,7 @@ test('fortress_visit carries the food facts in its state and, with nothing carri
   const tree = visit.options(b, null, goalOf(), () => {}, actions, { fortress, leave: () => {} });
   assert.deepEqual(Object.keys(tree).sort(), ['get_food_here', 'go_back', 'go_in', 'leave_fortress']);
   assert.match(tree.go_in.description, /Food: .*under 18 in about 3\.3 minutes of fighting with no eating.* Health comes back only at hunger 18 or more\./);
-  assert.match(tree.go_back.description, /cows \(1 to 3 raw beef.*never hurts pigs or chickens/);
+  assert.match(tree.go_back.description, /cows \(1 to 3 raw beef.*pigs \(1 to 3 raw porkchop/);
   assert.match(tree.go_back.description, /nothing to eat carried at hunger 18 or more, the bot's own row: 22 fights/);
   assert.match(tree.get_food_here.description, /Get food here before going on/);
 });

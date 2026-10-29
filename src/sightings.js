@@ -15,7 +15,9 @@
 // Rabbits too: the food of snowy and desert ground, hunted there when no
 // cow is about (mid-231-r ate one a minute before sealing in, and its
 // pocket was told of no food for an hour; note 538).
-const KINDS = ['sheep', 'cow', 'rabbit', 'hoglin', 'wolf'];
+// Pigs and chickens too (note 2484, Fable's audit of 2026-10-29): hunted since the user lifted the rule on 10-19, never
+// remembered, so never offered as a walk back for food.
+const KINDS = ['sheep', 'cow', 'rabbit', 'pig', 'chicken', 'hoglin', 'wolf'];
 const FLOCK = 24;
 const KEEP_MS = 30 * 60000;
 const EVERY_MS = 15000;
