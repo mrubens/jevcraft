@@ -143,7 +143,10 @@ async function escape(survival, task, goal, save, { log = console.log, why = 'in
   // second "still in the lava after 0 s", and died in the lava at 0 with
   // swim_up on offer every time. Taken again only when every way has so failed.
   const here = bot.entity.position;
-  const failedHere = k => (survival.state.lavaEscapes || []).some(e => e.took === k && e.out === false && Date.now() - Date.parse(e.at) < FAILED_MS
+  // Not one cut short by the turn taken from it (note 2551): full-131 (25586, 2026-10-29 23:29Z) began to_dry_ground in
+  // the work's turn, the arbiter took the turn for the lava 0.2 s in and cancelled it, the next escape passed it over as
+  // failed and took pillar_out, four seconds in the lava from 16.9 health to 2.6, and the bot died there.
+  const failedHere = k => (survival.state.lavaEscapes || []).some(e => e.took === k && e.out === false && !e.cancelled && Date.now() - Date.parse(e.at) < FAILED_MS
     && e.position && Math.hypot(e.position.x - here.x, e.position.y - here.y, e.position.z - here.z) <= FAILED_NEAR);
   const all = Object.keys(ways), fresh = all.filter(k => !failedHere(k));
   const keys = fresh.length ? [...fresh, ...all.filter(k => !fresh.includes(k))] : all, took = keys[0] || null;
@@ -158,12 +161,13 @@ async function escape(survival, task, goal, save, { log = console.log, why = 'in
   if (!took) return false;
   // The pathfinder's goal let go first (note 1940): the walk that put the body in the lava keeps steering it by its path each tick, and the swim's jump is set and unset against it. full-2 (2026-10-20 02:09:43Z) chose retreat, walked into lava, took swim_up at 17.9 health, and sank from y 31.7 to 25.9 in 2.6 seconds with 'jump let go mid-move by clearControlStates' in the log; dead at 02:10:38.
   try { bot.pathfinder?.setGoal?.(null); bot.pathfinder?.stop?.(); } catch (_) { /* no walk to stop */ }
-  let out = false;
+  let out = false, cancelled = false;
   try { out = (await ways[took].run()) !== false && !require('./terrain').bodyInLava(bot); }
+  catch (err) { if (err?.name === 'Cancelled' || /cancel|preempt/i.test(String(err?.message || ''))) cancelled = true; throw err; }
   finally {
     const after = { took, out, seconds: round((Date.now() - t0) / 1000), health: round(bot.health ?? 20), position: surroundings(bot).position };
-    log(`[lava-escape] ${took}: ${out ? 'out of the lava' : 'still in the lava'} after ${after.seconds} s at ${after.health} health`);
-    Object.assign(kept[kept.length - 1] || {}, { out, seconds: after.seconds, healthAfter: after.health });
+    log(`[lava-escape] ${took}: ${out ? 'out of the lava' : cancelled ? 'cut short (the turn was taken)' : 'still in the lava'} after ${after.seconds} s at ${after.health} health`);
+    Object.assign(kept[kept.length - 1] || {}, { out, seconds: after.seconds, healthAfter: after.health, ...(cancelled ? { cancelled: true } : {}) });
     save?.();
   }
   return out;
