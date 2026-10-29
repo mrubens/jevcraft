@@ -107,7 +107,11 @@ function fetchOption(bot) {
           // The walk's time by the distance, not a fixed few seconds: twelve at the least, three a block beyond.
           if (b.entity.position.distanceTo(d.at) > 4) await navigate(b, t, new goals.GoalNear(d.at.x, d.at.y, d.at.z, 2), { timeoutMs: Math.max(12000, d.distance * 3000), stallMs: 8000 });
           require('./drop-collection').forgetRest(b, d.name, d.at.clone ? d.at.clone() : new Vec3(d.at.x, d.at.y, d.at.z), 6);
-          await collectNearbyDrops(b, t, d.name, { origin: d.at.clone ? d.at.clone() : new Vec3(d.at.x, d.at.y, d.at.z), radius: 6, timeoutMs: 15000, waitForSpawnMs: 1500, allowExcavation: true });
+          // Jev's choice, made with the mobs about in its state, as the walk back to the bot's own drops is (note 2287): the
+          // pickup's own filter left out every drop a block nearer a mob than the bot, seen or behind rock, and full-111
+          // (25591, 2026-10-29 18:2xZ), eight zombies, creepers and skeletons in the caves about and none in sight, stood a
+          // block from its raw iron, 'reached, not picked up', no spot tried. A hit still goes to the survival layer (note 2535).
+          await collectNearbyDrops(b, t, d.name, { origin: d.at.clone ? d.at.clone() : new Vec3(d.at.x, d.at.y, d.at.z), radius: 6, timeoutMs: 15000, waitForSpawnMs: 1500, allowExcavation: true, hostilesOk: true });
         } catch (err) { if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; why = String(err.message || err).slice(0, 100); }
         const now = (b.inventory?.items?.() || []).filter(i => i.name === d.name).reduce((s, i) => s + i.count, 0);
         if (now > (before.get(d.name) || 0)) { took.push(`${now - before.get(d.name)} ${words(d.name)}`); before.set(d.name, now); memory(b).drops.delete(d.id); }
