@@ -359,10 +359,14 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
       for (const drop of nearbyDrops(bot, item, origin, radius, { hostilesOk }).filter(d => d.position.distanceTo(bot.entity.position) <= 6 && Math.abs(d.position.y - bot.entity.position.y) <= 3).slice(0, 2)) {
         task.check(); checkAir(bot);
         const c = drop.position.floored();
+        let failedWalk = null;
         try { await move(bot, task, new goals.GoalNear(c.x, c.y, c.z, 1), { timeoutMs: 6000, stallMs: 2500, hostilesOk, stopWhen: () => gained() }); }
-        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; failedWalk = err; }
         for (const until = Date.now() + 500; !gained() && Date.now() < until;) { task.check(); await sleep(50); }
         if (gained()) { console.log(`[drops] the ${item.replaceAll('_', ' ')} at ${c} taken by a walk over to it`); break; }
+        // Why the walk over came to nothing (note 2492): full-90 (25586, 2026-10-29 12:41Z) left raw iron 2.9 off, 2 up on
+        // gravel from a tunnel, with no word of the walk.
+        console.log(`[drops] the walk over to the ${item.replaceAll('_', ' ')} at ${c} from ${bot.entity.position.floored()}: ${failedWalk ? String(failedWalk.message || failedWalk).slice(0, 140) : 'arrived, not picked up'} (dig ${movement.canDig !== false}, towers ${!!movement.allow1by1towers})`);
       }
       } finally { Object.assign(movement, keep); }
     }
