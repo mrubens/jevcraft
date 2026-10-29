@@ -2512,7 +2512,11 @@ function logInView(bot, step) {
   if (kept && open([kept]).length) { bot._logKind = { name: kept, at: Date.now() }; return swapTo(step, kept); }
   if (open([step.block]).length) { bot._logKind = { name: step.block, at: Date.now() }; return step; }
   const names = Object.keys(bot.registry?.blocksByName || {}).filter(n => family.test(n) && n !== step.block);
-  const other = open(names)[0];
+  // Out to 64 where the species asked for is in view but all of it set aside (note 2531): full-107 (25589, 2026-10-29
+  // 17:4xZ) had its oak across a deep river set aside each two minutes, the jungle past 32 blocks never looked for, and
+  // the step went back to the oak each time the rest ran out.
+  const asidesOnly = find(bot, [step.block], 32, 1).length > 0;
+  const other = open(names)[0] || (asidesOnly ? find(bot, names, 64, 16).filter(p => !isSetAside(bot._goal || {}, 'reach', p))[0] : null);
   const name = other && bot.blockAt(other)?.name;
   if (!name) return step;
   bot._logKind = { name, at: Date.now() };
