@@ -67,8 +67,20 @@ function remembered(bot, now = Date.now()) {
 
 const words = n => n.replaceAll('_', ' ');
 // The option, or null: every valuable drop remembered, with where, how long it has and what came of the last try.
+// A death's drops are the corpse run's (corpse-run.js, its staircases and digs), not this walk's (note 2521): full-103
+// (25591, 2026-10-29 16:3xZ) had its death's water bucket, iron sword and iron boots offered here 54 blocks down, and the
+// walk came to 'No path to the goal!' for each.
+function deathAt(bot) {
+  try {
+    const goal = bot._goal, rec = goal?.survival?.recovery;
+    if (rec?.status === 'pending' && rec.position) return rec.position;
+    const cr = require('./corpse-run').corpseRun(bot, goal);
+    return cr?.position || null;
+  } catch (_) { return null; }
+}
 function fetchOption(bot) {
-  const lying = remembered(bot).filter(d => d.distance <= 96 && d.secondsLeft >= 15);
+  const dead = deathAt(bot);
+  const lying = remembered(bot).filter(d => d.distance <= 96 && d.secondsLeft >= 15 && !(dead && Math.hypot(d.at.x - dead.x, d.at.y - dead.y, d.at.z - dead.z) <= 8));
   if (!lying.length) return null;
   const list = lying.slice(0, 8).map(d => `${d.count} ${words(d.name)} ${d.distance} blocks off${Math.abs(d.dy) >= 3 ? ` (${Math.abs(d.dy)} ${d.dy < 0 ? 'down' : 'up'})` : ''}, about ${d.secondsLeft >= 90 ? `${Math.round(d.secondsLeft / 60)} minutes` : `${d.secondsLeft} seconds`} before it vanishes${d.tries ? `, tried ${d.tries} time${d.tries > 1 ? 's' : ''} (last: ${d.lastWhy})` : ''}`).join('; ');
   const far = Math.max(...lying.slice(0, 8).map(d => d.distance));
