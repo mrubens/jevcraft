@@ -339,9 +339,14 @@ function foodRoutes(bot, task, goal, save, { actions = {}, survival = null } = {
     const record = require('./food-plan').recordSays('portal', 'nether');
     routes.return_for_food = { description: `Go back through the portal to the Overworld for food, hunted and cooked there, and come back fed. ${require('./game-progress').portalTrip(bot, goal)}${there ? ` ${there}` : ''}${nv.keepOnSays(bot, goal)}${nv.standingTripSays(bot, goal, 'return_for_food')}${record ? ` ${record[0].toUpperCase()}${record.slice(1)}.` : ''}`,
       run: async () => {
-        nv.chooseReturnForFood(goal); delete goal.netherFoodKit;
+        // The kit's answer kept through the trip (note 2502): deleted here, a trip cut short (escape_threat held seventeen
+        // times on full-91, 2026-10-29 13:56 to 14:04Z) had the question asked again at once, eight times in eight
+        // minutes at health 20 and hunger 20, a fortress 47 blocks off.
+        nv.chooseReturnForFood(goal);
         goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; goal.foodTripChosen = Date.now(); save?.();
         await actions.returnOverworld(bot, task, goal, save);
+        // The stay is left once the trip back is made (the next stay asks afresh); a trip cut short keeps the answer.
+        delete goal.netherFoodKit; save?.();
       } };
   }
   return { routes, notOffered, known, seen, stock };
