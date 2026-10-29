@@ -314,6 +314,23 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
         if (gained()) break;
       }
     }
+    // A drop sunk in water under the bot, swum down to (note 2465): the walk at it floats over it, and no pickup spot is
+    // offered in water. Crouched in water the body sinks; the dive ends at half the air. full-71 (25592, 2026-10-29
+    // 08:3xZ), no flint carried and its portal still to light, dug gravel at a pond's edge and its one flint sank to the
+    // bottom 3 blocks under the bot, 'in water over water under water, 0 spots', and was left.
+    if (!gained() && typeof bot.setControlState === 'function') {
+      const wet = c => /water/.test(bot.blockAt(c)?.name || '');
+      for (const drop of nearbyDrops(bot, item, origin, radius, { hostilesOk }).filter(d => d.position.distanceTo(bot.entity.position) <= 6 && d.position.y < bot.entity.position.y - 0.5 && wet(d.position.floored())).slice(0, 2)) {
+        task.check(); checkAir(bot);
+        if ((bot.oxygenLevel ?? 20) < 15) break;
+        console.log(`[drops] the ${item.replaceAll('_', ' ')} lies in water ${Math.round(bot.entity.position.y - drop.position.y)} under the bot: swum down to`);
+        try {
+          await motion.move(bot, task, { label: 'swim_down_to_drop', keys: ['forward'], sneak: true, why: 'down through the water to a drop lying in it',
+            look: drop.position.offset(0, 0.1, 0), maxMs: 5000, tick: 50, until: () => gained() || (bot.oxygenLevel ?? 20) < 10 });
+        } catch (_) { task.check(); }
+        if (gained()) break;
+      }
+    }
     if (!gained()) {
       const lyingNow = nearbyDrops(bot, item, origin, radius, { hostilesOk });
       if (lyingNow.length) {
