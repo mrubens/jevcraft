@@ -60,6 +60,10 @@ function remembered(bot, now = Date.now()) {
     const left = d.seenAt + LIFE_MS - now;
     if (left <= 0) { m.drops.delete(id); continue; }
     if (d.dimension !== bot.game?.dimension) continue;
+    // Not there where it would be seen (note 2528): merged into another stack, picked up or gone while the bot was too far
+    // to hear of it. full-103 (25591, 2026-10-29 17:1xZ) was sent back for two raw iron 2 and 3 blocks off that were no
+    // longer lying, 'reached, not picked up', no pickup even begun.
+    if (here.distanceTo(d.at) <= 16 && !bot.entities?.[id]) { m.drops.delete(id); continue; }
     out.push({ ...d, distance: Math.round(here.distanceTo(d.at)), dy: Math.round(d.at.y - here.y), secondsLeft: Math.round(left / 1000) });
   }
   return out.sort((a, b) => a.distance - b.distance);
