@@ -151,7 +151,7 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
       if (!made) console.log(`[drops] no room in the pockets for the ${item.replaceAll('_', ' ')} lying here, and none made`);
     }
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err; }
-  const deadline = Date.now() + timeoutMs, spawnDeadline = Date.now() + waitForSpawnMs;
+  let deadline = Date.now() + timeoutMs; const spawnDeadline = Date.now() + waitForSpawnMs;
   const movement = bot.pathfinder.movements, policy = miningMovement(bot), start = bot.entity.position.clone();
   const previous = { allow1by1towers: movement.allow1by1towers, scafoldingBlocks: movement.scafoldingBlocks, allowSprinting: movement.allowSprinting, hostilesOk: movement.hostilesOk,
     allowParkour: movement.allowParkour, maxDropDown: movement.maxDropDown };
@@ -170,8 +170,12 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
   // Why a pickup spot was passed over, counted for the line said when nothing was taken (note 2285).
   const why = { hostile: 0, bounds: 0, route: 0, moved: 0, walked: 0 };
   const allowedWhy = point => { const p = new Vec3(point.x, point.y, point.z); if (!(p.distanceTo(start) <= radius + 1 && p.y >= start.y - 8 && policy.allowed(point) && !damagingTerrain.has(bot.blockAt(supportCell(p))?.name))) return 'bounds'; if (!hostilesOk && !safeFromHostiles(bot, p)) return 'hostile'; return null; };
-  let seen = false, passageTried = false;
+  let seen = false, passageTried = false, extended = false;
   try {
+    // Once more, four seconds, where the time ran out with the drop known only at its end and no spot yet tried (note
+    // 2479): its stack is read after the entity under load, and the pickup waited for it to the deadline. full-84
+    // (25592, 2026-10-29 11:1xZ) dug iron in passing and left the raw iron 4 blocks off, '1 spots', every count 0.
+    for (;;) {
     while (Date.now() < deadline && !gained()) {
       task.check(); checkAir(bot);
       const drops = nearbyDrops(bot, item, origin, radius, { hostilesOk });
@@ -253,6 +257,9 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
         }
       }
       if (!gained()) await sleep(Math.max(0, Math.min(100, deadline - Date.now())));
+    }
+    if (!gained() && !extended && Object.values(why).every(v => !v) && nearbyDrops(bot, item, origin, radius, { hostilesOk }).length) { extended = true; deadline = Date.now() + 4000; continue; }
+    break;
     }
     task.check();
     // A drop in a gap one high within reach, the passage not opened to it: the block over it dug from where the bot
