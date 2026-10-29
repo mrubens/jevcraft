@@ -884,7 +884,12 @@ function spanBlockSources(bot, { reach = 16, walk = 32, skip = () => false, name
     // the way is a step down and up again. The planks mid-242-af-nether-2-
     // fortress-3 laid on its span as cover, two high, were each a floor over
     // air once the lower was dug (note 608).
-    const floorOverAir = standing(p.offset(0, 1, 0)) && !solid(at(p.offset(0, -1, 0))) && !solid(at(p.offset(0, -2, 0)));
+    // Nor the block the bot stands on where air lies within six under it (note 2462): dug, the bot drops into its cell,
+    // and the next pass digs the one under that. full-68 (25591, 2026-10-29 07:38Z), gathering blocks on its fortress's
+    // bridge at y 62, dug the nether bricks it stood on and the layer under, and fell 29 blocks to its death.
+    const under = start.offset(0, -1, 0);
+    const floorOverFall = p.x === under.x && p.y === under.y && p.z === under.z && [1, 2, 3, 4, 5, 6].some(d => open(at(p.offset(0, -d, 0))));
+    const floorOverAir = floorOverFall || (standing(p.offset(0, 1, 0)) && !solid(at(p.offset(0, -1, 0))) && !solid(at(p.offset(0, -2, 0))));
     const diggable = !floorOverAir && !faces.some(f => /lava/.test(at(p.offset(...f))?.name || '')) && faces.some(f => open(at(p.offset(...f)))) &&
       (solid(at(p.offset(0, -1, 0))) || solid(at(p.offset(0, -2, 0))));
     if (diggable) candidates.set(num(p), { p, b, from: null });
