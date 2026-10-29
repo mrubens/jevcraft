@@ -696,6 +696,8 @@ const SHOOTER_KEPT_MS = 10000;
 // magma cubes (26.1.2 Slime's MoveControl, toward the nearest player in
 // range).
 const HOPPERS = new Set(['slime', 'magma_cube']);
+// Stances that wait for the mob to come to the bot (note 2527).
+const WAITING_STANCES = new Set(['corner_ambush', 'await_in_reach', 'out_of_sight', 'back_to_wall', 'dig_in_and_fight']);
 const STRIKING_STANCES = new Set(['fight', 'fight_from_footing', 'rail_and_fight', 'strike_from_above', 'shield_guard', 'low_ceiling', 'close_in', 'charge_nearest']);
 // The work's steps that are the blaze hunt going at them: carrying on with
 // one of these is not said to gain nothing toward the rods (note 614).
@@ -6854,6 +6856,13 @@ class Survival {
       // Past twice its stated seconds, a standing stance is asked again once (holds.js pastStated, note 2169).
       if (!holdEnded) holdEnded = holds.pastStated(held.hold, { choice: held.choice, at: held.at, expects: held.expects }, Date.now(), (this.state.pastAsked ||= {}));
       if (!holdEnded && inTime) holding = true;
+      // A waiting stance against shooters alone, its time out with nothing struck, is asked again, not held on (note 2527):
+      // a blaze hovers and shoots and does not come round the corner to the sword. full-104 (25586, 2026-10-29 17:1xZ)
+      // held corner_ambush 17, then 34 seconds and on, 'nothing it was chosen on has changed (the blaze 6 blocks off in
+      // sight)', every shot on the shield and no blow struck, its fortress's blazes about it.
+      else if (!holdEnded && WAITING_STANCES.has(held.choice) && held.start && !stanceActed(bot, held.start) && danger.length && danger.every(t => require('./mob-policy').shooter(t.entity))) {
+        holdEnded = `held ${Math.round((Date.now() - held.at) / 1000)} seconds against shooters alone and nothing was struck: ${danger.slice(0, 3).map(t => `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`).join(', ')} did not come within the sword's reach`;
+      }
       else if (!holdEnded) {
         const x = holds.extend(held.hold, Date.now(), bot.entity.position);
         if (x.extend) {
