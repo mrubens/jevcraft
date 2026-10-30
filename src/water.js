@@ -209,7 +209,13 @@ async function collectWater(bot, task, goal, save, { navigate, explore, digTo = 
     }
   }
   if (sources.length && digTo) {
-    const near = sources.slice().sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0];
+    // Which water, Jev's own question (note 2585): the nearest was dug toward, whatever lay between and however the
+    // digs there had gone. full-157 (25587, 2026-10-30 05:1xZ) dug toward one source eleven times ('no walk reaches
+    // the water at (-139, -27, -57), 31 blocks off: digging to it', 'Water source is outside visible interaction
+    // reach'), full-158 eight times, full-155 371 seconds stuck at its fill; the stalled runs' clocks had 4 to 8
+    // minutes of 'fill bucket' each. Asked once for the place, held on the source chosen while it is not set aside.
+    const near = await chooseWater(bot, task, goal, save, sources, { explore });
+    if (!near) return;
     goal.step = { action: 'fill_bucket', position: { x: near.x, y: near.y, z: near.z }, item: 'water_bucket', dig: true }; save();
     console.log(`[water] no walk reaches the water at ${near}, ${Math.round(near.distanceTo(bot.entity.position))} blocks off: digging to it`);
     await digTo(near);
@@ -217,6 +223,46 @@ async function collectWater(bot, task, goal, save, { navigate, explore, digTo = 
   }
   await explore(bot, task, goal, save, 'water', { surfaceOnly: true });
 }
+// The water to dig toward, or to look elsewhere: Jev's question (note 2585). The three nearest sources not set
+// aside, each with its distance, its height against the bot's, the rock on the straight line to it and what the digs
+// toward it from about here came to; and the nearest biome seen with water, or the surface search, as the other way.
+// Held on the source chosen for ten minutes while it is not set aside. -> the source (Vec3), or null (elsewhere taken).
+const WATER_WAY_HOLD_MS = 10 * 60000;
+async function chooseWater(bot, task, goal, save, sources, { explore } = {}) {
+  const P = require('./progress'), here = bot.entity.position, eye = here.offset(0, 1.62, 0);
+  const open = sources.filter(p => !P.isSetAside(goal, 'reach', p)).sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
+  const held = goal.waterWay;
+  if (held?.at && Date.now() - held.chosenAt < WATER_WAY_HOLD_MS) {
+    const kept = open.find(p => p.x === held.at.x && p.y === held.at.y && p.z === held.at.z);
+    if (kept) return kept;
+    delete goal.waterWay; save?.();
+  }
+  if (!open.length) { if (explore) await explore(bot, task, goal, save, 'water', { surfaceOnly: true }); return null; }
+  const client = task?.opportunityClient;
+  const few = open.slice(0, 3);
+  const ids = require('./decisions/keys').ids(goal, 'water', few.map(p => ({ x: p.x, y: p.y, z: p.z })), { near: 2 });
+  const rockOn = p => { const cells = new Set(), to = p.offset(0.5, 0.5, 0.5), n = Math.max(2, Math.ceil(eye.distanceTo(to) * 2)); let rock = 0;
+    for (let i = 1; i < n; i++) { const q = eye.plus(to.minus(eye).scaled(i / n)).floored(); const k = `${q}`; if (cells.has(k)) continue; cells.add(k); const b = bot.blockAt(q); if (b?.boundingBox === 'block') rock++; }
+    return rock; };
+  const tried = p => { const e = P.attemptsFor(goal).entries?.[P.keyOf('reach', p)]; return e ? ` Tried from about here before: ${String(e.why || 'it came to nothing').slice(0, 120)}.` : ''; };
+  const tree = {};
+  few.forEach((p, i) => {
+    const d = Math.round(p.distanceTo(here)), dy = Math.round(p.y - here.y), rock = rockOn(p);
+    tree[`water_${ids[i]}`] = { target: { x: p.x, y: p.y, z: p.z }, description: `Dig a staircase toward the water at (${p.x}, ${p.y}, ${p.z}), ${d} blocks off${dy ? `, ${Math.abs(dy)} ${dy < 0 ? 'below' : 'above'} the bot` : ', level with the bot'}: ${rock ? `about ${rock} block${rock === 1 ? '' : 's'} of rock on the straight line to it` : 'nothing solid on the straight line to it'}, no walk reaches it from here. A stair is dug a step at a time, no cell with water or lava behind it; a pass that gets no nearer sets this water aside for twenty minutes.${tried(p)}` };
+  });
+  let known = null; try { known = waterKnown(bot); } catch (_) { known = null; }
+  let biome = null; try { biome = (require('./exploration').biomeView(bot)?.biomesNearby || []).find(holdsWater) || null; } catch (_) { biome = null; }
+  tree.water_elsewhere = { description: `Leave these and look for water elsewhere, on the surface: ${biome ? `the nearest biome seen with water is the ${biome.biome.replaceAll('_', ' ')} ${biome.distance} blocks ${biome.direction}` : 'no biome with water is seen; the search walks the surface from here'}.${known?.kind === 'source' ? '' : ''}` };
+  const state = { water: few.map((p, i) => `water_${ids[i]}: (${p.x}, ${p.y}, ${p.z}), ${Math.round(p.distanceTo(here))} blocks off`), sourcesInView: sources.length, setAside: sources.length - open.length, here: { x: Math.round(here.x), y: Math.round(here.y), z: Math.round(here.z) }, dimension: bot.game?.dimension };
+  const decision = await require('./decisions').decide('water_way', { client, bot, task, goal, save, tree, state });
+  if (decision.stale) return null;
+  const pick = decision.path.at(-1);
+  if (pick === 'water_elsewhere' || !tree[pick]) { if (explore) await explore(bot, task, goal, save, 'water', { surfaceOnly: true }); return null; }
+  const at = tree[pick].target;
+  goal.waterWay = { pick, at, chosenAt: Date.now() }; save?.();
+  return new Vec3(at.x, at.y, at.z);
+}
+
 // A water source a body can wade to: its floor within two below and open
 // air within two above, so the head is out or a step from it.
 function wadeable(bot, p) {
@@ -247,4 +293,4 @@ function waterKnown(bot) {
   if (biome) return { kind: 'biome', distance: biome.distance, says: `no water in view within 48 blocks; the nearest seen is the ${biome.biome.replaceAll('_', ' ')} ${biome.distance} blocks ${biome.direction} (${biome.has})` };
   return { kind: 'none', distance: null, says: 'no water is known: none in view within 48 blocks and no biome seen with water' };
 }
-module.exports = { wadeable, sourceWater, fillBucket, fillWaterBucket, collectWater, waterKnown, holdsWater };
+module.exports = { chooseWater, wadeable, sourceWater, fillBucket, fillWaterBucket, collectWater, waterKnown, holdsWater };

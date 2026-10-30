@@ -154,6 +154,20 @@ define({
 
 module.exports = {};
 
+// Which water to dig toward for the bucket, or whether to look elsewhere (note 2585): the nearest was dug toward
+// whatever lay between, eleven times on one source (full-157, 2026-10-30).
+define({
+  id: 'water_way', area: 'strategy', parent: 'rung_progress', kind: 'strategy', primitive: 'choice', stakes: 'low', tree: true,
+  question: 'Water is in view but no walk reaches any of it: which source should the bot dig a staircase toward, or should it look for water elsewhere on the surface?',
+  trigger: 'Filling a water bucket (the portal cast, a cauldron), with water sources in view within 48 blocks that no dry stand, wade or swim reached (water.js collectWater), a way to dig at hand; asked once for the place and held on the source chosen for ten minutes while it is not set aside.',
+  source: 'src/water.js (chooseWater, collectWater)',
+  options: [
+    { pattern: 'water_\\d+', names: 'the water source, by the number it was given when first offered, kept for it (keys.js)', label: 'dig a staircase toward this water source', when: 'one for each of the three nearest sources not set aside; said with its distance, its height against the bot, the rock on the straight line to it, that no walk reaches it, how the staircase digs and rests, and what the digs toward it from about here came to', level: 'root' },
+    { key: 'water_elsewhere', label: 'leave these and look for water elsewhere on the surface', when: 'always; said with the nearest biome seen with water (its kind, distance and direction) or that none is seen', level: 'root' },
+  ],
+  instructions: { task: 'The bot needs a bucket of water and the water in view cannot be walked to. Choose which source to dig toward, or to look elsewhere.', guidance: 'Each source says how far and how deep it is and what is between; the digs are a step at a time and stop before water or lava. `setAside` is how many sources in view were set aside after digs that got no nearer.' },
+});
+
 // A boat for a crossing the code has already checked: level water, room for
 // the boat and a safe shore at each end.
 define({
