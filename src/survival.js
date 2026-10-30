@@ -6695,7 +6695,12 @@ class Survival {
     // six blocks, sixty-two times in 12.8 minutes with the same blazes at
     // the same range throughout (note 743): a newcomer of a kind already
     // held against is not news, only one of a kind that was not there.
-    const newcomer = held?.ids && danger.find(t => t.distance <= STANCE_NEWCOMER && !held.ids.includes(t.entity.id) && !held.kinds?.split(',').includes(t.entity.name));
+    // A wither skeleton in the Nether is a newcomer from sixteen blocks, not six, as the arbiter takes it (note 2577, after
+    // note 2569): full-164 (25590, 2026-10-30 07:16 to 07:18Z), its first rod a minute old, held leave_and_heal against a
+    // blaze and was told of a wither skeleton only at 'a newcomer within 6', two blocks off; shield_guard went 17.3 to 7.4
+    // in three seconds and it was slain.
+    const newcomerReach = t => t.entity?.name === 'wither_skeleton' && /nether/.test(String(bot.game?.dimension || '')) ? 16 : STANCE_NEWCOMER;
+    const newcomer = held?.ids && danger.find(t => t.distance <= newcomerReach(t) && !held.ids.includes(t.entity.id) && !held.kinds?.split(',').includes(t.entity.name));
     // But a crowd grown at arm's length is news, whatever the kinds: two or
     // more within four blocks now and more than when the stance was chosen
     // (crowd.js, note 778). 25593 (mid-237-ap, 20:54:33Z) held shield_guard
@@ -6809,7 +6814,7 @@ class Survival {
     // Why a held stance is let go, said once each time (note 1949): full-3 (2026-10-20 08:18:54 to 57Z) turned cap_fight, shield_guard, cap_fight, shield_guard, cap_fight, cap_fight, shield_guard, cap_fight, cap_fight in three seconds among three endermen, 17.3 health to none, every answer replaced before its run began and nothing in the record saying what ended each hold; the stall watch alone saw 'turning between shield guard and cap overhead 4 times in 1 seconds'.
     if (held && !holding) {
       const why = leftBe ? 'leaving them be ended at a threat in reach' : runStuck ? 'the run got nowhere' : unseenLong ? (heldNow.every(t => !t.visible) ? 'its mobs long out of sight' : 'its mobs long no nearer') : crowdGrew ? 'the crowd grew' : shieldChanged ? 'the shield changed' : outageLow ? 'Jev down and the health low'
-        : (held.ids ? newcomer : held.kinds !== kinds) ? `a newcomer within ${STANCE_NEWCOMER}: ${newcomer?.entity?.name || kinds}` : hitSince ? 'hit while leaving them be' : offSpot ? 'off its spot' : lineAgain.length ? 'a shooter has its line again' : shotThrough ? 'shot through' : blockAgain ? 'the creeper block is due again' : pushedOpen ? 'pushed open' : held.lethalAgain ? 'lethal again'
+        : (held.ids ? newcomer : held.kinds !== kinds) ? `a newcomer within ${newcomer ? newcomerReach(newcomer) : STANCE_NEWCOMER}: ${newcomer?.entity?.name || kinds}` : hitSince ? 'hit while leaving them be' : offSpot ? 'off its spot' : lineAgain.length ? 'a shooter has its line again' : shotThrough ? 'shot through' : blockAgain ? 'the creeper block is due again' : pushedOpen ? 'pushed open' : held.lethalAgain ? 'lethal again'
         : damageOver ? `more damage than priced (${Math.round((held.health - (bot.health ?? 0)) * 10) / 10} of ${held.health} gone in ${Math.round(elapsed * 10) / 10} s)` : !inTime ? 'its time is up' : 'no reason named';
       console.log(`[stance] ${String(held.choice).replaceAll('_', ' ')} let go after ${Math.round((Date.now() - held.at) / 100) / 10} s: ${why}`);
       // Kept for the next stance question (note 2549): each stance's time held and why it ended.
