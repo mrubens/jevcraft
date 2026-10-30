@@ -3148,6 +3148,13 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
       // between mine and tunnel five times in a second over gravel 15 to 40 blocks off.
       if (!mined && /^No reachable dry standing position/.test(e.message) && /_ore$|^gravel$/.test(step.block || '') && !isSetAside(goal, 'reach', p) && !again) {
         access?.restore(); access = undefined;
+        // Within reach with only rock between, dug through from here before any tunnel (note 2561).
+        try {
+          if (await require('./opportunistic-mining').digThroughTo(bot, task, p)) {
+            try { await require('./drop-collection').collectNearbyDrops(bot, task, step.drops, { origin: p.offset(0.5, 0.5, 0.5), radius: 6, timeoutMs: 8000, waitForSpawnMs: 1000, allowExcavation: true }); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+            if (countOf(bot, step.drops) > before) return;
+          }
+        } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
         console.log(`[mine] no stand beside the ${wasBlock} at ${p}, ${Math.round(bot.entity.position.distanceTo(p))} blocks off: tunnelling to it`);
         goal.tunnelOre = { x: p.x, y: p.y, z: p.z, from: { x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z } }; save();
         // A tunnel that cannot start from here sets the ore aside as before (note 2305): full-10 (2026-10-27 17:31 to

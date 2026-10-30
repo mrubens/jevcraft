@@ -277,6 +277,34 @@ function passingSays(bot, c) {
 // climbs too'; full-9 pillared up past iron at 15:5xZ). A pillar's top or a staircase's step is no place to walk off
 // from, so only what is in the arm's reach and in sight is dug, nothing walked to: the kinds the walks take in passing
 // (passingKinds), no lava against the block, never the block under the feet or the column's cells. -> blocks dug
+// The block asked for, within reach of the eye with only diggable rock on the line to it, dug through that rock and then
+// itself, under the same rules as mineWithinReach (note 2561): the mine step's tunnel came to 3.7 blocks of its gravel
+// and its stand search found no stand, 'No reachable dry standing position ... (37, 1, 6): noPath', and turned to the
+// tunnel again; full-136, full-138, full-140, full-142 and full-145 (2026-10-30) turned mine and tunnel so. -> true when dug.
+async function digThroughTo(bot, task, p) {
+  if (!bot?.entity?.position || typeof bot.blockAt !== 'function') return false;
+  const eye = bot.entity.position.offset(0, 1.62, 0), feet = bot.entity.position.floored(), c = p.offset(0.5, 0.5, 0.5), dir = c.minus(eye);
+  if (dir.norm() > 4.5) return false;
+  const target = bot.blockAt(p);
+  if (!target || target.boundingBox !== 'block' || bot.canDigBlock?.(target) === false) return false;
+  const cells = [];
+  for (let t = 0; t <= dir.norm(); t += 0.1) {
+    const q = eye.plus(dir.scaled(t / dir.norm())).floored();
+    if (q.equals(p) || cells.some(x => x.equals(q))) continue;
+    const b = bot.blockAt(q);
+    if (b && b.boundingBox === 'block') cells.push(q);
+  }
+  const walls = cells.map(q => bot.blockAt(q));
+  if (walls.some(b => !b || b.diggable === false || /^(sand|red_sand|gravel|suspicious_)/.test(b.name) || /lava|water/.test(b.name))) return false;
+  if (walls.some(b => b.position.y < feet.y - 1 || (b.position.x === feet.x && b.position.z === feet.z && b.position.y < feet.y))) return false;
+  if (!walls.every(b => require('./tunneling').safeExcavation(bot, b.position)) || !require('./tunneling').safeExcavation(bot, p)) return false;
+  const digOne = b => task?.check ? require('./vitals').digWithAirGuard(bot, task, b) : require('./skills').digWithTool(bot, b, true);
+  for (const b of walls) { const now = bot.blockAt(b.position); if (now && now.boundingBox === 'block') await digOne(now); }
+  await digOne(bot.blockAt(p));
+  console.log(`[mine] the ${target.name.replaceAll('_', ' ')} at ${p} dug through ${walls.length ? walls.map(b => `the ${b.name.replaceAll('_', ' ')}`).join(', ') : 'nothing'} from where the bot stands`);
+  return true;
+}
+
 async function mineWithinReach(bot, task, { now = Date.now(), label = 'from where the climb stands' } = {}) {
   if (!bot?.entity?.position || !bot.inventory?.items || now - (bot._climbLookAt || 0) < 800) return 0;
   bot._climbLookAt = now;
@@ -427,5 +455,5 @@ async function mineGoldInPassing(bot, task, goal, save, { navigate, dig }) {
   return mineInPassing(bot, task, goal, save, { navigate, dig }, null);
 }
 
-module.exports = { passingOreSays, mineWithinReach, shortOfPearls, goldInPassing, mineGoldInPassing, mineInPassing, passingCandidates, passingSays, valuableInPassing: goldInPassing, mineValuableInPassing: mineGoldInPassing,
+module.exports = { digThroughTo, passingOreSays, mineWithinReach, shortOfPearls, goldInPassing, mineGoldInPassing, mineInPassing, passingCandidates, passingSays, valuableInPassing: goldInPassing, mineValuableInPassing: mineGoldInPassing,
   PASSING_RADIUS, PASSING_REACH, GOLD_WORTH, VITALS, piglinsWithin, LIMITS, opportunityCandidates, opportunisticMining, fuelCarried, FUEL_UNITS_WANTED };
