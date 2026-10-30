@@ -97,10 +97,17 @@ function parse(key) {
 // 2026-10-01 15:49-15:52Z) made 6 more for 10 with 3 slots free, and nine
 // drop questions later had given up its cobblestone and its flint and
 // steel, then needed cobblestone for the cast's walls (note 819).
+// What making buckets first came to (note 2584): from the plan chosen to the first lava bucket carried, on the full runs
+// of 2026-10-29 12:00Z to 10-30 13:00Z, the median minutes by the buckets the plan made first. One or two: 7 to 12 (34
+// plans). Three to five: 21 to 24 (12 plans), where the code's own estimate (15 seconds and 10 a smelt) said 1 to 3:
+// the iron is mined and a furnace walked to, fuelled and waited on, and the route's 'fewest seconds' took the many for
+// cheap (full-134 '4 more made first', full-141 '3 more ... 1 of the 22 raw iron smelted', a stall on smelt each).
+const MAKE_RECORD = { from: '2026-10-29 12:00Z', to: '2026-10-30 13:00Z', few: { minutes: [7, 12], plans: 34 }, many: { minutes: [21, 24], plans: 12 } };
+const makeRecordSeconds = n => n >= 3 ? MAKE_RECORD.many.minutes[0] * 60 : 0;
 function priceCast({ reach = 0, trip = 0, cast = 10, toFetch = 10, carriers = 0, ingots = 0, raw = 0, room = Infinity }) {
   const tripsWith = n => n > 0 ? Math.ceil(toFetch / Math.min(n, Math.max(1, room))) : Infinity;
   const castSeconds = cast * CAST_RECORD.secondsABlock;
-  const makeSeconds = n => { const smelt = Math.max(0, 3 * n - ingots); return n ? 15 + smelt * 10 : 0; };
+  const makeSeconds = n => { const smelt = Math.max(0, 3 * n - ingots); return n ? Math.max(15 + smelt * 10, makeRecordSeconds(n)) : 0; };
   const iron = ingots + raw;
   const most = Math.min(Math.floor(iron / 3), Math.max(0, toFetch - carriers), Math.max(0, room - carriers));
   let best = null;
@@ -123,7 +130,7 @@ function priceSays(p, { tripWhat = 'a trip for lava' } = {}) {
   if (p.seconds === null) return `${p.reach ? `Getting there ${mins(p.reach)}; then ` : ''}no bucket is carried and no iron to make one (three ingots), so the iron is mined and smelted first, and the ${p.trips || 10} lava trips priced after that.`;
   const parts = [];
   if (p.reach) parts.push(`getting there ${mins(p.reach)}`);
-  if (p.make) parts.push(`${p.make} more bucket${p.make === 1 ? '' : 's'} made first, ${mins(p.makeSeconds)}`);
+  if (p.make) parts.push(`${p.make} more bucket${p.make === 1 ? '' : 's'} made first, ${mins(p.makeSeconds)} (on the full runs of ${MAKE_RECORD.from} to ${MAKE_RECORD.to}, plans that made one or two first had their lava bucket in about ${MAKE_RECORD.few.minutes.join(' to ')} minutes, the median of ${MAKE_RECORD.few.plans}; three to five first, about ${MAKE_RECORD.many.minutes.join(' to ')}, of ${MAKE_RECORD.many.plans}${p.make >= 3 ? ', the price here' : ''})`);
   if (Number.isFinite(p.room)) parts.push(`the pockets hold ${p.room} lava bucket${p.room === 1 ? '' : 's'} at once (a full one takes a slot of its own), so no more are carried a trip`);
   if (p.trips) parts.push(`${p.trips} trip${p.trips === 1 ? '' : 's'} with ${p.buckets} bucket${p.buckets === 1 ? '' : 's'}, ${tripWhat} ${mins(p.trip)} each`);
   parts.push(`casting the blocks ${mins(p.castSeconds)} (${CAST_RECORD.secondsABlock} seconds a block at the record's pace)`);
@@ -227,4 +234,4 @@ function askedAgainSays(due) {
   return due && due.kind !== 'none' ? ` Asked again because ${due.why}.` : '';
 }
 
-module.exports = { planRecordSays, PLAN_RECORD, priceCast, priceSays, planFailed, planFacts, planDue, askedAgainSays, failuresFor, failuresSays, parse, standingOf, carriersOf, CAST_RECORD, BESIDE_BLOCKS, PLAN_MIN_MS, ROUTE, KEYS, sameLava };
+module.exports = { MAKE_RECORD, planRecordSays, PLAN_RECORD, priceCast, priceSays, planFailed, planFacts, planDue, askedAgainSays, failuresFor, failuresSays, parse, standingOf, carriersOf, CAST_RECORD, BESIDE_BLOCKS, PLAN_MIN_MS, ROUTE, KEYS, sameLava };

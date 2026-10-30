@@ -343,7 +343,7 @@ test('buckets are part of the route: made first where they shorten it, both pric
   const goal = {};
   assert.equal(await portalMethod(bot, task, goal, () => {}), false, 'the buckets first, on the next passes');
   assert.match(offered.here_deep, /Buckets: 1 carried, 2 more made first from the iron carried \(three ingots each\)\./);
-  assert.match(offered.here_deep, /2 more buckets made first, about \d+ seconds; 4 trips with 3 buckets/);
+  assert.match(offered.here_deep, /2 more buckets made first, about \d+ seconds \(on the full runs of [^)]*\); 4 trips with 3 buckets/);
   assert.match(offered.here_deep, /With only the 1 bucket carried it would be 10 trips, about \d+ minutes in all\./);
   assert.equal(goal.portalBuckets.target, 3);
   assert(said.some(m => /^Portal plan: a frame cast here, its lava from the lava layer, 2 more buckets made first, about \d+ minutes\.$/.test(m)), said.join(' | '));

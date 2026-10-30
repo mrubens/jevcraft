@@ -16,18 +16,20 @@ const botWith = (items, at = new Vec3(0.5, 64, 0.5)) => ({ registry, game: { dim
   inventory: { items: () => items }, findBlocks: () => [], blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', position: p, boundingBox: p.y < 64 ? 'block' : 'empty' }) });
 
 test('a route is priced end to end: buckets made first only where they shorten it, both said', () => {
-  // One bucket, nine ingots, trips of four minutes: three more buckets save far more than they cost.
+  // One bucket, nine ingots, trips of four minutes: two more buckets save far more than they cost; a third is priced
+  // from the record (note 2584: three to five made first took 21 to 24 minutes), and does not.
   const p = PP.priceCast({ reach: 60, trip: 240, cast: 10, toFetch: 10, carriers: 1, ingots: 9, raw: 0 });
-  assert.equal(p.make, 3);
-  assert.equal(p.trips, 3);
-  assert.equal(p.seconds, 60 + 15 + 3 * 240 + 10 * PP.CAST_RECORD.secondsABlock);
+  assert.equal(p.make, 2);
+  assert.equal(p.trips, 4);
+  assert.equal(p.seconds, 60 + 15 + 4 * 240 + 10 * PP.CAST_RECORD.secondsABlock);
   assert.equal(p.carried.trips, 10);
-  assert.match(PP.priceSays(p), /^Priced end to end, about \d+ minutes: getting there about 60 seconds; 3 more buckets made first, about 15 seconds; 3 trips with 4 buckets, a trip for lava about 4 minutes each; casting the blocks about 2 minutes \(12 seconds a block at the record's pace\)\. With only the 1 bucket carried it would be 10 trips, about \d+ minutes in all\.$/);
+  assert.match(PP.priceSays(p), /^Priced end to end, about \d+ minutes: getting there about 60 seconds; 2 more buckets made first, about 15 seconds \(on the full runs of [^)]*\); 4 trips with 3 buckets, a trip for lava about 4 minutes each; casting the blocks about 2 minutes \(12 seconds a block at the record's pace\)\. With only the 1 bucket carried it would be 10 trips, about \d+ minutes in all\.$/);
   // Enough buckets carried for the lava owed: none made.
   assert.equal(PP.priceCast({ reach: 300, trip: 25, cast: 10, toFetch: 10, carriers: 10, ingots: 9 }).make, 0);
-  // Raw iron smelted first, at ten seconds an ingot.
+  // Raw iron smelted first, at ten seconds an ingot: two buckets, six ingots.
   const raw = PP.priceCast({ trip: 240, cast: 10, toFetch: 10, carriers: 1, ingots: 0, raw: 9 });
-  assert.equal(raw.makeSeconds, 15 + 9 * 10);
+  assert.equal(raw.make, 2);
+  assert.equal(raw.makeSeconds, 15 + 6 * 10);
   // No bucket and no iron: not priced, and said so.
   assert.match(PP.priceSays(PP.priceCast({ trip: 60, cast: 10, toFetch: 10, carriers: 0 })), /no bucket is carried and no iron to make one \(three ingots\), so the iron is mined and smelted first/);
 });

@@ -7,7 +7,8 @@ const PP = require('../src/portal-plan');
 
 test('buckets made first stop at the pockets\' room for lava buckets, and the price says it (25589 mid-226-am, note 819)', () => {
   const wide = PP.priceCast({ reach: 30, trip: 20, toFetch: 10, carriers: 4, ingots: 30, room: Infinity });
-  assert.equal(wide.buckets, 10, 'with room, ten made for one trip');
+  // Trips of twenty seconds: a bucket more saves one, six more (one trip) cost the record's twenty minutes (note 2584).
+  assert.equal(wide.buckets, 5, 'with room, one more made, two trips');
   const tight = PP.priceCast({ reach: 30, trip: 20, toFetch: 10, carriers: 4, ingots: 30, room: 5 });
   assert.ok(tight.buckets <= 5, `${tight.buckets} buckets with room for 5`);
   assert.equal(tight.trips, 2);
