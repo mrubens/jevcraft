@@ -500,7 +500,7 @@ function tick(bot, survival, now = Date.now()) {
       eating = false;
     }
     s.by = answered ? 'answer' : 'reflex';
-    strikeFireball(bot, s, now);
+    if (!answered?.noStrike) strikeFireball(bot, s, now);
     guard.push({ at: h.at, why: answered ? 'answer: shield up' : a ? `reflex: a ${s.name.replaceAll('_', ' ')} on its way, the stance ${String(a.stance || '').replaceAll('_', ' ')} walking on` : `reflex: a ${s.name.replaceAll('_', ' ')} on its way, no answer about it`, shot: s, w: SHOT_W });
   }
   // Behind the block chosen: walked to while the warning is due or on.
@@ -614,6 +614,18 @@ function shotOptions(bot, warned) {
     if (warned.some(e => e.name === 'ghast')) {
       const G = require('./ghast'), f = bot._fireballStrikes;
       tree.shield_up.description += ` Facing it, the ghast's fireball is also struck as it comes within reach: struck with anything, a fireball flies back the way the bot looks and does not land (no hurt, no fire, no push; the shield alone stops the hurt, not the push). In the arena (a ghast 13 to 30 blocks off, the bot standing with its shield up, ${G.REFLEX_ARENA.runs} runs), ${G.REFLEX_ARENA.struck} of ${G.REFLEX_ARENA.came} fireballs that came were struck so, ${G.REFLEX_ARENA.landed || 'none'} landed, no health was lost, and ${G.REFLEX_ARENA.killed} of the ghasts were killed by a fireball sent back; with the shield up and no strike, the bot died in both of two runs.${f?.struck ? ` By this bot since: ${f.struck} struck, ${f.landed} of them landed all the same.` : ''}`;
+      // A fireball struck back is the bot's (the game's rule: the striker becomes its owner): where it bursts it hurts
+      // what is there, and a zombified piglin hurt by the bot turns on it with its group (note 2591). full-193 (25591,
+      // 2026-10-30 13:59:20Z) struck one back at a ghast 46 blocks off from its slot; eight seconds later the group, the
+      // nearest 34 blocks from where one was hurt, came at it and it was slain from 20 in seven seconds; full-168 (25588,
+      // 09:23Z) the same, 18 blocks off. Both the day's zombified piglin deaths.
+      const zp = Object.values(bot.entities || {}).filter(x => x?.name === 'zombified_piglin' && x.position && x.isValid !== false && x.position.distanceTo(here) <= 48);
+      if (zp.length) {
+        const nearestZp = Math.round(Math.min(...zp.map(x => x.position.distanceTo(here))));
+        const zpSays = ` A fireball struck back is the bot's: where it bursts it hurts what is there, and a zombified piglin hurt by the bot turns on it with every one of its kind within about 35 blocks of it across and 10 up or down, for the next 20 to 40 seconds (the game's rule); ${zp.length} zombified piglin${zp.length === 1 ? ' is' : 's are'} within 48 blocks, the nearest ${nearestZp} off. On 2026-10-30 two runs struck one back with them about and were slain by the group within a minute (full-168, full-193, the day's two zombified piglin deaths).`;
+        tree.shield_up.description += zpSays;
+        tree.shield_no_strike = { description: `Face ${who} and hold the shield up while the shots come, as above, and leave the fireball unstruck: the shield takes its hurt and not its push (about a block), and it bursts where it meets the bot or the ground about it, near the bot and not among the zombified piglins (${zp.length} within 48 blocks, the nearest ${nearestZp} off).${edgeCell(bot) ? ' A deadly drop is beside the feet: the push is over it.' : ''}`, split: tree.shield_up.split, noStrike: true };
+      }
     }
   }
   // A deadly drop beside the feet (note 2195): the shot's knockback is about a block, and a span or ledge over the lava
@@ -960,7 +972,8 @@ function ask(bot, survival, warned) {
     .then(d => {
       const choice = d && !d.stale ? d.path?.[0] : null;
       if (!choice || !tree[choice]) return;
-      record(choice, d.safetyRule ? 'rule' : 'jev');
+      if (choice === 'shield_no_strike') record('shield_up', d.safetyRule ? 'rule' : 'jev', { noStrike: true });
+      else record(choice, d.safetyRule ? 'rule' : 'jev');
       if (choice === 'strike_first') strikeFirst(bot, tree.strike_first.target).catch(() => {});
     })
     .catch(() => null)
