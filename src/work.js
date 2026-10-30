@@ -9630,7 +9630,12 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   // alone, back for food 17 of 23: the portal walked twice. The recorded asks asked again of Jev, 12 of them twice each:
   // the food taken up 0 of 24 as asked, 14 of 24 asked on its own so. Asked once for the crossing; a turn back for food
   // or a death since asks again, as the kit's held choice does.
-  if (!pick && tree.take_up_food) {
+  // Asked whenever the food is under the Nether's reserve, whatever went without it before (note 2574): 'Nether first'
+  // at the strategy's question counts as going without the food (game-progress.js GOING_WITHOUT), and the food was not
+  // offered at the crossing at all. full-158 (25589, 2026-10-30 06:10Z) crossed with 12 of 80 points and full-151
+  // (25588, 04:20Z) with 33, the food's question not asked; inside, the food was the first thing asked.
+  const foodShort = items.find(i => i.key === 'food' && i.carried < NETHER_FLOOR);
+  if (!pick && (tree.take_up_food || foodShort)) {
     const fi = items.find(i => i.key === 'food');
     const since = kit.foodAsk?.wall || 0;
     const asked = !!kit.foodAsk && !(goal.foodTurnBack?.at > since) && !(goal.survival?.deaths || []).some(d => Date.parse(d.at) > since);
