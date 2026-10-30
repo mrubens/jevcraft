@@ -601,6 +601,14 @@ function flipWatch(bot, goal, now = Date.now()) {
     // (25586, 2026-10-30 00:2xZ) and full-138 (25588, 00:5xZ) had 'turning between smelt and detour' raised with a
     // batch in its furnace, and the iron rung rested with its ingots cooking.
     if (layer === 'work' && names.has('smelt') && names.has('detour') && goal.smelting) continue;
+    // Nor the walk or dig with its ore detours taken on the way, while they bring something up (note 2558): the
+    // detour (opportunistic-mining.js, step collect_nearby_resource) gives the step back, and its gain is not the rung's,
+    // so the tunnel or mine was read as flipping and rested. full-136, full-138, full-140 and full-142 (2026-10-30)
+    // had 'turning between tunnel and collect nearby resource' raised on the way to iron.
+    if (layer === 'work' && names.has('collect_nearby_resource')) {
+      const recent = (goal.opportunistic?.history || []).filter(h => h.finishedAt && now - Date.parse(h.finishedAt) < 60000);
+      if (recent.some(h => (h.pickedUp || 0) > 0)) continue;
+    }
     const place = flipPlace(changes, here);
     if (!place) continue;
     if (worth(bot) > first.worth) continue;
