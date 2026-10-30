@@ -158,7 +158,12 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
       // Thrown facing away from the drop (note 2544): thrown toward open ground, the room's 320 cobblestone on full-120
       // (25591, 2026-10-29 21:2xZ) lay where its raw iron did, 0.6 blocks off, and the walk over 'arrived, not picked up'.
       const lying = nearbyDrops(bot, item, origin, radius, { hostilesOk })[0];
-      const made = await tidy.makeRoom(bot, task, item, { keep, away: lying?.position || origin, purpose: `the ${item.replaceAll('_', ' ')} lying here`, goal: bot._goal || null });
+      // Two slots, not one (note 2570): the slot the tidy frees is taken by the first thing walked over, and at the bot's
+      // own digging that is the rock it dug. full-154 (25589, 2026-10-30 04:1x to 04:5xZ) made room 39 times, each 'the
+      // tidy dropped 13 cobblestone (building blocks past the 128 kept in all)', and left raw iron 0.2 blocks off with
+      // 'free slots 0', the cobblestone lying about taken first. A second slot asks the whole stack or Jev's question.
+      const room = () => tidy.roomFor(bot, item, 1) && (bot.inventory?.emptySlotCount?.() ?? 2) >= 2;
+      const made = await tidy.makeRoom(bot, task, item, { keep, away: lying?.position || origin, purpose: `the ${item.replaceAll('_', ' ')} lying here`, goal: bot._goal || null, room });
       if (!made) console.log(`[drops] no room in the pockets for the ${item.replaceAll('_', ' ')} lying here, and none made`);
     }
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err; }
