@@ -53,6 +53,10 @@ const CASES = {
   ore_behind_one: () => ({ at: [3, 1, 0], ore: 'diamond_ore', fill: [[2, -1, -2, 4, 3, 2, 'stone']] }),
   ore_overhead_shaft: () => ({ at: [0, 3, 1], ore: 'diamond_ore', fill: [[-2, -1, -2, 2, 5, 2, 'stone'], [0, 0, 0, 0, 2, 0, 'air']] }),
   ore_below_ledge: () => ({ at: [2, -2, 0], ore: 'diamond_ore', fill: [[1, -3, -1, 3, -1, 1, 'stone'], [1, -1, 0, 1, -1, 0, 'air']] }),
+  // Ore dug from a one-wide tunnel's end, a block down and a block across (full-138, 2026-10-29 00:3xZ: the drop in the
+  // ore's cell, 'navigation timed out without reaching new ground', 'reached, not picked up', 1.7 blocks off).
+  ore_diag_down_tunnel: () => ({ at: [1, -1, 1], ore: 'diamond_ore', fill: [[-2, -2, -2, 3, 3, 3, 'stone'], [-1, 0, 0, 0, 1, 0, 'air']] }),
+  ore_diag_down_tunnel_far: () => ({ at: [1, -1, 1], ore: 'diamond_ore', fill: [[-3, -2, -2, 3, 3, 3, 'stone'], [-3, 0, 0, 0, 1, 0, 'air']] }),
   ore_from_stair: () => ({ at: [2, 3, 0], ore: 'diamond_ore', stand: [0, 1, 0], fill: [[-1, -1, -2, 3, 5, 2, 'stone'], [0, 1, 0, 0, 3, 0, 'air'], [1, 2, 0, 1, 4, 0, 'air']] }),
 };
 
@@ -88,7 +92,7 @@ async function trial(name, n) {
   const count = () => bot.inventory.items().filter(i => i.name === 'diamond').reduce((s, i) => s + i.count, 0);
   const before = had, started = Date.now();
   const lines = [];
-  const orig = console.log; console.log = (...a) => { const s = a.join(' '); if (/^\[(drops|room|loot|climb ore)\]/.test(s)) lines.push(s.slice(0, 220)); };
+  const orig = console.log; console.log = (...a) => { const s = a.join(' '); if (process.env.ALL || /^\[(drops|room|loot|climb ore)\]/.test(s)) lines.push(s.slice(0, 300)); };
   let error = null;
   try {
     const task = new Task('pickup_drill', 'the pickup drill');
@@ -96,13 +100,14 @@ async function trial(name, n) {
       bot._goal = { kind: 'win' };
       const dug = await require('../src/opportunistic-mining').mineWithinReach(bot, task, { now: Date.now() + 10000, label: 'in the drill' });
       lines.push(`[drill] in-passing dug ${dug}`);
+      if (process.env.ALL) { await sleep(1500); const items = Object.values(bot.entities).filter(e => e.name === 'item' && e.position.distanceTo(bot.entity.position) < 8); lines.push(`[drill] items: ${items.map(e => `${e.getDroppedItem?.()?.name}@${e.position.x.toFixed(2)},${e.position.y.toFixed(2)},${e.position.z.toFixed(2)} valid=${e.isValid}`).join('; ') || 'none'}; bot at ${bot.entity.position.x.toFixed(2)},${bot.entity.position.y.toFixed(2)},${bot.entity.position.z.toFixed(2)}`); }
     }
     await require('../src/drop-collection').collectNearbyDrops(bot, task, 'diamond', { origin: bot.entity.position.clone(), radius: 8, timeoutMs: 15000, waitForSpawnMs: 1000, allowExcavation: true });
   } catch (e) { error = String(e.message || e).slice(0, 160); }
   finally { console.log = orig; }
   for (let i = 0; i < 10 && count() === before; i++) await sleep(100);
   const taken = count() > before;
-  const r = { case: name, trial: n, taken, seconds: Math.round((Date.now() - started) / 100) / 10, drop: `${at.x - X},${at.y - G - 1},${at.z - Z}`, full, error, said: lines.slice(-3) };
+  const r = { case: name, trial: n, taken, seconds: Math.round((Date.now() - started) / 100) / 10, drop: `${at.x - X},${at.y - G - 1},${at.z - Z}`, full, error, said: process.env.ALL ? lines : lines.slice(-3) };
   log(r);
   return r;
 }
