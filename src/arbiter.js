@@ -33,7 +33,11 @@ const WITHER_SIGHTED = 16;
 // within 6: hoglin' and was struck before any stance was asked ('hit with no survival response (health 20)'), thrown
 // into the lava at (31, 28.6, -192), and dead six seconds on. One pacified by a warped fungus or a portal near is not
 // among the threats at all (danger.js).
-const SIGHTED_FAR = new Set(['wither_skeleton', 'hoglin']);
+// And a piglin brute (note 2604): its axe lands about 9 through iron, three blows from full health, and it runs at the
+// bot's own pace. full-216 (25588, 2026-10-30 19:59:29Z) came through its portal beside a bastion with three brutes 10
+// to 14 blocks off in view, was asked nothing of them (the smelt's question, none good 0.72), struck from 20 to 11 to 5
+// 'with no survival response', and slain 39 seconds after entering.
+const SIGHTED_FAR = new Set(['wither_skeleton', 'hoglin', 'piglin_brute']);
 const sightedReach = (bot, t) => SIGHTED_FAR.has(t?.entity?.name) && /nether/.test(String(bot?.game?.dimension || '')) ? WITHER_SIGHTED : STANCE_NEWCOMER;
 const { LIGHTS_AT, APPROACH, FUSE } = require('./combat-estimate');
 
