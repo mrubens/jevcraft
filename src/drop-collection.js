@@ -136,6 +136,9 @@ class PickupGoal extends goals.GoalBlock {
   isEnd(node) { return node.x === this.x && node.z === this.z && Math.abs(node.y - this.standingY) < 1; }
 }
 
+// The drops dug to through a block or two (note 2601), and the ground dug through for them.
+const DIG_FOR = /^(raw_iron|raw_gold|diamond|emerald|ancient_debris|gold_nugget|blaze_rod|ender_pearl|obsidian)$/;
+const DUG_THROUGH = /^(stone|deepslate|cobblestone|cobbled_deepslate|granite|diorite|andesite|tuff|dirt|coarse_dirt|gravel|netherrack|basalt|blackstone|soul_soil|calcite|sandstone|sand|red_sand|terracotta)$/;
 async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item), origin = bot.entity.position.clone(),
   radius = 16, timeoutMs = 6500, waitForSpawnMs = 0, onTarget = () => {}, move = navigate, allowExcavation = false,
   // The bot's own drops after a death (note 2287): they lie where it died, beside what killed it, and with hostiles
@@ -231,8 +234,14 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
           try { route = await surveyRoute(bot, task, movement, target, Math.min(250, deadline - Date.now())); }
           finally { if (climb) Object.assign(movement, { allow1by1towers: false, scafoldingBlocks: [] }); }
           if (changed()) { why.moved++; continue; }
+          // A valuable drop past a block or two of rock is dug to (note 2601): ore dug in passing drops into the pocket
+          // beside the tunnel, and every route there breaks a block. On the full runs of 2026-10-30, raw iron or gold
+          // 2 to 4 blocks off was left 'no short clear route' on full-201, 206, 209, 210, 212, 215 and 216. The
+          // pathfinder's own break rules (no liquid let in) stand; two blocks at most, of the ground as the world makes it.
+          const breaks = (route.path || []).reduce((n, p) => n + (p.toBreak?.length || 0), 0);
+          const digOk = DIG_FOR.test(item) && breaks <= 2 && (route.path || []).every(p => (p.toBreak || []).every(b => DUG_THROUGH.test(bot.blockAt(new Vec3(b.x, b.y, b.z))?.name || '')));
           if (route.status !== 'success' || (route.path || []).length > 32 ||
-              !(route.path || []).every(p => allowed(p) && !p.toBreak?.length && (climb || !p.toPlace?.some(p => !p.useOne)))) { why.route++; continue; }
+              !(route.path || []).every(p => allowed(p) && (!p.toBreak?.length || digOk) && (climb || !p.toPlace?.some(p => !p.useOne)))) { why.route++; continue; }
           if (climb) Object.assign(movement, { allow1by1towers: true, scafoldingBlocks: previous.scafoldingBlocks });
           why.walked++;
           onTarget({ item, position: { ...drop.position.floored() } });
