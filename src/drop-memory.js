@@ -6,7 +6,9 @@
 // that fails ends that try only, and is said on the next offer.
 const { Vec3 } = require('vec3');
 
-const VALUABLE = /^(diamond|emerald|raw_iron|raw_gold|raw_copper|iron_ingot|gold_ingot|copper_ingot|ender_pearl|blaze_rod|ender_eye|obsidian|flint|ancient_debris|netherite_scrap|netherite_ingot|bow|crossbow|shield|bucket|water_bucket|lava_bucket|golden_apple|bed|[a-z_]*_bed|(diamond|iron|netherite)_(pickaxe|sword|axe|shovel|helmet|chestplate|leggings|boots)|golden_boots|copper_(helmet|chestplate|leggings|boots))$/;
+// Copper is not among them (note 2586): nothing on the way to the dragon takes it, and 9 of the day's 19 'reached, not
+// picked up' walks (2026-10-30) were for raw copper, one lying in a pool five blocks up walked to nine times (full-174).
+const VALUABLE = /^(diamond|emerald|raw_iron|raw_gold|iron_ingot|gold_ingot|ender_pearl|blaze_rod|ender_eye|obsidian|flint|ancient_debris|netherite_scrap|netherite_ingot|bow|crossbow|shield|bucket|water_bucket|lava_bucket|golden_apple|bed|[a-z_]*_bed|(diamond|iron|netherite)_(pickaxe|sword|axe|shovel|helmet|chestplate|leggings|boots)|golden_boots|copper_(helmet|chestplate|leggings|boots))$/;
 // An item entity lasts five minutes in loaded ground (6000 ticks), its clock running only while a player is near enough
 // to keep the chunk ticking (about 176 blocks with this server's view).
 const LIFE_MS = 5 * 60000, TICKING = 176, SEEN_GONE = 24, KEEP = 40;
@@ -98,13 +100,19 @@ function fetchOption(bot) {
   // Not a drop a few seconds old (note 2532): the dig that made it takes it up itself, and the memory's walk sent at once
   // found its item not yet read and took nothing, 'reached, not picked up' (full-109, 25592, 2026-10-29 17:5xZ, raw iron
   // 2 blocks off from an ore just dug through five blocks).
-  const lying = remembered(bot).filter(d => d.distance <= 96 && d.secondsLeft >= 15 && Date.now() - d.seenAt >= 3000 && !(dead && Math.hypot(d.at.x - dead.x, d.at.y - dead.y, d.at.z - dead.z) <= 8) && !byDeath(d));
+  const all = remembered(bot).filter(d => d.distance <= 96 && d.secondsLeft >= 15 && Date.now() - d.seenAt >= 3000 && !(dead && Math.hypot(d.at.x - dead.x, d.at.y - dead.y, d.at.z - dead.z) <= 8) && !byDeath(d));
+  // Walked to twice from about here and not taken: left out of the walk until the bot has moved (note 2586), and said.
+  const hereNow = bot.entity.position;
+  const leftOut = all.filter(d => d.tries >= 2 && d.missFrom && Math.hypot(d.missFrom.x - hereNow.x, d.missFrom.z - hereNow.z) <= 8);
+  const lying = all.filter(d => !leftOut.includes(d));
   if (!lying.length) return null;
   const list = lying.slice(0, 8).map(d => `${d.count} ${words(d.name)} ${d.distance} blocks off${Math.abs(d.dy) >= 3 ? ` (${Math.abs(d.dy)} ${d.dy < 0 ? 'down' : 'up'})` : ''}, about ${d.secondsLeft >= 90 ? `${Math.round(d.secondsLeft / 60)} minutes` : `${d.secondsLeft} seconds`} before it vanishes${d.tries ? `, tried ${d.tries} time${d.tries > 1 ? 's' : ''} (last: ${d.lastWhy})` : ''}`).join('; ');
   const far = Math.max(...lying.slice(0, 8).map(d => d.distance));
   const seconds = Math.max(5, Math.round(far * 2 / 4.3 + lying.length * 2));
+  const triedSays = lying.slice(0, 8).filter(d => d.tries).map(d => `${words(d.name)} walked to ${d.tries === 1 ? 'once' : `${d.tries} times`}, not taken${d.lastWhy ? ` (${String(d.lastWhy).slice(0, 90)})` : ''}`);
+  const leftSays = leftOut.length ? ` Left out, walked to twice from about here and not taken: ${leftOut.slice(0, 3).map(d => `${words(d.name)} ${d.distance} blocks off`).join(', ')}.` : '';
   return {
-    description: `Go and pick up what of value was seen lying: ${list}. About ${seconds} seconds there and back where the walk is plain; the walk may dig. Dropped things last five minutes while the bot is within ${TICKING} blocks, then vanish.`,
+    description: `Go and pick up what of value was seen lying: ${list}. About ${seconds} seconds there and back where the walk is plain; the walk may dig. Dropped things last five minutes while the bot is within ${TICKING} blocks, then vanish.${triedSays.length ? ` ${triedSays.join('; ')}.` : ''}${leftSays}`,
     run: async (b, t) => {
       const { goals } = require('mineflayer-pathfinder'), { navigate } = require('./skills'), { collectNearbyDrops } = require('./drop-collection');
       const before = new Map(lying.map(d => [d.name, (b.inventory?.items?.() || []).filter(i => i.name === d.name).reduce((s, i) => s + i.count, 0)]));
@@ -124,10 +132,25 @@ function fetchOption(bot) {
           // block from its raw iron, 'reached, not picked up', no spot tried. A hit still goes to the survival layer (note 2535).
           await collectNearbyDrops(b, t, d.name, { origin: d.at.clone ? d.at.clone() : new Vec3(d.at.x, d.at.y, d.at.z), radius: 6, timeoutMs: 15000, waitForSpawnMs: 1500, allowExcavation: true, hostilesOk: true });
         } catch (err) { if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; why = String(err.message || err).slice(0, 100); }
+        // The walk ended a cell short (note 2586): the game takes up a drop within about a block of the body's edge and
+        // half a block of its height, and 'reached, not picked up (... 1.7 to 2.1 from the bot, in air)' was five of the
+        // day's walks (full-172, full-174, full-179, full-185, 2026-10-30). The bot steps onto the drop's own cell.
+        try {
+          const e = b.entities?.[d.id];
+          const count = () => (b.inventory?.items?.() || []).filter(i => i.name === d.name).reduce((s, i) => s + i.count, 0);
+          if (!why && e?.position && e.isValid !== false && count() <= (before.get(d.name) || 0)) {
+            const off = e.position.distanceTo(b.entity.position), dy = e.position.y - b.entity.position.y;
+            if (off > 1 && off <= 2.5 && Math.abs(dy) <= 1.2) {
+              const c = e.position.floored();
+              await navigate(b, t, new goals.GoalBlock(c.x, c.y, c.z), { timeoutMs: 4000, stallMs: 2000, pickup: true, hostilesOk: true });
+              await new Promise(r => setTimeout(r, 800));
+            }
+          }
+        } catch (err) { if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
         const now = (b.inventory?.items?.() || []).filter(i => i.name === d.name).reduce((s, i) => s + i.count, 0);
         if (now > (before.get(d.name) || 0)) { took.push(`${now - before.get(d.name)} ${words(d.name)}`); before.set(d.name, now); memory(b).drops.delete(d.id); }
         else if (memory(b).drops.has(d.id)) {
-          m.tries++;
+          m.tries++; m.missFrom = { x: b.entity.position.x, z: b.entity.position.z };
           // What was there when the walk took nothing (note 2552): 'reached, not picked up' came back on full-109, full-111,
           // full-123 and full-136 (2026-10-29) with the drill's cases all taken; the entity, its place now, the bot's
           // distance and the block it lies in are said, so the next one names its cause.
