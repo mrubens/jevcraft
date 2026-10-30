@@ -19,6 +19,10 @@ test('by day at hunger under eighteen with no food carried, food is offered with
   assert.match(offered.food_reserve, /until then every hit taken stays taken\. The record in the Overworld .*At hunger 15 with/);
 });
 
-test('fed to eighteen at midday, no food reserve is offered', async () => {
-  assert.equal((await ask(3000, 19)).food_reserve, undefined);
+// Fed, it is still offered with nothing carried, said with the hunger to come (note 2589): 20 of the 24 Overworld deaths
+// of 2026-10-30 carried nothing to eat, and food was on offer at 83 of 742 upkeep asks with nothing carried.
+test('fed to eighteen at midday with nothing carried, food is offered, said with the hunger that falls with the work', async () => {
+  const offered = await ask(3000, 19);
+  assert.match(offered.food_reserve || '', /^Find food now, by day: 0 food points carried, hunger 19,/);
+  assert.match(offered.food_reserve, /at 19 now it does, and hunger falls with walking, mining, fighting and the healing itself/);
 });

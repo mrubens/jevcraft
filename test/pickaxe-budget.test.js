@@ -47,7 +47,8 @@ test('with the uses short of the step and the way home, a spare is offered at up
   const { upkeepStep } = require('../src/work');
   const asked = [];
   const client = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: 'carry_on', confidence: 0.7 } } }; } };
-  const items = [{ name: 'iron_pickaxe', count: 1, durabilityUsed: 24 }, { name: 'cobblestone', count: 64 }, { name: 'stick', count: 2 }, { name: 'crafting_table', count: 1 }];
+  // A kit's food carried: food is offered whenever less is (note 2589), and this is the pickaxe's case.
+  const items = [{ name: 'iron_pickaxe', count: 1, durabilityUsed: 24 }, { name: 'cobblestone', count: 64 }, { name: 'stick', count: 2 }, { name: 'crafting_table', count: 1 }, { name: 'cooked_beef', count: 16 }];
   const { bot } = mine({ items });
   // Carried on from the wood, not short then: held five minutes.
   const goal = { kind: 'win', step: { action: 'mine', block: 'iron_ore' }, upkeepHold: { keys: 'wood_reserve', until: Date.now() + 300000 } };

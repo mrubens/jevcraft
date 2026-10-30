@@ -157,7 +157,8 @@ test('short of blocks with Jev asked, now or later is its choice; "carry on" hol
     registry, inventory: { items: () => [{ name: 'stone_pickaxe', count: 1 }, { name: 'dirt', count: 4 }, { name: 'oak_log', count: 8 }] }, health: 20, food: 20 };
   const goal = { kind: 'win', step: { action: 'mine', block: 'iron_ore' } };
   assert.equal(await upkeepStep(bot, { check() {} }, goal, () => {}, client), false, 'carried on');
-  assert.deepEqual(asked[0], ['block_reserve', 'carry_on']);
+  // Nothing to eat carried by day: food is on offer too, fed or not (note 2589).
+  assert.deepEqual(asked[0], ['block_reserve', 'carry_on', 'food_reserve']);
   assert.equal(goal.step.block, 'iron_ore', 'the work step is kept');
   assert.equal(await upkeepStep(bot, { check() {} }, goal, () => {}, client), false);
   assert.equal(asked.length, 1, 'held: not asked again within five minutes');
