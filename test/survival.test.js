@@ -6559,3 +6559,17 @@ test('blows that came through the raised shield in the last twenty seconds price
   assert.ok(o.expects.damage > 0, JSON.stringify(o.expects));
   assert.match(o.description, /In the last 20 seconds 2 blows landed with the shield raised here/);
 });
+
+// Note 2592: a blaze with no line flies straight at the bot (the game's blaze), so cover does not keep one within
+// sixteen off: priced with its shots and said. Of the take_cover picks of 2026-10-30 with two or more blazes within
+// sixteen, priced about 4.9 damage as kept off, 7 of 20 were followed by death within the minute.
+test('cover from a blaze within sixteen is priced with its shots and says it flies at the bot; one farther off is kept off (note 2592)', () => {
+  const bot = crowdBot({ health: 20 });
+  bot.game.dimension = 'the_nether';
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const near = survival.stanceOptions(new Task('x'), {}, () => {}, [crowdMob(4, 'blaze', 8)], false);
+  const far = survival.stanceOptions(new Task('x'), {}, () => {}, [crowdMob(4, 'blaze', 20)], false);
+  assert.ok(near.take_cover && far.take_cover, 'cover is offered against both');
+  assert.match(near.take_cover.description, /The blaze 8 blocks off flies: with no line to the bot it flies straight at it \(the game's rule\)/);
+  assert.ok(near.take_cover.expects.damage > far.take_cover.expects.damage, `${near.take_cover.expects.damage} near, ${far.take_cover.expects.damage} far`);
+});
