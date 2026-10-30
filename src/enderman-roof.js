@@ -98,27 +98,44 @@ async function takeRoof(bot, task, actions, plan) {
     const { goals } = require('mineflayer-pathfinder');
     // Why it was not taken, left on the plan for the next question (note 1952).
     try { await actions.navigate(bot, task, new goals.GoalBlock(plan.cell.x, plan.cell.y, plan.cell.z), { timeoutMs: 4000, stallMs: 1500 }); }
-    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; plan.why = `the walk to the gap at (${plan.cell.x}, ${plan.cell.y}, ${plan.cell.z}) failed: ${String(err.message || err).slice(0, 80)}`; return false; }
-    if (!feetCell(bot).equals(plan.cell)) { plan.why = `the walk ended short of the gap at (${plan.cell.x}, ${plan.cell.y}, ${plan.cell.z})`; return false; }
-    return true;
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; plan.why = `the walk to the gap at (${plan.cell.x}, ${plan.cell.y}, ${plan.cell.z}) failed: ${String(err.message || err).slice(0, 120)}`; }
+    if (feetCell(bot).equals(plan.cell)) return true;
+    plan.why ||= `the walk ended short of the gap at (${plan.cell.x}, ${plan.cell.y}, ${plan.cell.z})`;
+    // The gap not reached, the lid goes up where the bot stands instead, where one can (note 2610): the walk the
+    // pathfinder refused 'along a drop' or timed out left the bot in the open with the endermen on it. full-226 (25592,
+    // 2026-10-30 23:02:56Z), at y 81 in the Nether with two endermen about, took cap_fight at 0.88 for a gap 3 blocks
+    // off, the walk ended 'No route from here ... the way passes along a drop', and the fight that followed in the open
+    // took 16.2 of 20 health in 2.6 seconds; of the day's 580 cap fights, 8 ended at the gap's walk.
+    const feet = feetCell(bot), cap = canCapHere(bot, feet);
+    if (!cap) return false;
+    const whyWalk = plan.why;
+    const placed = await placeLid(bot, task, actions, { ...plan, kind: 'place', cell: feet, post: cap.post, blocks: cap.blocks });
+    plan.why = `${whyWalk}; ${placed.ok ? `the lid went up where the bot stood instead, at (${feet.x}, ${feet.y + 2}, ${feet.z})` : placed.why}`;
+    return placed.ok;
   }
   if (plan.kind === 'place') {
-    const material = shelter.buildingItem(bot)?.name;
-    if (!material) { plan.why = 'no block carried for the lid'; return false; }
-    const lid = plan.cell.offset(0, 2, 0);
-    // Placed by this stance's run before: the stance is held run after run.
-    if (feetCell(bot).equals(plan.cell) && bot.blockAt(lid)?.boundingBox === 'block') return true;
-    // The post first, floor to the lid's level, where the lid has no face of its own to go against (note 2588).
-    for (const c of plan.post || []) {
-      if (bot.blockAt(c)?.boundingBox === 'block') continue;
-      try { await actions.place(bot, task, c, material, { stay: true }); }
-      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; plan.why = `the post's block at (${c.x}, ${c.y}, ${c.z}) for the lid was not placed: ${String(err.message || err).slice(0, 80)}`; return false; }
-    }
-    try { await actions.place(bot, task, lid, material, { stay: true }); return true; }
-    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; plan.why = `the lid at (${lid.x}, ${lid.y}, ${lid.z}) was not placed: ${String(err.message || err).slice(0, 80)}`; return false; }
+    const placed = await placeLid(bot, task, actions, plan);
+    if (!placed.ok) plan.why = placed.why;
+    return placed.ok;
   }
   plan.why = 'no way to a lid from here';
   return false;
+}
+// The post first where the lid has no face of its own (note 2588), then the lid two over the cell. -> { ok, why }
+async function placeLid(bot, task, actions, plan) {
+  const { feetCell } = require('./terrain');
+  const material = shelter.buildingItem(bot)?.name;
+  if (!material) return { ok: false, why: 'no block carried for the lid' };
+  const lid = plan.cell.offset(0, 2, 0);
+  // Placed by this stance's run before: the stance is held run after run.
+  if (feetCell(bot).equals(plan.cell) && bot.blockAt(lid)?.boundingBox === 'block') return { ok: true };
+  for (const c of plan.post || []) {
+    if (bot.blockAt(c)?.boundingBox === 'block') continue;
+    try { await actions.place(bot, task, c, material, { stay: true }); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return { ok: false, why: `the post's block at (${c.x}, ${c.y}, ${c.z}) for the lid was not placed: ${String(err.message || err).slice(0, 80)}` }; }
+  }
+  try { await actions.place(bot, task, lid, material, { stay: true }); return { ok: true }; }
+  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return { ok: false, why: `the lid at (${lid.x}, ${lid.y}, ${lid.z}) was not placed: ${String(err.message || err).slice(0, 80)}` }; }
 }
 
 module.exports = { existingGap, canCapHere, roofPlan, takeRoof };
