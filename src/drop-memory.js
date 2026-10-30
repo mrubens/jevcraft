@@ -121,8 +121,25 @@ function fetchOption(bot) {
         } catch (err) { if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; why = String(err.message || err).slice(0, 100); }
         const now = (b.inventory?.items?.() || []).filter(i => i.name === d.name).reduce((s, i) => s + i.count, 0);
         if (now > (before.get(d.name) || 0)) { took.push(`${now - before.get(d.name)} ${words(d.name)}`); before.set(d.name, now); memory(b).drops.delete(d.id); }
-        else if (memory(b).drops.has(d.id)) { m.tries++; m.lastWhy = why || 'reached, not picked up'; }
-        if (!took.some(t => t.endsWith(words(d.name)))) misses.push(`${words(d.name)} at (${Math.floor(d.at.x)}, ${Math.floor(d.at.y)}, ${Math.floor(d.at.z)}) from ${b.entity.position.floored()}: ${why || (memory(b).drops.has(d.id) ? 'reached, not picked up' : 'gone when the walk came')}`);
+        else if (memory(b).drops.has(d.id)) {
+          m.tries++;
+          // What was there when the walk took nothing (note 2552): 'reached, not picked up' came back on full-109, full-111,
+          // full-123 and full-136 (2026-10-29) with the drill's cases all taken; the entity, its place now, the bot's
+          // distance and the block it lies in are said, so the next one names its cause.
+          let there = '';
+          if (!why) {
+            try {
+              const e = b.entities?.[d.id];
+              if (!e) there = ' (the entity is gone)';
+              else {
+                const at = e.position, cell = b.blockAt?.(at.floored());
+                there = ` (the entity at (${at.x.toFixed(1)}, ${at.y.toFixed(1)}, ${at.z.toFixed(1)}), ${at.distanceTo(b.entity.position).toFixed(1)} from the bot, in ${cell?.name || '?'}, ${e.isValid === false ? 'not valid' : 'valid'}, free slots ${b.inventory?.emptySlotCount?.() ?? '?'})`;
+              }
+            } catch (_) { there = ''; }
+          }
+          m.lastWhy = why || `reached, not picked up${there}`;
+        }
+        if (!took.some(t => t.endsWith(words(d.name)))) misses.push(`${words(d.name)} at (${Math.floor(d.at.x)}, ${Math.floor(d.at.y)}, ${Math.floor(d.at.z)}) from ${b.entity.position.floored()}: ${why || (memory(b).drops.has(d.id) ? (m.lastWhy || 'reached, not picked up') : 'gone when the walk came')}`);
       }
       // Each miss said (note 2518): twelve of the day's walks 'took nothing' with no word of why.
       console.log(`[drops] the walk for what was seen lying: ${took.length ? `took ${took.join(', ')}` : 'took nothing'}${misses.length ? `; not taken: ${misses.slice(0, 3).join('; ')}` : ''}`);
