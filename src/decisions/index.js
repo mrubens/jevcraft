@@ -1225,6 +1225,17 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     // on; its caller asks it again from where the bot is now.
     if (outage) decision = { stale: true, jevWasDown: { since: new Date(outage.since).toISOString(), heldMs: Math.round(tookMs) }, usage: decision.usage };
     task?.check(); if (bot && watchAir) checkAir(bot); interrupt();
+    // A drill's preferred answers (JEV_DRILL_PREFER, a comma list of keys; note 2612): where one is on offer, it is taken
+    // over Jev's answer and said so, with Jev's own answer kept on the decision. For the spawner drill's measure of one
+    // tactic's ceiling (scripts/spawner-drill.js), never set in play.
+    const prefer = process.env.JEV_DRILL_PREFER;
+    if (prefer && !decision.stale && decision.path) {
+      const want = prefer.split(',').map(k => k.trim()).filter(Boolean).find(k => tried.leafAt(tree, k));
+      if (want && decision.path.at(-1) !== want) {
+        console.log(`[drill prefer] ${id}: ${want} over Jev's ${decision.path.join('/')}`);
+        decision = { ...decision, ...walk(tree, (children, path) => Object.keys(children).find(k => k === want || tried.leafAt(children[k]?.children || {}, want)) || Object.keys(children)[0]), drillPrefer: { over: decision.path } };
+      }
+    }
     // The gate: a judgment below the question's threshold is not acted on
     // as asked; the caller has its own low-confidence path.
     const low = !decision.stale && !decision.safetyRule && spec.gate && (decision.judgments || []).find(j => (j.confidence ?? 1) < spec.gate.threshold);
