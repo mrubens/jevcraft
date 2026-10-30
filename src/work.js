@@ -9651,7 +9651,7 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     if (fi && !asked) {
       const ck = require('./crossing-kit'), stay = ck.netherStay(bot, goal), short = Math.max(0, fi.wants - fi.carried);
       const foodTree = {
-        cross_now: { description: `Cross and go on with the stay on what is carried: ${fi.carried} food points, about ${Math.round(fi.carried / ck.NETHER_HUNGER_AN_HOUR * 60)} minutes of it at ${ck.NETHER_HUNGER_AN_HOUR} an hour, against the ${stay.minutes} minutes the goal wants there; ${short} points short. In the Nether the food is a hoglin (in the crimson forests, 40 health, hitting for 3 to 8) or a bastion's chests; otherwise back out through this portal for it.${ck.CROSSED_SHORT}${crossFoodSays}` },
+        cross_now: { description: `Cross and go on with the stay on what is carried: ${fi.carried} food points, about ${Math.round(fi.carried / ck.NETHER_HUNGER_AN_HOUR * 60)} minutes of it at ${ck.NETHER_HUNGER_AN_HOUR} an hour, against the ${stay.minutes} minutes the goal wants there; ${short} points short. In the Nether the food is a hoglin (in the crimson forests, 40 health, hitting for 3 to 8) or a bastion's chests; otherwise back out through this portal for it.${(() => { try { return require('./nether-food').blazeFoodSays(fi.carried); } catch (_) { return ''; } })()}${ck.CROSSED_SHORT}${crossFoodSays}` },
         take_up_food: { description: `Get the Nether's food here first, before crossing: ${fi.carried} of ${fi.wants} points carried.${takeUpFoodSays(bot, goal, fi)}` },
       };
       const decision = await decide('crossing_food', { client, bot, task, goal, save, tree: foodTree,
