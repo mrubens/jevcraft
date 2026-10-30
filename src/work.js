@@ -7392,6 +7392,11 @@ async function portalStep(bot, task, goal, save, client) {
       const failed = () => {
         const stopped = Object.entries(tries.stops).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(', ');
         goal.portalMethod.nearFailed = { walks: tries.walks, best: Math.round(Math.min(tries.best, d)), now: Math.round(d), stopped };
+        // Said as the plan's way failing (portal-plan.js planFailed), so the intention held on it ends and the questions
+        // it gates are asked with all their ways again (note 2575, after note 2573). full-161 (25588, 2026-10-30 06:3xZ)
+        // had its lava 54 below 'made no ground', its walks stalled twice, and was asked 'surface_trip: wait for dawn, the
+        // only way offered', climb and mine_first 'not offered while here_sight holds'.
+        try { require('./portal-plan').planFailed(goal, `${tries.walks} walks toward its lava came no nearer than ${Math.round(Math.min(tries.best, d))} blocks`); } catch (_) { /* no plan */ }
         delete goal.portalMethod.nearTries; save();
         return false;
       };
