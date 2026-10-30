@@ -11,7 +11,7 @@
 // at the blow (dragon-126, 2.5 s, the blast took 15 through a shield not
 // yet raised); 1578 cached the rim test and the count did not move.
 //   [stall] 2708 ms held: self getBlock src/movement.js:82 1210 ms, ...; inclusive getNeighbors src/movement.js:191 2400 ms, ...
-// JEV_STALL_PROFILE=0 turns it off. The profiles go to artifacts/stall-profiles, the last thirty kept.
+// JEV_STALL_PROFILE=1 turns it on (off by default since note 2596: the profile's own read held the loop under load). The profiles go to artifacts/stall-profiles, the last thirty kept.
 const fs = require('fs');
 const path = require('path');
 

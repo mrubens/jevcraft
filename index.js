@@ -26,7 +26,11 @@ async function main() {
   // breath (2026-09-26). Any stall of two seconds or more is said, with
   // what the bot was doing, so the code that held it can be found.
   // And caught in the act (note 1587): a CPU profile kept rolling, the window of a stall written out with its hottest frames.
-  const stallProfiler = process.env.JEV_STALL_PROFILE === '0' ? null : require('./src/stall-profiler').startStallProfiler({ directory: path.join(__dirname, 'artifacts', 'stall-profiles') });
+  // On only when asked (JEV_STALL_PROFILE=1, note 2596): the profile is stopped and read back on the main thread every
+  // twenty seconds, and with the machine loaded that read held the loop itself. The full runs of 2026-10-30 16:4xZ
+  // (load average 50 on sixteen cores) logged 54 stalls of 2 to 12.7 seconds in an hour, 34 of them led by the
+  // profiler's own call ('self post node:inspector:115 11964 ms' on full-203, 16:43:56Z, the bot in water).
+  const stallProfiler = process.env.JEV_STALL_PROFILE !== '1' ? null : require('./src/stall-profiler').startStallProfiler({ directory: path.join(__dirname, 'artifacts', 'stall-profiles') });
   let tickAt = Date.now();
   setInterval(() => {
     const lag = Date.now() - tickAt - 250;
