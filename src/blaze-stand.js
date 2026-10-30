@@ -2003,8 +2003,23 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
         const walkers = require('./danger').threats(bot, 16).filter(t => t.entity && t.entity.name !== 'blaze' && t.entity.name !== 'ghast' && !t.projectile && ce.MOBS?.[t.entity.name]);
         if (walkers.length) walkersSays = ` Walkers about, which the blazes' line does not hide the cell from: ${walkers.slice(0, 3).map(t => { const sp = ce.blocksPerSecond(t.entity.name) || 2; const d = t.entity.position.distanceTo(sitePos); return `the ${words(t.entity.name)} ${round(t.distance)} blocks off, at the cell in about ${round(d / sp)} seconds at its own pace if it comes, about ${ce.MOBS[t.entity.name].hit} a blow before armour`; }).join('; ')}.`;
       } catch (_) { walkersSays = ''; }
-      options.leave_and_heal = { kind: 'heal', site, expects: { damage: round(setup.damage + bites + Math.max(0, burning - Math.max(setup.wall, proof))), seconds: round(setup.wall + heal), oneHit: fireHit, heals: healable ? round(20 - after) : 0 },
-        description: `Go out of their sight${healable ? ' to heal and come back' : ' (no health comes back at this hunger)'}: ${where}${what} ${stays}${bitesSays}${walkersSays}` + m.says };
+      // Priced from this fight's own record of it as well (note 2580): the walk's price alone said 'about 0.2 damage over
+      // about 4 seconds' while the same question's record had leave and heal 'held 84 s, 29.7 health lost, 0 killed'
+      // (full-166, 25588, 2026-10-30 08:20Z, slain by a wither skeleton a minute later; full-164 07:17Z the same).
+      let damage = round(setup.damage + bites + Math.max(0, burning - Math.max(setup.wall, proof))), seconds = round(setup.wall + heal), ownSays = '';
+      try {
+        const fight = require('./blaze-fight').look(bot);
+        if (fight) {
+          const held = (bot._stanceLedger || []).filter(e => e.since >= fight.began && e.choice === 'leave_and_heal').reduce((h, e) => ({ seconds: h.seconds + e.seconds, lost: h.lost + e.lost }), { seconds: 0, lost: 0 });
+          if (held.seconds >= 30) {
+            const rate = held.lost / held.seconds;
+            ownSays = ` In this fight so far it has been held ${Math.round(held.seconds)} seconds and ${round(held.lost)} health lost under it, about ${round(rate * 60)} a minute.`;
+            damage = Math.max(damage, round(rate * Math.max(seconds, 15)));
+          }
+        }
+      } catch (_) { ownSays = ''; }
+      options.leave_and_heal = { kind: 'heal', site, expects: { damage, seconds, oneHit: fireHit, heals: healable ? round(20 - after) : 0 },
+        description: `Go out of their sight${healable ? ' to heal and come back' : ' (no health comes back at this hunger)'}: ${where}${what} ${stays}${bitesSays}${walkersSays}${ownSays}` + m.says };
     }
   }
 
