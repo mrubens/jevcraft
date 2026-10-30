@@ -605,6 +605,11 @@ function flipWatch(bot, goal, now = Date.now()) {
     // detour (opportunistic-mining.js, step collect_nearby_resource) gives the step back, and its gain is not the rung's,
     // so the tunnel or mine was read as flipping and rested. full-136, full-138, full-140 and full-142 (2026-10-30)
     // had 'turning between tunnel and collect nearby resource' raised on the way to iron.
+    // Nor an upkeep's crafting answered just now, made a step at a time between the steps of the work it set aside a
+    // moment (note 2562): the spare pickaxe's planks, sticks and pickaxe are three crafts, each a turn, and full-144
+    // (25587, 2026-10-30 02:3xZ) had 'turning between craft and fill bucket 4 times in 1 second' raised on them and
+    // its reach of the Nether rested, then again 6 times in 8 seconds; full-143 and full-137 the same with the tunnel.
+    if (layer === 'work' && names.has('craft') && bot._lastAnswer?.id === 'upkeep' && now - (bot._lastAnswer.at || 0) < 30000) continue;
     if (layer === 'work' && names.has('collect_nearby_resource')) {
       const recent = (goal.opportunistic?.history || []).filter(h => h.finishedAt && now - Date.parse(h.finishedAt) < 60000);
       if (recent.some(h => (h.pickedUp || 0) > 0)) continue;
