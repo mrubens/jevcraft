@@ -6573,3 +6573,16 @@ test('cover from a blaze within sixteen is priced with its shots and says it fli
   assert.match(near.take_cover.description, /The blaze 8 blocks off flies: with no line to the bot it flies straight at it \(the game's rule\)/);
   assert.ok(near.take_cover.expects.damage > far.take_cover.expects.damage, `${near.take_cover.expects.damage} near, ${far.take_cover.expects.damage} far`);
 });
+
+// Note 2606: a piglin brute's own facts reach the stance's state (mobsHere), where full-222 (2026-10-30 21:34:22Z) was asked
+// about one seven blocks off with no note of it.
+test('a piglin brute in view puts its facts in the stance state: the blow, the pace, the twelve-block chase and the wall it does not pass', () => {
+  const bot = crowdBot({ health: 20 });
+  bot.game.dimension = 'the_nether';
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  survival.stanceOptions(new Task('x'), {}, () => {}, [{ entity: { id: 4, name: 'piglin_brute', position: new Vec3(7.5, 64, 0.5), height: 1.95 }, distance: 7, visible: true }], false);
+  const notes = survival._stanceShared?.mobNotes || '';
+  assert.match(notes, /about 9 through iron, a blow a second at arm's length, three blows from full health/);
+  assert.match(notes, /keeps after a player only while that player is within 12 blocks of it and in its sight/);
+  assert.match(notes, /a pocket sealed round the bot or a pillar of three blocks keeps it off/);
+});
