@@ -219,7 +219,10 @@ function actionOf(goal, now = Date.now()) {
   // see, set aside at the rung's question a minute before (note 605).
   const phase = goal?.kind === 'win' && step.action !== 'detour' ? goal.rungTime?.phase || goal.gameProgress?.phase : null;
   const rung = phase && !require('./progress').isSetAside(goal, 'rung', phase, now) ? phase : null;
-  const purpose = rung ? `rung:${rung}` : step.block || step.resource || item || (step.choice ? `${step.action}:${step.choice}` : step.action);
+  // A step's block may be where it is, not what (descend_pillar's block is a position): keyed by a name only (note 2598;
+  // full-208, 2026-10-30 17:21Z, stalled and blocked 'on step:[object Object]').
+  const named = v => (typeof v === 'string' ? v : null);
+  const purpose = rung ? `rung:${rung}` : named(step.block) || named(step.resource) || item || (step.choice ? `${step.action}:${step.choice}` : step.action);
   return { key: `step:${purpose}`, layer: 'work', name: step.action,
     target: P(step.target) || P(step.destination) || P(step.to) || P(step.cell) || P(step.portal), item, ...blocked };
 }
