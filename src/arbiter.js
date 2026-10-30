@@ -28,7 +28,13 @@ const { STANCE_HEALTH, STANCE_NEWCOMER } = require('./danger');
 // since the ruling asks the turn again, and at which those known at the ruling and the turn are counted, so one already
 // known does not ask again.
 const WITHER_SIGHTED = 16;
-const sightedReach = (bot, t) => t?.entity?.name === 'wither_skeleton' && /nether/.test(String(bot?.game?.dimension || '')) ? WITHER_SIGHTED : STANCE_NEWCOMER;
+// And a hoglin there (note 2597): it charges and its blow throws the body up and back, and over the lava sea that is
+// the death. full-205 (25587, 2026-10-30 17:00:27Z), crossing at 20 health, had its stance let go for 'a newcomer
+// within 6: hoglin' and was struck before any stance was asked ('hit with no survival response (health 20)'), thrown
+// into the lava at (31, 28.6, -192), and dead six seconds on. One pacified by a warped fungus or a portal near is not
+// among the threats at all (danger.js).
+const SIGHTED_FAR = new Set(['wither_skeleton', 'hoglin']);
+const sightedReach = (bot, t) => SIGHTED_FAR.has(t?.entity?.name) && /nether/.test(String(bot?.game?.dimension || '')) ? WITHER_SIGHTED : STANCE_NEWCOMER;
 const { LIGHTS_AT, APPROACH, FUSE } = require('./combat-estimate');
 
 // Out of a reflex two past where it began, not at the same line: a creeper
