@@ -98,6 +98,19 @@ test('a wither skeleton cannot come under a ceiling two high: walk-reach reads e
   assert.ok(!both.ids.has(7), 'the zombie still gets to the bot');
 });
 
+// Note 2583: the same roof planned ahead of any wither skeleton, toward the blazes about; nothing with neither.
+test('the low ceiling is planned ahead of the skeletons toward the blazes about, and not with nothing about', () => {
+  const { bot } = cavernBot();
+  const blaze = { id: 9, name: 'blaze', position: SKELETON_AT.offset(0, 1, 0), distance: 9, shoots: true };
+  const plan = wg.lowCeilingPlan(bot, [], { ahead: [blaze] });
+  assert.ok(plan, 'planned with no tall walker in view');
+  assert.equal(plan.kind, 'roof');
+  assert.deepEqual(plan.tall, []);
+  assert.deepEqual(keys(plan.placed), keys([[-241, 66, -143], [-240, 66, -143], [-241, 66, -142], [-240, 66, -142], [-239, 66, -142]].map(cell)));
+  assert.equal(wg.lowCeilingPlan(bot, [], { ahead: [] }), null);
+  assert.equal(wg.lowCeilingPlan(bot, []), null);
+});
+
 test('the low ceiling found for the recorded corner: five blocks of netherrack two up, each against a face, quicker than digging in by hand', () => {
   const { bot, threat } = cavernBot();
   const plan = wg.lowCeilingPlan(bot, [threat()]);

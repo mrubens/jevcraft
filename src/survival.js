@@ -682,6 +682,8 @@ const UNSEEN_HOLD_MS = 30000;
 // And a fight whose mob comes no nearer (note 2576): held on 'nothing it was chosen on has changed', it answered nothing
 // either. full-164 (25590, 2026-10-30 06:5x to 07:0xZ) held fight nine times, about two minutes, against a drowned 7
 // blocks off in the water in sight, standing at the shore its portal's walk had brought it to.
+// Rod-holders slain by wither skeletons on 2026-10-30, said on the ceiling offered ahead of them (note 2583).
+const WITHER_AFTER_ROD = " Of the runs that took a first blaze rod on 2026-10-30, three (full-164 at 56 minutes, full-166 at 1h22, full-177 two minutes after finding its fortress at 1h39) were slain by wither skeletons 2 to 5 minutes after it, each in the open with two to four blazes shooting and health already down; the ceiling was offered to each only once a skeleton was in view, and by then priced past the health left (full-177: about 19 damage from 17.1, the blazes firing through its building).";
 const WAITS_FOR_MOB = new Set(['shield_guard', 'shield_the_charge', 'back_to_wall', 'await_in_reach', 'corner_ambush', 'fight', 'fight_from_footing']);
 // A standoff with one creeper behind blocks (note 778, the critic's ~02:54Z
 // item 4): this long with it within ten blocks, the bot not hurt by it, and
@@ -9354,8 +9356,16 @@ class Survival {
     const wg = require('./wither-guard');
     if (inWater(bot) || !bot.entity?.onGround) return null;
     const tall = coming.filter(t => wg.tallWalker(t) && t.distance <= 16);
-    if (!tall.length) return null;
-    const plan = wg.lowCeilingPlan(bot, tall, { blockSeconds: BLOCK_SECONDS });
+    // Ahead of them (note 2583): in the Nether with blazes about and no tall walker in view, the roof alone, put in now
+    // while nothing taller is here. Of the runs that took a first blaze rod on 2026-10-30, three (full-164, 56 minutes;
+    // full-166, 1h22; full-177, at its fortress at 1h39) were slain by wither skeletons 2 to 5 minutes after, each in
+    // the open with two to four blazes shooting: the ceiling was offered only once a skeleton was in view, and priced
+    // then (full-177, 11:02:43Z) 'about 19 damage over about 15 seconds, from 17.1 health', the blazes firing through
+    // its building. Of the day's 921 stance asks with a blaze about, 515 had no skeleton in view, the nearest blaze
+    // eight or more off and 15 health or more, and none offered it.
+    const ahead = !tall.length && /nether/.test(String(bot.game?.dimension || '')) ? mobs.filter(m => m.name === 'blaze' && !m.far) : [];
+    if (!tall.length && !ahead.length) return null;
+    const plan = wg.lowCeilingPlan(bot, tall, { blockSeconds: BLOCK_SECONDS, ahead: ahead.length ? ahead : null });
     if (!plan) return null;
     // A race, as the pocket's is: one at the bot before the cells round it
     // are in stands where a block goes, the block does not go in, and it is
@@ -9371,21 +9381,21 @@ class Survival {
     const tallIds = new Set(plan.kind === 'dig' ? plan.tall : plan.tall.filter(id => !first.some(m => m.id === id)));
     const price = stanceCost({ mobs, setup: plan.seconds, fight: { only: m => !tallIds.has(m.id), lead: true }, reaches: m => m.shoots, shield: shielded, health: bot.health });
     const raceDig = first.length && plan.kind === 'dig' ? ` The ${first[0].name.replaceAll('_', ' ')} ${Math.round(first[0].distance)} blocks off can be at the bot in about ${Math.round(arrivesAt(first[0]) * 10) / 10} seconds at its own speed, before the bot is at the hole's end (${plan.shutAt} seconds): its blows land on the bot's back until then, and none reach the end once the bot stands there; the hole is one wide, so one stands at its mouth at a time.` : '';
-    const raceSays = raceDig ? raceDig : first.length ? ` The ${first[0].name.replaceAll('_', ' ')} ${Math.round(first[0].distance)} blocks off can be at the bot in about ${Math.round(arrivesAt(first[0]) * 10) / 10} seconds at its own speed, before the ${plan.kind === 'roof' ? 'blocks over the cells round the bot are in' : 'hole is dug'} (${plan.shutAt} seconds): one there first stands where a block goes or at the mouth, the ${plan.kind === 'roof' ? 'block does not go in (the game puts none where a body is)' : 'bot is struck while it digs'}, and it is fought there as in the fight, priced so.` : ` The ${plan.kind === 'roof' ? 'blocks over the cells round the bot go in first, those toward it first' : 'hole is dug'}: in after about ${plan.shutAt} seconds, before it can be at the bot.`;
-    const names = [...new Set(tall.map(t => t.entity.name))];
+    const raceSays = !tall.length ? ` No wither skeleton is in view now: the blocks go in over about ${plan.shutAt} seconds before one can come, and a blaze that comes under the ceiling (1.8 blocks tall, it fits) is at the sword's reach.` : raceDig ? raceDig : first.length ? ` The ${first[0].name.replaceAll('_', ' ')} ${Math.round(first[0].distance)} blocks off can be at the bot in about ${Math.round(arrivesAt(first[0]) * 10) / 10} seconds at its own speed, before the ${plan.kind === 'roof' ? 'blocks over the cells round the bot are in' : 'hole is dug'} (${plan.shutAt} seconds): one there first stands where a block goes or at the mouth, the ${plan.kind === 'roof' ? 'block does not go in (the game puts none where a body is)' : 'bot is struck while it digs'}, and it is fought there as in the fight, priced so.` : ` The ${plan.kind === 'roof' ? 'blocks over the cells round the bot go in first, those toward it first' : 'hole is dug'}: in after about ${plan.shutAt} seconds, before it can be at the bot.`;
+    const names = tall.length ? [...new Set(tall.map(t => t.entity.name))] : ['wither_skeleton'];
     const who = names.map(n => `a ${n.replaceAll('_', ' ')} is ${bodyHeight(n)} blocks tall`).join(' and ');
     const compass = ([dx, dz]) => dx > 0 ? 'east' : dx < 0 ? 'west' : dz > 0 ? 'south' : 'north';
     const { digsWith } = require('./bunker');
     const rock = plan.dug.length ? (bot.blockAt(plan.dug[0])?.name || 'rock').replaceAll('_', ' ') : '';
     const setup = plan.kind === 'roof' && !plan.blocks
-      ? `${plan.steps ? 'Step one block along this level, under' : 'Stay under'} the ceiling two up over the bot and the cells round it, and fight from under it`
+      ? `${plan.steps ? 'Step one block along this level, under' : 'Stay under'} the ceiling two up over the bot and the cells round it, and ${tall.length ? 'fight' : 'take the blazes'} from under it`
       : plan.kind === 'roof'
-      ? `${plan.steps ? 'Step one block along this level, then put' : 'Put'} ${plan.blocks} block${plan.blocks === 1 ? '' : 's'} of ${plan.material.replaceAll('_', ' ')} in two up over the bot and over each cell round it that is open there (about ${plan.seconds} seconds of placing, the shield down meanwhile), and fight from under that ceiling`
+      ? `${plan.steps ? 'Step one block along this level, then put' : 'Put'} ${plan.blocks} block${plan.blocks === 1 ? '' : 's'} of ${plan.material.replaceAll('_', ' ')} in two up over the bot and over each cell round it that is open there${tall.length ? '' : ' now, before any wither skeleton is in view'} (about ${plan.seconds} seconds of placing, the shield down meanwhile), and ${tall.length ? 'fight' : 'take the blazes'} from under that ceiling`
       : `${plan.mouth ? `Walk ${plan.off} block${plan.off === 1 ? '' : 's'} to the ${rock} at (${plan.mouth.x}, ${plan.mouth.y}, ${plan.mouth.z}) and dig` : 'Dig'} a hole two in and two high into ${plan.mouth ? 'it' : `the ${rock}`} to the ${compass(plan.dir)} (${plan.blocks} block${plan.blocks === 1 ? '' : 's'} ${digsWith(bot, bot.blockAt(plan.dug.find(c => bot.blockAt(c)?.boundingBox === 'block') || plan.dug[0]))}, about ${plan.seconds} seconds ${plan.mouth ? 'of walking and digging' : 'of digging'}, the shield down meanwhile), each pair of blocks stepped into as it is dug, and fight from its end${wg.holeSays()}`;
     const others = mobs.filter(m => !plan.tall.includes(m.id) && !m.apart && !m.far && !m.shoots && m.name !== 'creeper');
     const shortSays = others.length ? ` The others that bite are shorter and come under it: fought there as they come.` : '';
     return { expects: { damage: price.damage, seconds: price.seconds, oneHit },
-      description: `${setup}: ${who}, and its body does not go under a ceiling two high (the game's rule), so the nearest it can stand is a block and a half off, out of its own reach (a blow reaches about a block and a half centre to centre, sideways only) and within the sword's (three blocks from the eye); it is struck each time it comes to the edge, the shield up facing it between swings. Under it, a wither skeleton's blow cannot reach, and so it withers nothing.${raceSays}${shortSays}${wg.measuredSays('low', tall.filter(t => t.entity.name === 'wither_skeleton').length, { also: ['fight'] })}` + costSays(price, bot.health, mobs, { doing: plan.kind === 'roof' ? 'putting the ceiling in' : 'digging in', done: 'Under it' }),
+      description: `${setup}: ${who}, and its body does not go under a ceiling two high (the game's rule), so the nearest it can stand is a block and a half off, out of its own reach (a blow reaches about a block and a half centre to centre, sideways only) and within the sword's (three blocks from the eye); it is struck each time it comes to the edge, the shield up facing it between swings. Under it, a wither skeleton's blow cannot reach, and so it withers nothing.${raceSays}${shortSays}${tall.length ? '' : WITHER_AFTER_ROD}${wg.measuredSays('low', Math.max(1, tall.filter(t => t.entity.name === 'wither_skeleton').length), { also: ['fight'] })}` + costSays(price, bot.health, mobs, { doing: plan.kind === 'roof' ? 'putting the ceiling in' : 'digging in', done: 'Under it' }),
       run: async () => {
         this.report(goal, save, { action: 'low_ceiling', kind: plan.kind, to: { ...plan.stand }, blocks: plan.blocks, health: bot.health, stance: true });
         lowerShield(bot);
@@ -9415,7 +9425,7 @@ class Survival {
           }
         }
         await centreOn(bot, task, plan.stand);
-        const r = await wg.guard(bot, task, { until: Date.now() + 15000, focus: tall[0].entity.id, radius: 16, stop: this.crowdStop() });
+        const r = await wg.guard(bot, task, { until: Date.now() + 15000, focus: tall[0]?.entity.id ?? null, radius: 16, stop: this.crowdStop() });
         this.state.stanceWhy = `under the ceiling: ${r.swings} swing${r.swings === 1 ? '' : 's'}, ${r.hurt ? `${r.hurt} health lost` : 'no health lost'}`;
         return true;
       } };

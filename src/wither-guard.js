@@ -80,15 +80,18 @@ function attachOrder(bot, cells, first = () => 0) {
 // (the walkers' own heights, note 601): each tall walker kept off, and the
 // sword still reaching where it can stand nearest. The quicker first.
 // -> { kind, stand, at, placed, dug, seconds, blocks, digMs, material } or null
-function lowCeilingPlan(bot, danger, { blockSeconds = 0.6 } = {}) {
+// `ahead`: mobs to build toward with no tall walker in view yet (note 2583): the roof alone is planned, ordered toward
+// them, and the walk-reach check of the tall ones is not run (there are none).
+function lowCeilingPlan(bot, danger, { blockSeconds = 0.6, ahead = null } = {}) {
   if (typeof bot.blockAt !== 'function' || !bot.entity?.position) return null;
   const tall = danger.filter(tallWalker);
-  if (!tall.length) return null;
+  if (!tall.length && !ahead?.length) return null;
+  const toward = tall.length ? tall.map(t => t.entity.position) : ahead.map(m => m.position || m.entity?.position).filter(Boolean);
   const { walkersApart } = require('./walk-reach');
   const shelter = require('./shelter');
   const feet = bot.entity.position.floored();
   const stock = bot.inventory.items().filter(i => shelter.builds(bot, i.name)).sort((a, b) => shelter.LAST_MATERIALS.has(a.name) - shelter.LAST_MATERIALS.has(b.name) || b.count - a.count)[0];
-  const keptOff = (at, opts) => { let kept; try { kept = walkersApart(bot, tall, { at, ...opts }); } catch (_) { return false; } return tall.every(t => kept.ids.has(t.entity.id)); };
+  const keptOff = (at, opts) => { if (!tall.length) return true; let kept; try { kept = walkersApart(bot, tall, { at, ...opts }); } catch (_) { return false; } return tall.every(t => kept.ids.has(t.entity.id)); };
   const eye = bot.entity.position.offset(0, 1.62, 0);
   const plans = [];
   // Under a ceiling put in: the bot's own cell, or one step along its level.
@@ -110,7 +113,7 @@ function lowCeilingPlan(bot, danger, { blockSeconds = 0.6 } = {}) {
     const bodyIn = c => tall.some(t => { const p = t.entity.position, w = (t.entity.width || 0.7) / 2, h = t.entity.height || ce.bodyHeight(t.entity.name);
       return p.x + w > c.x && p.x - w < c.x + 1 && p.z + w > c.z && p.z - w < c.z + 1 && p.y < c.y + 1 && p.y + h > c.y; });
     if (over.some(bodyIn)) continue;
-    const nearest = c => Math.min(...tall.map(t => Math.hypot(t.entity.position.x - (c.x + 0.5), t.entity.position.z - (c.z + 0.5))));
+    const nearest = c => toward.length ? Math.min(...toward.map(p => Math.hypot(p.x - (c.x + 0.5), p.z - (c.z + 0.5)))) : 0;
     // Its own cell last: the cells round it are the way in.
     const order = attachOrder(bot, over, c => (c.x === cell.x && c.z === cell.z ? 1000 : nearest(c)));
     if (!order) continue;
@@ -126,7 +129,7 @@ function lowCeilingPlan(bot, danger, { blockSeconds = 0.6 } = {}) {
   }
   // A hole two in and two high into the rock beside the bot, rock over it.
   const { blockDigMs } = require('./bunker');
-  for (const [dx, dz] of AROUND4) {
+  for (const [dx, dz] of tall.length ? AROUND4 : []) {
     const a = feet.offset(dx, 0, dz), b = feet.offset(2 * dx, 0, 2 * dz);
     const cells = [a, a.offset(0, 1, 0), b, b.offset(0, 1, 0)];
     const blocks = cells.map(c => bot.blockAt(c));
@@ -146,7 +149,7 @@ function lowCeilingPlan(bot, danger, { blockSeconds = 0.6 } = {}) {
   // (enderman-slot.js slotSite, note 987). 25595 (2026-10-03 05:19Z) had
   // four wither skeletons eight blocks off, full health and an iron kit,
   // no rock at its side, and every stance priced past its health.
-  if (!plans.some(p => p.kind === 'dig')) {
+  if (tall.length && !plans.some(p => p.kind === 'dig')) {
     let site = null; try { site = require('./enderman-slot').slotSite(bot, { reach: 6 }); } catch (_) { site = null; }
     if (site && site.off > 0) {
       const cells = [site.a.offset(0, 1, 0), site.a, site.b.offset(0, 1, 0), site.b];
