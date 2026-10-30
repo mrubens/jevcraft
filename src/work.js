@@ -9643,7 +9643,11 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   if (!pick && (tree.take_up_food || foodShort)) {
     const fi = items.find(i => i.key === 'food');
     const since = kit.foodAsk?.wall || 0;
-    const asked = !!kit.foodAsk && !(goal.foodTurnBack?.at > since) && !(goal.survival?.deaths || []).some(d => Date.parse(d.at) > since);
+    // Food taken up and still under the reserve asks again (note 2578): the take-up ran and stopped short, and the kit's
+    // question that came after crossed with it unasked. full-168 (25591, 2026-10-30 08:4x to 09:01Z) chose take_up_food,
+    // gathered to 32 of 80, crossed at the kit's cross_now, and was asked return_for_food inside at 0.61 within a minute.
+    const takenShort = kit.foodAsk?.pick === 'take_up_food' && !!foodShort;
+    const asked = !!kit.foodAsk && !takenShort && !(goal.foodTurnBack?.at > since) && !(goal.survival?.deaths || []).some(d => Date.parse(d.at) > since);
     if (fi && !asked) {
       const ck = require('./crossing-kit'), stay = ck.netherStay(bot, goal), short = Math.max(0, fi.wants - fi.carried);
       const foodTree = {
