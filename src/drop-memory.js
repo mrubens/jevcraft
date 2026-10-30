@@ -49,6 +49,10 @@ function install(bot) {
     if (!bot.entity?.position || d.dimension !== bot.game?.dimension || bot.entity.position.distanceTo(d.at) <= SEEN_GONE) m.drops.delete(e.id);
   };
   bot.on('entitySpawn', look); bot.on('entityUpdate', look); bot.on('entityGone', gone);
+  // Where it lies as it moves (note 2560): 'entityUpdate' is the metadata only, and a drop that fell kept the place it
+  // was first seen. full-146 (25588, 2026-10-30 02:0xZ) was sent to raw iron at (34, 33, 57), 'reached, not picked up
+  // (the entity at (34.0, 23.0, 57.1), 10.3 from the bot)': it had fallen ten blocks down a hole after it was seen.
+  bot.on('entityMoved', e => { const d = m.drops.get(e?.id); if (d && e.position) d.at = e.position.clone(); });
   // Where the bot died, kept as long as its drops last (note 2536): the corpse run's own record is gone once that run
   // ends or is given up, and full-106 (25588, 2026-10-29 18:3xZ) was offered its death's diamond and iron chestplate
   // 75 blocks under it, 'No route from here'.
@@ -68,6 +72,7 @@ function remembered(bot, now = Date.now()) {
     // to hear of it. full-103 (25591, 2026-10-29 17:1xZ) was sent back for two raw iron 2 and 3 blocks off that were no
     // longer lying, 'reached, not picked up', no pickup even begun.
     if (here.distanceTo(d.at) <= 16 && !bot.entities?.[id]) { m.drops.delete(id); continue; }
+    const live = bot.entities?.[id]; if (live?.position) d.at = live.position.clone();
     out.push({ ...d, distance: Math.round(here.distanceTo(d.at)), dy: Math.round(d.at.y - here.y), secondsLeft: Math.round(left / 1000) });
   }
   return out.sort((a, b) => a.distance - b.distance);
