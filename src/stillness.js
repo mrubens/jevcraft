@@ -597,22 +597,22 @@ function flipWatch(bot, goal, now = Date.now()) {
     if (portal === 'label') continue;
     // Two fight moves trading places (a fight and a raised shield) are one fight.
     if ([...names].every(n => HOLDS.has(n) || EMERGENCIES.has(n))) continue;
-    // A smelt and the detour taken while its batch cooks are the work going on, not a flip (note 2555): full-137
-    // (25586, 2026-10-30 00:2xZ) and full-138 (25588, 00:5xZ) had 'turning between smelt and detour' raised with a
-    // batch in its furnace, and the iron rung rested with its ingots cooking.
-    if (layer === 'work' && names.has('smelt') && names.has('detour') && goal.smelting) continue;
-    // Nor the walk or dig with its ore detours taken on the way, while they bring something up (note 2558): the
-    // detour (opportunistic-mining.js, step collect_nearby_resource) gives the step back, and its gain is not the rung's,
-    // so the tunnel or mine was read as flipping and rested. full-136, full-138, full-140 and full-142 (2026-10-30)
-    // had 'turning between tunnel and collect nearby resource' raised on the way to iron.
-    // Nor an upkeep's crafting answered just now, made a step at a time between the steps of the work it set aside a
-    // moment (note 2562): the spare pickaxe's planks, sticks and pickaxe are three crafts, each a turn, and full-144
-    // (25587, 2026-10-30 02:3xZ) had 'turning between craft and fill bucket 4 times in 1 second' raised on them and
-    // its reach of the Nether rested, then again 6 times in 8 seconds; full-143 and full-137 the same with the tunnel.
-    if (layer === 'work' && names.has('craft') && bot._lastAnswer?.id === 'upkeep' && now - (bot._lastAnswer.at || 0) < 30000) continue;
-    if (layer === 'work' && names.has('collect_nearby_resource')) {
-      const recent = (goal.opportunistic?.history || []).filter(h => h.finishedAt && now - Date.parse(h.finishedAt) < 60000);
-      if (recent.some(h => (h.pickedUp || 0) > 0)) continue;
+    // Two steps trading the turn are a loop only where nothing is being done (note 2563, the user: 'That feels pretty
+    // specialized', of 2555, 2558 and 2562, each a pair let off by name): what is carried changed at all, used up as
+    // well as gained (a craft turns logs into planks, a pickup or a dig brings ore), a block dug or laid in a cell not
+    // worked lately (off the ladder, as below), or a batch cooking in its furnace, is work going on between two steps. The rung's measure alone
+    // named smelt and its detour, the tunnel and its ore detours, an upkeep's crafts and the bucket's walk as flips, and
+    // each rested the rung with its work under way: full-137, full-138, full-136 to full-145, full-144 (2026-10-30).
+    // Not the rock a dig brings up (cobblestone, dirt and the like) nor a block dug by itself: on the ladder a dig with
+    // nothing nearer is the flip it always was (note 699; the suite's mine-and-tunnel and staircase cases).
+    if (layer === 'work') {
+      const DEBRIS = /^(cobblestone|cobbled_deepslate|dirt|coarse_dirt|gravel|sand|red_sand|netherrack|stone|deepslate|andesite|diorite|granite|tuff|calcite|blackstone|basalt|soul_sand|soul_soil|\w*terracotta|sandstone|red_sandstone|clay_ball|flint)$/;
+      let carriedChanged = false;
+      try {
+        const now2 = kinds(bot), before = first.kinds || {};
+        carriedChanged = !!first.kinds && Object.keys({ ...before, ...now2 }).some(k => !DEBRIS.test(k) && (now2[k] || 0) !== (before[k] || 0));
+      } catch (_) { carriedChanged = false; }
+      if (carriedChanged || goal.smelting) continue;
     }
     const place = flipPlace(changes, here);
     if (!place) continue;
