@@ -56,6 +56,9 @@ const CASES = {
   // Ore dug from a one-wide tunnel's end, a block down and a block across (full-138, 2026-10-29 00:3xZ: the drop in the
   // ore's cell, 'navigation timed out without reaching new ground', 'reached, not picked up', 1.7 blocks off).
   ore_diag_down_tunnel: () => ({ at: [1, -1, 1], ore: 'diamond_ore', fill: [[-2, -2, -2, 3, 3, 3, 'stone'], [-1, 0, 0, 0, 1, 0, 'air']] }),
+  // The same with the vein going on under the ore dug (full-143, 2026-10-30 01:4xZ: raw iron 'in air over iron_ore', 1.7
+  // off, the walk over 'navigation timed out without reaching new ground').
+  ore_diag_down_on_ore: () => ({ at: [1, -1, 1], ore: 'diamond_ore', fill: [[-2, -2, -2, 3, 3, 3, 'stone'], [-1, 0, 0, 0, 1, 0, 'air'], [1, -2, 1, 1, -2, 1, 'iron_ore']] }),
   ore_diag_down_tunnel_far: () => ({ at: [1, -1, 1], ore: 'diamond_ore', fill: [[-3, -2, -2, 3, 3, 3, 'stone'], [-3, 0, 0, 0, 1, 0, 'air']] }),
   ore_from_stair: () => ({ at: [2, 3, 0], ore: 'diamond_ore', stand: [0, 1, 0], fill: [[-1, -1, -2, 3, 5, 2, 'stone'], [0, 1, 0, 0, 3, 0, 'air'], [1, 2, 0, 1, 4, 0, 'air']] }),
 };
