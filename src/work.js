@@ -7833,6 +7833,20 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
   if (!lighter && !await acquireStep(bot, task, 'flint_and_steel', 1, goal, save)) return false;
   const bottom = cells.blocks.find(p => p.y === frame.origin.y);
   await navigate(bot, task, new goals.GoalNear(bottom.x, bottom.y, bottom.z, 2));
+  // Not standing in the frame's own plane when it is lit (note 2587): within two of the bottom block is the doorway too,
+  // and a body in the doorway is carried through the moment the portal forms. full-177 (25591, 2026-10-30 09:52Z) lit
+  // its cast portal with no crossing asked (survival's food search ended 'the bot went to the nether'), was asked
+  // return_for_food inside within a minute, and came back out; full-31 (note 2429) the same. Stepped a block or two
+  // across the plane first, onto standing ground.
+  {
+    const feet = bot.entity.position.floored();
+    const inPlane = cells.interior.some(q => q.x === feet.x && q.z === feet.z);
+    if (inPlane) {
+      const standable = c => air(bot.blockAt(c)) && air(bot.blockAt(c.offset(0, 1, 0))) && bot.blockAt(c.offset(0, -1, 0))?.boundingBox === 'block';
+      const side = [1, -1].flatMap(d => [1, 2].map(k => feet.plus(across(axis).scaled(d * k)))).find(standable);
+      if (side) { try { await navigate(bot, task, new goals.GoalBlock(side.x, side.y, side.z), { timeoutMs: 6000, stallMs: 2000 }); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; } }
+    }
+  }
   await bot.equip(bot.inventory.items().find(i => i.name === (lighter || 'flint_and_steel')), 'hand');
   task.check();
   await bot.activateBlock(bot.blockAt(bottom), new Vec3(0, 1, 0));
