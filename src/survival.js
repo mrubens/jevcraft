@@ -679,7 +679,10 @@ const UNSEEN_HOLD_MS = 30000;
 // The stances that wait for the mob to come (note 2568): held while it stays where it is, in sight or not, they answer
 // nothing. full-153 (25590, 2026-10-30 04:26 to 04:32Z) held shield_guard 388 seconds at its portal's site against a
 // zombie 7 blocks off in sight that never came, the hold renewed with nothing new and the portal not cast.
-const WAITS_FOR_MOB = new Set(['shield_guard', 'shield_the_charge', 'back_to_wall', 'await_in_reach', 'corner_ambush']);
+// And a fight whose mob comes no nearer (note 2576): held on 'nothing it was chosen on has changed', it answered nothing
+// either. full-164 (25590, 2026-10-30 06:5x to 07:0xZ) held fight nine times, about two minutes, against a drowned 7
+// blocks off in the water in sight, standing at the shore its portal's walk had brought it to.
+const WAITS_FOR_MOB = new Set(['shield_guard', 'shield_the_charge', 'back_to_wall', 'await_in_reach', 'corner_ambush', 'fight', 'fight_from_footing']);
 // A standoff with one creeper behind blocks (note 778, the critic's ~02:54Z
 // item 4): this long with it within ten blocks, the bot not hurt by it, and
 // the block's hold ends with the standoff said; each later end comes when
