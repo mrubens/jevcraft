@@ -6283,6 +6283,16 @@ class Survival {
     // offered the pillar at 0 damage and the shield's guard at 67.5, each
     // behind the same lead, took the guard at 0.60, climbed down to face
     // them and was dead in eight seconds.
+    // The runs' own record on the price, with blazes about (note 2605), as the push record is (pushRecordOn, note 2026):
+    // a way whose picks here were followed by a death within two minutes in died-of-n of them carries that share of the
+    // health now over its estimate, and says so. On 2026-10-30 keep_working stood priced about 29 and chosen 36 times at
+    // blaze fights with a death after 47% of them; take_cover priced about 5, chosen 102, a death after 18%; the record
+    // was said beside the figure (note 2602) and the figure still read as the cheap way.
+    if (danger.some(t => t.entity.name === 'blaze')) for (const [k, o] of Object.entries(options)) {
+      if (!o?.expects || !Number.isFinite(o.expects.damage)) continue;
+      const add = require('./blaze-outcomes').deathShare('encounter_stance', k, bot.health ?? 20);
+      if (add > 0) { o.expects.damage = Math.round((o.expects.damage + add) * 10) / 10; o.recordAdded = add; }
+    }
     const hpNow = Math.round((bot.health ?? 20) * 10) / 10;
     const priceOf = o => Number.isFinite(o.expects?.damage)
       ? `This way: about ${Math.round(o.expects.damage * 10) / 10} damage${Number.isFinite(o.expects.seconds) ? ` over about ${Math.round(o.expects.seconds)} seconds` : ''}, from ${hpNow} health${o.expects.damage >= hpNow ? ' (more than the bot has)' : ''}. `
@@ -6303,7 +6313,7 @@ class Survival {
     // five times running, priced 8 to 12 against corner_ambush's 0.2 to 2.5, and died at the fifth, nothing said of how
     // charging had gone before.
     // The runs' own record first (blaze-outcomes.js, note 2602), the 2026-10-27 table where a way has none yet.
-    if (danger.some(t => t.entity.name === 'blaze')) for (const [k, o] of Object.entries(options)) if (o && typeof o.description === 'string') { const live = require('./blaze-outcomes').ownSays('encounter_stance', k); o.description += live || blazeStanceSays(k); }
+    if (danger.some(t => t.entity.name === 'blaze')) for (const [k, o] of Object.entries(options)) if (o && typeof o.description === 'string') { const live = require('./blaze-outcomes').ownSays('encounter_stance', k); o.description += (live || blazeStanceSays(k)) + (o.recordAdded ? ` That death rate's share of the health now, about ${o.recordAdded}, is in this way's damage figure above (note 2605).` : ''); }
     // A creeper about: what the first answer to one came to in the record,
     // on each way it has a record for (creeper-first.js, note 1123; the record by the creeper's distance is creeper-record.js).
     if (danger.some(t => t.entity.name === 'creeper')) {

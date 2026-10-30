@@ -12,10 +12,13 @@ const fs = require('fs');
 const path = require('path');
 
 const FILE = path.join(__dirname, '..', 'artifacts', 'blaze-outcomes.json');
-const KEEP_MS = 60000, LEAST = 5;
+// JEV_BLAZE_OUTCOMES names another file (the tests').
+const fileNow = () => process.env.JEV_BLAZE_OUTCOMES || FILE;
+// A row is said from five picks; the price carries the record from ten (note 2605).
+const KEEP_MS = 60000, LEAST = 5, PRICED_FROM = 10;
 let cache = { at: 0, data: null, file: null };
 
-function load(file = FILE) {
+function load(file = fileNow()) {
   const now = Date.now();
   if (cache.data && cache.file === file && now - cache.at < KEEP_MS) return cache.data;
   let data = null;
@@ -30,21 +33,21 @@ const hhmm = iso => { const d = new Date(iso); return Number.isFinite(d.getTime(
 const when = data => `the full runs of the last day, read at ${hhmm(data.to)}`;
 
 // The row of one option at one question, or null under five picks.
-function rowOf(question, key, file) {
+function rowOf(question, key, file = fileNow()) {
   const data = load(file);
   const r = data?.questions?.[question]?.[key];
   return r && r.n >= LEAST ? r : null;
 }
 
 // The option's own sentence.
-function ownSays(question, key, file) {
+function ownSays(question, key, file = fileNow()) {
   const data = load(file), r = rowOf(question, key, file);
   if (!r) return '';
   return ` In the record of ${when(data)}, this way chosen here ${r.n} times: a blaze killed within two minutes after ${r.kill} (${pct(r.kill, r.n)}%), a death within two minutes after ${r.died} (${pct(r.died, r.n)}%)${r.lost !== null && r.lost !== undefined ? `, about ${r.lost} health lost in the next thirty seconds` : ''}.`;
 }
 
 // The rows of the ways on offer, for the question's state: killers first.
-function tableSays(question, offered, file) {
+function tableSays(question, offered, file = fileNow()) {
   const data = load(file);
   if (!data) return '';
   const rows = (offered || []).filter(k => k !== 'none_good').map(k => [k, rowOf(question, k, file)]).filter(([, r]) => r);
@@ -54,4 +57,14 @@ function tableSays(question, offered, file) {
   return `Of the ways on offer here, what each led to in the record of ${when(data)} (times chosen; followed within two minutes by a blaze killed; by a death): ${said.join('; ')}. A way not listed was chosen under five times.`;
 }
 
-module.exports = { FILE, LEAST, load, rowOf, ownSays, tableSays };
+// The death rate's share of the health now, carried on the option's damage figure as the push record is (survival.js
+// pushRecordOn, note 2026): a way chosen here with blazes about that was followed by a death within two minutes in
+// died-of-n of its picks is priced at that share of the health the bot has, over its estimate. Rows under ten picks
+// price nothing. -> the damage added, or 0.
+function deathShare(question, key, health, file = fileNow()) {
+  const r = rowOf(question, key, file);
+  if (!r || r.n < PRICED_FROM || !r.died) return 0;
+  return Math.round(r.died / r.n * (Number.isFinite(health) ? health : 20) * 10) / 10;
+}
+
+module.exports = { FILE, LEAST, PRICED_FROM, load, rowOf, ownSays, tableSays, deathShare };

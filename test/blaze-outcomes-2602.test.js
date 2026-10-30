@@ -47,3 +47,39 @@ test('said on the option from five picks, and the table of the ways on offer for
   assert.equal(live.tableSays('encounter_stance', ['pillar'], file), '');
   assert.equal(live.tableSays('encounter_stance', ['take_cover'], path.join(path.dirname(file), 'none.json')), '', 'no record file, nothing said');
 });
+
+// Note 2605: the record on the price. A way whose picks were followed by a death in died-of-n of them carries that share
+// of the health now over its estimate, as the push record does (note 2026), and says so.
+test('the death rate of the record is folded into the stance price at a blaze fight, and said; nothing under ten picks', async () => {
+  const { EventEmitter } = require('node:events');
+  const { Vec3 } = require('vec3');
+  const { Task } = require('../src/skills');
+  const { Survival } = require('../src/survival');
+  const registry = require('minecraft-data')('26.1');
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'blaze-outcomes-')), 'blaze-outcomes.json');
+  fs.writeFileSync(file, JSON.stringify({ from: '2026-10-29T20:00:00Z', to: '2026-10-30T20:40:00Z', questions: { encounter_stance: {
+    take_cover: { n: 20, kill: 1, died: 10, lost: 1.1 }, keep_working: { n: 8, kill: 0, died: 4, lost: 1 } } } }));
+  const mk = () => {
+    const iron = ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'].map(name => ({ name }));
+    return Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival' }, health: 20, food: 20, foodSaturation: 0, entities: {}, time: { timeOfDay: 6000 },
+      entity: { position: new Vec3(0.5, 64, 0.5), onGround: true, height: 1.8 }, registry,
+      inventory: { items: () => [{ name: 'iron_sword', count: 1 }, { name: 'iron_pickaxe', count: 1 }, { name: 'netherrack', count: 64 }, { name: 'cooked_beef', count: 3 }], slots: { 5: iron[0], 6: iron[1], 7: iron[2], 8: iron[3], 45: { name: 'shield' } } },
+      blockAt: p => ({ position: p.floored(), name: p.y < 64 ? 'netherrack' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', diggable: true }), world: { raycast: () => null }, findBlocks: () => [] });
+  };
+  const blaze = { entity: { id: 7, name: 'blaze', position: new Vec3(6.5, 65, 0.5), height: 1.8 }, distance: 6, visible: true };
+  const ask = () => new Survival(mk(), { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } }).stanceOptions(new Task('x'), {}, () => {}, [blaze], false);
+  const was = process.env.JEV_BLAZE_OUTCOMES;
+  process.env.JEV_BLAZE_OUTCOMES = path.join(path.dirname(file), 'none.json');
+  const plain = ask();
+  process.env.JEV_BLAZE_OUTCOMES = file;
+  const live = require('../src/blaze-outcomes');
+  live.load(file); // the file read fresh, not the cached none
+  const priced = ask();
+  if (was === undefined) delete process.env.JEV_BLAZE_OUTCOMES; else process.env.JEV_BLAZE_OUTCOMES = was;
+  assert.ok(plain.take_cover && priced.take_cover, `take_cover offered: ${Object.keys(plain)}`);
+  assert.equal(Math.round((priced.take_cover.expects.damage - plain.take_cover.expects.damage) * 10) / 10, 10, 'half of 20 health added');
+  assert.match(priced.take_cover.description, /this way chosen here 20 times: a blaze killed within two minutes after 1 \(5%\), a death within two minutes after 10 \(50%\)/);
+  assert.match(priced.take_cover.description, /That death rate's share of the health now, about 10, is in this way's damage figure above/);
+  assert.match(priced.take_cover.description, /^This way: about [\d.]+ damage/);
+  assert.equal(priced.keep_working.expects.damage, plain.keep_working.expects.damage, 'eight picks price nothing');
+});
