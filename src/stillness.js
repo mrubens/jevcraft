@@ -597,6 +597,10 @@ function flipWatch(bot, goal, now = Date.now()) {
     if (portal === 'label') continue;
     // Two fight moves trading places (a fight and a raised shield) are one fight.
     if ([...names].every(n => HOLDS.has(n) || EMERGENCIES.has(n))) continue;
+    // A smelt and the detour taken while its batch cooks are the work going on, not a flip (note 2555): full-137
+    // (25586, 2026-10-30 00:2xZ) and full-138 (25588, 00:5xZ) had 'turning between smelt and detour' raised with a
+    // batch in its furnace, and the iron rung rested with its ingots cooking.
+    if (layer === 'work' && names.has('smelt') && names.has('detour') && goal.smelting) continue;
     const place = flipPlace(changes, here);
     if (!place) continue;
     if (worth(bot) > first.worth) continue;
