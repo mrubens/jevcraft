@@ -1457,6 +1457,18 @@ function blazeStanceSays(key) {
   return ` In the record (every trial and full run's log to 2026-10-27), this way chosen with a blaze about: ${n} times; a death within a minute ${died ? `${died} of them` : 'none of them'}, ${rods ? `${rods} rod${rods === 1 ? '' : 's'}` : 'no rod'} got within five minutes (whatever came after), ${hp} health lost in the next thirty seconds a time.`;
 }
 function pushRecordOn(bot, key, o) {
+  // The runs' own record first (blaze-outcomes.js, note 2608): a death within a minute of this way chosen with a deadly
+  // drop beside the feet, said from five picks and on the price from ten, as the table of 2026-10 below is where a way
+  // has no live row yet.
+  try {
+    const live = require('./blaze-outcomes'), row = live.rowOf(live.DROP, key);
+    if (row) {
+      o.description += live.dropSays(key);
+      const add = live.deathShare(live.DROP, key, bot.health ?? 20);
+      if (add > 0 && o.expects && Number.isFinite(o.expects.damage)) { o.expects.damage = Math.round((o.expects.damage + add) * 10) / 10; o.description += ` That share of the health now, about ${add}, is in this way's damage figure.`; }
+      return;
+    }
+  } catch (_) { /* the table below */ }
   const r = PUSH_RECORD[key];
   if (!r) return;
   const [n, fell] = r;
@@ -6172,6 +6184,7 @@ class Survival {
       // The push carried on the price too (note 1922), for the quiet scene that reads the figure alone: full-1 (2026-10-19 21:12:14Z) was told 'a fireball that lands here is priced by that fall: the bot's death' on a ledge one block from lava 19 down, its figure 'about 0 damage'; the scene read quiet, gave the turn to the work, and a fireball put the bot in the lava at 21:12:20.
       o.expects = { ...(o.expects || {}), pushOver: { deadly: !!over.deadly, by: over.pusher?.name } };
       if (over.deadly) pushRecordOn(bot, k, o);
+      if (over.deadly) this._stanceShared.dropTable = require('./blaze-outcomes').tableSays(require('./blaze-outcomes').DROP, Object.keys(options));
       // Where the push cannot carry it over, said beside it (note 612).
       if (blastOver && k !== 'fight_from_footing') o.description += blastOver.footing ? ` Footing a push from the ${blastOver.pusher.name.replaceAll('_', ' ')} cannot carry the bot over stands ${blastOver.footing.steps} step${blastOver.footing.steps === 1 ? '' : 's'} off at (${blastOver.footing.cell.x}, ${blastOver.footing.cell.y}, ${blastOver.footing.cell.z}).` : ` No footing a push from the ${blastOver.pusher.name.replaceAll('_', ' ')} cannot carry the bot over is within ${FOOTING_STEPS} steps of walking.`;
     }
@@ -7218,7 +7231,9 @@ class Survival {
         riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot),
         // What every way on offer led to at blaze fights on the runs now playing (note 2602): one table for all of them.
         ...((t => t ? { blazeRecordToday: t } : {})(require('./blaze-record').blazesAbout(bot).within16 ? require('./blaze-outcomes').tableSays('encounter_stance', Object.keys(options)) : '')),
-        ...(this.state.stanceNoStrike ? { noStrike: this.state.stanceNoStrike } : {}) };
+        ...(this.state.stanceNoStrike ? { noStrike: this.state.stanceNoStrike } : {}),
+        // What every way on offer led to with a deadly drop beside the feet on the runs now playing (note 2608).
+        ...(shared.dropTable ? { dropRecordToday: shared.dropTable } : {}) };
       // At a live cage, what the stay there has come to, on each hold, and
       // what cover gives up at full health (cage-yield.js, note 702).
       const cageSoFar = (() => { try { return require('./cage-yield').annotate(bot, goal, options); } catch (_) { return null; } })();

@@ -83,3 +83,20 @@ test('the death rate of the record is folded into the stance price at a blaze fi
   assert.match(priced.take_cover.description, /^This way: about [\d.]+ damage/);
   assert.equal(priced.keep_working.expects.damage, plain.keep_working.expects.damage, 'eight picks price nothing');
 });
+
+// Note 2608: a stance with a deadly drop beside the feet is counted under its own key, a death within a minute after.
+test('the drop record: counted from the push priced on an option, said as a death within a minute, and the table safest first', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'blaze-outcomes-'));
+  const drop = (s, key, health) => JSON.stringify({ status: 'running', step: { action: 'x' }, decision: { at: at(s), askedAt: at(s - 0.1), id: 'encounter_stance', path: [key], options: { [key]: { expects: { damage: 2, pushOver: { deadly: true, by: 'ghast' } } } }, state: { dimension: 'the_nether', health, threats: [{ name: 'ghast', distance: 40 }] } } });
+  const lines = [drop(0, 'keep_working', 20), JSON.stringify({ death: { status: 'pending', at: at(40), dimension: 'the_nether', position: { x: 0, y: 30, z: 0 } } }), drop(300, 'keep_working', 20), drop(600, 'await_in_reach', 20)];
+  fs.writeFileSync(path.join(dir, 'first-days-full-2.log'), lines.join('\n') + '\n');
+  const out = await script.compute({ dir, hours: 24 * 365 * 10 });
+  assert.deepEqual(out.questions['encounter_stance@drop'].keep_working, { n: 2, kill: 0, died: 1, lost: null });
+  assert.equal(out.questions['encounter_stance@drop'].await_in_reach.n, 1);
+  assert.equal(out.questions.encounter_stance, undefined, 'no blaze within sixteen: not a blaze fight');
+  const file = path.join(dir, 'blaze-outcomes.json');
+  fs.writeFileSync(file, JSON.stringify({ from: '2026-10-29T23:00:00Z', to: '2026-10-30T23:00:00Z', questions: { 'encounter_stance@drop': { keep_working: { n: 38, kill: 0, died: 12, lost: 2.3 }, await_in_reach: { n: 28, kill: 0, died: 0, lost: 0.5 }, nook: { n: 21, kill: 0, died: 7, lost: 3 } } } }));
+  assert.match(live.dropSays('keep_working', file), /^ In the record of the full runs of the last day, read at 23:00Z, this way chosen with a deadly drop beside the feet 38 times: the bot dead within a minute after 12 \(32%\), about 2\.3 health lost in the next thirty seconds\.$/);
+  assert.match(live.tableSays(live.DROP, ['nook', 'keep_working', 'await_in_reach', 'pillar'], file), /^Of the ways on offer here, what each led to with a deadly drop beside the feet in the record of .*: await in reach 28: dead within a minute after 0%; keep working 38: dead within a minute after 32%; nook 21: dead within a minute after 33%\./);
+  assert.equal(live.deathShare(live.DROP, 'keep_working', 20, file), 6.3);
+});

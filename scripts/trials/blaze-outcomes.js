@@ -43,6 +43,8 @@ async function readLog(file, sinceMs) {
       if (!/nether/.test(dim)) continue;
       const key = Array.isArray(dec.path) ? dec.path[0] : null;
       if (!key) continue;
+      const deadlyDrop = dec.id === 'encounter_stance' && Object.values(dec.options || {}).some(o => o && o.expects && o.expects.pushOver && o.expects.pushOver.deadly);
+      if (deadlyDrop && !seen.has(`${dec.askedAt}@drop`)) { seen.add(`${dec.askedAt}@drop`); answers.push({ at, q: 'encounter_stance@drop', key, health: Number.isFinite(st.health) ? st.health : null, deathMs: 60000 }); }
       if (dec.id === 'encounter_stance' && !(st.threats || []).some(t => t && t.name === 'blaze' && t.distance <= 16)) continue;
       if (dec.id === 'hunt_target' && !(st.resource === 'blaze_rod' || /blaze/.test(JSON.stringify(st.blazes || '')) || Object.keys(dec.options || {}).some(k => /^(charge_nearest|close_in|box_here|box_at_spawner)$/.test(k)))) continue;
       seen.add(dec.askedAt);
@@ -66,7 +68,7 @@ function tally(logs) {
       const q = by[a.q] ||= {}, r = q[a.key] ||= { n: 0, kill: 0, died: 0, lostSum: 0, lostN: 0 };
       r.n++;
       if (kills.some(t => t >= a.at && t - a.at <= KILL_MS)) r.kill++;
-      if (deaths.some(t => t >= a.at && t - a.at <= DEATH_MS)) r.died++;
+      if (deaths.some(t => t >= a.at && t - a.at <= (a.deathMs || DEATH_MS))) r.died++;
       if (a.health !== null) {
         const later = hps.filter(([t]) => t > a.at && t - a.at <= LOST_MS).map(([, h]) => h);
         if (later.length) { r.lostSum += Math.max(0, a.health - Math.min(...later)); r.lostN++; }

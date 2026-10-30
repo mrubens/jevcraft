@@ -46,12 +46,27 @@ function ownSays(question, key, file = fileNow()) {
   return ` In the record of ${when(data)}, this way chosen here ${r.n} times: a blaze killed within two minutes after ${r.kill} (${pct(r.kill, r.n)}%), a death within two minutes after ${r.died} (${pct(r.died, r.n)}%)${r.lost !== null && r.lost !== undefined ? `, about ${r.lost} health lost in the next thirty seconds` : ''}.`;
 }
 
-// The rows of the ways on offer, for the question's state: killers first.
+// A stance with a deadly drop beside the feet (note 2608): the same record under its own key, a death within a minute
+// after the pick. On 2026-10-30 keep working was chosen so 38 times and the bot was dead within a minute after 12,
+// nook 7 of 21, hold on span 6 of 27, take cover 8 of 62; await in reach 0 of 28, seal 0 of 16, shield guard 0 of 5.
+const DROP = 'encounter_stance@drop';
+function dropSays(key, file = fileNow()) {
+  const data = load(file), r = rowOf(DROP, key, file);
+  if (!r) return '';
+  return ` In the record of ${when(data)}, this way chosen with a deadly drop beside the feet ${r.n} times: the bot dead within a minute after ${r.died} (${pct(r.died, r.n)}%)${r.lost !== null && r.lost !== undefined ? `, about ${r.lost} health lost in the next thirty seconds` : ''}.`;
+}
+
+// The rows of the ways on offer, for the question's state: killers first (the drop's, the safest first).
 function tableSays(question, offered, file = fileNow()) {
   const data = load(file);
   if (!data) return '';
   const rows = (offered || []).filter(k => k !== 'none_good').map(k => [k, rowOf(question, k, file)]).filter(([, r]) => r);
   if (!rows.length) return '';
+  if (question === DROP) {
+    rows.sort((a, b) => (a[1].died / a[1].n - b[1].died / b[1].n) || (b[1].n - a[1].n));
+    const said = rows.map(([k, r]) => `${words(k)} ${r.n}: dead within a minute after ${pct(r.died, r.n)}%`);
+    return `Of the ways on offer here, what each led to with a deadly drop beside the feet in the record of ${when(data)} (times chosen; followed within a minute by a death): ${said.join('; ')}. A way not listed was chosen under five times.`;
+  }
   rows.sort((a, b) => (b[1].kill / b[1].n - a[1].kill / a[1].n) || (a[1].died / a[1].n - b[1].died / b[1].n));
   const said = rows.map(([k, r]) => `${words(k)} ${r.n}: a kill after ${pct(r.kill, r.n)}%, a death after ${pct(r.died, r.n)}%`);
   return `Of the ways on offer here, what each led to in the record of ${when(data)} (times chosen; followed within two minutes by a blaze killed; by a death): ${said.join('; ')}. A way not listed was chosen under five times.`;
@@ -67,4 +82,4 @@ function deathShare(question, key, health, file = fileNow()) {
   return Math.round(r.died / r.n * (Number.isFinite(health) ? health : 20) * 10) / 10;
 }
 
-module.exports = { FILE, LEAST, PRICED_FROM, load, rowOf, ownSays, tableSays, deathShare };
+module.exports = { FILE, DROP, LEAST, PRICED_FROM, load, rowOf, ownSays, dropSays, tableSays, deathShare };
