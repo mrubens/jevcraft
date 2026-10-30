@@ -153,7 +153,11 @@ function portalDeathsSays(bot, goal, now = Date.now()) {
 // points carried, three went back through the portal for food 0 to 13 minutes after crossing (full-88, full-89,
 // full-91), and full-88 never got back into the Nether: it hunted in the Overworld at 2 health for an hour and was shot
 // dead. The one with 91 points (full-92) has not gone back.
-const CROSSED_SHORT = ' The record of the full runs of 2026-10-29: of four crossings made with 4 to 24 food points, three went back through the portal for food within 0 to 13 minutes of crossing, the walk back, the food and the walk in again each time, and one of them never got back into the Nether (it hunted at 2 health and died); the crossing made with 91 points did not go back.';
+// Today's record (note 2556): of the Nether's food kit asked just inside on the full runs of 2026-10-29 and 30, nine
+// crossings made with 0 to 12 food points chose to go back for food every time (full-105, 106 twice, 116, 118, 121
+// twice, 125, 138), most at once, the trip home 12 to 40 minutes; the one with 106 points (full-129) went on. Crossing
+// short and turning back inside is the portal walked twice for nothing.
+const CROSSED_SHORT = ' The record of the full runs of 2026-10-29 and 30: of the nine crossings made with 0 to 12 food points, all nine chose to go back through the portal for food once inside, most within a minute of crossing, the trip home and in again taking 12 to 40 minutes, and some never got back in; the one crossing made with 106 points went on. Earlier, of four crossings with 4 to 24 points, three went back within 0 to 13 minutes, and the one with 91 points did not.';
 function kitItems(bot) {
   if (bot.game?.gameMode !== 'survival') return [];
   const items = [];
