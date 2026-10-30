@@ -118,7 +118,11 @@ function hostileEntities(bot, radius = 24) {
     // A hoglin with a warped fungus, a nether portal or a respawn anchor
     // within its sensing box drops its target and attacks nothing while it
     // stays that near, struck or not (hoglin-repellent.js, note 587).
-    if (require('./hoglin-repellent').pacified(bot, entity)) return false;
+    // Not one that has struck the bot within ten seconds, as the spider's daylight truce ends (note 2579): the warped fungus
+    // read as calming it while it hit. full-163 (25592, 2026-10-30 08:5xZ) in a warped forest: '[bug] hurt without a
+    // survival response {"health":11, ... "threats":[]}', keep_working held 215.9 s, and run_from asked at 1.2 health with
+    // a hoglin 2.4 blocks off; slain by it.
+    if (require('./hoglin-repellent').pacified(bot, entity) && !(bot._hurtBy?.hoglin > Date.now() - 10000)) return false;
     return entity.position.distanceTo(position) <= radius;
   });
 }
