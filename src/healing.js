@@ -62,7 +62,11 @@ function foodSources(bot, goal) {
   const overworld = /overworld/.test(String(bot.game?.dimension || 'overworld'));
   const prey = overworld ? ['cow', 'mooshroom', 'sheep', 'rabbit'] : ['hoglin'];
   guard(() => {
-    const seen = Object.values(bot.entities || {}).filter(e => prey.includes(e.name) && e.isValid !== false && e.position && e.position.distanceTo(here) <= 32 && !preyFailed(goal, e))
+    // Only what the hunt takes (foraging.js preyFood: no young, no killer rabbit), as huntInView takes it (note 2566):
+    // a young rabbit in view was offered as food in view, the hunt passed it over, and full-151 (25588, 2026-10-30
+    // 03:51 to 04:12Z) turned the food known step over at 21 passes a second, fifteen times, 45 seconds each.
+    const takes = e => { try { return !!require('./foraging').preyFood(bot, e); } catch (_) { return true; } };
+    const seen = Object.values(bot.entities || {}).filter(e => prey.includes(e.name) && e.isValid !== false && e.position && e.position.distanceTo(here) <= 32 && !preyFailed(goal, e) && takes(e))
       .sort((a, b) => a.position.distanceTo(here) - b.position.distanceTo(here));
     if (seen[0]) {
       const d = Math.round(seen[0].position.distanceTo(here)), kind = seen[0].name, count = seen.filter(e => e.name === kind).length;
