@@ -339,6 +339,12 @@ const carriesDiamondPick = bot => { try { return (bot?.inventory?.items?.() || [
 function endOf(bot, goal, i, now) {
   if (i.q === 'portal_plan' && i.diamondPickaxe !== true && i.choice !== 'build_new' && carriesDiamondPick(bot)) return 'a real change: a diamond pickaxe is carried now, and the obsidian can be mined';
   if (now - i.at >= MAX_MS) return `lapsed: held ${ago(now - i.at)} without arriving, failing or finishing`;
+  // The portal's way failed since it was chosen (portal-plan.js planFailed) ends it, so the plan asked again for that
+  // failure offers every way and not the one that failed alone (note 2573). full-155 (25586, 2026-10-30 05:2x to
+  // 05:5xZ) was asked again 'a stall on detour: No path to the goal!' and offered 'beside sight, the only way offered'
+  // twice, its ruined portal with lava two blocks off withheld ('not offered while beside_sight holds: ... ruin_0');
+  // full-158 three times, full-134 once.
+  if (i.q === 'portal_plan') { const failed = (goal?.portalPlanFailures || []).filter(f => f.at > i.at).at(-1); if (failed) return `failed: ${String(failed.why || 'the way came to nothing').slice(0, 160)}`; }
   if (i.dimension && dim(bot) && dim(bot) !== i.dimension) return `ended: now in ${words(dim(bot).replace(/^the_/, ''))}`;
   const deaths = goal?.survival?.deaths || [];
   if (deaths.length && Date.parse(deaths.at(-1).at) > i.at) return 'ended by a death';
