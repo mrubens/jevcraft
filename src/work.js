@@ -9643,7 +9643,12 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
       const decision = await decide('crossing_food', { client, bot, task, goal, save, tree: foodTree,
         state: { food: `${fi.carried} carried, the stay wants ${fi.wants}`, health: bot.health, hunger: bot.food, minutesAtCrossing: Math.round(kit.workedMs / 60000) } });
       if (decision.stale) return false;
-      kit.foodAsk = { pick: decision.path.at(-1), wall: Date.now() }; save();
+      // A body way the low-health layer put beside it (wall_in_first, eat_first) is run there and is not the food's
+      // answer: the food is asked again on the next pass (note 2571). full-156 (25592, 2026-10-30 04:53Z), 0 food points
+      // carried, chose wall_in_first at 0.5 and the food question was counted asked for the crossing.
+      const foodPick = decision.path.at(-1);
+      if (!['cross_now', 'take_up_food'].includes(foodPick)) return false;
+      kit.foodAsk = { pick: foodPick, wall: Date.now() }; save();
       if (kit.foodAsk.pick === 'take_up_food') { pick = 'take_up_food'; kit.choice = { pick, keys, at: kit.workedMs, wall: Date.now() }; save(); }
     }
     // Crossing without it was chosen: the rest of the kit is asked without the food.
