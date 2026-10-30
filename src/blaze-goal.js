@@ -56,7 +56,7 @@ const REFLEX_Q = new Set(['turn_priority', 'encounter_stance', 'shot_answer', 'b
 const TOWARD_Q = {
   fortress_approach: /^(walk_route|cross_level|tunnel|stairs_down|pillar_up|blocks_then_pillar|blocks_then_cross|dig_through|descend|cover_lava|scoop_lava|span_round|head_toward)$/,
   fortress_visit: /^go_in$/,
-  empty_spawner: /^(box_here|stand_by_spawner|hunt_on|open_slit|box_in_line|box_at_spawner|dig_in_at_spawner|pull_back)$/,
+  empty_spawner: /^(box_here|stand_by_spawner|hunt_on|open_slit|box_in_line|box_at_spawner|dig_in_at_spawner|dig_to_spawner|pull_back)$/,
   hunt_target: /^(hunt_\d+|charge_nearest|close_in|fight_at_spawner|back_to_wall|box_here|box_at_spawner|box_in_line|dig_in_and_fight|fetch_rod_\d+|rise_to_strike|await_in_reach|stay_and_fight)$/,
   combat_kit: /^fight_with_carried$/,
   fortress_leg: /^(blazes_\w+|go_to_blazes(_about)?|go_to_spawner(_\d+)?|wait_at_spawner|stay_in_fortress|back_to_fortress|unwalked_\d+|blocks_then_cross|pillar_up|blocks_then_pillar)$/,

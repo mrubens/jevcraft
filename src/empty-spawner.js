@@ -292,6 +292,40 @@ function lullOptions(bot, task, goal, save, actions, known, quiet, { now = Date.
       tree.dig_in_at_spawner = { ...require('./cage-hold').planNode(), description: `Walk ${hole.steps || 0} block${hole.steps === 1 ? '' : 's'} and dig a hole one wide and two high into the rock beside the cage (${words(hole.rock)}, dug ${hole.with}, about ${digSecs} s), the mouth toward it, and hold it for its next blazes: rock behind, beside and over, only the front open.${clock.jobSays(quiet, secs)}`, secs,
         run: () => buildAndHold(bot, task, goal, save, actions, { kind: 'hole', site: hole, key: 'dig_in_at_spawner' }, secs) };
     }
+    // No way at the spawner walked to (no box by the cage, no stand, no hole beside it): the way dug, as a player digs
+    // through the fortress's bricks to its spawner room (note 2595). full-198 (25588, 2026-10-30 16:22 to 16:36Z), 13
+    // blocks from its cage behind nether bricks at full health, was offered a box 12.7 blocks off and a slit (whose
+    // dig then found 'No route from here'), answered none_good at 0.67, and held there fourteen minutes: 0 blazes
+    // killed, 0 rods, 'Nothing has come of it for 8 minutes while 4 blazes' were about the cage.
+    if (!tree.box_at_spawner && !tree.stand_by_spawner && !tree.dig_in_at_spawner && actions?.navigate) {
+      const feet = bot.entity.position.floored(), c = centre(cage);
+      const dx = feet.x + 0.5 - c.x, dz = feet.z + 0.5 - c.z, flat = Math.hypot(dx, dz);
+      if (flat > 4.5 && flat <= 16) {
+        // A cell three blocks short of the cage on the line from it to the bot, at the feet's height.
+        const target = new (require('vec3').Vec3)(Math.floor(c.x + dx / flat * 3), feet.y, Math.floor(c.z + dz / flat * 3));
+        const n = Math.ceil(Math.hypot(target.x - feet.x, target.z - feet.z));
+        let digs = 0, digMs = 0, molten = false;
+        for (let i = 1; i <= n; i++) {
+          const p = feet.offset(Math.round((target.x - feet.x) * i / n), 0, Math.round((target.z - feet.z) * i / n));
+          for (const q of [p, p.offset(0, 1, 0)]) {
+            const b = bot.blockAt(q);
+            if (/lava|water/.test(b?.name || '')) molten = true;
+            if (b?.boundingBox === 'block') { digs++; try { digMs += require('./bunker').blockDigMs(bot, b); } catch (_) { digMs += 1500; } }
+          }
+        }
+        if (!molten && digs > 0 && Number.isFinite(digMs)) {
+          const secs = round(n / WALK + digMs / 1000);
+          tree.dig_to_spawner = { description: `Dig a way straight toward the cage, ${round(flat)} blocks off, to a cell three blocks short of it at this height: about ${digs} block${digs === 1 ? '' : 's'} in the way on the line, about ${secs} seconds of digging and walking, then be asked again there, where the ways at the spawner (a box by the cage, a stand, a hole beside it) can be had. No walk reaches the spawner from here now, so none of them is offered.`, secs,
+            run: async () => {
+              goal.step = { action: 'dig_to_spawner', cage: { x: cage.x, y: cage.y, z: cage.z }, target: { x: target.x, y: target.y, z: target.z } }; save();
+              let r = null;
+              try { r = await require('./bridging').tunnelStraight(bot, task, target, { maxSteps: n + 8, near: 1, navigate: actions.navigate }); }
+              catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err; r = { why: err.message }; }
+              console.log(`[spawner] dug toward the cage at (${cage.x}, ${cage.y}, ${cage.z}): ${r?.steps ?? 0} steps, now ${round(centre(cage).distanceTo(bot.entity.position))} blocks from it${r?.why ? `: ${String(r.why).slice(0, 120)}` : ''}`);
+            } };
+        }
+      }
+    }
     // Out past sixteen: the spawner makes none and its delay stops counting.
     const out = outOfRange(bot, cage);
     if (out) {
