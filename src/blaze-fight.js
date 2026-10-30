@@ -52,7 +52,16 @@ function says(bot, now = Date.now()) {
   const by = {};
   for (const k of kills) { const s = String(k.stance || k.step || 'nothing').replaceAll('_', ' '); by[s] = (by[s] || 0) + 1; }
   const last = kills.at(-1);
-  return `The fight with the blazes here began ${minutes ? `${minutes} minute${minutes === 1 ? '' : 's'}` : 'under a minute'} ago (a blaze first within ${NEAR} blocks): ${kills.length ? `${kills.length} killed since (${Object.entries(by).map(([s, n]) => `${n} under ${s}`).join(', ')}), the last ${Math.max(1, Math.round((now - last.at) / 60000))} minute${Math.round((now - last.at) / 60000) > 1 ? 's' : ''} ago` : 'none killed since'}; ${about} about within ${NEAR} now, the most at once ${c.most}. A spawner goes on spawning while the blazes it made live, up to about six near it.${about >= 6 || c.most >= 6 ? ` Blazes, the spawner's as any, despawn as other hostile mobs do: every one at once with the bot more than 128 blocks off, and at random, most within a minute or so, with it more than 32 off; within 32 they stay.` : ''}`;
+  // What each stance of this fight has cost and come to (note 2554): full-130 (25590, 2026-10-30 00:4xZ) had its six
+  // kills under close in, charge nearest and take cover, then held back to wall and corner ambush with 14 to 19 blazes
+  // about, 7.9 health gone in 23 seconds under the ambush, and was burned dead with 3 rods; full-125 the same at 31.
+  const held = {};
+  for (const e of (bot._stanceLedger || []).filter(e => e.since >= c.began)) {
+    const k = String(e.choice).replaceAll('_', ' '), h = held[k] ||= { seconds: 0, lost: 0 };
+    h.seconds += e.seconds; h.lost += e.lost;
+  }
+  const costs = Object.entries(held).filter(([, h]) => h.seconds >= 5).map(([k, h]) => `${k} held ${h.seconds >= 90 ? `${Math.round(h.seconds / 60)} minutes` : `${Math.round(h.seconds)} s`}, ${Math.round(h.lost * 10) / 10} health lost, ${by[k] || 0} killed`);
+  return `The fight with the blazes here began ${minutes ? `${minutes} minute${minutes === 1 ? '' : 's'}` : 'under a minute'} ago (a blaze first within ${NEAR} blocks): ${kills.length ? `${kills.length} killed since (${Object.entries(by).map(([s, n]) => `${n} under ${s}`).join(', ')}), the last ${Math.max(1, Math.round((now - last.at) / 60000))} minute${Math.round((now - last.at) / 60000) > 1 ? 's' : ''} ago` : 'none killed since'}; ${about} about within ${NEAR} now, the most at once ${c.most}.${costs.length ? ` Each stance in this fight so far: ${costs.join('; ')}.` : ''} A spawner goes on spawning while the blazes it made live, up to about six near it.${about >= 6 || c.most >= 6 ? ` Blazes, the spawner's as any, despawn as other hostile mobs do: every one at once with the bot more than 128 blocks off, and at random, most within a minute or so, with it more than 32 off; within 32 they stay.` : ''}`;
 }
 
 module.exports = { install, look, says, NEAR };

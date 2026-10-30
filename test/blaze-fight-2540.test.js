@@ -29,3 +29,15 @@ test('a crowd of six or more is told how blazes despawn (note 2542)', () => {
   assert.match(bf.says(bot), /more than 128 blocks off/);
   bot.emit('end');
 });
+
+test('each stance of the fight is said with its time, health lost and kills (note 2554)', () => {
+  const bf = require('../src/blaze-fight');
+  const bot = new EventEmitter();
+  Object.assign(bot, { entity: { position: new Vec3(0, 64, 0) }, game: { dimension: 'the_nether' }, entities: { 1: { id: 1, name: 'blaze', position: new Vec3(5, 64, 0), isValid: true } }, _goal: {} });
+  bf.install(bot);
+  const now = Date.now();
+  bf.look(bot, now - 120000);
+  bot._stanceLedger = [{ at: now - 30000, since: now - 60000, choice: 'corner_ambush', seconds: 30, lost: 7.9 }];
+  assert.match(bf.says(bot, now), /corner ambush held 30 s, 7.9 health lost, 0 killed/);
+  bot.emit('end');
+});

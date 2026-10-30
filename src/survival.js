@@ -6807,6 +6807,8 @@ class Survival {
       console.log(`[stance] ${String(held.choice).replaceAll('_', ' ')} let go after ${Math.round((Date.now() - held.at) / 100) / 10} s: ${why}`);
       // Kept for the next stance question (note 2549): each stance's time held and why it ended.
       this.state.stanceEnds = [...(this.state.stanceEnds || []).filter(e => Date.now() - e.at < 60000), { at: Date.now(), choice: held.choice, seconds: Math.round((Date.now() - held.at) / 100) / 10, why, health: Math.round((bot.health ?? 0) * 10) / 10 }].slice(-8);
+      // And for the blaze fight's record (note 2554): every stance's time and the health it lost, the fight's whole length.
+      bot._stanceLedger = [...(bot._stanceLedger || []).filter(e => Date.now() - e.at < 30 * 60000), { at: Date.now(), since: held.at, choice: held.choice, seconds: (Date.now() - held.at) / 1000, lost: Math.max(0, (held.health ?? bot.health ?? 0) - (bot.health ?? 0)) }].slice(-200);
     }
     // At the end of its time, a hold with nothing new is not a question
     // (holds.js, note 599): held on, 15, 30, then 60 seconds at a time, while
