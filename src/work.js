@@ -2084,6 +2084,7 @@ async function clearLineToOre(bot, task, ore, { most = 3, digBlock = dig } = {})
   return dug;
 }
 async function tunnelOrSetAside(bot, task, goal, save, target, resource, ore = null) {
+  const startFar = bot.entity.position.distanceTo(target);
   try {
     for (let i = 0; i < STAIRS_AT_A_TIME; i++) {
       const before = bot.entity.position.clone();
@@ -2095,6 +2096,16 @@ async function tunnelOrSetAside(bot, task, goal, save, target, resource, ore = n
       if (bot.entity.position.distanceTo(target) <= 4 || bot.entity.position.distanceTo(before) < 0.5) break;
     }
     if (ore) await clearLineToOre(bot, task, ore);
+    // A pass that ends no nearer is a stall, its ore set aside as a staircase's (note 2567): beside an aquifer the
+    // stairs it may take go round within the pocket, a block this way and that, and the mine step turns to the next ore
+    // through the same water. full-156 (25592, 2026-10-30 04:3xZ) tunnelled from a pocket at (194, 42, -235) toward
+    // four iron ores down and west through water, 28 to 41 blocks off, its stairs ending at (194, 42, -234 to -236),
+    // mine and tunnel turned four times in 33 seconds; full-152 and full-151 the same at 28 and 12 blocks.
+    const endFar = bot.entity.position.distanceTo(target);
+    if (endFar > 4 && endFar > startFar - 1) {
+      const err = new Error(`the tunnel toward ${target} got no nearer in a pass (${Math.round(startFar)} blocks off before, ${Math.round(endFar)} after)`);
+      err.name = 'StaircaseStalled'; err.landing = bot.entity.position.floored(); throw err;
+    }
   }
   catch (err) {
     if (err.name !== 'StaircaseStalled') throw err;
