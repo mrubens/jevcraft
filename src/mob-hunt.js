@@ -1409,6 +1409,36 @@ async function huntObserved(bot, task, goal, save, actions, client) {
         run: async () => { await require('./home-base').cutCobwebs(bot, task, goal, save, actions, webs, wanted); } };
     }
   }
+  // The blocks carried into a blaze fight, said, and digging a stack's worth first offered (note 2593): the stances
+  // that keep the fire off are built (cover two or three blocks, a ceiling about nine, a box about sixteen, a seal
+  // about twenty-three), and with none carried they are not on offer. full-195 (25589, 2026-10-30 15:37 to 15:39Z)
+  // went at seven blazes with 8 blocks, was down to 0 in a minute and burned on a ledge where every way out of the
+  // fire was a deadly fall; full-170 (09:18 to 09:21Z) stood among seven with none, offered keep_working and retreat
+  // alone, Jev answering none_good at 0.6 to 0.7 eighteen times; full-176 (11:14 to 11:15Z) the same. Of the day's
+  // blaze stance asks, 180 of 373 came with no block carried.
+  let blocksNow = null;
+  if (state.entity === 'blaze') {
+    const carried = blocksCarried(bot);
+    blocksNow = `${carried} building block${carried === 1 ? '' : 's'} carried: the stances that keep the fire off are built (cover two or three blocks, a ceiling about nine, a box about sixteen, a seal about twenty-three), and none of them is offered with too few for it. On 2026-10-30 three runs were slain at blazes with none left (full-170, full-176, full-195).`;
+    const pick = pickaxeFirst(bot);
+    if (carried < 64 && !pick.none && pick.carried && actions.mineAt && actions.navigate) {
+      const plan = blocksPlan(bot, goal, 64 - carried);
+      if (plan.want && !plan.far) {
+        const from = plan.first.walk ? `a walk of ${plan.first.walk} block${plan.first.walk === 1 ? '' : 's'} from here` : 'where the bot stands';
+        tree.blocks_first = { description: `Dig ${plan.want} block${plan.want === 1 ? '' : 's'} first (${kindsSaid(plan.found.reachable)}), the nearest ${Math.round(plan.first.p.distanceTo(bot.entity.position))} blocks off, dug from ${from}${plan.seconds === null ? '' : `, about ${plan.seconds} seconds`}, then be asked again with them carried: ${carried} carried now. The blazes about shoot at what they see meanwhile.`,
+          run: async () => {
+            goal.step = { action: 'restock_blocks', want: carried + plan.want, for: 'blazes' }; save();
+            const skip = p => isSetAside(goal, 'reach', p);
+            let r = null;
+            try {
+              r = await gatherSpanBlocks(bot, task, carried + plan.want, { navigate: actions.navigate, reach: RESTOCK_REACH, walk: RESTOCK_WALK, skip,
+                mineAt: s => actions.mineAt(bot, task, goal, save, s.p, s.name, s.drops), deadline: Date.now() + Math.max(60, (plan.seconds ?? 60) * 2) * 1000 });
+            } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err; r = { why: err.message }; }
+            console.log(`[restock] for the blazes: ${blocksCarried(bot) - carried} of ${plan.want} blocks gained (${blocksCarried(bot)} carried)${r?.why ? `: ${String(r.why).slice(0, 160)}` : ''}`);
+          } };
+      }
+    }
+  }
   let cageSoFar = null;
   if (state.entity === 'blaze') { try { cageSoFar = require('./cage-yield').annotate(bot, goal, tree); } catch (_) { /* no cage */ } }
   const snapshot = { request: goal.request, ...(cageSoFar?.holdsResting ? { holdsResting: cageSoFar.holdsResting } : {}), resource: state.item, need: state.entity === 'blaze' ? huntTarget(bot, goal) - countOf(bot, state.item) : huntLeft(bot, goal),
@@ -1418,6 +1448,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
     // said: re-asked without it, no answer of 8 moved (note 672).
     health: bot.health, food: bot.food, dimension: dimension(bot), riskNow: require('./risk').riskNow(bot),
     fitness: { ...fit, said: fitSaid },
+    ...(blocksNow ? { blocksCarried: blocksNow } : {}),
     // A blaze whose every way to fight it in the open ends within a push of
     // lava or a deep drop: fought from a stand, not walked under.
     ...(unreached.length ? { noWayToStrike: unreached.map(u => `${u} ${Object.keys(tree).some(k => /^(box|hole|wall|stand|back_to|corner|cage|spawner)/.test(k)) ? 'offered' : 'not on offer here'}`) } : {}),

@@ -1993,6 +1993,8 @@ test('blazes heard through the fortress\'s walls are a worded fight, the stands 
   assert.match(options.hunt_7, /^Fight the blaze 16 blocks off, 2 up, at \(17, 66, 1\), out of sight now \(heard through the walls; it comes once it sees the bot\), in the open: Close on it and strike it with the iron sword, the shield raised toward its shots, 4 pieces of armour worn\. A blaze drops a rod about half the time; blaze rods are what the request needs now/);
   assert.match(state.blazes, /^2 blazes within forty-eight blocks \(0 in sight, the rest heard through the walls\), the nearest 16 blocks off, from 2 to 4 blocks above the bot's feet; these are the blazes the fortress search came for: 8 blaze rods still needed/);
   assert.equal(Object.keys(state).indexOf('blazes'), 3, 'with the resource and what is needed');
+  // The blocks carried into the fight, said with what the built stances take (note 2593).
+  assert.match(state.blocksCarried, /building blocks? carried: the stances that keep the fire off are built \(cover two or three blocks, a ceiling about nine, a box about sixteen, a seal about twenty-three\)/);
   assert(options.back_to_wall, `a stand is offered with the blazes out of sight: ${Object.keys(options)}`);
 });
 
