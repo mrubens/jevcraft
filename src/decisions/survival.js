@@ -374,6 +374,18 @@ define({
   instructions: { task: 'The bot is on its way through a portal into the Nether. Choose whether to cross with what it carries now or to top up one item of its kit first.', guidance: 'Every option lists the kit item by item: what is carried, what the code would take, and why. The amounts the code would take are a careful default, not a rule. The food, blocks and spare pickaxe were steps of the ladder before this; what they left short is said. A top-up says the working minutes it has had at this crossing and what they brought. `kit` is each item carried against what the code would take.' },
 });
 
+define({
+  id: 'crossing_food', area: 'strategy', parent: 'crossing_kit', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'Cross into the Nether with the food carried now, or get the food for the stay here first?',
+  trigger: 'In the Overworld on the way through a portal, in Survival, before the crossing kit question, when the food is short of the Nether\'s reserve and its take-up is on offer (note 2565); asked once for a crossing, again after a turn back for food or a death.',
+  source: 'src/work.js (crossingKitReady)',
+  options: [
+    { key: 'cross_now', label: 'cross with the food carried', when: 'always; said with the minutes the food carried lasts against the stay the goal wants, the food the Nether has, and the record of crossings made short', level: 'root' },
+    { key: 'take_up_food', label: 'get the food for the stay here first', when: 'always; said with the points short and the minutes of gathering they are at the fresh runs\' pace', level: 'root' },
+  ],
+  instructions: { task: 'The bot is on its way through a portal into the Nether, short of food for the stay there. Choose whether to cross with the food it carries now or to get the food here first.', guidance: 'Each option says what it costs in minutes. Food in the Nether is scarce: hoglins in the crimson forests and a bastion\'s chests; otherwise the way to food is back out through the portal. The rest of the kit is asked next.' },
+});
+
 // The food rung before the portal, taken (src/work.js kitFoodStep,
 // crossing-kit.js kitRungs, note 673): which way to the food, or going on
 // without more. The crossing question's food top-ups, moved here: the known

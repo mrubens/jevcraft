@@ -9536,11 +9536,14 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   // 1257): 25584 and 25590 (2026-10-04 20:40 to 21:00Z), thirteen pearls
   // banked each, stood at 2 and 3 health at their fortresses with nothing
   // to eat.
-  if (foodItem && Number.isFinite(foodItem.carried) && foodItem.carried < 36) tree.cross_now.description += ` In the record (2026-10-04 12:00 to 21:00Z), of 37 crossings made with under 16 food points carried 26 turned back for food within fifteen minutes, a median stay of 3 to 5 minutes; of 13 with 16 to 35 points 4 did (a median stay of 9 minutes); of 39 with 36 or more, 5 (16 minutes). ${foodItem.carried} are carried now.`;
+  // Said on crossing with the food short, here and on the food's own question before this one (note 2565).
+  let crossFoodSays = '';
+  if (foodItem && Number.isFinite(foodItem.carried) && foodItem.carried < 36) crossFoodSays += ` In the record (2026-10-04 12:00 to 21:00Z), of 37 crossings made with under 16 food points carried 26 turned back for food within fifteen minutes, a median stay of 3 to 5 minutes; of 13 with 16 to 35 points 4 did (a median stay of 9 minutes); of 39 with 36 or more, 5 (16 minutes). ${foodItem.carried} are carried now.`;
   if (empty.some(i => i.key === 'food' && i.carried === 0)) {
     const minutes = Math.max(0, Math.round((hungerNow - 17) / NETHER_HUNGER_AN_HOUR * 60));
-    tree.cross_now.description += ` No food at all is carried: in the Nether hunger falls about ${NETHER_HUNGER_AN_HOUR} an hour with nothing to eat${hungerNow >= 18 ? `, and at hunger ${hungerNow} health stops coming back in about ${minutes} minute${minutes === 1 ? '' : 's'}` : ', and health is not coming back now'}.`;
+    crossFoodSays += ` No food at all is carried: in the Nether hunger falls about ${NETHER_HUNGER_AN_HOUR} an hour with nothing to eat${hungerNow >= 18 ? `, and at hunger ${hungerNow} health stops coming back in about ${minutes} minute${minutes === 1 ? '' : 's'}` : ', and health is not coming back now'}.`;
   }
+  tree.cross_now.description += crossFoodSays;
   // The crossing that turned back for food (note 1134): made again with the
   // food no better, it is the same round trip. 25591 (2026-10-03 23:24:44
   // to 23:25:21Z), nine rods and seven pearls in its chests, crossed at
@@ -9549,7 +9552,8 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   const turnedBack = goal.foodTurnBack && Date.now() - goal.foodTurnBack.at < 30 * 60000 ? goal.foodTurnBack : null;
   if (turnedBack && foodItem && foodItem.carried < foodItem.wants && hungerNow < 18) {
     const ago = Math.max(1, Math.round((Date.now() - turnedBack.at) / 60000));
-    tree.cross_now.description += ` The last crossing turned back through the portal for food ${ago} minute${ago === 1 ? '' : 's'} ago, the first thing asked on the far side; ${foodItem.carried} food points are carried now and hunger is ${hungerNow}: crossed so, the same question is asked there again.`;
+    const back = ` The last crossing turned back through the portal for food ${ago} minute${ago === 1 ? '' : 's'} ago, the first thing asked on the far side; ${foodItem.carried} food points are carried now and hunger is ${hungerNow}: crossed so, the same question is asked there again.`;
+    tree.cross_now.description += back; crossFoodSays += back;
   }
   for (const i of empty) tree[`take_up_${i.key}`] = { takesUp: `nether_${i.key}`, description: `Take up the ${i.key} for the Nether again first: ${i.carried === 0 ? `it is empty now, 0 of ${i.wants} carried${seen[i.key] ? ` (${seen[i.key]} when the crossing last looked)` : ''}` : `${i.carried} of ${i.wants} points carried, under the Nether's reserve of ${NETHER_FLOOR}`}, and its step was set aside by the ladder; its rest is lifted and the ladder takes it up next.${i.key === 'food' ? takeUpFoodSays(bot, goal, i) : ''}` };
   const pickMade = noPickaxe ? (countOf(bot, 'iron_ingot') >= 3 ? 'iron_pickaxe' : ['cobblestone', 'cobbled_deepslate', 'blackstone'].some(n => countOf(bot, n) >= 3) ? 'stone_pickaxe' : 'wooden_pickaxe') : null;
@@ -9609,6 +9613,32 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   const sameSet = kit.choice?.keys === keys || (kit.choice?.pick === 'take_up_food' && !!tree.take_up_food);
   const held = kit.choice && !undone && sameSet && kit.workedMs - kit.choice.at < KIT_HOLD_MS && tree[kit.choice.pick];
   let pick = held ? kit.choice.pick : null;
+  // The food asked on its own first, in the terms the Nether's food question asks it just inside (note 2565): one of
+  // six to ten top-ups here, and said as the ladder's step ('its step was set aside by the ladder; its rest is lifted'),
+  // take_up_food was chosen once in 97 asks with the food short (2026-10-29 12:00Z to 10-30 03:00Z), and inside, asked
+  // alone, back for food 17 of 23: the portal walked twice. The recorded asks asked again of Jev, 12 of them twice each:
+  // the food taken up 0 of 24 as asked, 14 of 24 asked on its own so. Asked once for the crossing; a turn back for food
+  // or a death since asks again, as the kit's held choice does.
+  if (!pick && tree.take_up_food) {
+    const fi = items.find(i => i.key === 'food');
+    const since = kit.foodAsk?.wall || 0;
+    const asked = !!kit.foodAsk && !(goal.foodTurnBack?.at > since) && !(goal.survival?.deaths || []).some(d => Date.parse(d.at) > since);
+    if (fi && !asked) {
+      const ck = require('./crossing-kit'), stay = ck.netherStay(bot, goal), short = Math.max(0, fi.wants - fi.carried);
+      const foodTree = {
+        cross_now: { description: `Cross and go on with the stay on what is carried: ${fi.carried} food points, about ${Math.round(fi.carried / ck.NETHER_HUNGER_AN_HOUR * 60)} minutes of it at ${ck.NETHER_HUNGER_AN_HOUR} an hour, against the ${stay.minutes} minutes the goal wants there; ${short} points short. In the Nether the food is a hoglin (in the crimson forests, 40 health, hitting for 3 to 8) or a bastion's chests; otherwise back out through this portal for it.${ck.CROSSED_SHORT}${crossFoodSays}` },
+        take_up_food: { description: `Get the Nether's food here first, before crossing: ${fi.carried} of ${fi.wants} points carried.${takeUpFoodSays(bot, goal, fi)}` },
+      };
+      const decision = await decide('crossing_food', { client, bot, task, goal, save, tree: foodTree,
+        state: { food: `${fi.carried} carried, the stay wants ${fi.wants}`, health: bot.health, hunger: bot.food, minutesAtCrossing: Math.round(kit.workedMs / 60000) } });
+      if (decision.stale) return false;
+      kit.foodAsk = { pick: decision.path.at(-1), wall: Date.now() }; save();
+      if (kit.foodAsk.pick === 'take_up_food') { pick = 'take_up_food'; kit.choice = { pick, keys, at: kit.workedMs, wall: Date.now() }; save(); }
+    }
+    // Crossing without it was chosen: the rest of the kit is asked without the food.
+    if (pick !== 'take_up_food' && kit.foodAsk?.pick === 'cross_now') delete tree.take_up_food;
+    if (!pick && !Object.keys(tree).some(k => k !== 'cross_now')) return true;
+  }
   if (!pick) {
     const worn = k => { const i = short.find(s => `top_up_${s.key}` === k); return i && kit.spent[i.key]?.ms >= KIT_FALLBACK_MS && i.carried > 0; };
     // The old order, for the tests' stand-in only (note 707).

@@ -199,7 +199,9 @@ test('the food kit is asked inside the Nether when the stay wants more than is c
   assert.deepEqual(Object.keys(options).sort(), ['go_on', 'restock_food', 'return_for_food']);
   assert.match(options.go_on, /^Go on with the stay on what is carried: 4 food points, about 6 minutes of it at 40 an hour, against the 120 minutes the goal still wants; 76 points short\./);
   assert.match(options.restock_food, /^Get food here first \(the ways asked next, each priced\): a hoglin hunted on foot, a hoglin hunted from a pillar\./);
-  assert.match(options.return_for_food, /^Go back through the portal to the Overworld for food, hunted and cooked there, and come back fed\./);
+  // The trip said by what it costs first, not by the walk to the portal (note 2565).
+  assert.match(options.return_for_food, /^Leave the Nether for food: out through the portal, hunt and cook in the Overworld, and back in\. On the full runs of 2026-10-29 and 30 such a trip took the bot out of the Nether 12 to 40 minutes/);
+  assert.doesNotMatch(options.return_for_food, /seconds at a walk/);
   assert.deepEqual(state.stay, { minutesWanted: 120, pointsWanted: 80, pointsCarried: 4, carriedLastMinutes: 6, short: 76 });
   assert.match(state.note, /the food line of the crossing kit, asked inside the Nether because this stay began here/);
   // Once an hour whatever the answer: not again now.

@@ -584,7 +584,8 @@ test('the kit for the crossing is one question: every item said against what the
   // No spare shield and no armour: each offered, priced (note 791).
   // A spare pickaxe made from the pockets beside the one carried (note 943).
   // 16 of 80 food is under the Nether's reserve of 36: the food is on offer too (note 1942; of 45 cross_now answers on 2026-10-19/20, 29 crossed under the reserve and the 19 with 2 to 30 points saw no food option).
-  assert.deepEqual(Object.keys(asked).sort(), ['cross_now', 'take_up_food', 'top_up_armour', 'top_up_gold', 'top_up_shield', 'top_up_spare_pickaxe']);
+  // Asked on its own first (note 2565) and crossing chosen there, the rest of the kit is asked without it.
+  assert.deepEqual(Object.keys(asked).sort(), ['cross_now', 'top_up_armour', 'top_up_gold', 'top_up_shield', 'top_up_spare_pickaxe']);
   assert.match(asked.cross_now, /short of what the code would take in gold/);
   assert.match(asked.cross_now, /Left from the ladder's kit steps: food 16 of 80, blocks 30 of 128, pickaxe 1 of 2\./);
   assert.doesNotMatch(asked.cross_now, /Food: 16 food points carried/);

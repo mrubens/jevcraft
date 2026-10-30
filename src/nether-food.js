@@ -337,7 +337,8 @@ function foodRoutes(bot, task, goal, save, { actions = {}, survival = null } = {
     // What such trips came to in the flight records (note 784): 25581 took
     // it twice at hunger 18 and full health (critic 2026-09-30 12:40Z).
     const record = require('./food-plan').recordSays('portal', 'nether');
-    routes.return_for_food = { description: `Go back through the portal to the Overworld for food, hunted and cooked there, and come back fed. ${require('./game-progress').portalTrip(bot, goal)}${there ? ` ${there}` : ''}${nv.keepOnSays(bot, goal)}${nv.standingTripSays(bot, goal, 'return_for_food')}${record ? ` ${record[0].toUpperCase()}${record.slice(1)}.` : ''}`,
+    const tripRest = `${there ? ` ${there}` : ''}${nv.keepOnSays(bot, goal)}${nv.standingTripSays(bot, goal, 'return_for_food')}${record ? ` ${record[0].toUpperCase()}${record.slice(1)}.` : ''}`;
+    routes.return_for_food = { description: `Go back through the portal to the Overworld for food, hunted and cooked there, and come back fed. ${require('./game-progress').portalTrip(bot, goal)}${tripRest}`, tripRest,
       run: async () => {
         // The kit's answer kept through the trip (note 2502): deleted here, a trip cut short (escape_threat held seventeen
         // times on full-91, 2026-10-29 13:56 to 14:04Z) had the question asked again at once, eight times in eight
@@ -493,7 +494,11 @@ async function askStayKit(bot, task, goal, save, { actions = {}, survival = null
   if (stay.short) {
     // What the trip home came to on the day's runs (note 2526): 12 to 30 minutes out of the Nether a time, and one of the
     // four never back in (full-88).
-    if (found.routes.return_for_food) tree.return_for_food = { description: `${found.routes.return_for_food.description}${cookCovers ? ` ${cookCovers}` : ''} On 2026-10-29's full runs a trip home for food took the bot out of the Nether 12 to 30 minutes a time, and one bot of four never got back in.` };
+    // The trip said by what it costs, first, and not by the walk to the portal (note 2565): 'the nearest portal
+    // remembered is 1 blocks off, about 0 seconds at a walk' read as a trip of no cost just inside the portal. The
+    // recorded asks of 2026-10-29 and 30 asked again of Jev, 12 of them twice each: back for food 16 of 24 as asked, 19
+    // of 24 with the cost put first and the walk kept, 9 of 24 with the cost first and the walk left out.
+    if (found.routes.return_for_food) tree.return_for_food = { description: `Leave the Nether for food: out through the portal, hunt and cook in the Overworld, and back in. On the full runs of 2026-10-29 and 30 such a trip took the bot out of the Nether 12 to 40 minutes, and some bots never got back in.${found.routes.return_for_food.tripRest ?? ''}${cookCovers ? ` ${cookCovers}` : ''}` };
     if (found.routes.raid_bastion) tree.raid_bastion = { description: found.routes.raid_bastion.description };
     const others = Object.keys(found.routes).filter(k => !['return_for_food', 'raid_bastion', ...(cook ? ['cook_meat'] : [])].includes(k));
     if (others.length) {

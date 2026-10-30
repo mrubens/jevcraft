@@ -224,8 +224,9 @@ test('on the trip chosen for the kit a death left in the Nether, the crossing is
   let text = '';
   const client2 = { systemOne: async ({ questions }) => { asked++; text = JSON.stringify(questions); return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'cross_now', confidence: 0.7 }])) }; } };
   await crossingKitReady(b, { check() {}, opportunityClient: client2 }, goal, () => {}, client2);
-  // Asked still of what the drops do not hold, the food above all (note 2337): nothing to eat carried here.
-  assert.equal(asked, 1);
+  // Asked still of what the drops do not hold, the food above all (note 2337): nothing to eat carried here, the food
+  // asked on its own first (note 2565), then the rest of the kit.
+  assert.equal(asked, 2);
   assert.match(text, /on its way through a portal into the Nether/);
 });
 

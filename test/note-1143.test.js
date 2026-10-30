@@ -18,7 +18,7 @@ test('no food carried at hunger 13 with the food step set aside by going without
   const client = { systemOne: async ({ questions }) => { offered ||= questions.branch_0.criteria; return { answers: { branch_0: { choice: 'take_up_food', confidence: 0.6 } } }; } };
   assert.equal(await crossingKitReady(botOf(13, kit), new Task('win'), goal, () => {}, client), false);
   assert(offered.take_up_food, 'the food step offered back');
-  assert.match(offered.take_up_food, /it is empty now, 0 of \d+ carried/);
+  assert.match(offered.take_up_food, /before crossing: 0 of \d+ points carried/);
   assert.match(offered.cross_now, /The last crossing turned back through the portal for food 1 minute ago/);
   assert.equal(require('../src/progress').isSetAside(goal, 'rung', 'nether_food'), false, 'its rest lifted');
 });
