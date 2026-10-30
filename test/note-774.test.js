@@ -259,6 +259,9 @@ test('a blaze no walk reaches is not priced as a kill by fight, and is offered a
   assert(!options.close_in && !options.charge_nearest);
   assert(options.rise_to_strike, Object.keys(options).join(','));
   assert.equal(options.rise_to_strike.kind, 'rise');
+  // Why no strike is on offer, for the question's state (note 2603): the hover, what is under it, the column that reaches.
+  assert.match(options._noStrike, /^No blaze is within a sword's reach of ground the bot can walk to, so neither the close-in nor the charge is on offer: the nearest in sight, 5\.5 blocks off, hovers 2\.2 blocks above the bot's feet over open air; a column of 1 block 2 steps off would bring the sword to it \(rise_to_strike\)\./);
+  assert.ok(!Object.keys(options).includes('_noStrike'), 'a fact, not a way');
   assert.match(options.rise_to_strike.description, /^(?:This way: .*? health(?: \(more than the bot has\))?\. )?Rise to the blaze \d(\.\d)? blocks off, which no walk on the ground reaches within the sword's reach: walk \d blocks? to \(2, 64, 0\) and pillar [1-3] blocks? up/);
   assert(options.await_in_reach, 'with a shield, the hold for it to come in');
   assert.match(options.await_in_reach.description, /It comes only as it chooses: nothing here brings it in\./);

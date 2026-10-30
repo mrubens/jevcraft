@@ -4866,6 +4866,8 @@ class Survival {
       // a wither skeleton five blocks off round a corner, and it struck the
       // bot a second later (note 559).
       const stands = require('./blaze-stand').blazeStands(bot, [...danger, ...hiddenNear], { dig: typeof this.actions.dig === 'function', need: rodsNeed, of: require('./blaze-stand').rodsOf(bot, goal), holds: goal?.mobHunt?.standResults || [], goal });
+      // A fact of the stands, not a way (note 2603): lifted into the question's state.
+      if (typeof stands._noStrike === 'string') { this.state.stanceNoStrike = stands._noStrike; delete stands._noStrike; } else delete this.state.stanceNoStrike;
       for (const key of Object.keys(stands)) standKeys.add(key);
       for (const [key, o] of Object.entries(stands)) options[key] = { expects: o.expects, ...(o.judgeBy ? { judgeBy: o.judgeBy } : {}), description: o.description + (o.kind === 'hole' && !o.site.inside ? buildCost : '') + hitsLeft,
         run: async () => {
@@ -7205,7 +7207,8 @@ class Survival {
         holdEnds: `A way chosen here is asked again once it has cost more than its own estimate at the estimate's pace (six health where it gives none), and in any case once half the health it is chosen at is gone: from ${Math.round(bot.health * 10) / 10} health, at ${Math.round(bot.health * 5) / 10}.`,
         riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot),
         // What every way on offer led to at blaze fights on the runs now playing (note 2602): one table for all of them.
-        ...((t => t ? { blazeRecordToday: t } : {})(require('./blaze-record').blazesAbout(bot).within16 ? require('./blaze-outcomes').tableSays('encounter_stance', Object.keys(options)) : '')) };
+        ...((t => t ? { blazeRecordToday: t } : {})(require('./blaze-record').blazesAbout(bot).within16 ? require('./blaze-outcomes').tableSays('encounter_stance', Object.keys(options)) : '')),
+        ...(this.state.stanceNoStrike ? { noStrike: this.state.stanceNoStrike } : {}) };
       // At a live cage, what the stay there has come to, on each hold, and
       // what cover gives up at full health (cage-yield.js, note 702).
       const cageSoFar = (() => { try { return require('./cage-yield').annotate(bot, goal, options); } catch (_) { return null; } })();

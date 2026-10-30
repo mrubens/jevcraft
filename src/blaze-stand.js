@@ -1699,6 +1699,17 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
     const seen = blazes.filter(t => t.visible).sort((a, b) => a.distance - b.distance);
     const first = seen[0], shield = shieldCarried(bot);
     const rise = first ? riseSite(bot, first.entity) : null;
+    // Why no strike is on offer, said for the question's state (note 2603): of the day's stance asks with a blaze within
+    // six blocks on 2026-10-30, 70 of 124 offered neither the close-in nor the charge, and none said why; Jev took the
+    // holds (await, cover, retreat) that killed nothing. The nearest in sight: how high it hovers over the bot's feet,
+    // what lies under it, and whether a column of blocks would bring the sword to it.
+    if (first) {
+      const p = first.entity.position, feet = feetCell(bot);
+      const up = Math.round((p.y - bot.entity.position.y) * 10) / 10;
+      let under = 'open air'; for (let y = Math.floor(p.y); y >= Math.floor(p.y) - 12; y--) { const b = bot.blockAt(new Vec3(Math.floor(p.x), y, Math.floor(p.z))); if (!b) break; if (/lava/.test(b.name)) { under = `lava ${Math.floor(p.y) - y} down`; break; } if (b.boundingBox === 'block') { under = `${b.name.replaceAll('_', ' ')} ${Math.floor(p.y) - y} down`; break; } }
+      const pillar = rise ? `a column of ${rise.up} block${rise.up === 1 ? '' : 's'} ${rise.steps ? `${rise.steps} steps off` : 'where the bot stands'} would bring the sword to it (rise_to_strike)` : `no column of three blocks or fewer within three of it reaches it clear of lava`;
+      Object.defineProperty(options, '_noStrike', { enumerable: false, configurable: true, value: `No blaze is within a sword's reach of ground the bot can walk to, so neither the close-in nor the charge is on offer: the nearest in sight, ${round(first.distance)} blocks off, hovers ${up >= 0 ? `${up} blocks above` : `${-up} blocks below`} the bot's feet over ${under}; ${pillar}. A blaze that sees its target shoots from where it hovers and drifts toward it between volleys; one that loses sight of it flies at it.` });
+    }
     const carried = require('./blaze-tactics').blocksCarried(bot, { standing: true });
     const priced = withinSixteen(bot, danger);
     const sum = first ? closeInCost(bot, priced, { upTo: 1 }) : null;
