@@ -59,9 +59,9 @@ const TOWARD_Q = {
   empty_spawner: /^(box_here|stand_by_spawner|hunt_on|open_slit|box_in_line|box_at_spawner|dig_in_at_spawner|dig_to_spawner|pull_back)$/,
   hunt_target: /^(hunt_\d+|charge_nearest|close_in|fight_at_spawner|back_to_wall|box_here|box_at_spawner|box_in_line|dig_in_and_fight|fetch_rod_\d+|rise_to_strike|await_in_reach|stay_and_fight)$/,
   combat_kit: /^fight_with_carried$/,
-  fortress_leg: /^(blazes_\w+|go_to_blazes(_about)?|go_to_spawner(_\d+)?|wait_at_spawner|stay_in_fortress|back_to_fortress|unwalked_\d+|blocks_then_cross|pillar_up|blocks_then_pillar)$/,
+  fortress_leg: /^(blazes_\w+|go_to_blazes(_about)?|go_to_spawner(_\d+)?|wait_at_spawner|wait_where_seen|stay_in_fortress|back_to_fortress|unwalked_\d+|blocks_then_cross|pillar_up|blocks_then_pillar)$/,
 };
-const TOWARD = /^(blazes_\w+|go_to_blazes(_about)?|go_to_blaze_about|go_to_spawner(_\d+)?|wait_at_spawner|stay_in_fortress|take_up_obtain_blaze_rods|stay_and_fight)$/;
+const TOWARD = /^(blazes_\w+|go_to_blazes(_about)?|go_to_blaze_about|go_to_spawner(_\d+)?|wait_at_spawner|wait_where_seen|stay_in_fortress|take_up_obtain_blaze_rods|stay_and_fight)$/;
 const CARRY = /^(bank_rods|stash_rods|pick_up_rods|collect_rod_stash|the_way_in)$/;
 const LEAVE = /^(go_back|return_to_portal|return_overworld)$/;
 const BODY = /^(heal_first|leave_and_heal|wall_in_first|eat_first|eat|step_out_and_eat|eat_golden_apple|seal|bunker|take_cover|out_of_sight|retreat|leave_reach|tunnel_out|work_free|rise_through|recover_\w+|step_out|nook|dig_in)$/;
@@ -83,7 +83,7 @@ const OFF = [
 const WAY_KINDS = [
   ['a fight', /^(hunt_\d+|charge_nearest|close_in|fight_at_spawner|back_to_wall|rise_to_strike|await_in_reach|fetch_rod_\d+|dig_in_and_fight|stay_and_fight|fight_with_carried)$/],
   ['a box or slit at the spawner', /^(box_here|box_in_line|box_at_spawner|dig_in_at_spawner|open_slit)$/],
-  ['a wait at the spawner', /^(wait_at_spawner|stand_by_spawner|stay_in_fortress|hunt_on|pull_back)$/],
+  ['a wait at the spawner', /^(wait_at_spawner|wait_where_seen|stand_by_spawner|stay_in_fortress|hunt_on|pull_back)$/],
   ['a bridge or crossing', /^(blazes_)?(cross_level|blocks_then_cross|span_round|cover_lava|scoop_lava)$/],
   ['a dig or climb', /^(blazes_)?(tunnel|descend|dig_through|pillar_up|blocks_then_pillar)$/],
   ['a walk of the fortress\'s floors', /^unwalked_\d+$/],

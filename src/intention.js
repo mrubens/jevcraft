@@ -29,7 +29,7 @@
 
 // The answers that start an action that takes time, by question.
 const TIMED = {
-  fortress_leg: /^(blazes_\w+|back_to_fortress|leg_\w+|floor_\w+|round_\w+|go_to_blazes(_about)?|go_to_spawner(_\d+)?|wait_at_spawner|stay_in_fortress|unwalked_\d+|fetch_stems|return_for_blocks|restock_blocks|back_to_ground|seek_fortress_height|blocks_then_cross|pillar_up|blocks_then_pillar)$/,
+  fortress_leg: /^(blazes_\w+|back_to_fortress|leg_\w+|floor_\w+|round_\w+|go_to_blazes(_about)?|go_to_spawner(_\d+)?|wait_at_spawner|wait_where_seen|stay_in_fortress|unwalked_\d+|fetch_stems|return_for_blocks|restock_blocks|back_to_ground|seek_fortress_height|blocks_then_cross|pillar_up|blocks_then_pillar)$/,
   fortress_visit: /^(go_in|go_back|heal_first|get_food_here|hoglin_hunt)$/,
   fortress_approach: /^(walk_route|cross_level|tunnel|stairs_down|blocks_then_cross|pillar_up|blocks_then_pillar|dig_through|descend|fetch_stems|cover_lava|scoop_lava|span_round|return_for_blocks)$/,
   nether_gather: /^(leg_\w+|cross_to_\d+|walk_to_\d+|floor_to_\d+|climb_to_\d+|wood_in_view|dig_in_reach|portal_trip)$/,
@@ -123,7 +123,9 @@ const ERRAND_GATED = new Set(['stillness_detour', 'rung_progress']);
 // Answers that keep on with what is under way.
 const KEEP = /^(carry_on|keep_on|go_on|keep_at_it|continue_request|search_on|wait_here)$/;
 // Answers that leave what is under way: chosen, it ends.
-const DROP = /^(keep_searching|leave_fortress|without|set_aside_rung|other_way)$/;
+// leave_for_kit leaves too (note 2609): not in this set, a lone leave_for_kit on the fortress's question was taken unasked 83
+// times over the full runs (fortress-hold.js loneWhy reads this set).
+const DROP = /^(keep_searching|leave_fortress|leave_for_kit|without|set_aside_rung|other_way)$/;
 // A question asked as the way of an intention: its answers carry it on,
 // but for those that leave it.
 const WAYS = [

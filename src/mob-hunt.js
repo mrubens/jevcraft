@@ -2320,6 +2320,8 @@ const FORTRESS_MIN_BRICKS = 24;
 const FORTRESS_LOOK = 512, FORTRESS_VIEW = 4096;
 // A wait by a spawner Jev chose (wait_at_spawner), before the legs are asked again.
 const SPAWNER_WAIT_MS = 3 * 60000;
+// How lately blazes must have been seen at a place for the wait there to be offered from the fortress's floors (note 2609).
+const WAIT_WHERE_SEEN_RECENT_MS = 10 * 60000;
 // A walk to a spawner Jev chose (go_to_spawner), before the legs are asked
 // again: 100 blocks of fortress floor at a walk is under a minute, the way
 // asked where it finds none included.
@@ -3266,6 +3268,25 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     const reach = ` It lies ${way >= 0 ? `${HEADING_NAMES[way]} of here` : 'here'}; ${stood === null ? 'the bot has not stood within 32 blocks of it, so whether it can be walked to is not known' : `the bot has stood ${stood} blocks from it before`}.`;
     options.go_to_blazes = { description: `Go to where blazes were seen ${blazeSpotSays(best, here)}: blazes come from a spawner, which keeps its room full, and the hunt takes each one as it comes into view.${reach} The walk there is on foot first, digging and laying nothing; where it finds no way, the way there is asked (fortress_approach: a span, a pillar, a drop or a staircase, each with what it meets).${routeSays}${ended ? ` The last try at it ended: ${ended.why}.` : ''}`,
       target: { x: s.x, y: s.y, z: s.z }, run: () => { state.goTo = { x: s.x, y: s.y, z: s.z, kind: 'blazes', key: spotKey, since: Date.now() }; save(); return 'goto'; } };
+  }
+  // On the fortress's floors with blazes seen within the hunt's look lately and none about now, the wait where they
+  // were is a way of its own (note 2609), as the wait by a spawner seen is: blazes come from a spawner, which makes up to
+  // four within four blocks of itself every ten to forty seconds while a player is within sixteen of it, and a spawner
+  // not yet seen is still where they came from. full-225 (25587, 2026-10-30 23:03Z), on its floors with 2 blazes killed
+  // in 16 minutes and blazes seen 30 times 12 blocks off (last 5 minutes before), none in sight, had no way toward them
+  // on this question (the walk to where they were seen rested from here, no spawner on the map, nothing left to walk):
+  // make_pickaxe was withheld for the blazes and leave_for_kit was taken as the one way, unasked. Over the full runs that
+  // lone leave was taken 83 times.
+  if (fortress && onFortressFloors(bot, state) && spots.length) {
+    const near = spots.filter(sp => sp.off <= BLAZES_AT && sp.spot.at > Date.now() - WAIT_WHERE_SEEN_RECENT_MS && !spawnersKnown(bot, state).some(k => Math.hypot(k.s.x - sp.spot.x, k.s.y - sp.spot.y, k.s.z - sp.spot.z) <= 16))[0];
+    if (near && !blazesAbout(bot).length) {
+      const s = near.spot, ended = state.spawnerWaitEnded && state.spawnerWaitEndedAt > Date.now() - 10 * 60000 && state.spawnerWaitSpot === `${s.x},${s.y},${s.z}` ? state.spawnerWaitEnded : null;
+      const log = (state.walkedAllLog || []).filter(e => Date.now() - e.at < WALKED_ALL_MS)[0];
+      const here = `${state.inFortressSince ? `The bot has been in this fortress ${Math.max(1, Math.round((Date.now() - state.inFortressSince) / 60000))} minutes` : 'The bot is on this fortress\'s floors'}, ${bot._kills?.blaze || 0} blaze${(bot._kills?.blaze || 0) === 1 ? '' : 's'} killed in the trial${log ? `, ${Math.max(0, (bot._kills?.blaze || 0) - log.kills)} of them since it first walked all it could reach here` : ''}.`;
+      options.wait_where_seen = { description: `Wait where the blazes were seen, ${blazeSpotSays(near, bot.entity.position)}, for ${SPAWNER_WAIT_MS / 60000} minutes: within four blocks of it if a walk reaches, else as near as one does. No blaze is about now. Blazes come from a spawner, which makes up to four within four blocks of itself every ten to forty seconds while a player is within sixteen of it; this fortress's spawner has not been seen, and where the blazes were seen is the nearest thing known to where it stands. The hunt takes each blaze as it comes into view within its reach. ${here}${ended ? ` The last wait there ended: ${ended}.` : ''} The legs are asked again after.`,
+        target: { x: s.x, y: s.y, z: s.z }, waits: (() => { try { return require('./waits').spawnerTry(bot, new Vec3(s.x, s.y, s.z)); } catch (_) { return undefined; } })(),
+        run: () => { state.spawnerWait = { x: s.x, y: s.y, z: s.z, until: Date.now() + SPAWNER_WAIT_MS, startedAt: Date.now() }; state.spawnerWaitSpot = `${s.x},${s.y},${s.z}`; delete state.spawnerWaitEnded; save(); return 'wait'; } };
+    }
   }
   // At a fortress in view with rods owed and blazes seen at it, the work is
   // reaching those blazes, by every way the fortress approach prices (its
