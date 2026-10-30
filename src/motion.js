@@ -250,7 +250,17 @@ async function move(bot, task, { label, keys = ['forward'], sneak = true, why, l
   // fire at a sprint, up three steps and on off the ledge at (-163, 71, 140), 35 blocks into the lava sea; the run's own
   // guard stopped it a cell late, in the air. The fall seen ahead every tick (dropCell deep) would have stopped it on the rim.
   // A body in lava is left its way out as before: the cells of its swim and its block out are lava (lava-escape.js).
-  const inLava = burningIn?.name === 'lava';
+  // In lava by any cell of the body's box, or by the game's own flag (note 2600): bodyBurning gives the first burning cell
+  // it meets, and lava sets fire about it, so a body standing in lava with a fire in another of its cells read as not
+  // in lava, and its way out (whose cells are lava) was refused. full-207 (25588, 2026-10-30 18:38Z), 40 seconds into
+  // the Nether, knocked into lava at (50.7, 84, 92.6), had to_dry_ground and back_the_way_came refused twice each,
+  // 'out_of_lava: lava at (47, 84, 91) ahead; not walked into', and burned from 13.8 to none.
+  const inLava = burningIn?.name === 'lava' || !!bot.entity?.isInLava || (() => {
+    const p = bot.entity?.position; if (!p) return false;
+    const { feet, head } = span(p);
+    for (const [x, z] of columnsAt(p.x, p.z)) for (let y = feet; y <= head; y++) if (/lava/.test(bot.blockAt(new (require('vec3').Vec3)(x, y, z))?.name || '')) return true;
+    return false;
+  })();
   const refused = () => {
     const hit = !inLava && burningAhead(bot, keys, { deep: !sneak, flames: flames && !escaping });
     if (!hit || (intoFall && hit.name === 'deadly_fall')) return false;

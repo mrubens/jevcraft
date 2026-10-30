@@ -58,3 +58,23 @@ test('the same body with the rim going on east: the flames on the way are no ref
   assert.equal(ok, false, 'the move ran to its time, the flame no refusal');
   assert.equal(bot._moveRefused, undefined);
 });
+
+// Note 2600: a body in lava with a fire in another of its cells read as not in lava, and its way out (lava cells) was
+// refused: full-207 (25588, 2026-10-30 18:38Z) 'out_of_lava: lava at (47, 84, 91) ahead; not walked into', burned to death.
+test('a body standing in lava with a flame in one of its cells is left its way out through the lava (note 2600)', async () => {
+  const bot = rimBot();
+  // The lava pool at y 65 round the bot, the bot's feet in it at (0, 65, 0) beside a fire in the column it straddles.
+  bot.entity.position = new Vec3(0.95, 65.1, 0.5);
+  bot.blockAt = p => {
+    const x = Math.floor(p.x), y = Math.floor(p.y), z = Math.floor(p.z);
+    const mk = (name, box) => ({ name, boundingBox: box, position: new Vec3(x, y, z), diggable: true });
+    if (y <= 64) return mk('netherrack', 'block');
+    if (y === 65 && x === 0 && z === 0) return mk('fire', 'empty');
+    if (y === 65) return mk('lava', 'empty');
+    return mk('air', 'empty');
+  };
+  assert.equal(motion.bodyBurning(bot)?.name, 'fire', 'the first burning cell met is the fire');
+  const ok = await motion.move(bot, new (require('../src/skills').Task)('t'), { label: 'out_of_lava', keys: ['forward'], sneak: false, why: 'out of the lava', maxMs: 120, tick: 25 });
+  assert.equal(ok, false, 'the move ran to its time');
+  assert.equal(bot._moveRefused, undefined, 'not refused for the lava ahead');
+});
