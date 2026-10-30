@@ -24,6 +24,11 @@
 // reflex or a newcomer outranks; and shadow (JEV_ARBITER=shadow), where the
 // old layers keep the turn and the ruling is only logged beside theirs.
 const { STANCE_HEALTH, STANCE_NEWCOMER } = require('./danger');
+// A wither skeleton in the Nether is a newcomer from sixteen blocks, not six (note 2569): the reach at which a mob new
+// since the ruling asks the turn again, and at which those known at the ruling and the turn are counted, so one already
+// known does not ask again.
+const WITHER_SIGHTED = 16;
+const sightedReach = (bot, t) => t?.entity?.name === 'wither_skeleton' && /nether/.test(String(bot?.game?.dimension || '')) ? WITHER_SIGHTED : STANCE_NEWCOMER;
 const { LIGHTS_AT, APPROACH, FUSE } = require('./combat-estimate');
 
 // Out of a reflex two past where it began, not at the same line: a creeper
@@ -240,7 +245,7 @@ const STOPPED_BY_THREAT = /Threat nearby|Preempted|hurt|NeedsSafety/i;
 // (pressing): a ruling for the work made without one is asked again when
 // one comes (note 586).
 function observe(bot, ctx) {
-  const mobs = ctx.mobs || (() => { try { return probe.mobs(bot, STANCE_NEWCOMER); } catch (_) { return []; } })();
+  const mobs = ctx.mobs || (() => { try { return probe.mobs(bot, WITHER_SIGHTED); } catch (_) { return []; } })();
   // A mob counts as come when it can be at the bot: in sight, or within four
   // (the watch's own newcomer, watchOnce). One out of sight behind rock is
   // counted when it comes into sight. At a live spawner every blaze it put
@@ -260,7 +265,7 @@ function observe(bot, ctx) {
   // mob at the bot's reach still breaks the ruling below, as it always did.
   let atCage = false;
   try { atCage = !!require('./cage-hold').cageFight(bot, ctx.goal); } catch (_) { atCage = false; }
-  const near = mobs.filter(t => t.distance <= STANCE_NEWCOMER && (t.visible !== false || t.distance <= 4) && !(atCage && t.entity?.name === 'blaze'));
+  const near = mobs.filter(t => t.distance <= sightedReach(bot, t) && (t.visible !== false || t.distance <= 4) && !(atCage && t.entity?.name === 'blaze'));
   const counts = {};
   for (const t of mobs) if (t.distance <= 16 && t.entity?.name) counts[t.entity.name] = (counts[t.entity.name] || 0) + 1;
   return { ids: near.map(t => t.entity?.id), newKinds: near.map(t => t.entity?.name), counts,
@@ -951,7 +956,7 @@ async function take(bot, claims, ctx = {}) {
   const holding = (layer, action, extra = {}) => {
     const was = state.holder;
     let ids = [];
-    try { ids = (ctx.mobs || probe.mobs(bot, STANCE_NEWCOMER) || []).map(t => t.entity?.id); } catch (_) { /* no world */ }
+    try { ids = (ctx.mobs || probe.mobs(bot, WITHER_SIGHTED) || []).filter(t => t.distance <= sightedReach(bot, t)).map(t => t.entity?.id); } catch (_) { /* no world */ }
     state.holder = { layer, action, since: was?.layer === layer ? was.since : now, ...(was?.layer === layer && was.idleSince ? { idleSince: was.idleSince } : {}), ids, knew, ...extra };
     require('./turn').takeTurn(bot, layer, action);
   };
@@ -1106,8 +1111,14 @@ function watchOnce(bot, { live = mode() === 'live', now = Date.now(), look = pro
   // A newcomer: the ruling was made without it. The work's own threat check
   // (interruptCheck) is swapped out by nested steps and lost with them.
   else if (!inEnd && holder?.layer === 'work' && holder.ids) {
+    // A wither skeleton is asked of when it is first seen within sixteen, not six (note 2569): told at arm's length,
+    // every way was priced from a losing place, the low ceiling's hole 7 or 8 blocks off at 'about 26.2 damage, more
+    // than the bot has' (full-153, 25590, 2026-10-30 04:39Z, first asked at 15.2 health with it 2 blocks off, dead 16
+    // seconds after; full-143 at 5 blocks, full-104 and full-10 at 4). Nine of the day's fortress deaths were to wither
+    // skeletons, two or three within two blocks each time. Seen at sixteen, its race to the bot against the ceiling's
+    // shutting is said with the stance's other ways; one known when the work was given the turn does not ask again.
     let mobs = [];
-    try { mobs = look.mobs(bot, STANCE_NEWCOMER) || []; } catch (_) { /* no world */ }
+    try { mobs = (look.mobs(bot, WITHER_SIGHTED) || []).filter(t => t.distance <= sightedReach(bot, t)); } catch (_) { /* no world */ }
     // A build begun in a lull (spawner-clock.js, note 691) is finished: the
     // kind it was begun against coming out of the spawner is what it is for,
     // and the build meets its volleys itself. A mob at its reach, a push by a
@@ -1138,7 +1149,7 @@ function watchOnce(bot, { live = mode() === 'live', now = Date.now(), look = pro
     // pocket, a tunnel out of it, and the enderman at arm's length in the
     // open, 20 health to none in four blows.
     const huntKin = t => (t.distance > 3 && D.claimed(bot, t.entity)) || slotKin(t);
-    const fresh = mobs.find(t => t.entity && t.distance <= STANCE_NEWCOMER && (t.visible || (t.distance <= 4 && !shooter(t.entity))) && !holder.ids.includes(t.entity.id) &&
+    const fresh = mobs.find(t => t.entity && t.distance <= sightedReach(bot, t) && (t.visible || (t.distance <= 4 && !shooter(t.entity))) && !holder.ids.includes(t.entity.id) &&
       !(commit && commit.kinds.includes(t.entity.name) && t.distance > 3) && !sheltered(t) && !calm(t) && !huntKin(t));
     if (fresh) p = { by: 'newcomer', layer: null, action: null, id: fresh.entity.id, facts: { mob: fresh.entity.name, distance: Math.round(fresh.distance * 10) / 10, seen: !!fresh.visible },
       why: `a ${fresh.entity.name} came within ${Math.round(fresh.distance)} blocks` };
