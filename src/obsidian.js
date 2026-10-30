@@ -37,12 +37,26 @@ const at = p => new Vec3(p.x, p.y, p.z);
 // from the same place, saw lava 'much closer to the surface'. The plan looks across the simulation distance, ten chunks
 // (work.js lavaSources, distance 160); the fetch's own look stays at 48, so a pool known far off is walked to, not
 // tunnelled at through 100 blocks of rock (test note-753d).
+// Kept fifteen seconds for the same eight-block cell of the bot's (note 2599): the look across 160 blocks took 0.8 to
+// 1.2 seconds a time and was asked again within seconds, by each question that priced a plan; on 2026-10-30 full-206
+// logged 31 slow looks (10 named by a held event loop), full-201 17, full-212 two holds of 2.3 and 4.1 seconds sealed
+// in for the night. A pool does not come or go in fifteen seconds.
+const POOL_KEEP_MS = 15000;
 function poolSurface(bot, { distance = 48, count = 256 } = {}) {
   const id = bot.registry.blocksByName.lava?.id;
   if (id === undefined) return [];
+  const here = bot.entity?.position;
+  // Only the far look is kept (the near ones are cheap, and a pool come into view by them is seen at once).
+  const key = here && distance > 48 ? `${distance}:${count}:${String(bot.game?.dimension || '')}:${Math.floor(here.x / 8)},${Math.floor(here.y / 8)},${Math.floor(here.z / 8)}` : null;
+  const cache = bot._poolSurface ||= new Map(), now = Date.now(), kept = key && cache.get(key);
   const { inQuietZone } = require('./sculk');
-  return bot.findBlocks({ matching: id, maxDistance: distance, count,
-    useExtraInfo: b => sourceLava(b) && open(bot.blockAt(b.position.plus(UP))) }).filter(p => !inQuietZone(bot._goal, p));
+  // What was found, each looked at again (a lookup, not a search): a source taken since is no longer one.
+  const still = p => { const b = bot.blockAt(p); return !!b && sourceLava(b) && open(bot.blockAt(p.plus(UP))); };
+  if (kept && now - kept.at < POOL_KEEP_MS) return kept.found.filter(p => still(p) && !inQuietZone(bot._goal, p));
+  const found = bot.findBlocks({ matching: id, maxDistance: distance, count,
+    useExtraInfo: b => sourceLava(b) && open(bot.blockAt(b.position.plus(UP))) });
+  if (key) { cache.set(key, { at: now, found }); if (cache.size > 32) for (const [k, v] of cache) if (now - v.at >= POOL_KEEP_MS) cache.delete(k); }
+  return found.filter(p => !inQuietZone(bot._goal, p));
 }
 
 // Shore blocks: solid, at pool level, beside a surface source, with room to
