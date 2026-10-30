@@ -361,6 +361,20 @@ test('with no rock beside the bot, a hole in the rock within six blocks is plann
   assert.equal(plan.off, 3);
   assert.equal(plan.blocks, 4);
   assert.match(wg.holeSays(), /10 runs, 40 of 40 killed from its end/);
+  assert.equal(plan.passes, 10, 'the walk passes the skeleton at its closest, said');
+});
+
+// Note 2590: the mouth only where a walk to it exists. full-199 (2026-10-30 15:16:07Z) took the hole at rock 3.5 blocks
+// off, 'No path to the goal!' at once, and was struck 20 to 11 where it stood.
+test('a hole in rock no walk reaches is not planned (note 2590)', () => {
+  const far = cavernBot({ at: new Vec3(5.5, 64, 0.5), skeletonAt: new Vec3(14.5, 64, 0.5) });
+  // The same rock wall from x <= 1, and a trench two deep and three wide across the way at x 3 to 4: no step over it.
+  far.bot.blockAt = p => { const f = p.floored();
+    if (f.y >= 64 && f.x <= 1) return { ...flat(new Vec3(f.x, 60, f.z)), position: f };
+    if ((f.x === 3 || f.x === 4) && f.y >= 61 && f.y <= 63) return { name: 'air', boundingBox: 'empty', position: f };
+    return flat(p); };
+  const plan = wg.lowCeilingPlan(far.bot, [far.threat()]);
+  assert.ok(!plan || plan.kind !== 'dig' || !plan.mouth, 'no hole planned past the trench');
 });
 
 // Note 1030: the shield guard held a block from a drop into lava says first

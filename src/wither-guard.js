@@ -151,14 +151,21 @@ function lowCeilingPlan(bot, danger, { blockSeconds = 0.6, ahead = null } = {}) 
   // no rock at its side, and every stance priced past its health.
   if (tall.length && !plans.some(p => p.kind === 'dig')) {
     let site = null; try { site = require('./enderman-slot').slotSite(bot, { reach: 6 }); } catch (_) { site = null; }
-    if (site && site.off > 0) {
+    // Only where a walk to the mouth exists, by the steps a body takes (bunker.js wayTo), priced by that walk and said
+    // with how near it passes the nearest of them (note 2590): full-199 (25587, 2026-10-30 15:16:07Z), two wither
+    // skeletons three blocks off, took the hole at rock 3.5 blocks east, 'No path to the goal!' at once, and was struck
+    // 20 to 11 standing where it was, then slain; the mouth had been chosen by its distance alone.
+    let way = null;
+    if (site && site.off > 0) { try { way = require('./bunker').wayTo(bot, site.mouth, { steps: site.off + 4 }); } catch (_) { way = null; } }
+    if (site && site.off > 0 && way) {
       const cells = [site.a.offset(0, 1, 0), site.a, site.b.offset(0, 1, 0), site.b];
       const digMs = cells.map(c => bot.blockAt(c)).filter(solid).reduce((n, x) => n + blockDigMs(bot, x), 0);
       const at = new Vec3(site.b.x + 0.5, site.b.y, site.b.z + 0.5);
-      const walk = Math.round(site.off / 4.3 * 10) / 10;
+      const walk = Math.round(way.length / 4.3 * 10) / 10;
+      const passes = Math.round(Math.min(...way.map(c => Math.min(...tall.map(t => Math.hypot(t.entity.position.x - (c.x + 0.5), t.entity.position.z - (c.z + 0.5)))))) * 10) / 10;
       if (Number.isFinite(digMs) && keptOff(at, { dug: cells })) {
         const seconds = Math.round((walk + digMs / 1000 + 0.6) * 10) / 10;
-        plans.push({ kind: 'dig', stand: site.b, at, placed: [], dug: cells, steps: site.off + 2, blocks: site.digs.length, digMs, dir: [site.d.x, site.d.z], mouth: site.mouth, off: site.off, shutAt: seconds, seconds });
+        plans.push({ kind: 'dig', stand: site.b, at, placed: [], dug: cells, steps: way.length + 2, blocks: site.digs.length, digMs, dir: [site.d.x, site.d.z], mouth: site.mouth, off: way.length, passes, shutAt: seconds, seconds });
       }
     }
   }
