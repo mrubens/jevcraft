@@ -33,12 +33,37 @@ const flatBot = ({ endermen, items, health = 20, other = [] }) => {
   return bot;
 };
 
-test('roofPlan places a lid over the bot\'s own head on open ground when none is there yet', () => {
+// Open ground: nothing beside the lid's cell to set it against, so a post of three goes up beside the bot first and the
+// lid against its top: four blocks (note 2588; full-192's lid 'not placed: no adjacent solid anchor', 2026-10-30 13:52Z).
+test('roofPlan on open ground puts a post beside the bot and the lid on it, four blocks, and takes them in that order', async () => {
   const bot = flatBot({ endermen: [], items: [{ name: 'cobblestone', count: 20 }] });
   const plan = roof.roofPlan(bot);
   assert.equal(plan.kind, 'place');
-  assert.equal(plan.blocks, 1);
+  assert.equal(plan.blocks, 4);
+  assert.equal(plan.post.length, 3);
+  assert.deepEqual(plan.post.map(c => c.y), [64, 65, 66], 'the post stands floor to the lid\'s level');
+  assert.ok(plan.post.every(c => Math.abs(c.x - 1765) + Math.abs(c.z - 1765) === 1), 'the post is in a cell beside the bot');
   assert.ok(bot.blockAt(new Vec3(1765, 66, 1765)).boundingBox !== 'block', 'the cap cell was open before the plan');
+  const placed = [];
+  const task = new Task();
+  assert.equal(await roof.takeRoof(bot, task, { place: async (b, t, p) => { placed.push(`${p.x},${p.y},${p.z}`); } }, plan), true);
+  assert.deepEqual(placed, [...plan.post.map(c => `${c.x},${c.y},${c.z}`), '1765,66,1765'], 'the post bottom up, then the lid');
+});
+
+test('roofPlan is one block where the lid has a face beside it already', () => {
+  const bot = flatBot({ endermen: [], items: [{ name: 'cobblestone', count: 20 }] });
+  const real = bot.blockAt.bind(bot);
+  // A wall east of the bot at head height and the lid's level: a face for the lid, and no gap to step into there.
+  bot.blockAt = p => (Math.floor(p.x) === 1766 && [65, 66].includes(Math.floor(p.y)) && Math.floor(p.z) === 1765) ? { position: p, name: 'netherrack', boundingBox: 'block' } : real(p);
+  const plan = roof.roofPlan(bot);
+  assert.equal(plan.kind, 'place');
+  assert.equal(plan.blocks, 1);
+  assert.equal(plan.post.length, 0);
+});
+
+test('roofPlan is null on open ground with too few blocks for the post', () => {
+  const bot = flatBot({ endermen: [], items: [{ name: 'cobblestone', count: 2 }] });
+  assert.equal(roof.roofPlan(bot), null);
 });
 
 test('roofPlan finds an already-capped cell nearby instead of building one', () => {
@@ -111,7 +136,9 @@ test('under its lid, cap_fight holds for an enderman out of the sword\'s reach, 
   const lid = new Vec3(1765, 66, 1765);
   let places = 0, walked = 0, looked = 0;
   const real = bot.blockAt.bind(bot);
-  bot.blockAt = p => (places && Math.floor(p.x) === lid.x && Math.floor(p.y) === lid.y && Math.floor(p.z) === lid.z) ? { position: p, name: 'cobblestone', boundingBox: 'block' } : real(p);
+  // A wall west of the bot at head height and the lid's level: the lid has its face, one block (note 2588).
+  bot.blockAt = p => (places && Math.floor(p.x) === lid.x && Math.floor(p.y) === lid.y && Math.floor(p.z) === lid.z) ? { position: p, name: 'cobblestone', boundingBox: 'block' }
+    : (Math.floor(p.x) === 1764 && [65, 66].includes(Math.floor(p.y)) && Math.floor(p.z) === 1765) ? { position: p, name: 'netherrack', boundingBox: 'block' } : real(p);
   bot.pathfinder.setGoal = g => { if (g) walked++; };
   bot.lookAt = async () => { looked++; };
   const actions = { place: async () => { places++; }, dig: async () => {}, navigate: async () => { walked++; }, acquireStep: async () => {} };

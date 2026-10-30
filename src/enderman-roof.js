@@ -34,12 +34,40 @@ function existingGap(bot, feet, radius = 3) {
   return null;
 }
 
-// Whether a lid can go up right where the bot stands: the cell two above
-// its feet (one above its head) must be open to place against, and the
-// bot must be carrying a block.
+// A block goes in against a face (the game's rule): the lid two up needs a
+// solid block beside it at its own level. Over open ground there is none,
+// and the lid never went in: 'the lid at (-370, 69, -59) was not placed:
+// Cannot place cobblestone at (-370, 69, -59): no adjacent solid anchor'
+// (full-192, 25588, 2026-10-30 13:52Z, slain by the enderman eight seconds
+// on), and 259 of the day's stance asks carried the same failure in what was
+// not offered (note 2588). Where nothing is beside it, a post goes up first:
+// three blocks in the cell beside the bot, floor to the lid's level, and the
+// lid against the post's top. Four blocks, not one, and priced so.
+const SIDES = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const lidAnchored = (bot, lid) => SIDES.some(([dx, dz]) => bot.blockAt(lid.offset(dx, 0, dz))?.boundingBox === 'block');
+// Something standing in the cells: a block does not go in on a body.
+const bodyIn = (bot, cells) => Object.values(bot.entities || {}).some(e => e && e !== bot.entity && e.position && cells.some(c =>
+  Math.abs(e.position.x - (c.x + 0.5)) < 0.8 && Math.abs(e.position.z - (c.z + 0.5)) < 0.8 && e.position.y < c.y + 1 && e.position.y + (e.height || 1.8) > c.y));
+function postFor(bot, feet) {
+  for (const [dx, dz] of SIDES) {
+    const base = feet.offset(dx, 0, dz);
+    if (bot.blockAt(base.offset(0, -1, 0))?.boundingBox !== 'block') continue;
+    const cells = [0, 1, 2].map(dy => base.offset(0, dy, 0));
+    if (!cells.every(c => shelter.replaceable(bot.blockAt(c)))) continue;
+    if (bodyIn(bot, cells)) continue;
+    return cells;
+  }
+  return null;
+}
+// Whether a lid can go up right where the bot stands, and what it takes: the
+// cell two above its feet (one above its head) open, a face beside it or a
+// post that gives one, and the blocks for it carried.
 function canCapHere(bot, feet) {
-  const cap = bot.blockAt(feet.offset(0, 2, 0));
-  return !!cap && shelter.replaceable(cap) && shelter.materialStock(bot) >= 1;
+  const lid = feet.offset(0, 2, 0), cap = bot.blockAt(lid);
+  if (!cap || !shelter.replaceable(cap)) return null;
+  if (lidAnchored(bot, lid)) return shelter.materialStock(bot) >= 1 ? { post: [], blocks: 1 } : null;
+  const post = postFor(bot, feet);
+  return post && shelter.materialStock(bot) >= 4 ? { post, blocks: 4 } : null;
 }
 
 // The plan Jev is priced against: a gap already there within a couple of
@@ -53,7 +81,8 @@ function roofPlan(bot) {
   if (already && already.boundingBox === 'block') return { kind: 'here', cell: feet, blocks: 0, seconds: 0 };
   const gap = existingGap(bot, feet);
   if (gap) return { kind: 'gap', cell: gap, blocks: 0, seconds: Math.max(1, Math.round(gap.distanceTo(feet) / 4)) };
-  if (canCapHere(bot, feet)) return { kind: 'place', cell: feet, blocks: 1, seconds: 2 };
+  const cap = canCapHere(bot, feet);
+  if (cap) return { kind: 'place', cell: feet, blocks: cap.blocks, post: cap.post, seconds: cap.blocks === 1 ? 2 : 4 };
   return null;
 }
 
@@ -79,6 +108,12 @@ async function takeRoof(bot, task, actions, plan) {
     const lid = plan.cell.offset(0, 2, 0);
     // Placed by this stance's run before: the stance is held run after run.
     if (feetCell(bot).equals(plan.cell) && bot.blockAt(lid)?.boundingBox === 'block') return true;
+    // The post first, floor to the lid's level, where the lid has no face of its own to go against (note 2588).
+    for (const c of plan.post || []) {
+      if (bot.blockAt(c)?.boundingBox === 'block') continue;
+      try { await actions.place(bot, task, c, material, { stay: true }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; plan.why = `the post's block at (${c.x}, ${c.y}, ${c.z}) for the lid was not placed: ${String(err.message || err).slice(0, 80)}`; return false; }
+    }
     try { await actions.place(bot, task, lid, material, { stay: true }); return true; }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; plan.why = `the lid at (${lid.x}, ${lid.y}, ${lid.z}) was not placed: ${String(err.message || err).slice(0, 80)}`; return false; }
   }
