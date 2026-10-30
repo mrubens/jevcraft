@@ -56,3 +56,5 @@ for srv in .clean-run .clean-run-*; do
     rm -rf "$srv/$w" && echo "$srv/$w removed (old stage world, not the live one)"
   done
 done
+# What each answer at a blaze fight led to on the runs now playing, for the options (note 2602).
+nice -n 19 node scripts/trials/blaze-outcomes.js --hours 24 2>&1 | tail -1

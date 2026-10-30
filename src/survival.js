@@ -6300,7 +6300,8 @@ class Survival {
     // for. The fortress trial of 2026-10-27 (25599, 03:32 to 03:34Z, full iron, 7 blazes at a spawner) took charge_nearest
     // five times running, priced 8 to 12 against corner_ambush's 0.2 to 2.5, and died at the fifth, nothing said of how
     // charging had gone before.
-    if (danger.some(t => t.entity.name === 'blaze')) for (const [k, o] of Object.entries(options)) if (o && typeof o.description === 'string') o.description += blazeStanceSays(k);
+    // The runs' own record first (blaze-outcomes.js, note 2602), the 2026-10-27 table where a way has none yet.
+    if (danger.some(t => t.entity.name === 'blaze')) for (const [k, o] of Object.entries(options)) if (o && typeof o.description === 'string') { const live = require('./blaze-outcomes').ownSays('encounter_stance', k); o.description += live || blazeStanceSays(k); }
     // A creeper about: what the first answer to one came to in the record,
     // on each way it has a record for (creeper-first.js, note 1123; the record by the creeper's distance is creeper-record.js).
     if (danger.some(t => t.entity.name === 'creeper')) {
@@ -7202,7 +7203,9 @@ class Survival {
         // The meal here, or why none is offered (note 796).
         meal: mealSays(bot),
         holdEnds: `A way chosen here is asked again once it has cost more than its own estimate at the estimate's pace (six health where it gives none), and in any case once half the health it is chosen at is gone: from ${Math.round(bot.health * 10) / 10} health, at ${Math.round(bot.health * 5) / 10}.`,
-        riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot) };
+        riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot),
+        // What every way on offer led to at blaze fights on the runs now playing (note 2602): one table for all of them.
+        ...((t => t ? { blazeRecordToday: t } : {})(require('./blaze-record').blazesAbout(bot).within16 ? require('./blaze-outcomes').tableSays('encounter_stance', Object.keys(options)) : '')) };
       // At a live cage, what the stay there has come to, on each hold, and
       // what cover gives up at full health (cage-yield.js, note 702).
       const cageSoFar = (() => { try { return require('./cage-yield').annotate(bot, goal, options); } catch (_) { return null; } })();

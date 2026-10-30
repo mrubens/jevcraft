@@ -1449,6 +1449,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
     health: bot.health, food: bot.food, dimension: dimension(bot), riskNow: require('./risk').riskNow(bot),
     fitness: { ...fit, said: fitSaid },
     ...(blocksNow ? { blocksCarried: blocksNow } : {}),
+    ...((t => t ? { blazeRecordToday: t } : {})(state.entity === 'blaze' ? require('./blaze-outcomes').tableSays('hunt_target', Object.keys(tree)) : '')),
     // A blaze whose every way to fight it in the open ends within a push of
     // lava or a deep drop: fought from a stand, not walked under.
     ...(unreached.length ? { noWayToStrike: unreached.map(u => `${u} ${Object.keys(tree).some(k => /^(box|hole|wall|stand|back_to|corner|cage|spawner)/.test(k)) ? 'offered' : 'not on offer here'}`) } : {}),
