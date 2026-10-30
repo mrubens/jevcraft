@@ -576,11 +576,17 @@ function fireRouteSeconds(bot, route) {
 // 792: of the 48 runs of a second or more that never moved, the shield was
 // up through 30, and the watchdog stopped such a run at least 24 times).
 const WAY_OUT_MS = 3000;
+// The body's own runs by their controller's name: out of the fire or the lava, into water to put the fire out, out from
+// under a block over the head. The hurt listener (survival.js) stops a step hit 'with no survival response', and a run
+// not named here was the step it stopped (note 2607): full-223 (25589, 2026-10-30 21:43:37Z), alight at 3 health running
+// into water at y -46, and full-215 (18:55Z) the same, had 'into_water: forward, sprint let go mid-move by
+// clearControlStates at Object.stopForTurn' and burned to death on the spot; four such cuts in the day's logs, two deaths.
+const WAY_OUT_CONTROLLERS = new Set(['out_of_fire', 'out_of_lava', 'into_water', 'out_from_under']);
 function wayOutRunning(bot, now = Date.now()) {
   const r = bot?._bodyWayRunning;
   if (r && now - r.at <= WAY_OUT_MS) return r.action;
   const c = bot?._controller?.name;
-  return c === 'out_of_fire' || c === 'out_of_lava' ? c : null;
+  return WAY_OUT_CONTROLLERS.has(c) ? c : null;
 }
 async function outOfFire(bot, task, onAction = () => {}, route = fireRoute(bot)) {
   onAction({ action: 'out_of_fire', steps: route?.length ?? null, health: bot.health });

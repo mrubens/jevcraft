@@ -27,3 +27,11 @@ test('the mark is kept fresh past the three seconds a way out is read for', asyn
   await asWayOut(bot, async () => { await new Promise(r => setTimeout(r, 1200)); age = Date.now() - bot._bodyWayRunning.at; });
   assert.ok(age < 700, `marked ${age} ms ago`);
 });
+
+// Note 2607: the body's runs into water and out from under a block are the way out too, not a step to stop at a hit.
+test('wayOutRunning names the run into water and the step out from under a block (note 2607)', () => {
+  const { wayOutRunning } = require('../src/vitals');
+  assert.equal(wayOutRunning({ _controller: { name: 'into_water' } }), 'into_water');
+  assert.equal(wayOutRunning({ _controller: { name: 'out_from_under' } }), 'out_from_under');
+  assert.equal(wayOutRunning({ _controller: { name: 'walk' } }), null);
+});
