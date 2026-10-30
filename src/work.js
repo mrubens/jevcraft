@@ -1185,7 +1185,17 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   // hunger 10 with nothing to eat for stems 140 blocks from it.
   const away = !atCage && options.fetch_stems ? require('./fortress-away').awaySays(bot, goal, options.fetch_stems.place?.at, { owed: true }) : null;
   if (away) options.fetch_stems.description = `${options.fetch_stems.description.replace(require('./nether-wood').LATER, '')} ${away}`;
-  options.carry_on = { description: `${atCage ? atCage.carryOn : `Carry on with ${goal.step?.action ? `the ${String(goal.step.item || goal.step.block || goal.step.action).replaceAll('_', ' ')}` : 'the work'} and see to this later;`} asked again in five minutes, or sooner if what is due here changes${noPickCost ? ' or a way chosen fails for want of a pickaxe' : ''}.${budget?.short ? ` The pickaxes carried then run ${budget.need - budget.usesLeft} digs short of the step in hand and the way home, the rest dug by hand.` : ''}${noPickCost ? `${bs.aheadByHandSays(bot, goal)}${bs.goingOnSays(bot, UPKEEP_HOLD_MS / 60000)}` : wearNow ? ` The pickaxes: ${wearNow}.` : ''}${ended ? ` The last carry-on ended early: ${ended.method} failed for want of a pickaxe (${ended.why}).` : ''}`,
+  // Food offered and dusk inside the hold (note 2594): carried on, the next asking comes by night, when food is not
+  // offered here, and the night is spent at the hunger it reaches with nothing to eat. full-202 (25591, 2026-10-30
+  // 15:23:23Z), 0 food points carried and dusk 23 seconds off, weighed carry_on 0.51 against food_reserve 0.47,
+  // carried on 'asked again in five minutes', and was slain by zombies on its night mine at hunger 15 at 15:54Z.
+  const foodNight = (() => {
+    if (!options.food_reserve) return '';
+    const t = bot.time?.timeOfDay ?? 0, holdTicks = Math.round(UPKEEP_HOLD_MS / 50);
+    if (t >= DAY.DUSK || t + holdTicks < DAY.DUSK) return '';
+    return ` Dusk comes before that (in about ${Math.max(0, Math.round((DAY.DUSK - t) / 20))} seconds): by night finding food is not offered here, so carried on, the night is passed with nothing to eat, at the hunger it falls to, and health comes back only while hunger is eighteen or more.`;
+  })();
+  options.carry_on = { description: `${atCage ? atCage.carryOn : `Carry on with ${goal.step?.action ? `the ${String(goal.step.item || goal.step.block || goal.step.action).replaceAll('_', ' ')}` : 'the work'} and see to this later;`} asked again in five minutes, or sooner if what is due here changes${noPickCost ? ' or a way chosen fails for want of a pickaxe' : ''}.${foodNight}${budget?.short ? ` The pickaxes carried then run ${budget.need - budget.usesLeft} digs short of the step in hand and the way home, the rest dug by hand.` : ''}${noPickCost ? `${bs.aheadByHandSays(bot, goal)}${bs.goingOnSays(bot, UPKEEP_HOLD_MS / 60000)}` : wearNow ? ` The pickaxes: ${wearNow}.` : ''}${ended ? ` The last carry-on ended early: ${ended.method} failed for want of a pickaxe (${ended.why}).` : ''}`,
     run: async () => { goal.upkeepHold = { keys, until: Date.now() + UPKEEP_HOLD_MS, ...(noPickCost ? { noPickaxe: true, since: Date.now() } : {}) }; delete goal.upkeepHoldEnded; save(); } };
   // The lead short: carry_on says what going on without one costs.
   const ways = ['make_pickaxe', 'fetch_stems'].filter(k => options[k]);

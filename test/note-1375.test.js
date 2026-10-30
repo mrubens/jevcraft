@@ -26,3 +26,13 @@ test('fed to eighteen at midday with nothing carried, food is offered, said with
   assert.match(offered.food_reserve || '', /^Find food now, by day: 0 food points carried, hunger 19,/);
   assert.match(offered.food_reserve, /at 19 now it does, and hunger falls with walking, mining, fighting and the healing itself/);
 });
+
+// Note 2594: with dusk inside carry_on's five-minute hold, carry_on says the next asking comes by night, when food is not
+// offered. full-202 (2026-10-30 15:23:23Z) carried on 0.51 to 0.47 with dusk 23 seconds off and nothing to eat.
+test('food offered just before dusk: carry_on says dusk comes before the next asking and food is not offered by night', async () => {
+  const offered = await ask(9000, 20);
+  assert.ok(offered.food_reserve, 'food offered');
+  assert.match(offered.carry_on, /Dusk comes before that \(in about \d+ seconds\): by night finding food is not offered here/);
+  const midday = await ask(3000, 20);
+  assert.doesNotMatch(midday.carry_on, /Dusk comes before that/);
+});
