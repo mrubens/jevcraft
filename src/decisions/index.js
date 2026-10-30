@@ -559,7 +559,8 @@ function waitingByChoice(goal, id, now = Date.now()) {
 // the rung's question read "17 answers given, 1 coming to nothing" (note
 // 605). What an answer is (WAIT_ANSWERS) and a hold step still make a wait.
 // An answer that hands the ladder another rung (`takeBack` or `takesUp` on its node) is not judged by the ledgers (note 1962): its run changes nothing in the world by design, and the rung it takes up is measured on its own. full-2 (2026-10-20 13:35:29Z, 31 of 80 food points, under the Nether's reserve) chose take_up_food at the crossing; the rung ledger judged it by the rung it left ('nothing gained on the rung: no obsidian or flint and steel'), the outcome judge a second later ('changed nothing within 1 second (its own time 90 seconds); recorded failed'), the option read 'Tried once ... and it came to nothing' at the next asking, and Jev crossed with the 31; dead fourteen minutes later at 5.6 health with nothing to eat, burned by a blaze.
-const handsOff = node => !!(node?.takeBack || node?.takesUp);
+// And one marked handsOff by its question (pearl-order.js rods_first, note 2611): it hands the work to the ladder's own rung.
+const handsOff = node => !!(node?.takeBack || node?.takesUp || node?.handsOff);
 const ledgerWaits = (goal, id, path = null) => id !== 'stillness_detour' && ((tried.workBelowRung(id) ? HOLDS_STEP(goal) : waitingByChoice(goal, id)) || WAIT_ANSWERS.has(String(path?.at?.(-1) || '')));
 const HOLDS_STEP = goal => require('../stillness').HOLDS.has(goal?.step?.action);
 // Answers that are waits by what they are, whatever holds the turn when

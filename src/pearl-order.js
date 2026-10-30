@@ -230,7 +230,12 @@ const MINE_GOLD_RECORD = ' Across 2026-10-29\'s full runs this way was chosen 79
 const DAY_PEARLS_FIRST = ' On 2026-10-29\'s full runs six bots in the Nether took a pearl way first away from a warped forest (slot fights on open ground, stalking, a barter) and got 0 to 4 pearls in 30 to 100 minutes there, none of them fighting a blaze; the one that went to its fortress got its first rod in its first minute at it (full-93). In a warped forest, endermen many at a time, the slot\'s record is 16 to 21 pearls an hour.';
 function tree(bot, goal, r, now = Date.now()) {
   const o = overlap(bot, goal, r), out = {};
-  out.rods_first = { ladderNext: true, description: inNether(bot)
+  // Not judged by the ledgers (handsOff, decisions/index.js, note 1962's rule; note 2611): chosen, it hands the work to the
+  // ladder's rods rung and moves nothing itself. mid-full-162-fortress-1 (25586, 2026-10-30 23:38Z), a second after
+  // joining beside its fortress, had 'rods first was chosen 1 second ago and changed nothing within 1 second (its own
+  // time 10 minutes) ... recorded failed', then 'barter gold, the only way offered' and 'mine gold for barter', and dug
+  // for gold under the fortress with 7 rods owed; the same on full-21 (2026-10-28 15:24Z and 19:04Z).
+  out.rods_first = { ladderNext: true, handsOff: true, description: inNether(bot)
     ? `Go on with the rods now: ${o.fortress}; rods ${o.rods}. The pearls then, or while the rods rest: a warped forest's endermen, a barter, or the Overworld's night hunt. ${record.routeSays('rods_first', goal)}${DAY_PEARLS_FIRST}`
     : `Go on to the Nether for the rods now: rods ${o.rods}. The pearls then, or while the rods rest: a warped forest's endermen, a barter, or the Overworld's night hunt. ${record.routeSays('rods_first', goal)}` };
   if (r.enderman) {
