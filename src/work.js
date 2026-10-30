@@ -9652,7 +9652,7 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
       const ck = require('./crossing-kit'), stay = ck.netherStay(bot, goal), short = Math.max(0, fi.wants - fi.carried);
       const foodTree = {
         cross_now: { description: `Cross and go on with the stay on what is carried: ${fi.carried} food points, about ${Math.round(fi.carried / ck.NETHER_HUNGER_AN_HOUR * 60)} minutes of it at ${ck.NETHER_HUNGER_AN_HOUR} an hour, against the ${stay.minutes} minutes the goal wants there; ${short} points short. In the Nether the food is a hoglin (in the crimson forests, 40 health, hitting for 3 to 8) or a bastion's chests; otherwise back out through this portal for it.${(() => { try { return require('./nether-food').blazeFoodSays(fi.carried); } catch (_) { return ''; } })()}${ck.CROSSED_SHORT}${crossFoodSays}` },
-        take_up_food: { description: `Get the Nether's food here first, before crossing: ${fi.carried} of ${fi.wants} points carried.${takeUpFoodSays(bot, goal, fi)}` },
+        take_up_food: { description: `Get the Nether's food here first, before crossing: ${fi.carried} of ${fi.wants} points carried.${takeUpFoodSays(bot, goal, fi)}${kit.takeUpRested && Date.now() - kit.takeUpRested.at < 30 * 60000 ? ` Taken up ${Math.max(1, Math.round((Date.now() - kit.takeUpRested.at) / 60000))} minutes ago, every way to food here came to nothing and rests, ${kit.takeUpRested.carried} points carried then.` : ''}` },
       };
       const decision = await decide('crossing_food', { client, bot, task, goal, save, tree: foodTree,
         state: { food: `${fi.carried} carried, the stay wants ${fi.wants}`, health: bot.health, hunger: bot.food, minutesAtCrossing: Math.round(kit.workedMs / 60000) } });
@@ -9708,8 +9708,18 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     // The food taken up is gathered here and now, its own step run from the crossing (note 1969): handed back to the ladder, the crossing step ran again before any other stage (an enter_nether stage for the pearls as for the rods), the crossing question came back ten seconds later, and was answered cross_now. full-2 (2026-10-20 17:45:48 and 17:45:58Z, 17 of 80 food points, on notes 1964 and 1965's build) chose take_up_food and then crossed with the 17.
     if (key === 'food') {
       const foodItem = items.find(i => i.key === 'food');
+      const startedAt = Date.now();
       try { await kitFoodStep(bot, task, goal, save, { wants: foodItem?.wants }, client); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; console.log(`[kit] the food taken up at the crossing stopped: ${String(err.message || err).slice(0, 120)}`); }
+      // The food's own question with every way resting is the take-up come to nothing (note 2582): held while the food
+      // is empty (note 2133), the take-up ran its resting step again each pass, at once. full-179 (25586, 2026-10-30
+      // 11:13 to 11:2xZ), its first rod at 50 minutes and home for food, took the food up at 0 points, 'kit food: every
+      // way it had from here rests', and spun '21 passes in a second at enter_nether' 25 times. The hold lapses and the
+      // crossing's food question is asked again, told so.
+      if ((goal.tried?.escalations || []).some(e => e.from === 'kit_food' && e.at >= startedAt)) {
+        kit.takeUpRested = { at: Date.now(), carried: foodSupply(bot) }; delete kit.choice; delete kit.foodAsk; save();
+        console.log('[kit] the food taken up came to nothing here (its ways rest): the crossing\'s food question is asked again');
+      }
     }
     return false;
   }
