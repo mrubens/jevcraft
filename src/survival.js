@@ -676,6 +676,10 @@ const TRIDENT_RANGE = 24;
 const RUN_STANCES = new Set(['retreat', 'leave_reach', 'run_from']), RUN_STUCK_MS = 2000;
 // How long a held stance's mobs may stay unseen and no nearer before it ends (note 752j).
 const UNSEEN_HOLD_MS = 30000;
+// The stances that wait for the mob to come (note 2568): held while it stays where it is, in sight or not, they answer
+// nothing. full-153 (25590, 2026-10-30 04:26 to 04:32Z) held shield_guard 388 seconds at its portal's site against a
+// zombie 7 blocks off in sight that never came, the hold renewed with nothing new and the portal not cast.
+const WAITS_FOR_MOB = new Set(['shield_guard', 'shield_the_charge', 'back_to_wall', 'await_in_reach', 'corner_ambush']);
 // A standoff with one creeper behind blocks (note 778, the critic's ~02:54Z
 // item 4): this long with it within ten blocks, the bot not hurt by it, and
 // the block's hold ends with the standoff said; each later end comes when
@@ -6786,9 +6790,9 @@ class Survival {
     // reach and in sight (note 752j).
     const heldNow = held?.ids ? danger.filter(t => held.ids.includes(t.entity.id)) : [];
     const noNearer = t => { const m0 = (held?.mobs || []).find(m => m.name === t.entity.name); return !m0 || t.distance >= m0.distance - 1; };
-    if (held && heldNow.length && heldNow.every(t => !t.visible && noNearer(t))) held.unseenSince ||= Date.now(); else if (held) delete held.unseenSince;
+    if (held && heldNow.length && heldNow.every(t => (!t.visible || WAITS_FOR_MOB.has(held.choice)) && noNearer(t))) held.unseenSince ||= Date.now(); else if (held) delete held.unseenSince;
     const unseenLong = !!held?.unseenSince && Date.now() - held.unseenSince >= UNSEEN_HOLD_MS;
-    if (unseenLong) this.state.stanceFailed = [...[].concat(this.state.stanceFailed || []).filter(f => Date.now() - f.at < 20000), { choice: held.choice, kinds, where: { x: feet.x, y: feet.y, z: feet.z }, at: Date.now(), why: `held ${Math.round((Date.now() - held.at) / 1000)} seconds with the ${heldNow.map(t => t.entity.name.replaceAll('_', ' ')).join(' and the ')} out of sight and no nearer for ${Math.round((Date.now() - held.unseenSince) / 1000)}: nothing for it to answer` }];
+    if (unseenLong) this.state.stanceFailed = [...[].concat(this.state.stanceFailed || []).filter(f => Date.now() - f.at < 20000), { choice: held.choice, kinds, where: { x: feet.x, y: feet.y, z: feet.z }, at: Date.now(), why: `held ${Math.round((Date.now() - held.at) / 1000)} seconds with the ${heldNow.map(t => t.entity.name.replaceAll('_', ' ')).join(' and the ')} ${heldNow.every(t => !t.visible) ? 'out of sight and ' : ''}no nearer for ${Math.round((Date.now() - held.unseenSince) / 1000)}: nothing for it to answer` }];
     const physical = !!held && !leftBe && !runStuck && !unseenLong && !crowdGrew && !shieldChanged && !outageLow && (held.ids ? !newcomer : held.kinds === kinds) && !hitSince && !offSpot && !lineAgain.length && !shotThrough && !blockAgain && !pushedOpen && !held.lethalAgain;
     // More damage than priced by now, at the estimate's pace (past its
     // seconds, while held on, at its rate); without an estimate, six health.
@@ -6801,7 +6805,7 @@ class Survival {
     let holding = physical && !damageOver && inTime;
     // Why a held stance is let go, said once each time (note 1949): full-3 (2026-10-20 08:18:54 to 57Z) turned cap_fight, shield_guard, cap_fight, shield_guard, cap_fight, cap_fight, shield_guard, cap_fight, cap_fight in three seconds among three endermen, 17.3 health to none, every answer replaced before its run began and nothing in the record saying what ended each hold; the stall watch alone saw 'turning between shield guard and cap overhead 4 times in 1 seconds'.
     if (held && !holding) {
-      const why = leftBe ? 'leaving them be ended at a threat in reach' : runStuck ? 'the run got nowhere' : unseenLong ? 'its mobs long out of sight' : crowdGrew ? 'the crowd grew' : shieldChanged ? 'the shield changed' : outageLow ? 'Jev down and the health low'
+      const why = leftBe ? 'leaving them be ended at a threat in reach' : runStuck ? 'the run got nowhere' : unseenLong ? (heldNow.every(t => !t.visible) ? 'its mobs long out of sight' : 'its mobs long no nearer') : crowdGrew ? 'the crowd grew' : shieldChanged ? 'the shield changed' : outageLow ? 'Jev down and the health low'
         : (held.ids ? newcomer : held.kinds !== kinds) ? `a newcomer within ${STANCE_NEWCOMER}: ${newcomer?.entity?.name || kinds}` : hitSince ? 'hit while leaving them be' : offSpot ? 'off its spot' : lineAgain.length ? 'a shooter has its line again' : shotThrough ? 'shot through' : blockAgain ? 'the creeper block is due again' : pushedOpen ? 'pushed open' : held.lethalAgain ? 'lethal again'
         : damageOver ? `more damage than priced (${Math.round((held.health - (bot.health ?? 0)) * 10) / 10} of ${held.health} gone in ${Math.round(elapsed * 10) / 10} s)` : !inTime ? 'its time is up' : 'no reason named';
       console.log(`[stance] ${String(held.choice).replaceAll('_', ' ')} let go after ${Math.round((Date.now() - held.at) / 100) / 10} s: ${why}`);
@@ -7116,7 +7120,7 @@ class Survival {
           ...(held.lethalAgain ? { askedAgainFor: `one shot that lands ends the bot now, and a shooter had a line to it: it stepped out of every line first (${this.state.lethalLine?.did || 'the rule'})` } : blockAgain ? { askedAgainFor: blockAgain } : shotThrough ? { askedAgainFor: `the ${shotThrough.replaceAll('_', ' ')} it was chosen against hit the bot ${Math.round((Date.now() - bot._hurtBy[shotThrough]) / 1000)} seconds ago, ${Math.round((held.health - bot.health) * 10) / 10} health lost since it was chosen` }
             : pushedOpen ? { askedAgainFor: (() => { const k = (held.shooters || []).find(n => (bot._hurtBy?.[n] || 0) > held.at); const p = held.start?.pos; return `the ${k.replaceAll('_', ' ')} it was chosen against landed a shot ${Math.round((Date.now() - bot._hurtBy[k]) / 1000)} seconds ago, ${Math.round((held.health - bot.health) * 10) / 10} health lost since it was chosen${p ? `, and the bot is ${Math.round(Math.hypot(bot.entity.position.x - p.x, bot.entity.position.z - p.z) * 10) / 10} blocks from where it chose` : ''}; it is still open over the drop a push puts it over`; })() }
             : lineAgain.length ? { askedAgainFor: `${lineAgain.map(e => `the ${e.name.replaceAll('_', ' ')} ${Math.round(e.position.distanceTo(bot.entity.position) * 10) / 10} blocks off`).join(' and ')} ${lineAgain.length === 1 ? 'has' : 'have'} a line to where the bot hid` }
-            : unseenLong ? { askedAgainFor: `the ${heldNow.map(t => t.entity.name.replaceAll('_', ' ')).join(' and the ')} it was chosen against ${heldNow.length === 1 ? 'has' : 'have'} been out of sight and no nearer for ${Math.round((Date.now() - held.unseenSince) / 1000)} seconds` }
+            : unseenLong ? { askedAgainFor: `the ${heldNow.map(t => t.entity.name.replaceAll('_', ' ')).join(' and the ')} it was chosen against ${heldNow.length === 1 ? 'has' : 'have'} been ${heldNow.every(t => !t.visible) ? 'out of sight and ' : ''}no nearer for ${Math.round((Date.now() - held.unseenSince) / 1000)} seconds` }
             : runStuck ? { askedAgainFor: `the ${held.choice.replaceAll('_', ' ')} has not moved: ${ranBlocks} blocks in ${Math.round((Date.now() - held.at) / 1000)} seconds` }
             : crowdGrew ? { askedAgainFor: crowdX.grewSays(held, crowdNow) }
             : shieldChanged ? { askedAgainFor: `${shieldChanged}, since the ${held.choice.replaceAll('_', ' ')} was chosen ${Math.round((Date.now() - held.at) / 1000)} seconds ago` }
