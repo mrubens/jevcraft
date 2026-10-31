@@ -9027,6 +9027,18 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   // return_for_food chosen 21 seconds before, answered rung_progress
   // keep_at_it three times, told nothing of the trip, and sealed in again;
   // a blaze took it to 1.7 at 05:44:03.
+  // Walled in by its own blocks with mobs outside, said as a shared fact (note 2701): every detour here opens the
+  // pocket among them. mid-full-9-fortress-6 (25590, 2026-10-31 09:32:27Z), sealed with four blazes 3 to 6 blocks
+  // outside, was asked the rods' stall ('10 minutes without a new best'), took cross toward, and was at 12.3 health four
+  // seconds after the wall opened and dead at 09:32:40 (close in at arm's length with four, 13.2 lost in 5 s).
+  try {
+    const w = require('./walled-in').walledInSays(bot, { survival: stats, now });
+    if (w) {
+      const near = require('./danger').threats(bot, 12).filter(t => t.entity?.position);
+      const list = near.slice(0, 5).map(t => `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off${t.visible ? ' (in sight)' : ''}`).join(', ');
+      context.sealedIn = `${w.says} ${near.length ? `Outside, within twelve blocks: ${list}${near.length > 5 ? ` and ${near.length - 5} more` : ''}. Every way here but staying put opens the pocket, and the body is among them as it steps out; health ${Math.round((bot.health ?? 20) * 10) / 10}.` : 'No mob within twelve blocks outside it now.'}`;
+    }
+  } catch (_) { /* not said */ }
   {
     const fp = require('./food-plan'), held = fp.heldFood(stats, now);
     if (held) {
