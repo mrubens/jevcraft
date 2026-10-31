@@ -609,8 +609,17 @@ async function walkTo(bot, task, goal, { timeoutMs, stallMs, stopWhen, sprint, b
   // Jev and carried out (way-down.js, note 565). Still on one after, the
   // walk builds no tower: from a top a tower only climbs higher. A block
   // laid level is the fall rule's (overFall) and a span Jev's, as before.
+  // The flags set above come back whatever the way down throws (note 2628; the project review of 2026-10-30, item 2):
+  // thrown before the try below, the movements kept hostilesOk, the sprint and no digging for every walk after.
+  const restoreEarly = () => {
+    if (sprinting) movements.allowSprinting = walked;
+    if (hostilesOk && movements) movements.hostilesOk = hostilesWere;
+    if (optOut) movements.besideLava = lavaOptOut;
+    if (edgeOptOut) movements.edgeTaken = edgeWas;
+    if (foot) Object.assign(movements, foot);
+  };
   const wayDown = require('./way-down');
-  if (movements && !stopWhen?.()) await wayDown.comeDownFirst(bot, task, goal);
+  if (movements && !stopWhen?.()) { try { await wayDown.comeDownFirst(bot, task, goal); } catch (err) { restoreEarly(); throw err; } }
   const perch = movements && !foot ? wayDown.livePerch(bot) : null;
   const stillUp = perch && !wayDown.goalOnTop(goal, perch) ? { allow1by1towers: movements.allow1by1towers } : null;
   if (stillUp) movements.allow1by1towers = false;
