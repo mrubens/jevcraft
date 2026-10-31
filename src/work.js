@@ -6806,6 +6806,11 @@ function routeSays(bot, goal, r, { frame, placed, frameAt, here, diamondPickaxe,
     : `A new frame at another site near here; the frame begun at (${o.x}, ${o.y}, ${o.z}), ${placed} of ten cast, left as it stands${placed ? `, ${outOnly}, and the ${placed} cast there are ${placed} lava buckets again here` : ''}`;
   const lava = v.kind === 'deep' ? `the lava layer below (the deep lava lakes lie from about y ${LAVA_DEPTH + 2} down, anywhere), by a staircase dug down to y ${at.y}${r.site === 'beside' ? '' : ' and each trip back up it'}`
     : `${v.kind === 'pool' ? 'the lava pool known' : 'the lava in sight'} at (${at.x}, ${at.y}, ${at.z}), ${Math.round(here.distanceTo(at))} blocks off${height}${frame && r.site === 'here' ? `, ${fromFrame} blocks from the frame` : ''}, ${v.how === 'dig' ? 'by a staircase dug to it (its walk did not get there)' : 'walked to'}`;
+  // The walks toward this lava that failed lately, said with it (note 2750): full-293 (25587, 2026-10-31 21:3x to 21:41Z)
+  // was offered the lava in sight 20 blocks off as 'walked to ... about 80 seconds', took it at 0.43 (none good 0.33),
+  // and the fill bucket step failed 26 times running, 'No path to the goal!', each failure asking the portal plan again.
+  const failedTo = (() => { try { return v.kind === 'deep' ? [] : require('./failed-places').towardFailures(bot, goal, at); } catch (_) { return []; } })();
+  const failedSays = failedTo.length ? ` The way to this lava failed ${failedTo.length} time${failedTo.length === 1 ? '' : 's'} in the last ${Math.max(1, Math.round((Date.now() - Math.min(...failedTo.map(f => f.at))) / 60000))} minutes (${[...new Set(failedTo.map(f => f.why || f.kind).filter(Boolean).map(w => String(w).slice(0, 60)))].slice(0, 2).join('; ') || 'no route'}): the price assumes the walk gets there.` : '';
   const p = r.price;
   const smelt = p.make ? Math.max(0, 3 * p.make - countOf(bot, 'iron_ingot')) : 0;
   const bucketsSay = p.noBucket ? 'none carried and no iron for one' : `${p.buckets - p.make} carried${p.make ? `, ${p.make} more made first from the iron carried (three ingots each${smelt ? `, ${smelt} of the ${countOf(bot, 'raw_iron')} raw iron carried smelted first in a furnace, ${countOf(bot, 'furnace') ? 'one carried' : 'none carried: eight cobblestone make one'}` : ''})` : ''}`;
@@ -6825,7 +6830,7 @@ function routeSays(bot, goal, r, { frame, placed, frameAt, here, diamondPickaxe,
   // nothing, and a frame far below it is a climb down without a pickaxe. full-13 (25587, 2026-10-28 02:54 to 03:5xZ),
   // its portal cast beside the deep lava at y -52, died to a blaze at the fortress, woke at its bed by the surface with
   // no tools, and dug down by hand about 40 seconds a stair toward the portal; the user: 'Yeah this is nuts'.
-  return `${site}; cast from ${lava}. Buckets: ${bucketsSay}. Water: ${water}.${deepWater} ${PP.priceSays(p, { tripWhat: r.site === 'beside' ? 'a scoop and a few blocks\' walk' : 'there and back' })}${measured} Pickaxe: ${digs}. Risk: ${risk}.${record}${failed || (record ? '' : ' No failures known for this route.')}${PP.planRecordSays(r.site, v.kind)}${leaving}${bedBackSays(bot, r.site === 'beside' ? at : frameAt)}`;
+  return `${site}; cast from ${lava}. Buckets: ${bucketsSay}. Water: ${water}.${deepWater} ${PP.priceSays(p, { tripWhat: r.site === 'beside' ? 'a scoop and a few blocks\' walk' : 'there and back' })}${measured} Pickaxe: ${digs}. Risk: ${risk}.${record}${failed || failedSays || (record ? '' : ' No failures known for this route.')}${failed && failedSays ? failedSays : ''}${PP.planRecordSays(r.site, v.kind)}${leaving}${bedBackSays(bot, r.site === 'beside' ? at : frameAt)}`;
 }
 
 const POOL_LOOKS = 4;
