@@ -292,12 +292,23 @@ function lullOptions(bot, task, goal, save, actions, known, quiet, { now = Date.
       tree.dig_in_at_spawner = { ...require('./cage-hold').planNode(), description: `Walk ${hole.steps || 0} block${hole.steps === 1 ? '' : 's'} and dig a hole one wide and two high into the rock beside the cage (${words(hole.rock)}, dug ${hole.with}, about ${digSecs} s), the mouth toward it, and hold it for its next blazes: rock behind, beside and over, only the front open.${clock.jobSays(quiet, secs)}`, secs,
         run: () => buildAndHold(bot, task, goal, save, actions, { kind: 'hole', site: hole, key: 'dig_in_at_spawner' }, secs) };
     }
+    // No rock beside the cage for a hole: one built of the blocks carried (blaze-stand.js builtHoleSite, note 2730), in
+    // the lull, before the crowd forms, the one moment the buried drill ever chose its stand.
+    if (!hole) {
+      const built = (() => { try { return stand.builtHoleSite(bot, cage); } catch (_) { return null; } })();
+      if (built) {
+        const secs = round((built.steps || 0) / WALK + built.blocks * 0.6);
+        let price = ''; try { const { threats } = require('./danger'); const c = stand.standCost(bot, threats(bot, 48), { setup: secs, at: built.hole, open: new Set(built.open.map(o => `${o}`)), atOnce: 1, melee: true, pinned: true }); price = `This way: about ${c.damage} damage over about ${c.seconds} seconds, from ${round(bot.health ?? 20)} health. `; } catch (_) { price = ''; }
+        tree.build_hole_at_spawner = { ...require('./cage-hold').planNode(), description: `${price}No rock beside the cage to dig a hole into: build one. Walk ${built.steps || 0} block${built.steps === 1 ? '' : 's'} to the cell ${built.off} blocks from the cage at (${built.hole.x}, ${built.hole.y}, ${built.hole.z}), and wall it at feet and head on its back and two sides and roof it (${built.blocks} block${built.blocks === 1 ? '' : 's'} of those carried, about ${round(built.blocks * 0.6)} seconds), its mouth one wide and two high toward the cage, and fight from inside: what comes, comes to the mouth one at a time, where the sword reaches it, and every fireball comes through the mouth, where the shield faces. Built now, in the lull, it is up before the spawner's next blazes gather. Measured in the arena with an iron kit: the buried cage, the bot inside rock with the room's blazes coming to it one or two at a time, the last 15 runs 15 of 15 to seven rods with no death (55 runs, 328 rods, 5 deaths in all); the same cage in the open, no hole, 3 to 5 deaths in 5 runs; a box built among four blazes already there, 3 of 5 runs lost.`,
+          run: () => buildAndHold(bot, task, goal, save, actions, { kind: 'hole', site: built, key: 'build_hole_at_spawner' }, secs) };
+      }
+    }
     // No way at the spawner walked to (no box by the cage, no stand, no hole beside it): the way dug, as a player digs
     // through the fortress's bricks to its spawner room (note 2595). full-198 (25588, 2026-10-30 16:22 to 16:36Z), 13
     // blocks from its cage behind nether bricks at full health, was offered a box 12.7 blocks off and a slit (whose
     // dig then found 'No route from here'), answered none_good at 0.67, and held there fourteen minutes: 0 blazes
     // killed, 0 rods, 'Nothing has come of it for 8 minutes while 4 blazes' were about the cage.
-    if (!tree.box_at_spawner && !tree.stand_by_spawner && !tree.dig_in_at_spawner && actions?.navigate) {
+    if (!tree.box_at_spawner && !tree.stand_by_spawner && !tree.dig_in_at_spawner && !tree.build_hole_at_spawner && actions?.navigate) {
       const feet = bot.entity.position.floored(), c = centre(cage);
       const dx = feet.x + 0.5 - c.x, dz = feet.z + 0.5 - c.z, flat = Math.hypot(dx, dz);
       if (flat > 4.5 && flat <= 16) {

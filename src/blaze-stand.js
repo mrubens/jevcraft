@@ -180,6 +180,36 @@ function spawnerHoleSite(bot, cage = spawnerAt(bot), { steps = 30, avoid = [] } 
   return { ...h, spawner: cage, off: round(h.off), steps: found.steps, walkMs, ms: walkMs + h.digMs };
 }
 
+// The hole built where no rock is (note 2730; the Fable check-in of 2026-10-31 16:20Z): on a fortress's open platform
+// spawnerHoleSite finds no rock beside the cage, so the hole the buried drill proved (artifacts/spawner-drill-buried*.log:
+// the last 15 runs 15 of 15 to seven rods, no death) was offered 0 times in the fortress trials of 15:00 to 16:15Z, which
+// died five times at their cages with four or five blazes about. A standable cell within reach of the cage, walled at
+// feet and head on its back and two sides and roofed, its mouth toward the cage: the drill's geometry, of the blocks
+// carried. -> { hole, stand (the mouth's cell), side, build, open, blocks, steps, walkMs, ms, off } or null.
+function builtHoleSite(bot, cage = spawnerAt(bot), { steps = 30, avoid = [] } = {}) {
+  if (!cage) return null;
+  const centre = cage.offset(0.5, 0.5, 0.5);
+  const T = require('./blaze-tactics'), carried = T.blocksCarried(bot, { standing: true });
+  const open = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'empty' && !/lava|water|fire/.test(b.name); };
+  const site = cell => {
+    if (!open(cell) || !open(cell.offset(0, 1, 0)) || !solid(bot.blockAt(cell.offset(0, -1, 0))) || /magma/.test(bot.blockAt(cell.offset(0, -1, 0))?.name || '')) return null;
+    if (cell.offset(0.5, 0.5, 0.5).distanceTo(centre) > SPAWNER_HOLE) return null;
+    // The mouth toward the cage: the side whose step is most toward it.
+    const toward = [...SIDES].sort((a, b) => (b.x * (centre.x - cell.x - 0.5) + b.z * (centre.z - cell.z - 0.5)) - (a.x * (centre.x - cell.x - 0.5) + a.z * (centre.z - cell.z - 0.5)))[0];
+    const mouth = cell.plus(toward);
+    if (!open(mouth) || !open(mouth.offset(0, 1, 0))) return null;
+    const walls = SIDES.filter(t => !(t.x === toward.x && t.z === toward.z)).flatMap(t => [cell.plus(t), cell.plus(t).offset(0, 1, 0)]).concat([cell.offset(0, 2, 0)]);
+    if (walls.some(c => /lava|water/.test(bot.blockAt(c)?.name || ''))) return null;
+    const build = walls.filter(c => !solid(bot.blockAt(c)));
+    if (build.length > carried) return null;
+    return { hole: cell, stand: mouth, side: toward.scaled(-1), build, open: [mouth, mouth.offset(0, 1, 0)], blocks: build.length, off: round(cell.offset(0.5, 0.5, 0.5).distanceTo(centre)) };
+  };
+  const found = walkTo(bot, c => !siteFailedNear(bot, c) && knockLands(bot, c) && !!site(c), { steps, avoid });
+  if (!found) return null;
+  const h = site(found.cell), walkMs = found.steps * 250;
+  return { ...h, spawner: cage, steps: found.steps, walkMs, ms: walkMs + h.blocks * 600, built: true, rock: 'blocks carried' };
+}
+
 // A sealed pocket is a hole with no mouth: one side opened toward the
 // blazes, two blocks, makes it one. mid-235-p-fortress-4 sat twenty-two
 // minutes sealed ten blocks from a spawner with blazes five to seven off,
@@ -2365,6 +2395,13 @@ async function takeStand(bot, task, goal, save, option, { navigate, stallMs } = 
     return true;
   }
   if (kind !== 'hole') return await goTo(site.cell) && holdBeat(bot, task, goal, save, face, site.cell);
+  // A built hole (builtHoleSite, note 2730): into its cell, then its back, sides and roof put up as a box is.
+  if (site.build && !inHole(bot)) {
+    goal.step = { action: 'build_hole_at_spawner', hole: { ...site.hole } }; save?.();
+    await require('./blaze-tactics').buildBox(bot, task, goal, save, { cell: site.hole, walls: site.build, window: site.open[1] }, { navigate });
+    await bot.lookAt?.(face, true);
+    return true;
+  }
   if (at(bot, site.hole)) return holdBeat(bot, task, goal, save, face, site.hole);
   if (!await goTo(site.stand)) return false;
   goal.step = { action: 'dig_in_and_fight', hole: { ...site.hole } }; save?.();
@@ -2546,4 +2583,4 @@ function chargeRecord(hp, others) {
   return { charges, died, says: ` In the flight records, of ${charges} charges of the nearest blaze chosen at ${low ? 'under 12 health' : '12 health or more'} with ${many ? 'three or more' : 'two or fewer'} other blazes about, ${died} ended in the bot's death within 30 seconds.` };
 }
 
-module.exports = { inCageBox, deathsHereSays, chargeRecord, biterInReach, riseOrAwait, reachWalk, REACH_MEMO_MS, sortieFloor, eatInHold, fourNearSays, FOUR_NEAR, walkTakes, behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze, blazeReach, pushedOnly, REACH_STEPS, riseSite, riseOrAwait };
+module.exports = { builtHoleSite, inCageBox, deathsHereSays, chargeRecord, biterInReach, riseOrAwait, reachWalk, REACH_MEMO_MS, sortieFloor, eatInHold, fourNearSays, FOUR_NEAR, walkTakes, behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze, blazeReach, pushedOnly, REACH_STEPS, riseSite, riseOrAwait };
