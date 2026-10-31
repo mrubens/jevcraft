@@ -687,9 +687,11 @@ const WITHER_AFTER_ROD = " Of the runs that took a first blaze rod on 2026-10-30
 const WAITS_FOR_MOB = new Set(['shield_guard', 'shield_the_charge', 'back_to_wall', 'await_in_reach', 'corner_ambush', 'fight', 'fight_from_footing']);
 // A biter held against from farther than this, now within arm's length, is asked about again (note 2617).
 const BITER_AT_ARM = 2.5, BITER_CLOSED_FROM = 4;
+const STANCE_LEAST_MS = 3000;
 // The stances a walker coming to the body does not break (note 2617): those that wait for it (WAITS_FOR_MOB) and those that
 // put the body out of its reach or behind blocks; a hoglin at the pillar's foot is the pillar working (note 599).
-const CLOSED_IN_EXEMPT = new Set([...WAITS_FOR_MOB, 'pillar', 'cap_fight', 'box_here', 'hold_box', 'seal', 'bunker', 'nook', 'dig_down', 'dig_in', 'dig_in_and_fight', 'low_ceiling', 'creeper_dance', 'shaft_pocket']);
+// And the runs and the leaves (note 2635): a biter closing on a bot leaving is the chase the run prices, not news.
+const CLOSED_IN_EXEMPT = new Set([...WAITS_FOR_MOB, ...RUN_STANCES, 'leave_and_heal', 'out_of_sight', 'pillar', 'cap_fight', 'box_here', 'hold_box', 'seal', 'bunker', 'nook', 'dig_down', 'dig_in', 'dig_in_and_fight', 'low_ceiling', 'creeper_dance', 'shaft_pocket']);
 // A standoff with one creeper behind blocks (note 778, the critic's ~02:54Z
 // item 4): this long with it within ten blocks, the bot not hurt by it, and
 // the block's hold ends with the standoff said; each later end comes when
@@ -6881,7 +6883,11 @@ class Survival {
     // note 793): a stance priced at or past the health held on its price had
     // no damage end short of the death (22 of 66 Overworld deaths).
     const damageOver = !!held && (held.expects ? held.health - bot.health > pacedLoss(held.health, held.expects, elapsed, { extended: extendedHold }) : bot.health <= held.health - holdLoss(held.health));
-    const inTime = !!held && (extendedHold ? Date.now() < held.hold.until : Date.now() - held.at < STANCE_HOLD_MS && !(held.expects && elapsed > held.expects.seconds));
+    // A price of no seconds (a walk of 0 blocks to where the bot stands) is not 'its time is up' the moment it is chosen
+    // (note 2635): full-231 (25589, 2026-10-31 02:07Z) at 2.8 health had leave and heal priced 'walk 0 blocks (about 0
+    // seconds)' let go after 0 s five times running, asked and answered the same each time, while a wither skeleton came
+    // from 4.5 blocks to 2.4 and slew it. A stance has at least STANCE_LEAST_MS to act.
+    const inTime = !!held && (extendedHold ? Date.now() < held.hold.until : Date.now() - held.at < STANCE_HOLD_MS && !(held.expects && elapsed > Math.max(held.expects.seconds, STANCE_LEAST_MS / 1000)));
     let holding = physical && !damageOver && inTime;
     // Why a held stance is let go, said once each time (note 1949): full-3 (2026-10-20 08:18:54 to 57Z) turned cap_fight, shield_guard, cap_fight, shield_guard, cap_fight, cap_fight, shield_guard, cap_fight, cap_fight in three seconds among three endermen, 17.3 health to none, every answer replaced before its run began and nothing in the record saying what ended each hold; the stall watch alone saw 'turning between shield guard and cap overhead 4 times in 1 seconds'.
     if (held && !holding) {
