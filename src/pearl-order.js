@@ -62,6 +62,27 @@ function routes(bot, goal, now = Date.now()) {
   if (!bot?.entity?.position || !(inNether(bot) || inOverworld(bot))) return out;
   const ender = endermen(bot, ENDERMAN_REACH);
   if (ender.length) out.enderman = { nearest: ender[0], count: ender.length };
+  // From the Overworld, a warped forest known in the Nether within the step's reach of where the nearest portal comes
+  // out stays on the question (note 2689; the Fable check-in of 2026-10-31 08:00Z): the forest known vanished from it
+  // the moment the bot banked its rods and crossed, and mid-full-63-forest-4 (25591, 07:36 to 08:00Z), seven rods
+  // banked and a forest known 274 blocks from its Nether portal, saw rods first and a gold barter only and went hunting
+  // the Overworld's endermen (0.4 pearls an hour in the record against a forest slot's 16 to 21).
+  if (inOverworld(bot) && !isSetAside(goal, 'rung', 'warped_pearls', now)) {
+    try {
+      const here = bot.entity.position, at = { x: here.x / 8, z: here.z / 8 };
+      const nether = (goal.portals || []).filter(p => /nether/.test(String(p.dimension || ''))).sort((a, b) => Math.hypot(a.x - at.x, a.z - at.z) - Math.hypot(b.x - at.x, b.z - at.z))[0] || null;
+      const over = (goal.portals || []).filter(p => /overworld/.test(String(p.dimension || ''))).sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z))[0] || null;
+      if (nether && Math.hypot(nether.x - at.x, nether.z - at.z) <= 128) {
+        const forests = require('./warped-pearls').warpedKnown(goal, now).filter(l => !isSetAside(goal, 'landmark_trip', tripKey(l), now))
+          .map(l => ({ landmark: l, netherBlocks: Math.round(Math.hypot(l.x - nether.x, l.z - nether.z)) })).filter(f => f.netherBlocks <= FOREST_REACH).sort((a, b) => a.netherBlocks - b.netherBlocks);
+        if (forests.length) {
+          const portalBlocks = over ? Math.round(Math.hypot(over.x - here.x, over.z - here.z)) : null;
+          out.forest = { ...forests[0], distance: (portalBlocks || 0) + forests[0].netherBlocks, viaPortal: { overworld: over, nether, portalBlocks } };
+        }
+      }
+    } catch (_) { /* no forest said */ }
+    return out;
+  }
   if (!inNether(bot)) return out;
   if (!isSetAside(goal, 'rung', 'warped_pearls', now)) {
     let known = [];
@@ -162,7 +183,7 @@ const endedWhy = pick => ({ hunt_enderman: 'no enderman left within 48 blocks', 
 function stageFor(bot, goal, pick, r, want, now) {
   const base = { phase: 'obtain_ender_pearls', item: 'ender_pearl', via: 'pearl_order' };
   if (pick === 'hunt_enderman') return endermen(bot, HUNT_SIGHT).length ? { ...base, action: 'acquire', count: count(bot, 'ender_pearl') + 1 } : null;
-  if (pick === 'warped_forest') return r.forest ? { ...base, action: 'warped_pearls', count: want } : null;
+  if (pick === 'warped_forest') return r.forest ? (r.forest.viaPortal ? { ...base, action: 'enter_nether', count: want, via: 'warped_forest' } : { ...base, action: 'warped_pearls', count: want }) : null;
   if (pick === 'barter_gold') return r.barter ? { ...base, action: 'barter', count: want } : null;
   // The bastion's gold, then the barter with its piglins once gold is to throw.
   if (pick === 'bastion_gold') return r.barter ? { ...base, action: 'barter', count: want } : r.bastion ? { ...base, action: 'bastion_gold', item: 'gold_ingot' } : null;
@@ -249,7 +270,7 @@ function tree(bot, goal, r, now = Date.now()) {
     // The pace alone (note 2412): the walks back to a portal, how many came out in the Overworld, are not this walk's.
     try { pace = require('./game-progress').netherPaceSays(bot, r.forest.distance, { toPortal: false }).says; } catch (_) { pace = ''; }
     out.warped_forest = { target: { x: l.x, y: Number.isFinite(l.y) ? l.y : Math.round(bot.entity.position.y), z: l.z },
-      description: `Go to the warped forest at (${l.x}, ${l.z}), ${r.forest.distance} blocks off, and hunt its endermen one at a time for the pearls; ${o.fortress}. Held while the forest's walk and hunt do not rest (a hunt fifteen minutes without a pearl rests it), then the rods again.${pace} ${record.routeSays('warped_forest', goal)} Pearls ${o.pearls}.` };
+      description: `${r.forest.viaPortal ? `Back through the portal${r.forest.viaPortal.portalBlocks != null ? ` ${r.forest.viaPortal.portalBlocks} blocks off at (${r.forest.viaPortal.overworld.x}, ${r.forest.viaPortal.overworld.z})` : ''}, then ${r.forest.netherBlocks} blocks in the Nether from where it comes out to the warped forest known there at (${l.x}, ${l.z})` : `Go to the warped forest at (${l.x}, ${l.z}), ${r.forest.distance} blocks off`}, and hunt its endermen one at a time for the pearls; ${o.fortress}. Held while the forest's walk and hunt do not rest (a hunt fifteen minutes without a pearl rests it), then the rods again.${pace} ${record.routeSays('warped_forest', goal)} Pearls ${o.pearls}.` };
   }
   if (r.barter) {
     out.barter_gold = { description: `Barter with the piglins in reach now: ${o.gold}. A piglin turns on a player in no gold, so a gold piece is worn first. Held while gold is left to throw and a piglin is within 32, then the rods again. ${record.routeSays('barter_gold', goal)} Pearls ${o.pearls}.` };
