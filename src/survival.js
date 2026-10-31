@@ -4856,6 +4856,29 @@ class Survival {
         await sleep(250);
         return true;
       } };
+    // One block more (note 2714): on the top with a walker that reaches it from a ledge or the ground beside, a third
+    // block puts the top out of a zombie's reach from ground one up (its blow reaches 1.95 above where it stands). full-255
+    // (25587, 2026-10-31 09:03:52Z), two up at 20 health with three zombies at 2.6 to 3.6 blocks, one on a ledge that let
+    // it reach the top, had pillar (hold), strike from above, come down, seal and retreat, answered none of them good, the
+    // fallback took retreat off the top into them, and it was slain fourteen seconds on.
+    if (up && topReachers.some(t => !CLIMBERS.has(t.entity.name)) && scaffold >= 1 && [1, 2, 3].every(dy => { const b = bot.blockAt(feet.offset(0, dy, 0)); return b && b.boundingBox === 'empty' && !/lava|water/.test(b.name); })) {
+      const standYOf = t => onLedge.includes(t) ? t.entity.position.y : (beside ? base.y + beside.up : base.y);
+      const stillReach = coming.filter(t => !shooter(t.entity) && t.entity.name !== 'creeper' && (CLIMBERS.has(t.entity.name) || standYOf(t) + bodyHeight(t.entity.name) > topY + 1.01));
+      const stillKinds = new Set(stillReach.map(t => t.entity.name));
+      const higherCost = stanceCost({ mobs, setup: 1.5, fight: { only: m => stillKinds.has(m.name), lead: true }, reaches: m => m.shoots || m.spear || m.name === 'creeper' || m.name === 'warden' || stillKinds.has(m.name), shield: shielded, health: bot.health });
+      const outOf = topReachers.filter(t => !stillReach.includes(t));
+      options.pillar_higher = { expects: { damage: higherCost.damage, seconds: higherCost.seconds, oneHit },
+        description: `Go one block higher: a third block under the feet (1 of the ${scaffold} carried, about 1.5 seconds, the shield down for it), so the top is three up from the pillar's foot. A blow reaches as high as the mob stands plus its height (a zombie or a piglin 1.95, a wither skeleton 2.4): ${outOf.length ? `${mobList([...new Set(outOf.map(t => t.entity.name))], outOf.map(t => ({ name: t.entity.name })))} ${outOf.length === 1 ? 'reaches' : 'reach'} the top now from where ${outOf.length === 1 ? 'it stands' : 'they stand'} and would not reach it one higher` : 'none of those reaching the top now would be put out of reach'}${stillReach.length ? `; ${mobList([...new Set(stillReach.map(t => t.entity.name))], stillReach.map(t => ({ name: t.entity.name })))} still ${stillReach.length === 1 ? 'reaches' : 'reach'} it (a climber, or ground two up)` : ''}; shooters still can hit, and the sword still reaches what stands at the foot. A knock off a top three up is a fall of three among them.` + costSays(higherCost, bot.health, mobs, { doing: 'going up', done: 'Three up' }),
+        run: async () => {
+          this.report(goal, save, { action: 'pillar_higher', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health });
+          lowerShield(bot);
+          let placed = 0;
+          try { placed = await require('./pillar-recovery').pillarUp(bot, task, feet.y + 1, { dig: this.actions.dig, maxBlocks: 1, threats: false }); }
+          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+          if (bot.entity.position.y < feet.y + 0.9) { this.state.stanceWhy = `${placed ? 'the block went down but the bot is not up on it' : 'no block went under the feet'}; the top stays two up`; return false; }
+          return true;
+        } };
+    }
     // The fight chosen from the top, and what it came to in this hold.
     if (holdSays?.fight && options.fight) options.fight.description += holdSays.fight;
     // Down off a pillar of the bot's own: stood on one, nothing else here
