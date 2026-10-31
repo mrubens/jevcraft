@@ -271,7 +271,13 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     session.promise = runGoal(bot, task, goal, workStore, {
       decisionClient: routed, survival,
       onStep: g => {
-        console.log(JSON.stringify({ status: g.status, step: g.step, decision: g.decisions?.at(-1), position: bot.entity.position, error: g.lastError })); observation?.sample('step', undefined, g);
+        // The same step with the same last decision is written once in two seconds, not at every pass (note 2686): a
+        // loop spinning twenty passes a second wrote its 30 KB status line each pass, and full-250 (25588, 2026-10-31
+        // 07:3x to 07:55Z) grew a 53 MB log in 25 minutes in a stand-off with a creeper, about a megabyte a minute.
+        const line = JSON.stringify({ status: g.status, step: g.step, decision: g.decisions?.at(-1), position: bot.entity.position, error: g.lastError });
+        const key = JSON.stringify([g.status, g.step, g.decisions?.at(-1)?.at, g.lastError]), at = Date.now();
+        if (key !== session.lastStepKey || at - (session.lastStepAt || 0) >= 2000) { console.log(line); session.lastStepKey = key; session.lastStepAt = at; }
+        observation?.sample('step', undefined, g);
         // Every step change, not only the one a second the supervisor sees:
         // mid-110-f's staircase and retreat traded seven times in eight
         // seconds, between its looks, and the audit caught what it did not.
