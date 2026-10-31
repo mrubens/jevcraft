@@ -33,8 +33,12 @@ function bedKitHome(bot, goal) {
   if (!sb || !Number.isFinite(sb.x)) return null;
   const h = goal.survival?.home;
   if (h?.stash?.position && d3(h.stash.position, sb) <= HOME_COVERS) return null;
-  if (goal.bedKit && (!goal.bedKit.bedFoot || d3(goal.bedKit.bedFoot, sb) > 2)) delete goal.bedKit;
-  return { origin: plain(sb), stash: goal.bedKit || null, bedKit: true };
+  // A read changes nothing (note 2637; the project review of 2026-10-30, item 6): the kit chest by a bed the spawn has
+  // left is not forgotten here, it is said as the older one (survival.js builds its options with the spawn bed changed
+  // for a moment and this read inside, so the chest's memory went in a look); it is set aside only when a new kit chest
+  // is stocked (stockBedKit below), into goal.bedKitsLeft, where the stash's options can still name it.
+  const near = goal.bedKit && goal.bedKit.bedFoot && d3(goal.bedKit.bedFoot, sb) <= 2;
+  return { origin: plain(sb), stash: near ? goal.bedKit : null, older: !near && goal.bedKit ? goal.bedKit : null, bedKit: true };
 }
 
 const distanceTo = (bot, home) => { const p = bot.entity?.position; return p ? d3(p, { x: home.origin.x + 0.5, y: home.origin.y, z: home.origin.z + 0.5 }) : Infinity; };
@@ -69,6 +73,7 @@ async function placeBedChest(bot, task, goal, save, home, actions) {
   await actions.navigate(bot, task, new goals.GoalNear(cell.x, cell.y, cell.z, 3), { timeoutMs: 30000, stallMs: 8000 });
   if (bot.blockAt(cell)?.name !== kind) await actions.place(bot, task, cell, kind);
   if (bot.blockAt(cell)?.name !== kind) throw new Error('the chest did not go beside the bed');
+  if (goal.bedKit && goal.bedKit.position && d3(goal.bedKit.position, cell) > 2) (goal.bedKitsLeft ||= []).push({ ...goal.bedKit, leftAt: new Date().toISOString() });
   goal.bedKit = { position: plain(cell), bedFoot: plain(sb.foot), placedAt: new Date().toISOString(), contents: {}, ...(kind === 'ender_chest' ? { ender: true } : {}) };
   home.stash = goal.bedKit; save();
 }
