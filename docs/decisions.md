@@ -226,6 +226,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `ride_water` | root | pour the water bucket at the feet and step off into the waterfall | a water bucket carried, not in the Nether, and an open side whose fall runs clear to the ground or water |
 | `step_off` | root | step off a side and take the fall | a side whose fall leaves more than a point of health |
 | `stay_up` | root | stay up on the top for now, the walk waiting, asked again in a minute or once the mobs below go | hostile mobs below the top that have no way up to it |
+| `stay_level` | root | stay at this height: the walk's goal is level with the top or above it, so the way there is the approach's (a span, a tunnel, a pillar), not a way down | the walk's goal lies at the top's height or above it (within three below) and no stay-up is on offer; said with the goal's blocks across and up and how far every way down here ends below (note 2694) |
 
 ### `climb_out`
 

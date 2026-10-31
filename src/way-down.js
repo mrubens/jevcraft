@@ -614,6 +614,16 @@ async function oneWayDown(bot, task, walkGoal, perch, { client, goal, save }) {
     tree.stay_up = { description: `Stay up on the top for now: below are ${who}${below.length > 4 ? ` and ${below.length - 4} more` : ''}, none of them able to climb to it; the walk ${walkGoal ? 'this was for ' : ''}waits, and this is asked again in a minute or once they go. Health ${Math.round(health * 10) / 10}${heals ? ', coming back at this hunger' : `, not coming back at hunger ${food}`}.` };
   }
   const point = Number.isFinite(walkGoal?.x) && Number.isFinite(walkGoal?.z) ? walkGoal : walkGoal?.entity?.position;
+  // The walk's goal level with the top or above it and far across: staying at this height is a way (note 2694), the
+  // ways there being the approach's own (a span, a tunnel at this height, a pillar) where the walk finds no route.
+  // mid-full-147-fortress-5 (25586, 2026-10-31 08:27:50Z), its fortress 39 blocks across and 3 up with a spawner known
+  // in it, had dig down as the only way offered and took it unasked, 25 blocks down to y 52, the fortress then 28 up.
+  if (point && Number.isFinite(point.y) && point.y >= perch.feet.y - 3 && !tree.stay_up) {
+    const across = Math.round(Math.hypot(point.x - perch.feet.x, point.z - perch.feet.z)), dy = Math.round(point.y - perch.feet.y);
+    const lows = Object.values(ways).map(w => { const m = /ends (\d+) blocks lower/.exec(w.description || ''); return m ? Number(m[1]) : null; }).filter(n => n !== null);
+    const lower = lows.length ? `${Math.min(...lows)}${lows.length > 1 && Math.max(...lows) !== Math.min(...lows) ? ` to ${Math.max(...lows)}` : ''}` : 'many';
+    tree.stay_level = { description: `Stay at this height: the walk's goal at (${Math.round(point.x)}, ${Math.round(point.y)}, ${Math.round(point.z)}) is ${across} blocks across and ${dy > 0 ? `${dy} up` : dy < 0 ? `${-dy} down` : 'level with the top'}, so no way down leads to it; the ways there from here are the approach's own (a span laid at this height, a tunnel through the rock, a pillar), asked next where the walk finds no route. Every way down here ends ${lower} blocks lower, the goal then that much up again.` };
+  }
   const state = { top: perchSays(perch), health: Math.round(health), food: bot.food,
     ...(point ? { walkingTo: `${where({ x: Math.round(point.x), y: Math.round(Number.isFinite(point.y) ? point.y : perch.feet.y), z: Math.round(point.z) })}, ${Math.round(Math.hypot(point.x - perch.feet.x, point.z - perch.feet.z))} blocks off` } : {}),
     ...(goal?.survivalAction?.action ? { walkFor: said(goal.survivalAction.action) } : goal?.step?.action ? { walkFor: said(goal.step.action) } : {}),
@@ -623,6 +633,7 @@ async function oneWayDown(bot, task, walkGoal, perch, { client, goal, save }) {
   const decision = await decide('way_down', { client, bot, task, goal, save, tree, state, context: { oldOrder: oldOrderWay(ways) } });
   if (decision.stale) return false;
   const choice = decision.path.at(-1), way = ways[choice];
+  if (choice === 'stay_level') throw Object.assign(new Error(`Staying at this height: the walk's goal is level with the top or above it, and the way there is the approach's, not a way down`), { name: 'NoRoute', stayUp: true });
   if (choice === 'stay_up') {
     bot._wayDownStay = { until: Date.now() + STAY_MS, below: below.map(t => t.entity.id) };
     throw Object.assign(new Error('Staying up on the top: the mobs below have no way up and the way down is into them'), { name: 'NoRoute', stayUp: true });

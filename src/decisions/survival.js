@@ -294,6 +294,7 @@ define({
     { key: 'ride_water', label: 'pour the water bucket at the feet and step off into the waterfall', when: 'a water bucket carried, not in the Nether, and an open side whose fall runs clear to the ground or water', level: 'root' },
     { key: 'step_off', label: 'step off a side and take the fall', when: 'a side whose fall leaves more than a point of health', level: 'root' },
     { key: 'stay_up', label: 'stay up on the top for now, the walk waiting, asked again in a minute or once the mobs below go', when: 'hostile mobs below the top that have no way up to it', level: 'root' },
+    { key: 'stay_level', label: 'stay at this height: the walk\'s goal is level with the top or above it, so the way there is the approach\'s (a span, a tunnel, a pillar), not a way down', when: 'the walk\'s goal lies at the top\'s height or above it (within three below) and no stay-up is on offer; said with the goal\'s blocks across and up and how far every way down here ends below (note 2694)', level: 'root' },
   ],
   instructions: { task: 'The bot has to walk somewhere off the top it stands on, and no side of the top comes down within three blocks, so no walk can start from here. Choose how it comes down.', guidance: 'Each way says what it costs: the blocks to dig and the seconds and pickaxe uses, the water bucket spent, the health a fall takes, and where it ends: somewhere a walk goes on, or still up on the tower, where this is asked again. `top` says how far the sides fall; `triedLately` is what the ways chosen lately did.' },
 });
