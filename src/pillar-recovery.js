@@ -317,8 +317,15 @@ async function pillarUp(bot, task, targetY, { dig, maxBlocks = 40, threats = tru
     for (let attempt = 0; attempt < 3 && bot.entity.position.floored().y <= start; attempt++) {
       task.check();
       // The body still before the jump (note 1685): a jump with the run's momentum left in it lands a cell over, and on a stub one block wide that is off it. 25588 (dragon-220, 2026-10-15 01:06Z) laid one block of two in the cloud at (3, 64, -4), jumped three times for the second, 'the block was not placed in three jumps (on ground true)', and was found three blocks lower at (3, 62, -7), off its stub, 9.9 health; dragon-214, 215 and 216 laid one of two the same way. The keys are let go and up to three tenths of a second waited for the body to stand still; a jump that lands in another cell is said.
+      // The pathfinder's goal let go too (note 2692): with a walk's goal still set it put its keys back every tick, and the
+      // jump landed a cell or two over with air under it. full-248 (25587, 2026-10-31 08:19:33Z) at 12 health between a
+      // husk and a zombie had 'the jump carried the body from (-453, 775) to (-453, 773)' and 'the block was not placed in
+      // three jumps ... the body over (-453, 773) with air under it, not over its cell', fought on the ground instead and
+      // was killed by a witch at 1.08; 51 such 'stopped before the first block' lines today, 37 of them with the body over
+      // another cell.
+      try { bot.pathfinder?.setGoal?.(null); } catch (_) { /* no pathfinder */ }
       bot.clearControlStates?.();
-      for (let i = 0; i < 15 && bot.entity.velocity && Math.hypot(bot.entity.velocity.x, bot.entity.velocity.z) > 0.03; i++) await new Promise(resolve => setTimeout(resolve, 20));
+      for (let i = 0; i < 30 && bot.entity.velocity && Math.hypot(bot.entity.velocity.x, bot.entity.velocity.z) > 0.03; i++) await new Promise(resolve => setTimeout(resolve, 20));
       const cellBefore = bot.entity.position.floored();
       let peak = bot.entity.position.y;
       await move(bot, task, { label: 'pillar_up', keys: ['jump'], sneak: false, until: () => { peak = Math.max(peak, bot.entity.position.y); return bot.entity.position.y >= start + 1.1; }, maxMs: 1200, tick: 20 });
