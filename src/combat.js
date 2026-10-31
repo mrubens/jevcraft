@@ -263,7 +263,16 @@ async function defendNearby(bot, task, goal, save) {
   const span = require('./terrain').onSpan(bot);
   let threat = strikeTarget(bot);
   if (!threat) return false;
-  const weapon = defenseWeapon(bot), kind = weapon?.name.split('_').at(-1);
+  let weapon = defenseWeapon(bot);
+  // Among bystanders a sword's sweep would hit (a neutral beside the target), the axe or pickaxe is the weapon from the
+  // start (note 2632; the project review of 2026-10-30, item 5): the swing was scheduled by the sword's 700 ms and then
+  // strike() swapped to the tool at the last moment, so a pickaxe swung at 701 ms against its own 950, the log named the
+  // sword, and the two equips went round every swing. strike() keeps its swap for a sword still in hand.
+  if (weapon && /_sword$/.test(weapon.name) && bystanders(bot, threat.entity).length) {
+    const items = bot.inventory.items(), tool = items.find(i => /_axe$/.test(i.name)) || items.find(i => /_pickaxe$/.test(i.name));
+    if (tool) weapon = tool;
+  }
+  const kind = weapon?.name.split('_').at(-1);
   // Bare hands: a mob struck is unhurt for half a second after, so a punch
   // sooner is wasted (the ledge replay landed every other one at 300 ms).
   // The fight's estimate prices a creeper's race with its fuse by the same
@@ -294,7 +303,7 @@ async function defendNearby(bot, task, goal, save) {
   // a creeper, which is struck and backed away from.
   if (target.name !== 'creeper' && bot.inventory.slots?.[45]?.name === 'shield') raiseShield(bot);
   goal.survivalAction = { action: 'defend', target: target.name, entityId: target.id,
-    distance: Number(threat.distance.toFixed(2)), weapon: weapon?.name || 'bare hands', health: bot.health, swing,
+    distance: Number(threat.distance.toFixed(2)), weapon: bot.heldItem?.name || weapon?.name || 'bare hands', health: bot.health, swing,
     at: new Date().toISOString() };
   save(); return true;
 }
