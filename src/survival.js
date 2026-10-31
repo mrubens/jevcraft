@@ -688,6 +688,10 @@ const WAITS_FOR_MOB = new Set(['shield_guard', 'shield_the_charge', 'back_to_wal
 // A biter held against from farther than this, now within arm's length, is asked about again (note 2617).
 const BITER_AT_ARM = 2.5, BITER_CLOSED_FROM = 4;
 const STANCE_LEAST_MS = 3000;
+// What each stance led to with three or more blazes within eight blocks, by the health band it was chosen at (note 2677):
+// the fresh runs, fortress trials and spawner drills of 2026-10-27 to 31, a death from any cause within the minute after.
+// The band record of note 2616 is by health alone; the crowd was what killed at 10 to 16.
+const BLAZE_CROWD_RECORD = 'With three or more blazes within eight blocks, what followed each stance in the fresh runs, fortress trials and spawner drills of 2026-10-27 to 31 (a death within the minute after, from any cause), by the health it was chosen at. At 16 or more (968 askings, a death after 10%): charge nearest 298 times and 15%, close in 181 and 10%, corner ambush 82 and 10%, take cover 63 and 3%, back to wall 56 and 12%, seal 38 and none, leave and heal 37 and 3%, out of sight 25 and 4%, retreat 21 and none, step out and eat 15 and none. At 10 to 16 (276 askings, 24%): leave and heal 71 and 14%, charge nearest 51 and 41%, eat 24 and 21%, step out and eat 19 and 11%, close in 18 and 44%, back to wall 13 and 15%, corner ambush 13 and 15%, take cover 13 and 15%, seal 12 and 8%, dig down 9 and 33%. Under 10 (179 askings, 41%): leave and heal 43 and 21%, charge nearest 21 and 48%, back to wall 19 and 37%, corner ambush 18 and 28%, seal 12 and 33%, close in 11 and 82%, eat 11 and 45%, take cover 10 and 50%.';
 // What each stance led to with wither skeletons within twelve blocks, by their count (notes 2660 and 2673): the fresh runs and fortress trials of
 // 2026-10-27 to 31 (artifacts/first-days-full-*.log, midgame-mid-*fortress*.log), 688 askings, a death within the minute
 // after from any cause. The wither skeleton: a blow about 4.8 through iron, a blow a second at arm's length, 3.9 blocks a
@@ -7313,6 +7317,8 @@ class Survival {
         // What every way led to with a wither skeleton within twelve blocks (note 2660): the fresh runs and fortress
         // trials of 2026-10-27 to 31, read at 04:46Z on the 31st, a death from any cause within the minute after.
         ...(danger.some(t => t.entity?.name === 'wither_skeleton' && t.distance <= 12) ? { witherRecord: WITHER_RECORD } : {}),
+        // What every way led to with three or more blazes within eight blocks, by the health it was chosen at (note 2677).
+        ...(danger.filter(t => t.entity?.name === 'blaze' && t.distance <= 8).length >= 3 ? { blazeCrowdRecord: BLAZE_CROWD_RECORD } : {}),
         // What every way on offer led to with a deadly drop beside the feet on the runs now playing (note 2608).
         ...(shared.dropTable ? { dropRecordToday: shared.dropTable } : {}) };
       // At a live cage, what the stay there has come to, on each hold, and
