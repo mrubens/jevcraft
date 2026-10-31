@@ -304,9 +304,20 @@ function lullOptions(bot, task, goal, save, actions, known, quiet, { now = Date.
       tree.dig_in_at_spawner = { ...require('./cage-hold').planNode(), description: `Walk ${hole.steps || 0} block${hole.steps === 1 ? '' : 's'} and dig a hole one wide and two high into the rock beside the cage (${words(hole.rock)}, dug ${hole.with}, about ${digSecs} s), the mouth toward it, and hold it for its next blazes: rock behind, beside and over, only the front open.${clock.jobSays(quiet, secs)}`, secs,
         run: () => buildAndHold(bot, task, goal, save, actions, { kind: 'hole', site: hole, key: 'dig_in_at_spawner' }, secs) };
     }
+    // The hole the bot stands in, built or dug, offered as itself (note 2756): mid-full-9-fortress-21 (25590, 2026-10-31
+    // 23:30 to 23:32Z) built its hole whole at (-518, 69, 351), 8 blocks from the cage, and at the next lull two minutes
+    // on was offered stand by the spawner, step out and hunt on, the hole not among them (its cell read over the 8 of the
+    // built hole's reach); it took hunt on at 0.44, the hunt tunnelled up out of the roof, and it was slain at 23:44:35.
+    const inside = (() => { try { return stand.inHole(bot); } catch (_) { return null; } })();
+    if (inside && !hole) {
+      const c = centre(cage), off = round(inside.hole.offset(0.5, 0.5, 0.5).distanceTo(c));
+      const site = { ...inside, steps: 0, blocks: 0, build: [], open: [inside.stand, inside.stand.offset(0, 1, 0)], off, spawner: cage };
+      tree.build_hole_at_spawner = { ...require('./cage-hold').planNode(), description: `Stay in the hole the bot stands in, ${off} blocks from the cage, its mouth open on one side, and take the spawner's next blazes at the mouth: walls behind, beside and over it, only a blaze in line with the mouth sees in, and one that comes to it is within the sword.${clock.jobSays(quiet, 0)}`,
+        run: () => buildAndHold(bot, task, goal, save, actions, { kind: 'hole', site, key: 'build_hole_at_spawner' }, 0) };
+    }
     // No rock beside the cage for a hole: one built of the blocks carried (blaze-stand.js builtHoleSite, note 2730), in
     // the lull, before the crowd forms, the one moment the buried drill ever chose its stand.
-    if (!hole) {
+    if (!hole && !tree.build_hole_at_spawner) {
       // One standing whole (no block to lay) is offered with a blaze in sight too (note 2748): mid-full-147-fortress-17 (25590,
       // 2026-10-31 20:4x to 21:07Z) built its hole whole, came out of it, and at 21:04 to 21:06 was asked the lull three times
       // without it (stand by the spawner, box here, box in line, hunt on), went up to strike and burned to death at 21:07:21.
