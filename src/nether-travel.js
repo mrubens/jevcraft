@@ -694,7 +694,8 @@ const KEEP_ON_WHY = 'Jev chose to go on in the Nether without going back for foo
 // blaze" in the same second.
 function keepOnFightSays(bot) {
   let fed = true; try { fed = (bot.food ?? 20) >= 18 || require('./foraging').foodSupply(bot) > 0; } catch (_) { fed = true; }
-  return fed ? 'Fights go on as they come.' : 'The hunt goes looking for no blaze meanwhile (the search goes on), but a blaze met in reach is still offered as a fight.';
+  const h = Math.round((bot.health ?? 20) * 10) / 10;
+  return fed ? 'Fights go on as they come.' : `The hunt goes on at the health it has${h < 20 ? ` (${h} now, and no point of it comes back under hunger eighteen)` : ''}: it goes looking for no blaze meanwhile (the search goes on), but a mob met in reach is still offered as a fight, with what a hit costs said then; nothing waits for health that will not come.`;
 }
 const keepOnWhy = bot => `${KEEP_ON_WHY}, at ${Math.round((bot.health ?? 20) * 10) / 10} health and hunger ${bot.food}`;
 function keepOnSays(bot, goal, now = Date.now()) {

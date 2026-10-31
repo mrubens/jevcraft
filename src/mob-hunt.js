@@ -1774,7 +1774,13 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   // health with nothing to eat, keep_on chosen, stood at hunger 13 and then
   // 12, one under the fourteen asked, until the forest's quarter hour ran
   // out; 43 of its 319 minutes on the pearls were this wait.
-  const foodOnly = !!f0 && !f0.fit && (dimension(bot) === 'overworld' || wentOn) && f0.health >= HUNT_FLOOR && !f0.foodCarried && !(f0.burning && f0.health < 10);
+  // Gone on without food at Jev's word, the health floor holds nothing back either: under it, with nothing to eat,
+  // health is as it will be, so the step either hunts at this health (the fights come to Jev with the health and what
+  // a hit costs said) or stands for the twenty minutes keep_on bought. mid-full-19-fortress-2 (25586, 2026-10-31
+  // 01:20 to 02:35Z), its seven rods carried and the pearls next, chose keep_on at 11.9 health and hunger 14 and stood
+  // in recover_before_combat with endermen about for most of the 75 minutes to its cut, going back asked again
+  // every five minutes and keep_on answered each time: the option said the hunt goes on, the code waited for 14.
+  const foodOnly = !!f0 && !f0.fit && (dimension(bot) === 'overworld' || wentOn) && (f0.health >= HUNT_FLOOR || wentOn) && !f0.foodCarried && !(f0.burning && f0.health < 10);
   if (foodOnly && dimension(bot) === 'overworld' && !goal.stockFood) { goal.stockFood = true; save(); }
   if (!handler.passive && !f0.fit && !foodOnly) {
     // Nothing to eat and hunger under eighteen means no regeneration: the
