@@ -56,7 +56,7 @@ const REFLEX_Q = new Set(['turn_priority', 'encounter_stance', 'shot_answer', 'b
 const TOWARD_Q = {
   fortress_approach: /^(walk_route|cross_level|tunnel|stairs_down|pillar_up|blocks_then_pillar|blocks_then_cross|dig_through|descend|cover_lava|scoop_lava|span_round|head_toward)$/,
   fortress_visit: /^go_in$/,
-  empty_spawner: /^(box_here|stand_by_spawner|hunt_on|open_slit|box_in_line|box_at_spawner|dig_in_at_spawner|dig_to_spawner|pull_back)$/,
+  empty_spawner: /^(box_here|stand_by_spawner|hunt_on|open_slit|box_in_line|box_at_spawner|dig_in_at_spawner|build_hole_at_spawner|dig_to_spawner|pull_back)$/,
   hunt_target: /^(hunt_\d+|charge_nearest|close_in|fight_at_spawner|back_to_wall|box_here|box_at_spawner|box_in_line|dig_in_and_fight|fetch_rod_\d+|rise_to_strike|await_in_reach|stay_and_fight)$/,
   combat_kit: /^fight_with_carried$/,
   fortress_leg: /^(blazes_\w+|go_to_blazes(_about)?|go_to_spawner(_\d+)?|wait_at_spawner|wait_where_seen|stay_in_fortress|back_to_fortress|unwalked_\d+|blocks_then_cross|pillar_up|blocks_then_pillar)$/,
@@ -82,7 +82,7 @@ const OFF = [
 // The kind of way a 'toward' answer is, for its record.
 const WAY_KINDS = [
   ['a fight', /^(hunt_\d+|charge_nearest|close_in|fight_at_spawner|back_to_wall|rise_to_strike|await_in_reach|fetch_rod_\d+|dig_in_and_fight|stay_and_fight|fight_with_carried)$/],
-  ['a box or slit at the spawner', /^(box_here|box_in_line|box_at_spawner|dig_in_at_spawner|open_slit)$/],
+  ['a box or slit at the spawner', /^(box_here|box_in_line|box_at_spawner|dig_in_at_spawner|build_hole_at_spawner|open_slit)$/],
   ['a wait at the spawner', /^(wait_at_spawner|wait_where_seen|stand_by_spawner|stay_in_fortress|hunt_on|pull_back)$/],
   ['a bridge or crossing', /^(blazes_)?(cross_level|blocks_then_cross|span_round|cover_lava|scoop_lava)$/],
   ['a dig or climb', /^(blazes_)?(tunnel|descend|dig_through|pillar_up|blocks_then_pillar)$/],

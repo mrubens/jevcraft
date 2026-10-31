@@ -114,7 +114,7 @@ const CLASS_OF = {
   close_in: 'close_in', charge_nearest: 'charge',
   fight: 'fight', fight_from_footing: 'fight', rail_and_fight: 'fight',
   box_here: 'box_stand', box_at_spawner: 'box_stand', fight_at_spawner: 'box_stand', break_spawner: 'box_stand',
-  dig_in_and_fight: 'hole', dig_in_at_spawner: 'hole',
+  dig_in_and_fight: 'hole', dig_in_at_spawner: 'hole', build_hole_at_spawner: 'hole',
   take_cover: 'cover', back_to_wall: 'cover', out_of_sight: 'cover', corner_ambush: 'cover', seal: 'cover', shield_guard: 'cover', dig_down: 'cover', nook: 'cover', hold_on_span: 'cover', bunker: 'cover',
   retreat: 'retreat', leave_reach: 'retreat',
   leave_and_heal: 'heal', eat: 'heal',
@@ -409,7 +409,7 @@ function answersSay(bot, opts = {}) {
 // days old and say who died; none said which answer brought the rods.
 const RODS_BY = { from: '2026-10-03 03:00Z', to: '08:56Z', rods: 105,
   rows: { close_in: [36, 77, 7], charge: [5, 11, 0], corner: [5, 0, 3], box: [44, 1, 2], hole: [8, 0, 4], heal: [8, 0, 1], spawner: [23, 4, 6] } };
-const RODS_BY_KEY = { close_in: 'close_in', charge_nearest: 'charge', corner_ambush: 'corner', box_here: 'box', box_at_spawner: 'box', dig_in_and_fight: 'hole', dig_in_at_spawner: 'hole', bunker: 'hole', leave_and_heal: 'heal', fight_at_spawner: 'spawner', wait_at_spawner: 'spawner' };
+const RODS_BY_KEY = { close_in: 'close_in', charge_nearest: 'charge', corner_ambush: 'corner', box_here: 'box', box_at_spawner: 'box', dig_in_and_fight: 'hole', dig_in_at_spawner: 'hole', build_hole_at_spawner: 'hole', bunker: 'hole', leave_and_heal: 'heal', fight_at_spawner: 'spawner', wait_at_spawner: 'spawner' };
 const RODS_BY_SAID = { close_in: 'closing in', charge: 'a charge at the nearest', corner: 'a corner ambush', box: 'a box (building it and holding it)', hole: 'a hole dug to fight or recover in', heal: 'leaving to heal', spawner: 'standing or waiting at the cage' };
 function rodsBySays(key) {
   const kind = RODS_BY_KEY[key], row = kind && RODS_BY.rows[kind];

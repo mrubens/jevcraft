@@ -1929,7 +1929,7 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     // fresh bunker at a different spot while the almost-finished box stood
     // empty. While that intention holds, the wall it is building or has
     // already built is left to finish and be used, not preempted.
-    const buildingBox = (() => { try { const i = require('./intention').holding(bot, goal); return !!i && i.q === 'empty_spawner' && /^(box_here|box_in_line|box_at_spawner|dig_in_at_spawner|open_slit)$/.test(i.choice); } catch (_) { return false; } })();
+    const buildingBox = (() => { try { const i = require('./intention').holding(bot, goal); return !!i && i.q === 'empty_spawner' && /^(box_here|box_in_line|box_at_spawner|dig_in_at_spawner|build_hole_at_spawner|open_slit)$/.test(i.choice); } catch (_) { return false; } })();
     // A wall at hand, not a wall somewhere. Sent to find one nine blocks
     // off, the bot took forty-one damage crossing the room and arrived with
     // nothing; fighting where it stood cost twenty-six.

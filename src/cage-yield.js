@@ -23,7 +23,7 @@ const NO_YIELD_MS = 3 * 60000;
 const REACH = 5;       // blazes this near: a step and a swing
 // The ways that keep the bot where it is at the cage, waiting for blazes.
 const HOLDS = new Set(['box_here', 'box_at_spawner', 'take_cover', 'stand_by_spawner', 'fight_at_spawner', 'seal', 'dig_down',
-  'dig_in_at_spawner', 'dig_in_and_fight', 'stay_and_fight', 'open_slit', 'keep_at_it', 'back_to_wall', 'out_of_sight', 'nook', 'defer', 'hold_box']);
+  'dig_in_at_spawner', 'build_hole_at_spawner', 'dig_in_and_fight', 'stay_and_fight', 'open_slit', 'keep_at_it', 'back_to_wall', 'out_of_sight', 'nook', 'defer', 'hold_box']);
 const STRIKES = ['close_in', 'charge_nearest'];
 // A hold's rest (note 884), and what must be on offer beside it: a strike or a way out.
 const HOLD_REST_MS = 10 * 60000, HOLD_REST_HEALTH = 12;
