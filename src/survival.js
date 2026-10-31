@@ -12687,6 +12687,18 @@ class Survival {
     // Stocked is stocked: the flag that asked for a reserve was never taken
     // down, so the stock-driven search ran for the rest of the goal.
     if (foodSupply(bot) >= desiredFood) { unwatch(this, 'food_search', 'stock'); delete goal.stockFood; }
+    // Food chosen by Jev (upkeep's food reserve, a food plan's food) takes the stock search's rest down once (note 2727;
+    // the Fable check-in of 2026-10-31 14:00Z): resting, the search wanted nothing, so the answer ended in a second.
+    // full-264 (25592, 2026-10-31) chose food three times (12:20:10 food_reserve, 12:29:18, 12:58:40 'Find food for the
+    // reserve', ended '[food plan] ... ended: no food is asked for now (met, resting, or the work's own)') and found none;
+    // at 1 to 5 health with nothing to eat from 13:06, it was slain at 13:26:35.
+    {
+      const chosen = Math.max(goal.foodChosenAt || 0, this.state.foodChoice?.choice === 'food' ? this.state.foodChoice.at || 0 : 0);
+      if (chosen && now - chosen < 120000 && (this.state.foodRestLiftedFor || 0) < chosen) {
+        attemptsFor(this).clear('food_search', 'stock'); unwatch(this, 'food_search', 'stock');
+        this.state.foodRestLiftedFor = chosen; save();
+      }
+    }
     // The supervisor: five minutes of searching with no more food carried
     // sets the search aside for twenty. The clock used to run from the
     // first look whatever was found meanwhile.
