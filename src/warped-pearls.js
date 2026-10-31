@@ -116,7 +116,12 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
     // full-4 'navigation timed out' at 44 with the point 34 above, full-6 'No route' at 18, full-7 eight walks refused; the
     // user, 2026-10-26: 'we gotta be able to solve that'). Any of the forest's floor is the forest (inForest).
     if (!inForest(bot) && actions.navigate) {
-      const floor = nyliumFloor(bot);
+      // The floor a flight was dug toward is kept for the next passes while it is near its time (note 2681): the pick
+      // follows the endermen's level when any is in view, and mid-full-9-forest-5 (25591, 2026-10-31 07:2xZ) had it flip
+      // between (89, 40, 370) and (135, 63, 363) as endermen on a terrace came in and out of its sixty-four blocks, each
+      // pass walking or digging toward the other.
+      const kept = bot._forestFloorDug && bot._forestFloorDug.target && bot._forestFloorDug.at > Date.now() - 180000 ? bot._forestFloorDug.target : null;
+      const floor = kept && (() => { try { const b = bot.blockAt(kept.offset(0, -1, 0)); return b && b.name === 'warped_nylium'; } catch (_) { return false; } })() ? kept : nyliumFloor(bot);
       if (floor) {
         const t0 = Date.now(), d0 = Math.round(floor.distanceTo(bot.entity.position));
         let walkWhy = null;
@@ -152,7 +157,7 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
             }
           } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; ended = String(err.message || err).slice(0, 160); }
           console.log(`[warped] the dig toward the floor: ${steps} step${steps === 1 ? '' : 's'} in ${Math.round((Date.now() - dugAt) / 1000)} s, ${Math.round(fl.distanceTo(bot.entity.position))} off${ended ? `, ended: ${ended}` : flat >= 3 ? ', the last steps gained nothing' : ''}`);
-          bot._forestFloorDug = { off: floor.distanceTo(bot.entity.position), at: Date.now() };
+          bot._forestFloorDug = { off: floor.distanceTo(bot.entity.position), at: Date.now(), target: fl };
         }
         console.log(`[warped] to the forest's floor at (${floor.x}, ${floor.y}, ${floor.z}), ${d0} blocks off: ${inForest(bot) ? 'in the forest' : `not reached, ${Math.round(floor.distanceTo(bot.entity.position))} off`} in ${Math.round((Date.now() - t0) / 1000)} s`);
       }
