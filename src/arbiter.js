@@ -1087,7 +1087,12 @@ function outranks(bot, reflex, holder, now = Date.now()) {
   // (bot._stance) within its time, whatever the health, is the survival layer engaged with these shooters.
   if (reflex.key === 'fire') {
     const s = bot?._stance;
-    const engaged = s && now < (s.hold?.extended ? s.hold.until : s.at + require('./danger').STANCE_HOLD_MS) && s.choice !== 'keep_working';
+    // Within the stance's own time (its estimate's seconds where longer than the fifteen, as survival.js inTime reads it)
+    // and five seconds over, for the asking that follows its end (note 2655): open run 2 of the drill of 2026-10-31
+    // 03:51Z held close in 24 seconds (priced longer than fifteen), and the fire took the turn at 11.2 health in that
+    // hold's second half, note 2652's fifteen seconds passed; burned to a crisp 40 seconds later.
+    const ends = s ? (s.hold?.extended ? s.hold.until : s.at + Math.max(require('./danger').STANCE_HOLD_MS, (s.expects?.seconds || 0) * 1000)) : 0;
+    const engaged = s && now < ends + 5000 && s.choice !== 'keep_working';
     if (engaged && shooterThatLightsAbout(bot)) return false;
   }
   return true;
