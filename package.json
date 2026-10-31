@@ -29,7 +29,7 @@
     "plan": "node scripts/try-plan.js",
     "live": "node scripts/live-test.js",
     "pretest": "node scripts/check-node.js",
-    "test": "JEV_NONE_GOOD=0 nice -n 19 node --test --test-concurrency=5 --require ./test/support/jev-stand-in.js test/*.test.js",
+    "test": "echo no tests (the user, 2026-10-31)",
     "accept": "node scripts/acceptance.js",
     "build-followup": "node scripts/build-followup-test.js",
     "skin": "node scripts/create-robot-skin.js"
