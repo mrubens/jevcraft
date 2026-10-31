@@ -13,6 +13,11 @@
 // mob about sat out the whole of it, 15 to 45 seconds a test, a third of the
 // suite's time (note 797). The wait's own test sets its own length.
 process.env.JEV_FIGHT_WAIT_MS ||= '50';
+// The live record of the day's answers at the blazes (artifacts/blaze-outcomes.json, note 2602) is not read under the test
+// runner (note 2625): a test's expected words are the tables kept in code, and the record's rows change by the hour (the
+// drop record's own test and note 2616's name their own file). Two survival tests failed on main on 2026-10-31 for the
+// live rows: the meal priced 0.1 by the record's death share, and the drop's live row said in place of the table's.
+process.env.JEV_BLAZE_OUTCOMES ||= '/nonexistent/blaze-outcomes.json';
 const decisions = require('../../src/decisions');
 const { walk, firstOption } = decisions;
 const jevDown = require('../../src/jev-down');
