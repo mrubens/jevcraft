@@ -1247,6 +1247,19 @@ async function closeIn(bot, task, goal, save, { navigate, seconds = 45, item = '
       const inReach = live(target) && canStrike(bot, target) ? target : null;
       const shieldFrom = Date.now();
       if (!inReach && await shieldVolley(bot, task, { toward: live(target) ? target.position : null })) { stats.shieldMs += Date.now() - shieldFrom; continue; }
+      // A rod within a step is taken at once, a blaze in reach or not (note 2627): the pickup below runs only with no
+      // blaze in reach and nothing to defend, and in a fight that keeps a blaze in reach it never runs. mid-full-19-
+      // fortress-2 (25586, 2026-10-31 01:05 to 01:35Z) killed 23 blazes in a fight of thirty minutes and took 3 rods:
+      // 8 kills left a rod lying 2 to 4 blocks off two seconds on (note 2621's record), none walked to while the fight
+      // went on, and a rod lies five minutes. A step and back is under a second.
+      const rodAtFoot = navigate ? Object.values(bot.entities).find(e => e.getDroppedItem?.()?.name === item && e.isValid !== false && e.position && e.position.distanceTo(bot.entity.position) < ROD_STEP) : null;
+      if (rodAtFoot && !(bot._rodStepAt > Date.now() - 2500)) {
+        bot._rodStepAt = Date.now();
+        const before = countOf(bot, item), r = rodAtFoot.position.floored();
+        try { await navigate(bot, task, new goals.GoalNear(r.x, r.y, r.z, 0.5), { timeoutMs: 1500, stallMs: 800, onFoot: true, stopWhen: () => countOf(bot, item) > before || !live(rodAtFoot) }); }
+        catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+        continue;
+      }
       if (inReach) {
         const wait = (ce.SWING_MS.sword || 625) - (Date.now() - (bot._defenseAttackAt || 0));
         if (wait > 0) { await sleep(Math.min(wait, 150)); continue; }
@@ -1756,7 +1769,7 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
   // blazes to come to the sword, priced by whether any can see it, and by
   // what the holds already made from about here came to (note 585). The
   // close-in and the spawner's breaking are no holds.
-  if (hunted) for (const o of Object.values(options)) o.description += (TACTICS.has(o.kind) ? '' : ' Rods that fall near are picked up between volleys.') + (['close', 'charge', 'break', ...TACTICS].includes(o.kind) ? '' : holdSays(bot, o, holds));
+  if (hunted) for (const o of Object.values(options)) o.description += (TACTICS.has(o.kind) ? '' : ' Rods that fall within a step are taken at once, a blaze in reach or not; farther ones between volleys.') + (['close', 'charge', 'break', ...TACTICS].includes(o.kind) ? '' : holdSays(bot, o, holds));
   if (need > 0) {
     const cage = spawnerAt(bot), live = !!cage && cage.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position) <= 16;
     for (const o of Object.values(options)) o.description += towardRods(need, gainOf(o), { spawner: live, of });
@@ -1790,6 +1803,8 @@ function deathsHereSays(bot, { now = Date.now() } = {}) {
 // said with the rules of the game it rests on, a price worked out from the
 // fight at hand (the walk and the building in their fire, then what reaches
 // the bot there) and what the arena measured of it, fight by fight.
+// A rod this near is a step and back (note 2627).
+const ROD_STEP = 2.5;
 const TACTICS = new Set(['box', 'light', 'corner', 'heal', 'far']);
 const PLACE_SECONDS = 0.45, TORCH_SECONDS = 0.45;
 function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket, dig, runs = CLOSE_SECONDS, hunted = false, planned = false }) {
