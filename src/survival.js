@@ -7305,6 +7305,29 @@ class Survival {
         if (n && n.rodsLeft <= 0) needMetSays = `The rods' need is met: ${n.rods} blaze rod${n.rods === 1 ? '' : 's'} carried of ${n.rodsWanted} wanted (${n.pearlsLeft} ender pearl${n.pearlsLeft === 1 ? '' : 's'} still wanted). No fight here gains anything the goal wants now, and a death here drops the ${n.rods} rod${n.rods === 1 ? '' : 's'} carried; the spawner keeps making blazes while the bot is within sixteen blocks of it. Today both trials that met the need fought on at the cage and were dead within three minutes.`;
       }
     } catch (_) { needMetSays = null; }
+    // Away from the spawner with the rods, where they are all the goal wants of it (note 2745): the state said 'No fight
+    // here gains anything the goal wants now' and every way on offer was a stance to fight on, stash or a short retreat.
+    // mid-full-9-fortress-16 (25590, 2026-10-31 19:28 to 19:50Z) had 9 rods in the pack by 19:46 off a built hole, went on
+    // at the spawner charging and closing in at 0.12 to 0.38, and was slain by a blaze at 19:50:25 with them.
+    try {
+      const cage = needMetSays ? require('./blaze-stand').spawnerAt(bot) : null;
+      const here = bot.entity?.position, AWAY = 20;
+      const off = cage && here ? here.distanceTo(cage.offset(0.5, 0.5, 0.5)) : null;
+      if (cage && off !== null && off < AWAY && typeof goals.GoalInvert === 'function') {
+        const pace = require('./run-pace').runPace(require('./run-pace').paceOf(this.state));
+        const secs = Math.max(2, Math.round((AWAY - off) / pace * 10) / 10);
+        let cost = null; try { cost = require('./blaze-stand').standCost(bot, require('./danger').threats(bot, 48), { setup: secs }); } catch (_) { cost = null; }
+        const n = require('./eye-need').need(bot, goal);
+        options.leave_the_spawner = { ...(cost ? { expects: { damage: cost.damage, seconds: secs } } : {}),
+          description: `${cost ? `This way: about ${cost.damage} damage over about ${secs} seconds, from ${Math.round((bot.health ?? 20) * 10) / 10} health. ` : ''}Leave the spawner with the ${n?.rods ?? 'rods'} rod${n?.rods === 1 ? '' : 's'} carried, the goal's need of them met: walk away to ${AWAY} blocks or more from the cage (${Math.round(off)} now), about ${secs} seconds at this bot's pace of ${pace} blocks a second, the back to the blazes and the shield down; past 16 blocks of it the spawner makes no more, and the blazes in sight follow and shoot until they lose the bot. From there the ladder's next step is asked (the portal home, the pearls).`,
+          run: async () => {
+            this.report(goal, save, { action: 'leave_the_spawner', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
+            lowerShield(bot);
+            await this.actions.navigate(bot, task, new goals.GoalInvert(new goals.GoalNear(cage.x, cage.y, cage.z, AWAY)), { timeoutMs: Math.max(8000, secs * 3000), stallMs: 3000, sprint: true });
+            return true;
+          } };
+      }
+    } catch (_) { /* no way away offered */ }
       const state = { ...(shared.lowAndHit ? { lowAndHit: shared.lowAndHit } : {}), ...(shared.hitting ? { hittingNow: shared.hitting } : {}), ...(shared.mobNotes ? { mobsHere: shared.mobNotes } : {}), ...(kept ? { noWayToTheBot: kept } : {}), ...(outOfSightSays ? { outOfSight: outOfSightSays } : {}), ...((d => d ? { dropBeside: d.trim() } : {})(dropBesideSays(bot))), health: bot.health, food: bot.food, dimension: String(bot.game?.dimension || ''), armour, weapon: defenseWeapon(bot)?.name || 'bare hands',
         shield: bot.inventory.slots?.[45]?.name === 'shield', arrows: countOf(bot, 'arrow'), buildingBlocks: shelter.materialStock(bot),
         dropWithinThreeBlocks: require('./terrain').dropFacts(bot, feetCell(bot), 3) || false,
