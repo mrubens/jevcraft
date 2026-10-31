@@ -196,10 +196,13 @@ function builtHoleSite(bot, cage = spawnerAt(bot), { steps = 30, avoid = [] } = 
   const site = cell => {
     if (!open(cell) || !open(cell.offset(0, 1, 0)) || !solid(bot.blockAt(cell.offset(0, -1, 0))) || /magma/.test(bot.blockAt(cell.offset(0, -1, 0))?.name || '')) return no('not standable');
     if (cell.offset(0.5, 0.5, 0.5).distanceTo(centre) > SPAWNER_HOLE) return no(`over ${SPAWNER_HOLE} from the cage`);
-    // The mouth toward the cage: the side whose step is most toward it.
-    const toward = [...SIDES].sort((a, b) => (b.x * (centre.x - cell.x - 0.5) + b.z * (centre.z - cell.z - 0.5)) - (a.x * (centre.x - cell.x - 0.5) + a.z * (centre.z - cell.z - 0.5)))[0];
+    // The mouth toward the cage: of the sides that face it at all, the one most toward it whose cell is open at feet and
+    // head (note 2734: only the most direct side was tried, and at mid-full-63-fortress-12's cage (25591, 2026-10-31
+    // 17:0xZ) nine cells were refused 'the mouth toward the cage not open').
+    const dot = t => t.x * (centre.x - cell.x - 0.5) + t.z * (centre.z - cell.z - 0.5);
+    const toward = [...SIDES].filter(t => dot(t) > 0).sort((a, b) => dot(b) - dot(a)).find(t => open(cell.plus(t)) && open(cell.plus(t).offset(0, 1, 0)));
+    if (!toward) return no('no side facing the cage open at feet and head for a mouth');
     const mouth = cell.plus(toward);
-    if (!open(mouth) || !open(mouth.offset(0, 1, 0))) return no('the mouth toward the cage not open');
     const walls = SIDES.filter(t => !(t.x === toward.x && t.z === toward.z)).flatMap(t => [cell.plus(t), cell.plus(t).offset(0, 1, 0)]).concat([cell.offset(0, 2, 0)]);
     if (walls.some(c => /lava|water/.test(bot.blockAt(c)?.name || ''))) return no('lava or water in a wall cell');
     const build = walls.filter(c => !solid(bot.blockAt(c)));
