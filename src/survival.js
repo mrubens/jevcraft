@@ -13188,6 +13188,31 @@ class Survival {
         state.deathDrops = `What was dropped at the death lies ${off} blocks off: ${names.slice(0, 8).map(n => `${inv[n]} ${n.replaceAll('_', ' ')}`).join(', ') || 'unknown'}. Dropped things vanish five minutes after they fall while a player is within 176 blocks of them${age !== null ? `; they fell ${Math.round(age / 60 * 10) / 10} minutes ago` : ''}, and every minute spent elsewhere near them is one of those five. Carried now: ${worth.length ? worth.join(', ') : 'nothing a death would lose (no tool, armour, ore or ingot)'}${worth.length ? '' : ', so a death on the way back costs only the walk from the bed'}.`;
       }
     } catch (_) { /* not said */ }
+    // On a pillar's top with biters below that cannot reach it, holding the top is a way here, and every other way is
+    // said to come down among them (note 2683): full-247 (25588, 2026-10-31 07:25:14Z) stood two up at 1.9 health over
+    // two polar bears 4 and 5 blocks off, its food hold ended as health fell, and this question, asked with no way that
+    // stayed up, was answered obtain food (a rabbit 6 seconds off); the hunt came down and the bear slew it 20 seconds on.
+    try {
+      if (onPillarTop(bot, this.state.pillar)) {
+        const below = threats(bot, 16).filter(t => t.entity?.position && !shooter(t.entity) && !['creeper', 'warden'].includes(t.entity.name) && !CLIMBERS.has(t.entity.name) && t.entity.position.y < bot.entity.position.y - 1);
+        if (below.length) {
+          const names = mobList([...new Set(below.map(t => t.entity.name))], below.map(t => ({ name: t.entity.name })));
+          const list = below.slice(0, 4).map(t => `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`).join(', ');
+          state.onPillarTop = `The bot stands on a pillar's top, two up on placed blocks; ${list} ${below.length === 1 ? 'does' : 'do'} not reach it there. Every other way here comes down off the top among ${below.length === 1 ? 'it' : 'them'}${bot.food < 18 ? '; health does not come back up here either (hunger under eighteen)' : ''}.`;
+          tree.hold_pillar = { description: `Stay on the pillar's top, two up, where ${names} cannot reach, up to a minute more: no hit lands, nothing is gained, and the question is asked again when they leave, when one reaches the top, or when the minute is up. ${bot.food < 18 ? `Health ${Math.round(bot.health * 10) / 10} stays as it is up here: hunger ${bot.food}, under eighteen, so none comes back. ` : ''}Coming down for food or anything else is coming down among them.`,
+            run: async () => {
+              this.report(goal, save, { action: 'pillar_hold', threats: below.map(t => t.entity.name).slice(0, 4), health: bot.health, by: 'survival_priority' });
+              const until = Date.now() + 60000, h0 = bot.health;
+              while (Date.now() < until) {
+                task.check();
+                if (!onPillarTop(bot, this.state.pillar) || bot.health < h0 - 0.5) break;
+                if (!threats(bot, 16).some(t => t.entity?.position && !shooter(t.entity) && t.entity.position.y < bot.entity.position.y - 1)) break;
+                await sleep(500);
+              }
+            } };
+        }
+      }
+    } catch (_) { /* no pillar to hold */ }
     const decision = await this.decide(task, goal, save, { id: 'survival_priority', state, tree, interrupt: () => checkThreats(bot),
       isFresh: () => bot.health === state.health && bot.food === state.food && !immediateThreat(bot) });
     onStep(goal);
