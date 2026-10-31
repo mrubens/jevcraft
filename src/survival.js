@@ -572,7 +572,7 @@ function runFromRecord(d, climbing = false) {
 // many of the eight cells beside them can be stood on (a passage one wide
 // has two), and whether the way off from the biter steps up or down within
 // three cells. -> { open, steps, climbing, says }
-function runGroundOf(bot, awayFrom) {
+function runGroundOf(bot, awayFrom, { mob = null, speed = null, pace = null } = {}) {
   const feet = require('./terrain').feetCell(bot);
   const b = (x, y, z) => bot.blockAt(new Vec3(x, y, z));
   const standable = (x, y, z) => { const f = b(x, y - 1, z), a = b(x, y, z), h = b(x, y + 1, z); return !!f && f.boundingBox === 'block' && !!a && a.boundingBox === 'empty' && !!h && h.boundingBox === 'empty'; };
@@ -592,7 +592,12 @@ function runGroundOf(bot, awayFrom) {
   }
   const passage = open <= 3;
   const climbing = passage || Math.abs(steps) >= 2;
-  const says = `${passage ? `The bot stands in a passage: ${open} of the 8 cells beside its feet can be stood on` : `${open} of the 8 cells beside the bot's feet can be stood on`}${steps ? `, and the way off from it ${steps > 0 ? 'climbs' : 'drops'} ${Math.abs(steps)} in the next three cells` : ''}. ${climbing ? 'A run along steps goes at their pace, about a block a second (full-6, 2026-10-25 23:50Z: ten blocks up in ten seconds), not the sprint\'s 5.6, and a biter that walks 2.3 keeps up.' : 'Open ground: a sprint outruns anything that walks.'}`;
+  // The lead biter's pace against the bot's own measured run (note 2700), not 'a sprint outruns anything that walks':
+  // mid-full-63-fortress-5 (25590, 2026-10-31 09:18:27Z), five rods in, ran from two wither skeletons 7 and 9 blocks off
+  // told that, and they walk about 4.9 blocks a second against the bot's runs' 2.9 over their first four seconds; both were
+  // at arm's length in six seconds and it was dead at 20 health in ten.
+  const paceSays = mob && Number.isFinite(speed) ? ` ${mob.replaceAll('_', ' ')} walks about ${speed} blocks a second${Number.isFinite(pace) ? `; the bot's own runs made about ${pace} over their first four seconds (a sprint at best 5.6)${speed >= pace ? ': it is not outrun at the start, and one within a few blocks is at arm\'s length as the run begins' : ''}` : ''}.` : ' Open ground: a sprint at 5.6 blocks a second outruns a biter that walks 2.3.';
+  const says = `${passage ? `The bot stands in a passage: ${open} of the 8 cells beside its feet can be stood on` : `${open} of the 8 cells beside the bot's feet can be stood on`}${steps ? `, and the way off from it ${steps > 0 ? 'climbs' : 'drops'} ${Math.abs(steps)} in the next three cells` : ''}. ${climbing ? 'A run along steps goes at their pace, about a block a second (full-6, 2026-10-25 23:50Z: ten blocks up in ten seconds), not the sprint\'s 5.6, and a biter that walks 2.3 keeps up.' : paceSays.trim()}`;
   return { open, steps, climbing, says };
 }
 // A creeper this near ends the shield guard faced elsewhere (note 813).
@@ -5712,7 +5717,7 @@ class Survival {
         const secs = Math.round(RUN_FROM / Math.max(0.5, require('./run-pace').runPace(require('./run-pace').paceOf(this.state)) - speed) * 10) / 10;
         const others = danger.filter(t => shooter(t.entity) && t.visible).length;
         const runC = runFromCreeper(bot, runCreepers, fleeFrom(lead.entity, runCreepers), RUN_FROM, runWorn);
-        let ground = null; try { ground = runGroundOf(bot, lead.entity.position); } catch (_) { ground = null; }
+        let ground = null; try { ground = runGroundOf(bot, lead.entity.position, { mob: lead.entity.name, speed, pace: Math.round(require('./run-pace').runPace(require('./run-pace').paceOf(this.state)) * 10) / 10 }); } catch (_) { ground = null; }
         const nearest = Math.min(...biters.map(t => t.distance)), rec = runFromRecord(nearest, !!ground?.climbing);
         const recSays = rec ? `${ground ? `${ground.says} ` : ''}Runs like this one on the full runs (${RUN_FROM_RECORD.from} to ${RUN_FROM_RECORD.to}), from a mob that bites within ${rec.within} blocks, ${ground?.climbing ? 'over a climb or drop of four blocks or more' : 'over flat ground'}: ${rec.runs} in the records, the health lost in the 14 seconds after ${rec.median} on the median, ${rec.quarter} or more in one run in four, 6 or more in ${rec.sixOrMore} of 100, and the bot dead within them in ${rec.dead}${ground?.climbing ? '' : `; over a climb or drop instead, 6 or more in ${runFromRecord(nearest, true)?.sixOrMore ?? 0} of 100`}. ` : '';
         // The turn (note 2078): each that bites at arm's length as the run
