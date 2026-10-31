@@ -924,6 +924,12 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     const deaths = recentDeaths(bot, goal);
     if (deaths.length) { const spells = deathSpells(goal); state = { ...state, recentDeaths: deaths, ...(spells ? { deathSpells: spells } : {}) }; }
   }
+  // The run's clock against the ten-hour goal, with every plan question in every phase (clock.js, note 2626): the
+  // budget was said only before the Nether (strategy.js theClock, kept, the fuller text), and nothing after.
+  if (bot && goal && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && require('../clock').CLOCK_KINDS.has(spec.kind) && !state.theClock) {
+    let clock = null; try { clock = require('../clock').clockSays(bot, goal); } catch (_) { clock = null; }
+    if (clock) state = { ...state, theClock: clock };
+  }
   // Nights without sleep, with every such question: phantoms come for a
   // player on the third, and mid-231-e was killed by them at seven hunger,
   // told of it only in one option of one question (2026-09-26).
