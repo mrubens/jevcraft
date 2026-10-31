@@ -47,8 +47,16 @@ function portalFact(bot, goal = {}) {
   const owed = Math.max(0, (frame?.of || 10) - (frame?.standing || 0) - obsidian - lava);
   const held = goal.lavaFetch ? { at: { ...goal.lavaFetch.lava }, way: goal.lavaFetch.way } : goal.portalMethod?.near ? { at: { ...goal.portalMethod.near }, way: 'cast beside' } : null;
   const lit = litHere(bot);
-  const says = `${lit ? 'A portal is lit here. ' : 'No portal is lit here. '}${frame ? `The frame begun at (${frame.origin.x}, ${frame.origin.y}, ${frame.origin.z}), ${frame.distance} blocks off: ${frame.standing ?? 'some'} of ${frame.of} standing${frame.cast ? ', cast in place' : ''}.` : 'No frame begun.'} In hand: ${lava} lava, ${water} water and ${buckets} empty bucket${buckets === 1 ? '' : 's'}, ${obsidian} obsidian; ${owed} lava still to fetch.${held ? ` The lava held: (${held.at.x}, ${held.at.y}, ${held.at.z}), ${held.way}.` : ''}`;
-  return { lit, frame, lava, water, buckets, obsidian, owed, held, says };
+  // A whole frame with a light carried is one step from the Nether, said so (note 2723; the Fable check-in of
+  // 2026-10-31 13:00Z): full-262 (25589, 2026-10-31 12:26:13Z), its frame 10 of 10 cast 4 blocks off at y -23 and flint
+  // and steel carried, was told '10 of 10 standing ... 0 lava still to fetch' and nothing of the light; upkeep's wood
+  // reserve read the 96-block climb home as the pickaxes' coming shortfall, Jev took it, and the climb, a food hunt 190
+  // blocks off by boat and the way back were 25 minutes before it entered at 12:51.
+  const lighter = count(bot, 'flint_and_steel') ? 'the flint and steel' : count(bot, 'fire_charge') ? 'a fire charge' : null;
+  const whole = frame && Number.isFinite(frame.standing) && frame.standing >= frame.of;
+  const oneLight = !lit && whole && lighter ? ` The frame is whole and ${lighter} carried lights it: the Nether is one step from it. The way on from here is through it, not up: anything done up top first is the climb and the way back down to it, and the Nether's forests give stems for sticks, planks and a table, and its hoglins meat.` : '';
+  const says = `${lit ? 'A portal is lit here. ' : 'No portal is lit here. '}${frame ? `The frame begun at (${frame.origin.x}, ${frame.origin.y}, ${frame.origin.z}), ${frame.distance} blocks off: ${frame.standing ?? 'some'} of ${frame.of} standing${frame.cast ? ', cast in place' : ''}.` : 'No frame begun.'} In hand: ${lava} lava, ${water} water and ${buckets} empty bucket${buckets === 1 ? '' : 's'}, ${obsidian} obsidian; ${owed} lava still to fetch.${held ? ` The lava held: (${held.at.x}, ${held.at.y}, ${held.at.z}), ${held.way}.` : ''}${oneLight}`;
+  return { lit, frame, lava, water, buckets, obsidian, owed, held, says, oneLight: !!oneLight };
 }
 
 // Whether a step's claim on the turn holds against the fact: the ladder's
