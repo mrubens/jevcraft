@@ -41,10 +41,32 @@ function install(bot) {
       const now = Date.now(), c = look(bot, now);
       f.kills = [...f.kills.filter(k => now - k.at < KEEP_MS), { at: now, stance: stanceNow(bot), step: bot._goal?.step?.action || null, x: e.position.x, z: e.position.z }];
       console.log(`[blaze] one killed ${Math.round(e.position.distanceTo(bot.entity.position))} blocks off under ${String(stanceNow(bot) || bot._goal?.step?.action || 'nothing').replaceAll('_', ' ')}${c ? `, ${killsIn(bot, c).length} in this fight of ${Math.round((now - c.began) / 60000)} minutes` : ''}`);
+      // Where it died and what lies under it, and two seconds on whether its rod lies there (note 2621): the fortress
+      // trials of 2026-10-31 killed 20 blazes and gained no rod in four trial-hours, where the spawner drill's cavern got
+      // a rod from every second kill; a blaze killed over the walkway's edge drops into the lava below, unseen.
+      const where = e.position.floored(), under = groundUnder(bot, where);
+      const timer = setTimeout(() => {
+        try {
+          const rods = Object.values(bot.entities || {}).filter(o => o && o.isValid !== false && o.position && o.name === 'item' && o.getDroppedItem?.()?.name === 'blaze_rod' && o.position.distanceTo(e.position) <= 4);
+          const here = bot.entity?.position;
+          if (rods.length) { const r = rods[0].position.floored(); console.log(`[blaze] its rod lies at (${r.x}, ${r.y}, ${r.z})${here ? `, ${Math.round(rods[0].position.distanceTo(here))} blocks from the bot` : ''}; it died over ${under}`); }
+          else console.log(`[blaze] no rod lay within 4 of where it died two seconds on (${where.x}, ${where.y}, ${where.z}); it died over ${under}`);
+        } catch (_) { /* a record only */ }
+      }, 2000);
+      timer.unref?.();
     } catch (_) { /* a record only */ }
   });
 }
 
+// What lies under a cell, down to eight blocks: the first block that is not air, named with its depth, else open air.
+function groundUnder(bot, at) {
+  if (typeof bot.blockAt !== 'function') return 'ground unread';
+  for (let dy = 1; dy <= 8; dy++) {
+    const b = bot.blockAt(at.offset(0, -dy, 0));
+    if (b && b.name !== 'air' && b.name !== 'cave_air') return `${b.name.replaceAll('_', ' ')} ${dy} below`;
+  }
+  return 'open air for 8 blocks below';
+}
 function killsIn(bot, c) { return fight(bot).kills.filter(k => k.at >= c.began && Math.hypot(k.x - c.x, k.z - c.z) <= PLACE + NEAR); }
 
 // The fact for a question asked with blazes about, or null.
