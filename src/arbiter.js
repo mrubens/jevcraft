@@ -1071,7 +1071,26 @@ function outranks(bot, reflex, holder, now = Date.now()) {
     const held = require('./danger').stanceHeld(bot, now);
     if (held && held.choice !== 'keep_working') return false;
   }
+  // The fire waits for a held stance too while a shooter that sets alight is in sight (note 2646): a blaze's fireball
+  // lights the netherrack it lands on, and a bot out of that block is shot and lit again at once; answering the fire
+  // first answers the symptom, and the stance that answers the shooters never gets its look. The stance's own hold
+  // says 'alight now' and lets go at more damage than it priced or half the health gone. mid-236-er-nether-1-fortress-3
+  // (25590, 2026-10-31 02:52:05 to 02:52:18Z) chose close in at 19.4 health; from 02:52:10 the fire took the turn five
+  // times (body_way: out of fire twice, eat meal, rise on block, out of fire), health fell 15 to 9 to 5.9 to 1.5 with no
+  // stance asked, and the stance came back at 2.5 with every way priced over it; mid-237-hb-fortress-3 (25586, 02:53Z)
+  // 'turning between close in and out of fire 4 times in 4 seconds' and burned to death. A body in lava still comes first.
+  if (reflex.key === 'fire') {
+    const held = require('./danger').stanceHeld(bot, now);
+    if (held && held.choice !== 'keep_working' && shooterThatLightsAbout(bot)) return false;
+  }
   return true;
+}
+// A blaze or a ghast in sight within its fire's reach: what set the bot alight, and will again.
+function shooterThatLightsAbout(bot) {
+  try {
+    const { FIRE_REACH } = require('./combat-estimate');
+    return require('./danger').threats(bot, 48).some(t => t.visible && ['blaze', 'ghast'].includes(t.entity?.name) && t.distance <= (FIRE_REACH[t.entity.name] || 16));
+  } catch (_) { return false; }
 }
 
 // A run out of fire under way (vitals.js wayOutRunning, at most three
