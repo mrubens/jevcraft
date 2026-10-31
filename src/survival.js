@@ -691,6 +691,10 @@ const STANCE_LEAST_MS = 3000;
 // What each stance led to with three or more blazes within eight blocks, by the health band it was chosen at (note 2677):
 // the fresh runs, fortress trials and spawner drills of 2026-10-27 to 31, a death from any cause within the minute after.
 // The band record of note 2616 is by health alone; the crowd was what killed at 10 to 16.
+// With a creeper about, what followed each stance on the fresh runs of 2026-10-30/31 (a death within the minute after, from
+// any cause; distinct picks), and what blocking the creeper costs in time (note 2696): the block is the safest way and the
+// slowest, the creeper staying as long as it is blocked.
+const CREEPER_RECORD = 'With a creeper among the mobs about, what followed each stance on the fresh runs of 2026-10-30 to 31 (a death within the minute after, from any cause): block the creeper 205 times and 4% dead, retreat 134 and 5%, fight 56 and 9%, creeper dance 42 and 7%, run from 38 and 26%, shield the blast 37 and none, shield guard 21 and none, seal 16 and 6%, out of sight 12 and 8%, fight from footing 11 and none. Blocking costs time: 210 blocks held 105 minutes in all (about 30 seconds each), and 134 of them ended with the block due again, the creeper still there; the fight ended it in about 2 seconds where it was won.';
 const BLAZE_CROWD_RECORD = 'With three or more blazes within eight blocks, what followed each stance in the fresh runs, fortress trials and spawner drills of 2026-10-27 to 31 (a death within the minute after, from any cause), by the health it was chosen at. At 16 or more (968 askings, a death after 10%): charge nearest 298 times and 15%, close in 181 and 10%, corner ambush 82 and 10%, take cover 63 and 3%, back to wall 56 and 12%, seal 38 and none, leave and heal 37 and 3%, out of sight 25 and 4%, retreat 21 and none, step out and eat 15 and none. At 10 to 16 (276 askings, 24%): leave and heal 71 and 14%, charge nearest 51 and 41%, eat 24 and 21%, step out and eat 19 and 11%, close in 18 and 44%, back to wall 13 and 15%, corner ambush 13 and 15%, take cover 13 and 15%, seal 12 and 8%, dig down 9 and 33%. Under 10 (179 askings, 41%): leave and heal 43 and 21%, charge nearest 21 and 48%, back to wall 19 and 37%, corner ambush 18 and 28%, seal 12 and 33%, close in 11 and 82%, eat 11 and 45%, take cover 10 and 50%.';
 // What each stance led to with wither skeletons within twelve blocks, by their count (notes 2660 and 2673): the fresh runs and fortress trials of
 // 2026-10-27 to 31 (artifacts/first-days-full-*.log, midgame-mid-*fortress*.log), 688 askings, a death within the minute
@@ -7319,6 +7323,7 @@ class Survival {
         ...(danger.some(t => t.entity?.name === 'wither_skeleton' && t.distance <= 12) ? { witherRecord: WITHER_RECORD } : {}),
         // What every way led to with three or more blazes within eight blocks, by the health it was chosen at (note 2677).
         ...(danger.filter(t => t.entity?.name === 'blaze' && t.distance <= 8).length >= 3 ? { blazeCrowdRecord: BLAZE_CROWD_RECORD } : {}),
+        ...(danger.some(t => t.entity?.name === 'creeper' && t.distance <= 16) ? { creeperRecord: CREEPER_RECORD } : {}),
         // What every way on offer led to with a deadly drop beside the feet on the runs now playing (note 2608).
         ...(shared.dropTable ? { dropRecordToday: shared.dropTable } : {}) };
       // At a live cage, what the stay there has come to, on each hold, and
