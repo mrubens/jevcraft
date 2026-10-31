@@ -447,7 +447,16 @@ async function toDryReach(bot, task, target, navigate, avoid = []) {
     if (navigate) await navigate(bot, task, new goals.GoalNear(target.x, target.y, target.z, 2), { timeoutMs: 20000, stallMs: 5000 });
     return;
   }
-  if (!stand) throw new Error(`No dry place to stand within reach of ${target}, and the water there is too deep to wade: every cell in reach is water or has no floor`);
+  // None dry and too deep to wade: within reach from where the body is, or swum to within reach, as a player blocks a
+  // source treading water (note 2729). full-270 (25587, 2026-10-31 15:25:46 to 15:26:01Z), its frame 9 of 10 cast at
+  // (-358, 2, -166), met 'No dry place to stand within reach' at the source feeding its last slot nine times in 15 s,
+  // each finish answer ending in two seconds, and Jev left the frame for a new one; it had begun six by 1 h 30.
+  if (!stand) {
+    const inReach = () => bot.entity.position.offset(0, EYE, 0).distanceTo(target.offset(0.5, 0.5, 0.5)) <= REACH - 0.3;
+    if (!inReach() && navigate) { try { await navigate(bot, task, new goals.GoalNear(target.x, target.y, target.z, 3), { timeoutMs: 15000, stallMs: 5000 }); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; } }
+    if (inReach()) return;
+    throw new Error(`No dry place to stand within reach of ${target}, the water there too deep to wade, and no swim brought it within reach: every cell in reach is water or has no floor`);
+  }
   if (navigate) await navigate(bot, task, new goals.GoalBlock(stand.x, stand.y, stand.z), { timeoutMs: 20000, stallMs: 5000 });
   if (!bot.entity.position.floored().equals(stand)) throw new Error(`Did not reach the dry place at ${stand} beside ${target}`);
 }
