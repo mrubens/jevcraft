@@ -416,7 +416,10 @@ async function buildAndHold(bot, task, goal, save, actions, option, secs) {
   // Said as it begins and as it ends (note 2737): the built hole was chosen eight times on the fortress trials of
   // 2026-10-31 16:40 to 17:45Z and a block of it went down once, with no line saying the run began, failed or ended.
   if (option.key === 'build_hole_at_spawner') console.log(`[cage] building the hole at ${option.site?.hole} (${option.site?.blocks} blocks, ${option.site?.steps} steps): begun`);
-  bot._buildCommit = { until: Date.now() + (secs + 10) * 1000, kinds: ['blaze'], what: option.key };
+  // Its fireballs as well as the blaze (note 2755): the commit named 'blaze' alone, and of the built holes begun on the
+  // fortress trials of 2026-10-31 19:2x to 22:1xZ, six were ended by 'Threat nearby: small_fireball at 5 to 9 blocks'
+  // (mid-full-166-fortress-16, mid-full-63-fortress-17 twice, mid-full-147-fortress-19, mid-full-63-fortress-18 and -19).
+  bot._buildCommit = { until: Date.now() + (secs + 10) * 1000, kinds: ['blaze', 'small_fireball'], what: option.key };
   const p = bot.entity.position.floored();
   goal.emptySpawner = { ...(goal.emptySpawner || {}), built: { key: option.key, at: Date.now(), from: { x: p.x, y: p.y, z: p.z } } }; save?.();
   let why = null;
