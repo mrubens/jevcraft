@@ -204,7 +204,7 @@ function watchReleases(bot) {
   bot.setControlState = (key, on) => { if (!on && bot._controller && !bot._controller.failed && bot._controller.keys?.includes(key) && bot.controlState?.[key]) bot._controller.letGoBy = `set(${key}, false) at ${frames()}`; return raw(key, on); };
   if (typeof bot.clearControlStates === 'function') { const rawClear = bot.clearControlStates.bind(bot); bot.clearControlStates = () => { if (bot._controller && !bot._controller.failed) bot._controller.letGoBy = `clearControlStates at ${frames()}`; return rawClear(); }; }
 }
-async function move(bot, task, { label, keys = ['forward'], sneak = true, why, look, until = () => false, guard = () => {}, maxMs = 1500, tick = 25, throughFlames = false, intoFall = false, acrossGap = false, stopAt = null } = {}) {
+async function move(bot, task, { label, keys = ['forward'], sneak = true, why, look, until = () => false, guard = () => {}, maxMs = 1500, tick = 25, throughFlames = false, intoFall = false, acrossGap = false, stopAt = null, intoLava = false } = {}) {
   if (!label) throw new Error('A held-key move needs a name');
   watchReleases(bot);
   for (const key of keys) if (!MOVEMENT.has(key)) throw new Error(`Not a movement key: ${key}`);
@@ -264,6 +264,11 @@ async function move(bot, task, { label, keys = ['forward'], sneak = true, why, l
   const refused = () => {
     const hit = !inLava && burningAhead(bot, keys, { deep: !sneak, flames: flames && !escaping });
     if (!hit || (intoFall && hit.name === 'deadly_fall')) return false;
+    // The walk into lava Jev chose (respawn-fresh.js, note 2654) is not refused for the lava: mid-237-hh-fortress-3
+    // (25590, 2026-10-31 03:29 to 03:48Z) chose respawn_fresh with five rods and no pickaxe, and this guard refused
+    // 'respawn_fresh: lava at (-151, 31, 209) ahead; not walked into' 22,759 times over nineteen minutes before the body
+    // found the lava another way.
+    if (intoLava && /lava|fire/.test(hit.name)) return false;
     if (acrossGap && (hit.name === 'deadly_fall' || (Number.isFinite(hit.y) && hit.y < Math.floor(bot.entity.position.y)))) return false;
     // A move that ends in the cell ahead (stopAt: the portal's, note 1953) is not refused for what lies past that cell: the step into a portal with lava on its far face was 'lava ahead; not walked into' though the body stops in the sheet. A hazard in the stop cell itself still refuses it.
     if (stopAt) {

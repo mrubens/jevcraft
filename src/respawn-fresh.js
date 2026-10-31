@@ -57,7 +57,7 @@ async function run(bot, task, goal, save, { lava, navigate, move }) {
   const began = Date.now();
   while (Date.now() - began < DEATH_WAIT_MS && (bot.health ?? 0) > 0 && bot.isAlive !== false) {
     task.check();
-    try { await move(bot, task, { label: 'respawn_fresh', keys: ['forward'], sneak: false, why: 'into the lava, as Jev chose', look: new (require('vec3').Vec3)(lava.at.x + 0.5, lava.at.y + 0.5, lava.at.z + 0.5), maxMs: 1500, tick: 50, until: () => (bot.health ?? 0) <= 0 }); }
+    try { await move(bot, task, { label: 'respawn_fresh', keys: ['forward'], sneak: false, intoLava: true, why: 'into the lava, as Jev chose', look: new (require('vec3').Vec3)(lava.at.x + 0.5, lava.at.y + 0.5, lava.at.z + 0.5), maxMs: 1500, tick: 50, until: () => (bot.health ?? 0) <= 0 }); }
     catch (err) { if (err.name === 'Cancelled') throw err; }
   }
   return (bot.health ?? 0) <= 0 || bot.isAlive === false;
