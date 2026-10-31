@@ -165,7 +165,12 @@ function held(bot, key, now = Date.now()) {
   const h = bot?._bodyHeld;
   if (!h || h.key !== key) return null;
   if (now > h.until || (bot.health ?? 20) <= h.health - (h.drop ?? HOLD_HEALTH)) { delete bot._bodyHeld; return null; }
-  if (h.offered && WAYS_NOW[key] && !(h.lookedAt > now - RECHECK_MS)) {
+  // A walk to cover holds through the fire's own ways coming and going (note 2703): as the body steps between lit and
+  // unlit cells the fire question's set flips (out of fire, burn out, put out flames), each a 'fresh' way that let the
+  // hold go, and the walk began again at every asking. mid-235-fk-nether-1-fortress-6 (25586, 2026-10-31 09:41:26 to
+  // 09:41:35Z), nine rods carried, answered out of their line ten times in ten seconds at 14.6 health, held by note 2688
+  // and let go each second, and was fireballed to death at 09:41:37.
+  if (h.offered && WAYS_NOW[key] && h.choice !== 'out_of_their_line' && !(h.lookedAt > now - RECHECK_MS)) {
     h.lookedAt = now;
     let ways = null;
     try { ways = WAYS_NOW[key](bot); } catch (_) { /* no world to look at: the hold stands */ }
