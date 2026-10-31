@@ -191,8 +191,13 @@ function spawnerHoleSite(bot, cage = spawnerAt(bot), { steps = 30, avoid = [] } 
 // trials' cages (25586, 25590, 25591, 2026-10-31 17:05 to 17:15Z) was 'over 4.5 from the cage' or 'no cell within reach
 // of the cage walked to'.
 const BUILT_REACH = 8;
+// Withdrawn (note 2738): the arena's open cage with the built hole taken whenever offered (artifacts/
+// spawner-drill-open15-built-prefer.log, 2026-10-31 17:3x to 17:5xZ) went 5 runs, 1 rod, 5 deaths, a median 2.4 minutes,
+// against Jev's own answers in the same cage (open14-built: 10 rods, 5 deaths, 1.4 minutes): the hole built in their
+// line costs more than it saves. Kept for a stand prepared out of their sight before the cage is engaged.
+const BUILT_HOLE_OFFERED = false;
 function builtHoleSite(bot, cage = spawnerAt(bot), { steps = 30, avoid = [] } = {}) {
-  if (!cage) return null;
+  if (!BUILT_HOLE_OFFERED || !cage) return null;
   const centre = cage.offset(0.5, 0.5, 0.5);
   const T = require('./blaze-tactics'), carried = T.blocksCarried(bot, { standing: true });
   const open = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'empty' && !/lava|water|fire/.test(b.name); };
