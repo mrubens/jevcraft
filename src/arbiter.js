@@ -1087,7 +1087,13 @@ function outranks(bot, reflex, holder, now = Date.now()) {
   // (under a second) comes first there as it did before 2652.
   if (reflex.key === 'fire') {
     const held = require('./danger').stanceHeld(bot, now);
-    if (held && held.choice !== 'keep_working' && shooterThatLightsAbout(bot)) return false;
+    // And for a held stance whose price is spent (note 2705): more health gone since it was chosen than it priced, the
+    // stance's own let-go ('more damage than priced') runs only when survival has the turn, and the fire's ways took every
+    // turn meanwhile. mid-full-147-fortress-6 (25590, 2026-10-31 10:03:12 to 10:03:29Z) held await in reach against blazes
+    // 14 to 17 blocks off while a skeleton 8 to 11 off shot it from 20 to 11.5, 7.6 and 3; the body's rise on block and
+    // two meals took the turns, the stance was asked again only at 7.6, and it was dead at 10:03:38.
+    const spent = held?.expects && Number.isFinite(held.health) && (held.health - (bot.health ?? 20)) > (held.expects.damage ?? 0) + 1;
+    if (held && held.choice !== 'keep_working' && (shooterThatLightsAbout(bot) || spent)) return false;
   }
   return true;
 }
