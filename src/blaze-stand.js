@@ -1691,6 +1691,21 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
       description: `Walk ${cageHole.steps} block${cageHole.steps === 1 ? '' : 's'} (about ${seconds(round(cageHole.walkMs / 1000))}, in their fire meanwhile) to the ${words(cageHole.rock)} ${cageHole.off} blocks from the blaze spawner's cage, dig a hole one wide and two high into it with the mouth toward the cage (2 blocks ${cageHole.with}, about ${seconds(round(cageHole.digMs / 1000))} of digging), step in and hold it${shieldCarried(bot) ? ', the shield up and facing each volley as it comes' : ''}: the spawner puts its blazes within four blocks of itself, up to four at a time every ten to forty seconds while a player is within sixteen, and one that comes within two of the bot closes to swing, into the mouth and the sword. Rock behind, beside and over the bot: every shot comes in through the mouth, from in front${shieldCarried(bot) ? ' where the shield faces' : ''}, and none lights the cell; a push meets rock. Rods that fall at the mouth are picked up between volleys.` +
         m.says + fire + costSays(cost, hp, cost.mobs, { doing: 'walking and digging in', done: 'In the hole', over: overSays(cost, 'walking and digging in') }) };
   }
+  // Built where no rock is (note 2732): the lull question's build_hole_at_spawner (note 2730) was chosen by
+  // mid-full-147-fortress-12 (25590, 2026-10-31 16:41:33Z) and never ran, a blaze within three blocks taking the turn the
+  // same second; the fight's own question had no such way, and the bot fought eight minutes in the open at its cage
+  // (charge nearest, box here, leave and heal 30 times) and was fireballed at 16:49:52.
+  if (!cageHole && !pocket) {
+    const built = (() => { try { return builtHoleSite(bot, undefined, { avoid: biting }); } catch (_) { return null; } })();
+    if (built) {
+      const open = new Set(built.open.map(c => `${c}`));
+      const setup = round((built.ms + 250) / 1000);
+      const cost = standCost(bot, danger, { setup, at: built.hole, open, atOnce: 1, melee: true, pinned: true });
+      options.build_hole_at_spawner = { kind: 'hole', site: built, sees: seeingAt(built.hole), about: aboutAll.length, atSpawner: true, expects: { damage: cost.damage, seconds: cost.seconds, oneHit: oneHit(cost.mobs) },
+        description: `No rock beside the cage to dig a hole into: build one. Walk ${built.steps} block${built.steps === 1 ? '' : 's'} (about ${seconds(round(built.walkMs / 1000))}, in their fire meanwhile) to the cell ${built.off} blocks from the blaze spawner's cage at (${built.hole.x}, ${built.hole.y}, ${built.hole.z}), and wall it at feet and head on its back and two sides and roof it (${built.blocks} block${built.blocks === 1 ? '' : 's'} of those carried, about ${seconds(round(built.blocks * 0.6))}, a blaze in a cell holding its block out), its mouth one wide and two high toward the cage, and fight from inside: what comes, comes to the mouth one at a time, where the sword reaches it, and every fireball comes through the mouth, where the shield faces.` +
+          BURIED_DRILL + ' The same cage in the open in the arena, no hole: 3 to 5 deaths in 5 runs; a box built among four blazes already there: 3 of 5 runs lost.' + fire + costSays(cost, hp, cost.mobs, { doing: 'walking and building', done: 'In the hole', over: overSays(cost, 'walking and building') }) };
+    }
+  }
   const breaking = dig && !pocket && shieldCarried(bot) ? breakSite(bot, undefined, { avoid: biting }) : null;
   if (breaking) {
     const walk = round(breaking.steps / WALK), m = measuredSays('break', bot);
