@@ -312,7 +312,21 @@ async function askBank(bot, task, goal, save, actions, client, { now = Date.now(
     }
   } catch (_) { rodRate = null; }
   let decision;
-  try { decision = await require('./decisions').decide('rods_now', { client, bot, task, goal, save, tree, state: { rodsCarried: offer.rods, rodsWanted: offer.wanted, rodsStillNeeded: offer.left, portalBlocks: offer.d, health: bot.health, food: bot.food, ...(rodRate ? { rodRateHere: rodRate } : {}) } }); }
+  // The warped forest known, beside the portal walk (note 2690; the Fable check-in of 2026-10-31 08:00Z): with the rods
+  // done the pearls are next, and mid-full-63-forest-4 (25591, 07:36Z) banked its seven rods 212 blocks back at the
+  // portal with a forest known 109 blocks the other way, unsaid here, then hunted the Overworld's endermen for an hour.
+  let forestKnown = null;
+  try {
+    const f = require('./exploration').knownLandmarks(bot, goal, 'warped_forest', 512)[0];
+    if (f) {
+      const here = bot.entity.position, gp = require('./game-progress');
+      const portal = (goal.portals || []).filter(q => q.dimension === gp.dimension(bot)).sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z))[0] || gp.cameThrough(goal, here) || null;
+      let way = '';
+      if (portal && Number.isFinite(portal.x)) { const dot = (f.landmark.x - here.x) * (portal.x - here.x) + (f.landmark.z - here.z) * (portal.z - here.z); way = dot < 0 ? ', the other way from the portal' : ', the portal\'s way or near it'; }
+      forestKnown = `A warped forest is known ${f.distance} blocks off at (${f.landmark.x}, ${f.landmark.z})${way}: its endermen are the pearls' quickest way in the record (a slot there 16 to 21 pearls an hour, the Overworld's night hunt 0.4); the rods carried into it are lost with a death there.`;
+    }
+  } catch (_) { forestKnown = null; }
+  try { decision = await require('./decisions').decide('rods_now', { client, bot, task, goal, save, tree, state: { rodsCarried: offer.rods, rodsWanted: offer.wanted, rodsStillNeeded: offer.left, portalBlocks: offer.d, health: bot.health, food: bot.food, ...(rodRate ? { rodRateHere: rodRate } : {}), ...(forestKnown ? { forestKnown } : {}) } }); }
   catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[rods_now] not asked: ${String(err.message || err).slice(0, 900)}`); return null; }
   if (decision.stale) return null;
   if (decision.path?.at(-1) === 'keep_here') { await tree.keep_here.run(); return 'kept'; }
