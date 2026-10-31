@@ -9763,6 +9763,11 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     kit.choice = { pick, keys, at: kit.workedMs, wall: Date.now() }; save();
   }
   delete goal.preparingNether;
+  // Crossing short of gold by Jev's answer (note 2720): the golden boots are not then made by the code's own rule in the
+  // Nether (mob-hunt.js gold_for_piglins, 'No gold on me and gold ore in sight: golden boots first'). full-258 (25587,
+  // 2026-10-31 11:33Z) answered cross_now with top_up_gold on offer, and from 11:33 to 11:50 the Nether's gold ore was
+  // tunnelled toward 21 to 48 blocks off between its fortress legs, a nether_gather question each time.
+  if (pick === 'cross_now' && items.some(i => i.key === 'gold' && i.short)) { setAside(goal, 'gold_for_piglins', 'nether', 'Jev chose to cross without gold (crossing_kit: cross now)', 30 * 60000); save(); }
   if (pick === 'cross_now') return true;
   if (pick.startsWith('take_up_')) {
     const key = pick.slice(8), phase = `nether_${key}`;

@@ -455,6 +455,17 @@ function withoutOption(bot, goal, save, { forItem, resource }) {
         throw new Error('Going on without the stems, as Jev chose');
       } };
   }
+  // Gold ore for the golden boots (note 2720): going on without it is going without the boots, the boots' errand resting
+  // ten minutes and the work in hand going on as it is, not the rung left. full-258 (25587, 2026-10-31 11:47Z) read
+  // 'Go on without the golden boots this nether gold ore is for: leave the obtain blaze rods for thirty minutes', and
+  // crossed toward gold ore 12 to 29 blocks off instead, its fortress search waiting.
+  if (forItem === 'golden_boots' || goal.step?.action === 'gold_for_piglins' || goal.step?.item === 'golden_boots') {
+    return { description: `Go on without the golden boots this ${words(resource)} is for: the boots' errand rests ten minutes, and the ${phase ? words(phase) : 'work'} goes on as it is, no gold worn (a piglin that sees a player wearing no gold goes for it on sight; one wearing a piece it leaves be).`,
+      run: async () => {
+        setAside(goal, 'gold_for_piglins', 'nether', 'Jev chose to go on without the golden boots', 10 * 60000);
+        goal.step = { action: 'go_without', phase: phase || 'nether', need: resource }; save();
+      } };
+  }
   if (!phase || goal.kind !== 'win') return null;
   const { nextGameStage, RUNG_WAIT_MS } = require('./game-progress');
   let next = null;
