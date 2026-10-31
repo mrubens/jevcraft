@@ -104,4 +104,19 @@ function says(bot, now = Date.now()) {
   return `${fireSays ? fireSays.trim() + ' ' : ''}The fight with the blazes here began ${minutes ? `${minutes} minute${minutes === 1 ? '' : 's'}` : 'under a minute'} ago (a blaze first within ${NEAR} blocks): ${kills.length ? `${kills.length} killed since (${Object.entries(by).map(([s, n]) => `${n} under ${s}`).join(', ')}), the last ${Math.max(1, Math.round((now - last.at) / 60000))} minute${Math.round((now - last.at) / 60000) > 1 ? 's' : ''} ago` : 'none killed since'}; ${about} about within ${NEAR} now, the most at once ${c.most}.${costs.length ? ` Each stance in this fight so far: ${costs.join('; ')}.` : ''} A spawner goes on spawning while the blazes it made live, up to about six near it. On the full runs of 2026-10-29 and 30 the blazes killed came under charge nearest (17), close in (7) and take cover (1), and none under any other stance: box here, box in line, corner ambush, await in reach, back to wall, dig down and seal were held minutes at a time with none killed, while the blazes about grew.${about >= 6 || c.most >= 6 ? ` Blazes, the spawner's as any, despawn as other hostile mobs do: every one at once with the bot more than 128 blocks off, and at random, most within a minute or so, with it more than 32 off; within 32 they stay.` : ''}${stood}`;
 }
 
-module.exports = { install, look, says, NEAR, STOOD_RECORD };
+// What a rod on the ground is worth, by this fight's own pace (note 2742): the fetch was priced by its seconds' damage
+// alone, and of 83 offers on the fresh runs and fortress trials of 2026-10-31 it was taken 5 times (a median 0.02); 32 of
+// the 74 rods those kills dropped were left lying two seconds on and 28 never taken. full-280 (25587, 18:19:01Z), 7 blazes
+// killed in 35 minutes and 1 rod taken, chose corner ambush (2.7 over 15 s) over the fetch of a rod 3 blocks off (8.6
+// over 3 s). Left lying, a rod is gone in five minutes or at once on a fire, and another is the fight again.
+const ROD_DROP = 0.5;
+function rodWorthSays(bot, now = Date.now()) {
+  const c = look(bot, now);
+  if (!c) return ' Left lying, it is gone in five minutes, or at once if it falls on a fire; another is a blaze killed again, one in two dropping a rod.';
+  const kills = killsIn(bot, c).length, minutes = Math.max(1, Math.round((now - c.began) / 60000));
+  if (kills < 2) return ` Left lying, it is gone in five minutes, or at once if it falls on a fire. This fight has killed ${kills ? 'one blaze' : 'none'} in ${minutes} minute${minutes === 1 ? '' : 's'}; a blaze drops a rod one time in two.`;
+  const per = Math.round(minutes / (kills * ROD_DROP) * 10) / 10;
+  return ` Left lying, it is gone in five minutes, or at once if it falls on a fire. At this fight's pace, ${kills} killed in ${minutes} minutes and a blaze dropping a rod one time in two, another rod is about ${per} minutes more of it.`;
+}
+
+module.exports = { install, look, says, rodWorthSays, NEAR, STOOD_RECORD };

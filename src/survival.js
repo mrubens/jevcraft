@@ -5019,8 +5019,9 @@ class Survival {
           // the cover it stood behind; the walk lost 9.3 health in 6.6 seconds, and the bot died at the next asking.
           const cost = stanceCost({ mobs: mobs.map(m => ({ ...m, unseen: false })), seconds: secs, shield: shielded, health: bot.health });
           const blazesSay = (() => { try { return require('./mob-hunt').rodBlazesSays(bot, drop.position); } catch (_) { return ''; } })();
+          const worthSays = (() => { try { return require('./blaze-fight').rodWorthSays(bot); } catch (_) { return ''; } })();
           options[`fetch_rod_${drop.id}`] = { expects: { damage: cost?.damage ?? 0, seconds: secs, oneHit },
-            description: `Fetch the blaze rod lying ${Math.round(distance)} blocks off at (${p.x}, ${p.y}, ${p.z}), about ${secs} seconds there and back, the walk going past the blazes about it. It vanishes at most ${left} seconds from now (seen ${Math.round((nowMs - seen.get(drop.id)) / 1000)} seconds ago; a drop lasts five minutes from when it lands while the bot is near).${blazesSay}` + (cost ? costSays(cost, bot.health, mobs, { over: `in the ${secs} seconds it takes` }) + hitsLeft : ''),
+            description: `Fetch the blaze rod lying ${Math.round(distance)} blocks off at (${p.x}, ${p.y}, ${p.z}), about ${secs} seconds there and back, the walk going past the blazes about it. It vanishes at most ${left} seconds from now (seen ${Math.round((nowMs - seen.get(drop.id)) / 1000)} seconds ago; a drop lasts five minutes from when it lands while the bot is near).${blazesSay}${worthSays}` + (cost ? costSays(cost, bot.health, mobs, { over: `in the ${secs} seconds it takes` }) + hitsLeft : ''),
             run: async () => {
               this.report(goal, save, { action: `fetch_rod_${drop.id}`, threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
               return require('./drop-collection').collectNearbyDrops(bot, task, 'blaze_rod', { radius: 10, origin: drop.position.clone(), timeoutMs: Math.max(6000, secs * 1000 + 3000), move: this.actions.navigate, hostilesOk: true });
