@@ -4968,7 +4968,11 @@ class Survival {
           const distance = drop.position.distanceTo(bot.entity.position), p = drop.position.floored();
           const secs = Math.max(2, Math.round(2 * distance / 4.3 + 1.5));
           const left = Math.max(0, Math.round((300000 - (nowMs - seen.get(drop.id))) / 1000));
-          const cost = stanceCost({ mobs, seconds: secs, shield: shielded, health: bot.health });
+          // Priced in the open (note 2675): the walk leaves whatever stands between the bot and the shooters here, so none
+          // of them is 'kept off' for it. full-241 (25592, 2026-10-31 06:31:24Z) at 14.2 health had the fetch of a rod 1 block
+          // off priced 'about 0.6 damage over about 2 seconds' with four blazes 4.8 to 7.7 blocks off, read as kept off by
+          // the cover it stood behind; the walk lost 9.3 health in 6.6 seconds, and the bot died at the next asking.
+          const cost = stanceCost({ mobs: mobs.map(m => ({ ...m, unseen: false })), seconds: secs, shield: shielded, health: bot.health });
           const blazesSay = (() => { try { return require('./mob-hunt').rodBlazesSays(bot, drop.position); } catch (_) { return ''; } })();
           options[`fetch_rod_${drop.id}`] = { expects: { damage: cost?.damage ?? 0, seconds: secs, oneHit },
             description: `Fetch the blaze rod lying ${Math.round(distance)} blocks off at (${p.x}, ${p.y}, ${p.z}), about ${secs} seconds there and back, the walk going past the blazes about it. It vanishes at most ${left} seconds from now (seen ${Math.round((nowMs - seen.get(drop.id)) / 1000)} seconds ago; a drop lasts five minutes from when it lands while the bot is near).${blazesSay}` + (cost ? costSays(cost, bot.health, mobs, { over: `in the ${secs} seconds it takes` }) + hitsLeft : ''),
