@@ -845,6 +845,10 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // One committed intention at a time (intention.js, note 689): while an
   // answer that takes time holds, a question about the plan is asked without
   // the options that would replace it, and says it.
+  // A wait is never the one way left either (note 2704): with the plan's hold withholding the climb and the dig, full-257
+  // (25592, 2026-10-31 09:48:40Z) read '[one way] surface_trip: wait for dawn, the only way offered' at y 7 beside its
+  // lava pool, where dawn changes nothing, and waited nine minutes with the stall's detours churning round it.
+  const ONE_WAY_NEVER = new Set(['respawn_fresh', 'wait_for_dawn', 'wait_it_out', 'wait_here']);
   let underWay = null, intentionEnded = null;
   if (ledgered) {
     const g = require('../intention').gate(bot, goal, id, tree);
@@ -854,7 +858,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     // while fetch_stems held, read '[one way] nether_gather: respawn fresh, the only way offered', took it unasked, and
     // died in the lava lake; mid-237-hh-fortress-3 (25590, 03:29Z) went the same way with five rods carried.
     const left = oneWay(g.tree);
-    if (g.withheld.length && left && left.path.at(-1) === 'respawn_fresh') console.log(`[intention] ${id}: ${g.withheld.join(', ')} withheld while ${goal.intention?.choice} holds would leave respawn fresh the only way: offered after all`);
+    if (g.withheld.length && left && ONE_WAY_NEVER.has(left.path.at(-1))) console.log(`[intention] ${id}: ${g.withheld.join(', ')} withheld while ${goal.intention?.choice} holds would leave ${left.path.at(-1).replaceAll('_', ' ')} the only way: offered after all`);
     else { tree = g.tree; underWay = g.underWay; intentionEnded = g.ended; if (g.withheld.length) console.log(`[intention] ${id}: not offered while ${goal.intention?.choice} holds: ${g.withheld.join(', ')}`); }
   }
   // A rung set aside holds like a trip (asides.js, note 749): an option that
