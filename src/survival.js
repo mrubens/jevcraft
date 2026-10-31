@@ -688,6 +688,11 @@ const WAITS_FOR_MOB = new Set(['shield_guard', 'shield_the_charge', 'back_to_wal
 // A biter held against from farther than this, now within arm's length, is asked about again (note 2617).
 const BITER_AT_ARM = 2.5, BITER_CLOSED_FROM = 4;
 const STANCE_LEAST_MS = 3000;
+// What each stance led to with a wither skeleton within twelve blocks (note 2660): the fresh runs and fortress trials of
+// 2026-10-27 to 31 (artifacts/first-days-full-*.log, midgame-mid-*fortress*.log), 688 askings, a death within the minute
+// after from any cause. The wither skeleton: a blow about 4.8 through iron, a blow a second at arm's length, 3.9 blocks a
+// second, each blow withering ten seconds; the loop's commonest killer on 2026-10-30/31.
+const WITHER_RECORD = 'With a wither skeleton within twelve blocks, what followed each stance in the fresh runs and fortress trials of 2026-10-27 to 31 (688 askings; a death within the minute after, from any cause): shield guard 424 times, a death after 12%; fight 65, 9%; low ceiling 31, 32%; run from 29, 21%; corner ambush 19, 37%; leave and heal 18, 28%; retreat 11, 27%; out of sight 10, 10%; close in 9, 22%; back to wall 9, none; charge nearest 8, none; await in reach 8, 12%; pillar 7, none; eat 6, 17%; nook 5, 60%. The ways that stand in a corner or under a low roof with it coming died most; the ways that keep it in front with the shield, or a wall at the back, least.';
 // The longest build the lethal-line rule makes before the stance is asked (note 2653): about one blaze volley's interval.
 const LETHAL_BUILD_MAX_S = 3;
 // The stances a walker coming to the body does not break (note 2617): those that wait for it (WAITS_FOR_MOB) and those that
@@ -7301,6 +7306,9 @@ class Survival {
         // What every way on offer led to at blaze fights on the runs now playing (note 2602): one table for all of them.
         ...((t => t ? { blazeRecordToday: t } : {})(require('./blaze-record').blazesAbout(bot).within16 ? require('./blaze-outcomes').tableSays('encounter_stance', Object.keys(options), undefined, bot.health) : '')),
         ...(this.state.stanceNoStrike ? { noStrike: this.state.stanceNoStrike } : {}),
+        // What every way led to with a wither skeleton within twelve blocks (note 2660): the fresh runs and fortress
+        // trials of 2026-10-27 to 31, read at 04:46Z on the 31st, a death from any cause within the minute after.
+        ...(danger.some(t => t.entity?.name === 'wither_skeleton' && t.distance <= 12) ? { witherRecord: WITHER_RECORD } : {}),
         // What every way on offer led to with a deadly drop beside the feet on the runs now playing (note 2608).
         ...(shared.dropTable ? { dropRecordToday: shared.dropTable } : {}) };
       // At a live cage, what the stay there has come to, on each hold, and
