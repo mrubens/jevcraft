@@ -342,6 +342,12 @@ function standCost(bot, danger, { setup = 0, at = null, open = null, atOnce = In
   const there = estimate(t => shooter(t.entity) ? (sees(t) ? true : melee && t.entity.name === 'blaze' ? 'melee' : false) : true, Math.max(0, burning - setup), Math.max(0, proof - setup));
   const hit = Math.round(ce.afterArmour(ce.FIREBALL.melee, ce.armourOf(worn)) * 10) / 10;
   for (const m of there) if (m.name === 'blaze' && !m.shoots) m.hitsBot = hit;
+  // In a hole every fireball comes in through the mouth, where the shield faces (note 2728): the arena's probe had about
+  // one in thirty land through a shield raised to the glow within sixty degrees (SHIELD_LEAK), where the hold's cost took
+  // the shield as stopping half. Priced so, the cage hole read a median 2.3 times close in's price on the fortress trials
+  // of 2026-10-31 13:25 to 14:50Z and was taken once in 148 askings; mid-235-fk-nether-1-fortress-10 (25590, 14:49:43Z)
+  // read dig in and fight 75.9 beside leave and heal 4.4 and close in 20.8, took leave and heal at 13.3 and lost 10 in 8 s.
+  if (pinned && shield) for (const m of there) if (m.name === 'blaze' && m.shoots) m.lands = (m.lands ?? 1) * SHIELD_LEAK / 0.5;
   const first = setup ? ce.stanceCost({ mobs: now, setup, seconds: setup }) : { damage: 0, blasts: [] };
   // Held in a hole, a blaze that sees in is fought too (note 2724; the Fable check-in of 2026-10-31 13:15Z): one with a
   // line to the bot flies at it (the game's rule) and comes to the mouth, one at a time there (atOnce), where the sword
