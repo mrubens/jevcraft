@@ -157,7 +157,10 @@ function corpseRun(bot, goal, now = Date.now()) {
       // An End death is the void's only where the body fell out of the world (y under 0); one on the island's stone leaves
       // its drops where they fell, as any other (note 2633; the project review of 2026-10-30, item 1: every End death was
       // classed void and the kit written off, and the full runs' hours went to re-kitting after End deaths, full-2's 23).
-      status: where === 'end' && (death.position?.y ?? 0) < 0 ? 'void' : death.lava ? 'burned' : Object.keys(items).length ? 'open' : 'nothing',
+      // A body that died standing in fire dropped everything into the fire, and a drop in a fire block burns in under a
+      // second as a rod does (note 2666): full-241 (25592, 2026-10-31 05:06Z) 'walked into fire while fighting Blaze',
+      // and the trip back for its iron kit and 3 rods, 32 minutes on, found nothing ('despawned').
+      status: where === 'end' && (death.position?.y ?? 0) < 0 ? 'void' : (death.lava || /walked into fire/.test(String(death.cause || ''))) ? 'burned' : Object.keys(items).length ? 'open' : 'nothing',
       respawn: dim(bot.game?.dimension) === where ? { ...bot.entity.position } : null };
   }
   // Nor does the trip outlast its run: closed, the errand is done with.
@@ -376,7 +379,7 @@ async function kitTrip(bot, task, goal, save, now = Date.now()) {
   const again = madeAgain(run.items);
   const withSays = `with ${weapon ? `a ${weapon}` : 'no sword or axe'} and ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'}`;
   const tree = {
-    go_now: { description: `Go back for them now, as the bot stands (${withSays}): ${listed(run.items)} lie in the Nether where the bot died, ${fromPortal} blocks from the portal on that side; the portal on this side is ${toPortal} blocks off, about ${minutes} minute${minutes === 1 ? '' : 's'} at a clear walk over level ground, and longer over water, hills or rock.${hourSays}${depthSays} They are not a second older: dropped things age only while a player is within 128 blocks, and they last until the bot comes that near again, then five minutes. ${death.cause ? `The bot ${death.cause} there; when it died, ` : 'When the bot died, '}${about || 'nothing hostile was seen'}${about ? ' was about' : ''}; what was about then may be about still, and a mob the bot had struck forgets it once the bot is gone.${/burn|flame|fire|lava/i.test(death.cause || '') ? ' A death by fire is often on burning ground, and what drops into fire or lava is destroyed: 25593 (2026-10-04) went back 162 blocks for the kit of a death it burned to, and nothing lay there.' : ''} The bot wore ${(death.worn || []).map(n => n.replaceAll('_', ' ')).join(', ') || 'nothing'} then. Taken up, the kit is worn and carried at once and the ladder goes on from there.${foodSays}${piglinSays}${waySays} ${TRIPS}` },
+    go_now: { description: `Go back for them now, as the bot stands (${withSays}): ${listed(run.items)} lie in the Nether where the bot died, ${fromPortal} blocks from the portal on that side;${fireDropSays(death)} the portal on this side is ${toPortal} blocks off, about ${minutes} minute${minutes === 1 ? '' : 's'} at a clear walk over level ground, and longer over water, hills or rock.${hourSays}${depthSays} They are not a second older: dropped things age only while a player is within 128 blocks, and they last until the bot comes that near again, then five minutes. ${death.cause ? `The bot ${death.cause} there; when it died, ` : 'When the bot died, '}${about || 'nothing hostile was seen'}${about ? ' was about' : ''}; what was about then may be about still, and a mob the bot had struck forgets it once the bot is gone.${/burn|flame|fire|lava/i.test(death.cause || '') ? ' A death by fire is often on burning ground, and what drops into fire or lava is destroyed: 25593 (2026-10-04) went back 162 blocks for the kit of a death it burned to, and nothing lay there.' : ''} The bot wore ${(death.worn || []).map(n => n.replaceAll('_', ' ')).join(', ') || 'nothing'} then. Taken up, the kit is worn and carried at once and the ladder goes on from there.${foodSays}${piglinSays}${waySays} ${TRIPS}` },
     // Between going bare and the whole kit (note 2405): full-26 (25586, 2026-10-28 17:21 to 17:44Z) went back bare,
     // 'cross_now' chosen over a pickaxe and wood twice, and a hoglin killed it on the way; kit_first's record is a
     // median 206 minutes.
@@ -969,6 +972,14 @@ function stairsNear(goal, spot, dimension) {
   }
   return best;
 }
+// A death by fire, said with the trip back for the drops (note 2666): a drop that lands in a fire block burns in under a
+// second (the fire a blaze's fireball leaves on netherrack burns on until put out); what landed clear of it stays.
+function fireDropSays(death) {
+  const cause = String(death?.cause || '');
+  if (!/fire|burn|flame|blaze/i.test(cause)) return '';
+  return ` The bot ${cause} there: a drop that lands in a fire block burns in under a second, as a blaze rod does, and a blaze's fire on netherrack burns on until put out; what landed clear of the fire stays. full-241 (2026-10-31 05:06Z) walked into fire while fighting blazes and its trip back 32 minutes on found nothing.`;
+}
+
 // The quick kit's shortfall (note 2662: the kit_trip's quick_kit names a stone sword, a stone pickaxe, a stack of blocks and
 // food for the walk): what is still to make. -> [] when the kit is made.
 function quickKitShort(bot) {
