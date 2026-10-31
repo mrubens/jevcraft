@@ -696,12 +696,23 @@ function installToolPolicy(bot) {
   bot.pathfinder.bestHarvestTool = block => cheapestTool(bot, block);
 }
 
+// How far past its straight line a route may wander (blocks of path cost; the pathfinder's searchRadius).
+const SEARCH_RADIUS = 160;
 function configureMovements(bot) {
   // Ten seconds of route search, not the plugin's five (note 2517): the event loop held 2 to 5 s at a time on every run
   // ate the search's wall-clock time, and walks a few blocks up came back 'no route' or 'the search for a route ran out
   // of time' ten times in two minutes (full-98, 25589, 2026-10-29 16:2xZ, gold ore 5 to 7 up); the pickup drill
   // (scripts/pickup-drill.js) took every drop of 21 cases on an unloaded arena. Three callers already raised it by hand.
   if (bot.pathfinder && !(bot.pathfinder.thinkTimeout > 10000)) bot.pathfinder.thinkTimeout = 10000;
+  // A bound on the search's detour (note 2615): the plugin's searchRadius is unlimited by default, and A* then expands
+  // every node it can reach for the whole think time; its maxCost is the start's heuristic plus the radius, so a far goal
+  // still gets its straight walk and up to this much more, while a goal with no way to it (a run from mobs by GoalInvert
+  // on a fortress over the lava sea, every neighbour refused for the lava) is given up within the bound instead of
+  // filling the heap. mid-full-162-fortress-1 (25586, 2026-10-30 23:38Z), a second after joining beside its fortress,
+  // ran out of a 4 GB heap three times running ('Ineffective mark-compacts near heap limit'), the heap 12 million plain
+  // objects of numbers; its CPU profile had 123 of 150 busy seconds in astar.js compute under the pathfinder's
+  // monitorMovement, through this file's getNeighbors, lavaRound and landsInLava.
+  if (bot.pathfinder && !(bot.pathfinder.searchRadius > 0)) bot.pathfinder.searchRadius = SEARCH_RADIUS;
   fixMiningMaterials(bot.registry);
   fixPathfinderResults();
   installToolPolicy(bot);
