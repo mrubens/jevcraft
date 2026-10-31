@@ -703,6 +703,18 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
     // way to the Nether before them, for three hours (2026-09-26).
     const first = DEFERRABLE.has(stage.phase) && dimension(bot) === 'overworld' && netherFirst([stage.phase]);
     if (first) options.nether_first = first;
+    // The pearls' stage from a pearl way held before the Nether (pearl-order: an enderman in reach, a forest known) has the
+    // Nether now beside it (note 2695): with the stage as the ladder's next and the bed, a diamond pickaxe and side
+    // trips the rest, win_strategy was answered none good and the pearls' stage taken 18 times in the day to 08:35Z
+    // (the record of missing options), and full-250 (25588, 08:33Z, 62 minutes in, no Nether yet) hunted an enderman
+    // from a slot, banked its one pearl and had still not crossed at 70 minutes.
+    if (!first && stage.phase === 'obtain_ender_pearls' && stage.via === 'pearl_order' && dimension(bot) === 'overworld' && require('./eye-need').eyeTarget(goal) !== 0) {
+      const po = require('./pearl-order'), h = po.held(goal);
+      const way = h ? String(h.pick).replaceAll('_', ' ') : 'the pearl way';
+      options.nether_now = { description: `To the Nether now: the pearl way held (${way}) ends, and the ladder goes on to the portal with the kit carried now. In the record the pearls' quickest way is a warped forest's slot in the Nether (16 to 21 an hour) and the Overworld's endermen the slowest (0.4 an hour); the rods wait on the Nether in any case, and the run's budget has the Nether by about an hour.${goal.rungClocks?.reach_nether ? '' : ''}`,
+        says: 'To the Nether now; the pearls after.', chat: 'To the Nether now; the pearls can wait for the forest.',
+        run: async () => { po.endHeld(goal, 'Jev chose the Nether first (win_strategy)'); } };
+    }
     // On the way to the Nether with only steps Jev set aside to go without
     // left before it: each is a route of its own, taken up now rather than
     // when its half hour is out. mid-242-x was handed them back instead,
