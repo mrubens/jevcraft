@@ -38,7 +38,9 @@ for (const f of files) {
     if (/"blaze_rod":[1-9]/.test(inv) && !rod) rod = at;
     if (/"ender_pearl":[1-9]/.test(inv) && !pearl) pearl = at;
     if (/stronghold/.test(s) && /portal_room|eyes? (set|placed)|frame/.test(line) && !stronghold) stronghold = at;
-    if (/"dragonHealth":(0|[0-9]\.[0-9]+)[,}]/.test(line) && end && !dragon) dragon = at;
+    // A kill is the dragon at no health (note 2639; the project review of 2026-10-30, item 17): the pattern before took any
+    // single-digit health with a decimal, 5.5 among them, as a kill.
+    if (/"dragonHealth":0(\.0+)?[,}]/.test(line) && end && !dragon) dragon = at;
     step = d.step?.action || step;
     const h = /"health":([0-9.]+),"food"/.exec(line); if (h) health = Number(h[1]);
   }
