@@ -7237,6 +7237,13 @@ class Survival {
       const outOfSight = (() => { try { return require('./danger').threats(bot, 24).filter(t => !t.visible && !danger.some(d => d.entity.id === t.entity.id)).slice(0, 5); } catch (_) { return []; } })();
       const outOfSightSays = outOfSight.length ? `Within 24 blocks but out of sight, not gone: ${outOfSight.map(t => `a ${String(t.entity.name).replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off`).join(', ')}.${outOfSight.some(t => t.entity.name === 'creeper') ? ' A creeper lights within 7 blocks once it has the bot in sight, about 1.5 seconds to the blast.' : ''}` : null;
       const shared = this._stanceShared || {};
+    let needMetSays = null;
+    try {
+      if (/nether/.test(String(bot.game?.dimension || '')) && danger.some(t => t.entity?.name === 'blaze' && t.distance <= 24)) {
+        const n = require('./eye-need').need(bot, goal);
+        if (n && n.rodsLeft <= 0) needMetSays = `The rods' need is met: ${n.rods} blaze rod${n.rods === 1 ? '' : 's'} carried of ${n.rodsWanted} wanted (${n.pearlsLeft} ender pearl${n.pearlsLeft === 1 ? '' : 's'} still wanted). No fight here gains anything the goal wants now, and a death here drops the ${n.rods} rod${n.rods === 1 ? '' : 's'} carried; the spawner keeps making blazes while the bot is within sixteen blocks of it. Today both trials that met the need fought on at the cage and were dead within three minutes.`;
+      }
+    } catch (_) { needMetSays = null; }
       const state = { ...(shared.lowAndHit ? { lowAndHit: shared.lowAndHit } : {}), ...(shared.hitting ? { hittingNow: shared.hitting } : {}), ...(shared.mobNotes ? { mobsHere: shared.mobNotes } : {}), ...(kept ? { noWayToTheBot: kept } : {}), ...(outOfSightSays ? { outOfSight: outOfSightSays } : {}), ...((d => d ? { dropBeside: d.trim() } : {})(dropBesideSays(bot))), health: bot.health, food: bot.food, dimension: String(bot.game?.dimension || ''), armour, weapon: defenseWeapon(bot)?.name || 'bare hands',
         shield: bot.inventory.slots?.[45]?.name === 'shield', arrows: countOf(bot, 'arrow'), buildingBlocks: shelter.materialStock(bot),
         dropWithinThreeBlocks: require('./terrain').dropFacts(bot, feetCell(bot), 3) || false,
@@ -7337,6 +7344,12 @@ class Survival {
         // unsaid; it charged, and again at 6.8, and was fireballed to death at 1 h 31 with a rod in hand.
         ...(danger.filter(t => t.entity?.name === 'blaze' && (t.distance <= 12 || (t.distance <= 24 && t.visible))).length >= 3 ? { blazeCrowdRecord: BLAZE_CROWD_RECORD } : {}),
         ...(danger.some(t => t.entity?.name === 'creeper' && t.distance <= 16) ? { creeperRecord: CREEPER_RECORD } : {}),
+        // The rods' need met with blazes about (note 2706; the Fable check-in of 2026-10-31 11:00Z): the striking ways stayed on
+        // offer with nothing said of what they gain once the need was met (the rods sentence is appended only while rods are
+        // needed), and both trials that met the need today died at the cage within three minutes of it: mid-full-63-fortress-6
+        // (25586, 10:29 to 10:32:17Z) chose close in and charge nearest at 20 health after its rods were done and a wither
+        // skeleton slew it; mid-235-fk-nether-1-fortress-6 (09:33 to 09:41:37Z) the same with nine rods carried.
+        ...(needMetSays ? { rodsNeedMet: needMetSays } : {}),
         // What every way on offer led to with a deadly drop beside the feet on the runs now playing (note 2608).
         ...(shared.dropTable ? { dropRecordToday: shared.dropTable } : {}) };
       // At a live cage, what the stay there has come to, on each hold, and
