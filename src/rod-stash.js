@@ -319,10 +319,16 @@ function stepOutOffer(bot, goal, now = Date.now()) {
   return { stepOut: { cell: site.cell, steps: site.steps, nearest: site.nearest }, making, what, rods, wanted, seenBy, seconds: round(site.steps / WALK + PUT_SECONDS + making.seconds) };
 }
 function keepOption(bot, task, goal, save, actions, { then = null, thenSays = '' } = {}) {
-  const offer = stashOffer(bot, goal);
+  let offer = stashOffer(bot, goal);
+  // In a shooter's line with no cell out of every line to step to, the chest is still a way (note 2644): set down where
+  // the bot stands, in their fire, the shooters that see it and what a hit costs said. Before, the rods question had
+  // no keeping but the walk to the portal then: the spawner drill of 2026-10-31 02:4xZ (buried run 1, a chest carried,
+  // blazes in line at every cell) was offered bank_now and stay_for_more alone and walked 137 blocks with 3 rods a
+  // minute into a fight it was winning; six of the ten runs before it ended on that walk.
+  let out = null;
+  if (!offer) { out = stepOutOffer(bot, goal); if (!out) offer = stashOffer(bot, goal, { underFire: true }); }
+  if (!offer && !out) return null;
   if (!offer) {
-    const out = stepOutOffer(bot, goal);
-    if (!out) return null;
     const acts = { ...actions, place: actions?.place || require('./work').place, acquireStep: actions?.acquireStep || require('./work').acquireStep, navigate: actions?.navigate || require('./skills').navigate };
     const list = out.what.map(w => plural(w.count, words(w.item))).join(' and '), c = out.stepOut.cell;
     const description = `Step out of their line first, then keep them here: walk ${plural(out.stepOut.steps, 'block')} to ${at(c)}, which none of the ${plural(out.seenBy.length, 'shooter')} that see the bot now has a line to (the nearest then ${out.stepOut.nearest} blocks off), set a chest down there and put ${list} in it: about ${out.seconds} seconds in all, the walk in their fire.${makingSays(out.making)} The chest stays here: it is counted as rods held, and taken out on the way out once every rod wanted is got; a death meanwhile (the bot comes back to life in the Overworld) drops none of them. A ghast's fireball breaks a chest only where it lands beside it; a blaze's does not.${thenSays ? ` ${thenSays}` : ''}`;
@@ -346,7 +352,8 @@ function keepOption(bot, task, goal, save, actions, { then = null, thenSays = ''
   const h = Math.round((bot.health ?? 20) * 10) / 10, food = bot.food ?? 20;
   const eats = (bot.inventory?.items?.() || []).some(i => bot.registry?.foodsByName?.[i.name]);
   const body = food >= 18 ? `health ${h}, coming back at hunger ${food}` : `health ${h}, and at hunger ${food} it does not come back${eats ? ' until the bot has eaten' : ' (nothing to eat carried)'}`;
-  const description = `${offerSays(offer, { riskInState: false })} The chest stays here: it is counted as rods held, and taken out on the way out once every rod wanted is got; a death meanwhile (the bot comes back to life in the Overworld) drops none of them. A ghast's fireball breaks a chest only where it lands beside it (the chest's blast resistance 2.5); a blaze's does not. Now: ${body}.${thenSays ? ` ${thenSays}` : ''}`;
+  let hit = ''; try { hit = offer.seenBy?.length ? ` ${require('./crossing-kit').netherHitSays(bot) || ''}` : ''; } catch (_) { hit = ''; }
+  const description = `${offerSays(offer, { riskInState: false })}${hit.trimEnd()} The chest stays here: it is counted as rods held, and taken out on the way out once every rod wanted is got; a death meanwhile (the bot comes back to life in the Overworld) drops none of them. A ghast's fireball breaks a chest only where it lands beside it (the chest's blast resistance 2.5); a blaze's does not. Now: ${body}.${thenSays ? ` ${thenSays}` : ''}`;
   return { description, offer,
     run: async () => {
       const kept = await stashRods(bot, task, goal, save, acts, offer);

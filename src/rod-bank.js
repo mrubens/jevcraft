@@ -305,7 +305,9 @@ async function askBank(bot, task, goal, save, actions, client, { now = Date.now(
     if (offer.rods < (goal.rodSeen || 0)) goal.rodSeen = offer.rods;
     if (times.length >= 2) {
       const mins = (times.at(-1) - times[0]) / 60000, per = mins / (times.length - 1);
-      rodRate = `${times.length} rods in ${Math.round(mins * 10) / 10} minutes here, about ${Math.round(per * 10) / 10} minutes a rod${offer.left ? `; the ${offer.left} still needed at that rate about ${Math.round(per * offer.left)} minutes` : ''}`;
+      // Under a minute said in seconds: '3 rods in 0 minutes, about 0 minutes a rod' was said at the drill's first minute.
+      const span = m => m < 1.5 ? `${Math.max(1, Math.round(m * 60))} seconds` : `${Math.round(m * 10) / 10} minutes`;
+      rodRate = `${times.length} rods in ${span(mins)} here, about ${span(per)} a rod${offer.left ? `; the ${offer.left} still needed at that rate about ${span(per * offer.left)}` : ''}`;
     }
   } catch (_) { rodRate = null; }
   let decision;
