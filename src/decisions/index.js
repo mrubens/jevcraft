@@ -905,7 +905,11 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     return decision;
   };
   const one = oneWay(tree);
-  if (one) return takeOne(one);
+  // A deliberate death is never taken unasked, whatever left it alone (note 2679, after 2661, which stood the intention gate
+  // down for it): mid-236-eq-fortress-5 (25590, 2026-10-31 07:0xZ) read '[one way] nether_gather: respawn fresh, the only
+  // way offered' with blocks_first and the legs gone from the tree by other rests, took it, spun on stem mining for the
+  // chest it had no cell for, and died in the lava. Alone, it is asked, none good beside it.
+  if (one && one.path.at(-1) !== 'respawn_fresh') return takeOne(one);
   // An answer holds until what ends it happens (commit.js, note 764): the
   // question's definition or the option says what ends it (it arrives, it
   // fails, a named fact changes band, its time), and until then asking again
