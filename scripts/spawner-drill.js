@@ -224,8 +224,12 @@ async function one() {
   while (!run.ended) {
     await sleep(500);
     if (!bot.entity) continue;
-    const rods = count('blaze_rod');
-    while (rodsAt.length < rods) { rodsAt.push(Math.round((Date.now() - started) / 100) / 10); say({ rod: rodsAt.length, seconds: rodsAt.at(-1) }); }
+    // Rods kept in a chest count (note 2649, after note 2642 gave the kit a chest): open run 1 of 2026-10-31 03:0xZ put
+    // 3 rods in its chest, carried 4 more, was told 'rodsStillNeeded 0' and left for the pearls; the drill read it as
+    // 'left the cage' with 4 rods.
+    let kept = 0; try { kept = (bot._goal?.rodStashes || []).filter(s => !s.lostAt).reduce((n, s) => n + (s.contents?.blaze_rod || 0), 0); } catch (_) { kept = 0; }
+    const rods = count('blaze_rod') + kept;
+    while (rodsAt.length < rods) { rodsAt.push(Math.round((Date.now() - started) / 100) / 10); say({ rod: rodsAt.length, seconds: rodsAt.at(-1), kept }); }
     if (rods >= RODS) { run.ended = 'rods'; break; }
     if (Date.now() - started > MINUTES * 60000) { run.ended = 'time'; break; }
     // Gone from the cage (for food, for a kit, to bank the rods): alive, with what it carries.
