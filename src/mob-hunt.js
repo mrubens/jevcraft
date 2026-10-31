@@ -2950,7 +2950,13 @@ function sightingsThatWay(bot, goal, state, here, heading) {
 function knownFortressOutOfView(bot, goal, state, here, now = Date.now()) {
   let rods = 0; try { rods = require('./blaze-stand').rodsNeeded(bot, goal); } catch (_) { rods = 0; }
   if (!(rods > 0) || !/nether/.test(String(bot.game?.dimension || ''))) return null;
-  let p = state.fortressAt || state.approach?.found || state.found || null;
+  // The spawner found comes before the fortress's centre (note 2667): fortressAt is the bricks' middle, up to its extent
+  // from any blaze, and 'where they are known to be' is the spot the blazes were fought at. mid-full-241-fortress-1
+  // (25590, 2026-10-31 05:21 to 05:55Z) had its spawner found at (-112, 59, 27), 2 rods from it, and the fortress's
+  // centre at (-27, 39, 24), 85 blocks east; this walk went to the centre ('I know where the fortress is, near -27, 24,
+  // but I'm not getting any closer'), the hunt's return_to_blazes walked back to the sightings at -112, and the bot
+  // crossed the 85 blocks back and forth for half an hour, pearl_order asked at each turn (14 times).
+  let p = state.approach?.found || state.found || state.fortressAt || null;
   if (!p) {
     let known = [];
     try { known = require('./exploration').knownLandmarks(bot, goal, 'nether_fortress'); } catch (_) { known = []; }
