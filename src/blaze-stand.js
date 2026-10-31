@@ -191,21 +191,30 @@ function builtHoleSite(bot, cage = spawnerAt(bot), { steps = 30, avoid = [] } = 
   const centre = cage.offset(0.5, 0.5, 0.5);
   const T = require('./blaze-tactics'), carried = T.blocksCarried(bot, { standing: true });
   const open = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'empty' && !/lava|water|fire/.test(b.name); };
+  const why = {};
+  const no = k => { why[k] = (why[k] || 0) + 1; return null; };
   const site = cell => {
-    if (!open(cell) || !open(cell.offset(0, 1, 0)) || !solid(bot.blockAt(cell.offset(0, -1, 0))) || /magma/.test(bot.blockAt(cell.offset(0, -1, 0))?.name || '')) return null;
-    if (cell.offset(0.5, 0.5, 0.5).distanceTo(centre) > SPAWNER_HOLE) return null;
+    if (!open(cell) || !open(cell.offset(0, 1, 0)) || !solid(bot.blockAt(cell.offset(0, -1, 0))) || /magma/.test(bot.blockAt(cell.offset(0, -1, 0))?.name || '')) return no('not standable');
+    if (cell.offset(0.5, 0.5, 0.5).distanceTo(centre) > SPAWNER_HOLE) return no(`over ${SPAWNER_HOLE} from the cage`);
     // The mouth toward the cage: the side whose step is most toward it.
     const toward = [...SIDES].sort((a, b) => (b.x * (centre.x - cell.x - 0.5) + b.z * (centre.z - cell.z - 0.5)) - (a.x * (centre.x - cell.x - 0.5) + a.z * (centre.z - cell.z - 0.5)))[0];
     const mouth = cell.plus(toward);
-    if (!open(mouth) || !open(mouth.offset(0, 1, 0))) return null;
+    if (!open(mouth) || !open(mouth.offset(0, 1, 0))) return no('the mouth toward the cage not open');
     const walls = SIDES.filter(t => !(t.x === toward.x && t.z === toward.z)).flatMap(t => [cell.plus(t), cell.plus(t).offset(0, 1, 0)]).concat([cell.offset(0, 2, 0)]);
-    if (walls.some(c => /lava|water/.test(bot.blockAt(c)?.name || ''))) return null;
+    if (walls.some(c => /lava|water/.test(bot.blockAt(c)?.name || ''))) return no('lava or water in a wall cell');
     const build = walls.filter(c => !solid(bot.blockAt(c)));
-    if (build.length > carried) return null;
+    if (build.length > carried) return no(`more blocks than the ${carried} carried`);
     return { hole: cell, stand: mouth, side: toward.scaled(-1), build, open: [mouth, mouth.offset(0, 1, 0)], blocks: build.length, off: round(cell.offset(0.5, 0.5, 0.5).distanceTo(centre)) };
   };
-  const found = walkTo(bot, c => !siteFailedNear(bot, c) && knockLands(bot, c) && !!site(c), { steps, avoid });
-  if (!found) return null;
+  const found = walkTo(bot, c => c.offset(0.5, 0.5, 0.5).distanceTo(centre) <= SPAWNER_HOLE + 1 && (siteFailedNear(bot, c) ? no('a walk there failed lately') : !knockLands(bot, c) ? no('a knock from it lands in a drop or lava') : !!site(c)), { steps, avoid });
+  if (!found) {
+    // Why not, said once a minute (note 2731): mid-full-9-fortress-12 (25590, 2026-10-31 16:39Z) reached ten standable
+    // cells within 5.5 of its cage and was offered no built hole, and nothing said which check refused them.
+    const says = Object.entries(why).map(([k, v]) => `${v} ${k}`).join(', ') || 'no cell within reach of the cage walked to';
+    if (!bot._builtHoleSaid || Date.now() - bot._builtHoleSaid > 60000) { bot._builtHoleSaid = Date.now(); console.log(`[cage] no built hole by the cage at ${cage}: ${says}`); }
+    bot._builtHoleWhy = { at: Date.now(), why: says };
+    return null;
+  }
   const h = site(found.cell), walkMs = found.steps * 250;
   return { ...h, spawner: cage, steps: found.steps, walkMs, ms: walkMs + h.blocks * 600, built: true, rock: 'blocks carried' };
 }
