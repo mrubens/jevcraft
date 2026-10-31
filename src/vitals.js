@@ -1300,7 +1300,12 @@ function outOfLineWay(bot, task, onAction, shot, standing) {
   const c = cover.cell;
   const comes = [shot.entities.some(e => e.name === 'blaze') ? ' A blaze that loses sight of the bot comes on toward it and fires once it has a line again.' : '',
     shot.entities.some(e => e.name === 'ghast') ? ' A ghast drifts where it will and fires whenever it has a line again.' : ''].join('');
-  return { seconds: secs,
+  // Held once chosen until the walk arrives, a blow lands or health falls a band (note 2688; the Fable check-in of
+  // 2026-10-31 08:00Z): the fire reflex is put back every pass while the body burns and inFire flips as it steps between
+  // lit cells, so the body's question was asked at every hurt and the walk to cover restarted each second.
+  // mid-235-fk-nether-1-fortress-5 (25586, 07:52:06 to 07:52:15Z) answered out of their line and out of fire in turn
+  // nine times in ten seconds, 8.4 health to 1.5, and never reached its cover; three such spells today, two deaths.
+  return { seconds: secs, hold: Math.min(8, Math.max(3, Math.ceil(secs) + 1)),
     description: `Walk ${cover.steps} block${cover.steps === 1 ? '' : 's'} to (${c.x}, ${c.y}, ${c.z}), a cell ${shot.entities.length === 1 ? `${who} in sight has no line to from where it is` : `none of ${who} in sight has a line to from where they are`} now (rock stands between): about ${secs} seconds, in their line until there${standing ? ', out of the fire on the way' : ''}. The fire on the body burns on (${burnsOn}); there no fireball lands and none lights it again while they have no line.${comes}${lineAtEnd(bot, shot, c)}`,
     run: async () => { onAction({ action: 'out_of_fire', way: 'out_of_their_line', steps: cover.steps, health: bot.health }); await outOfFire(bot, task, () => {}, cover.path); return true; } };
 }
