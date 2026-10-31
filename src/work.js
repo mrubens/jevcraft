@@ -3833,6 +3833,11 @@ function smeltBatch(bot, goal, step, needed, carriedInput, plannedFuel) {
   // rungs' want, one to three ingots, each its own wait; 82 of 224 while_cooking asks on full-60 to full-85 were for a
   // single raw iron, and full-63 went into the Nether with 41 raw iron and 22 raw gold. With the side furnaces (note
   // 2471) a whole pile is about as quick as three.
+  // Not in the Nether (note 2622): there a smelt is its step's own count and the pile waits for the Overworld.
+  // mid-full-63-fortress-1 (25591, 2026-10-31 00:57Z), one rod from seven at 16.8 health with blazes known 12 blocks off,
+  // had its spare pickaxe's three ingots sized to 'raw_iron batch 3 -> 41: the open rungs want 0 more iron_ingot', and
+  // stood by the furnace waiting 142 seconds a time, the hunt held off; 41 raw iron is seven minutes of furnace there.
+  if (/nether/.test(String(bot.game?.dimension || ''))) return { count: needed, wants, rungs };
   if (goal?.kind === 'win' && /^(iron|gold|copper)_ingot$/.test(String(step.item)) && carriedInput > needed) {
     const burnsAll = CARRIED_FUELS.reduce((n, f) => n + Math.floor(countOf(bot, f) * itemsPerFuel(f)), 0) + (CARRIED_FUELS.includes(plannedFuel) ? 0 : needed);
     return { count: Math.max(needed, Math.min(carriedInput, burnsAll, 64)), wants, rungs, fuelFor: burnsAll };

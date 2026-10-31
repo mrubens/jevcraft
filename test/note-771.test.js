@@ -186,6 +186,9 @@ test('a batch sized to the rungs still open, up to the raw iron and the fuel car
     assert.equal(smeltBatch(furnaceBot({ raw: 40, coal: 2 }), goal, { item: 'iron_ingot', from: 'raw_iron', count: 3 }, 3, 40, 'coal').count, 16);
     // Up to a stack (note 2483: the ore carried smelted whole, the rungs' want aside).
     assert.equal(smeltBatch(furnaceBot({ raw: 86, ingots: 70 }), goal, { item: 'iron_ingot', from: 'raw_iron', count: 24 }, 24, 86, 'coal').count, 64);
+    // Not in the Nether (note 2622): there the pile waits for the Overworld, and the step's own three are smelted.
+    const nether = furnaceBot({ raw: 41, coal: 30 }); nether.game = { ...(nether.game || {}), dimension: 'the_nether' };
+    assert.equal(smeltBatch(nether, goal, { item: 'iron_ingot', from: 'raw_iron', count: 3 }, 3, 41, 'coal').count, 3);
   });
   // Not a win goal, or another output: the step's own count.
   assert.equal(smeltBatch(furnaceBot(), {}, { item: 'iron_ingot', from: 'raw_iron', count: 3 }, 3, 86, 'coal').count, 3);
