@@ -200,7 +200,7 @@ const BUILT_HOLE_OFFERED = false;
 // fortress picks of 15:00 to 18:05Z as all made 1.4 to 7.7 blocks from the cage with a blaze in sight within 5 to 20
 // seconds, none finished; the arena's open drill (2738) built under fire. The fortress trials asked the lull 448 times,
 // 427 of them with no blaze in sight and 368 with no rock beside the cage for the dug hole. In the fight it stays withdrawn.
-function builtHoleSite(bot, cage = spawnerAt(bot), { steps = 30, avoid = [], lull = false } = {}) {
+function builtHoleSite(bot, cage = spawnerAt(bot), { steps = 30, avoid = [], lull = false, whole = false } = {}) {
   if (!(BUILT_HOLE_OFFERED || lull) || !cage) return null;
   const centre = cage.offset(0.5, 0.5, 0.5);
   const T = require('./blaze-tactics'), carried = T.blocksCarried(bot, { standing: true });
@@ -223,7 +223,7 @@ function builtHoleSite(bot, cage = spawnerAt(bot), { steps = 30, avoid = [], lul
     if (build.length > carried) return no(`more blocks than the ${carried} carried`);
     return { hole: cell, stand: mouth, side: toward.scaled(-1), build, open: [mouth, mouth.offset(0, 1, 0)], blocks: build.length, off: round(cell.offset(0.5, 0.5, 0.5).distanceTo(centre)) };
   };
-  const found = walkTo(bot, c => c.offset(0.5, 0.5, 0.5).distanceTo(centre) <= BUILT_REACH + 1 && (siteFailedNear(bot, c) ? no('a walk there failed lately') : !knockLands(bot, c) ? no('a knock from it lands in a drop or lava') : !!site(c)), { steps, avoid });
+  const found = walkTo(bot, c => c.offset(0.5, 0.5, 0.5).distanceTo(centre) <= BUILT_REACH + 1 && (siteFailedNear(bot, c) ? no('a walk there failed lately') : !knockLands(bot, c) ? no('a knock from it lands in a drop or lava') : whole ? (site(c)?.blocks === 0 || no('not built whole yet')) : !!site(c)), { steps, avoid });
   if (!found) {
     // Why not, said once a minute (note 2731): mid-full-9-fortress-12 (25590, 2026-10-31 16:39Z) reached ten standable
     // cells within 5.5 of its cage and was offered no built hole, and nothing said which check refused them.
@@ -1715,7 +1715,10 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
   if (!cageHole && !pocket) {
     // A hole already built whole (no block left to lay) is offered in the fight too (note 2748): the building under fire
     // is what was withdrawn (2738), not the walk back into a hole that stands.
-    const built = (() => { try { const b = builtHoleSite(bot, undefined, { avoid: biting, lull: true }); return b && (BUILT_HOLE_OFFERED || b.blocks === 0) ? b : null; } catch (_) { return null; } })();
+    // whole (note 2751): the nearest cell a walk reaches was taken and, needing blocks, refused, the whole hole beside it
+    // never looked at: mid-full-9-fortress-19 (25590, 2026-10-31 21:47:27Z), 4 blocks above its whole hole at (-518, 69,
+    // 351), was offered 17 ways and no hole, took charge nearest at 0.64, and was slain by a blaze at 21:48:40.
+    const built = (() => { try { const b = builtHoleSite(bot, undefined, { avoid: biting, lull: true, whole: !BUILT_HOLE_OFFERED }); return b && (BUILT_HOLE_OFFERED || b.blocks === 0) ? b : null; } catch (_) { return null; } })();
     if (built) {
       const open = new Set(built.open.map(c => `${c}`));
       const setup = round((built.ms + 250) / 1000);
