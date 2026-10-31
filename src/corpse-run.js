@@ -154,7 +154,10 @@ function corpseRun(bot, goal, now = Date.now()) {
     const where = dim(death.dimension);
     goal.corpseRun = { deathAt: death.at, position: { ...death.position }, dimension: where, items, passes: 0, stuck: 0,
       ...(Array.isArray(recovery.dropsSeen) ? { drops: recovery.dropsSeen, mobsAtDeath: recovery.mobsHolding || [] } : {}),
-      status: where === 'end' ? 'void' : death.lava ? 'burned' : Object.keys(items).length ? 'open' : 'nothing',
+      // An End death is the void's only where the body fell out of the world (y under 0); one on the island's stone leaves
+      // its drops where they fell, as any other (note 2633; the project review of 2026-10-30, item 1: every End death was
+      // classed void and the kit written off, and the full runs' hours went to re-kitting after End deaths, full-2's 23).
+      status: where === 'end' && (death.position?.y ?? 0) < 0 ? 'void' : death.lava ? 'burned' : Object.keys(items).length ? 'open' : 'nothing',
       respawn: dim(bot.game?.dimension) === where ? { ...bot.entity.position } : null };
   }
   // Nor does the trip outlast its run: closed, the errand is done with.
