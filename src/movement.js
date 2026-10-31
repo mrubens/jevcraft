@@ -189,6 +189,19 @@ class SurvivalMovements extends Movements {
   }
 
   getNeighbors(node) {
+    // A cap on the nodes a search may expand (note 2620): the pathfinder's A* keeps every node it visits for its whole
+    // think time (ten seconds, note 2517) and its searchRadius bound (note 2615) is an ellipse of path cost that over an
+    // open lava sea still holds millions of cells; the heap is theirs. Past NODE_CAP expansions within NODE_WINDOW_MS the
+    // search is given no neighbours, said once, and ends as no route or the part found. mid-full-162-oom-3-fortress-1
+    // (25586, 2026-10-31 00:30 to 00:46Z) ran out of a 4 GB heap six times, 8 to 80 seconds after each join, on the
+    // bounded pathfinder and with the inverted goals gone (note 2618); the CPU profiles of the save on each build had
+    // the busy time in astar.js compute under the movement monitor, through this method.
+    const now = Date.now();
+    if (!this._nodeWindow || now - this._nodeWindow.at > NODE_WINDOW_MS) this._nodeWindow = { at: now, count: 0, said: false };
+    if (++this._nodeWindow.count > NODE_CAP) {
+      if (!this._nodeWindow.said) { this._nodeWindow.said = true; console.log(`[pathfinder] the search was cut at ${NODE_CAP} nodes in ${NODE_WINDOW_MS / 1000} seconds (note 2620): no route is found past it`); }
+      return [];
+    }
     const neighbors = super.getNeighbors(node);
     if (!this._hostileObservation || Date.now() - this._hostileObservation.at > 250) {
       this._hostileObservation = { at: Date.now(), entities: hostileEntities(this.bot, 64), sight: new Map() };
@@ -698,6 +711,9 @@ function installToolPolicy(bot) {
 
 // How far past its straight line a route may wander (blocks of path cost; the pathfinder's searchRadius).
 const SEARCH_RADIUS = 160;
+// How many nodes a search may expand in a window before it is cut (note 2620): the profiled crash expanded about
+// 250,000 a second for its whole think time; a long walk through caves expands tens of thousands.
+const NODE_CAP = 300000, NODE_WINDOW_MS = 10000;
 function configureMovements(bot) {
   // Ten seconds of route search, not the plugin's five (note 2517): the event loop held 2 to 5 s at a time on every run
   // ate the search's wall-clock time, and walks a few blocks up came back 'no route' or 'the search for a route ran out
@@ -846,4 +862,4 @@ function lavaAlongSays(lava, bot) {
     `walked crouched, which stops the body at the edge of its floor but not against a hit; a misstep or a push there is into the lava.${touch}`;
 }
 
-module.exports = { lavaAlong, lavaAlongSays, lavaRound, pushInLine, LAVA_SIDE_COST, fallBeside, configureMovements, updateDigCapabilities, installToolPolicy, SurvivalMovements, gapSurvivable };
+module.exports = { NODE_CAP, NODE_WINDOW_MS, lavaAlong, lavaAlongSays, lavaRound, pushInLine, LAVA_SIDE_COST, fallBeside, configureMovements, updateDigCapabilities, installToolPolicy, SurvivalMovements, gapSurvivable };
