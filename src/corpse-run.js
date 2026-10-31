@@ -861,6 +861,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     if (need > 1) console.log(`[corpse run] room for the ${need} stacks lying here: ${empty()} slots free`);
   }
   let got = 0, full = false;
+  const passFrom = bot.entity.position.clone();
   for (const name of Object.keys(run.items).sort((a, b) => rank(a) - rank(b))) {
     for (let tries = 0; tries < 4 && run.items[name] > 0; tries++) {
       task.check();
@@ -896,6 +897,22 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
       // Armour worn as it is taken up, not left in the pockets as spare gear for the next room made (note 2416).
       if (ARMOUR[name.split('_').pop()]) await wearRecovered(bot);
       if ((run.items[name] -= gained) <= 0) delete run.items[name];
+    }
+  }
+  // Nothing taken and the body where the pass began, its walks from here refused (failed-places: 'not walked again from
+  // here until a question is answered'): the working-free question is asked, as the work's stall asks it (note 2691). The
+  // corpse run's walks had no question of their own to answer, so mid-full-63-forest-4 (25591, 2026-10-31 08:13 to
+  // 08:30Z), blown up by a creeper with its iron and shield lying 2 to 5 blocks off, had every walk to them stall or find
+  // no route (12 to one cell), was told the walks are not begun again until a question is answered, and stood 15 minutes
+  // beside its kit asking none while the five minutes ran on it.
+  if (!got && bot.entity.position.distanceTo(passFrom) < 1.5 && (run.workedFree || 0) < 2) {
+    let refused = null; try { refused = require('./failed-places').pacingSays(bot, spot, { atGoal: true }); } catch (_) { refused = null; }
+    if (refused) {
+      run.workedFree = (run.workedFree || 0) + 1; save();
+      const off = Math.round(bot.entity.position.distanceTo(spot));
+      console.log(`[corpse run] stood where the pass began with nothing taken and the walks from here refused: working free (${refused.slice(0, 160)})`);
+      try { await require('./unstuck').workFree(bot, task, goal, save, { client: task.opportunityClient, dig: require('./work').dig, aim: { goal: 'away', aim: `off this spot toward the drops ${off} blocks off at (${spot.x}, ${spot.y}, ${spot.z})` } }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[corpse run] working free ended: ${String(err.message || err).slice(0, 160)}`); }
     }
   }
   run.passes++;
