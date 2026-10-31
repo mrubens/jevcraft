@@ -11,7 +11,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // Mobs that shoot. A piglin counts only with a crossbow in hand; one with a
 // sword is a melee mob and the charge rule's business.
-const bowReady = bot => bot.inventory.items().some(i => i.name === 'bow' && durable(bot.registry, i)) && countOf(bot, 'arrow') > 0;
+const bowReady = bot => bot.inventory.items().some(i => i.name === 'bow' && durable(bot.registry, i)) && require('./skills').arrowsCarried(bot) > 0;
 
 // Where to point the bow at a target this far off, moving this way: the
 // vanilla arc solved from the eye. `drop` is how far the pitch rises above

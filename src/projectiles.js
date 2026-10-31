@@ -110,7 +110,7 @@ async function shootBow(bot, task, target, { guard = () => {}, threatCheck = che
   };
   check();
   const bow = bot.inventory.items().find(i => i.name === 'bow' && (i.durabilityUsed || 0) < bot.registry.itemsByName.bow.maxDurability - 1);
-  if (!bow || countOf(bot, 'arrow') < 1) throw new Error('A usable bow and carried arrows are required');
+  if (!bow || require('./skills').arrowsCarried(bot) < 1) throw new Error('A usable bow and carried arrows are required');
   // Never with a chicken or a pig near the line (protected-animals.js).
   const { isProtected, nearShot, ProtectedAnimal } = require('./protected-animals');
   if (isProtected(target)) throw new ProtectedAnimal(`Never a ${target.name}: the shot was not taken`);
@@ -156,7 +156,7 @@ async function shootBow(bot, task, target, { guard = () => {}, threatCheck = che
       check(); if (aimError) throw aimError;
     }
     if (!solution) throw new Error('Bow yaw and pitch did not settle on the current target before their deadline');
-    const before = countOf(bot, 'arrow'), sentRotation = { ...bot.lastSentRotation };
+    const before = require('./skills').arrowsCarried(bot), sentRotation = { ...bot.lastSentRotation };
     const targetAtRelease = { position: { ...target.position }, at: Date.now(), aimAdjustments };
     released = true; bot.deactivateItem(); drawing = false;
     const deadline = Date.now() + confirmationMs, expected = bow.enchants?.some(e => e.name === 'infinity') ? 0 : 1;
@@ -164,7 +164,7 @@ async function shootBow(bot, task, target, { guard = () => {}, threatCheck = che
       task.check(); guard();
       if (bot.game.dimension !== dimension || bot.health <= 0) throw new Error('Bow confirmation interrupted by dimension change or death');
       if (ambiguous) throw new Error('Ambiguous arrow launch observation');
-      if (arrow && before - countOf(bot, 'arrow') === expected) return {
+      if (arrow && before - require('./skills').arrowsCarried(bot) === expected) return {
         at: Date.now(), targetId: target.id, target: target.name, arrowId: arrow.id, consumed: expected,
         origin: { ...solution.origin }, aim: { ...solution.target }, ticks: solution.ticks, velocity: { ...arrow.velocity },
         sentRotation, intendedVelocity: { ...solution.velocity }, targetAtRelease,

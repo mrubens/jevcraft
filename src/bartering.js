@@ -23,7 +23,8 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // barter was for: it makes a blaze's fire nothing for three minutes
 // (fire-resistance.js, note 656); a water bottle is the same item name and
 // is told apart by what it holds.
-const KEEP = new Set(['ender_pearl', 'obsidian', 'string', 'fire_charge', 'quartz', 'soul_sand', 'iron_nugget', 'enchanted_book']);
+// Spectral arrows kept too (note 2634): a bow shoots them, the End's crystals and the dragon take arrows, and the barter gives 6 to 12 at weight 40 of 469.
+const KEEP = new Set(['ender_pearl', 'obsidian', 'string', 'fire_charge', 'quartz', 'soul_sand', 'iron_nugget', 'enchanted_book', 'spectral_arrow']);
 const fireResistance = () => require('./fire-resistance');
 const keeps = item => !!item && (KEEP.has(item.name) || fireResistance().isFireResistance(item));
 const firePotions = bot => fireResistance().carried(bot).reduce((n, p) => n + (p.item.count || 1), 0);

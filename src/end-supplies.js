@@ -118,7 +118,7 @@ function kitItems(bot, goal, actions = {}, now = Date.now()) {
   const bow = equipment.some(i => i.name === 'bow' && durable(bot.registry, i));
   out.push({ key: 'bow', item: 'bow', carried: bow ? 1 : 0, wants: 1, short: !bow,
     says: 'Make or find a bow first: none that will last is carried. Without one the crystals on their pillars and the dragon in flight are out of reach, and the fight is the sword at its perch alone, the crystals healing it. Three sticks and three string at a crafting table; string is a spider\'s drop, and a skeleton drops a bow now and then.' });
-  const arrows = countOf(bot, 'arrow'), step = Math.min(WANTS.arrow, arrows + ARROW_STEP);
+  const arrows = require('./skills').arrowsCarried(bot), step = Math.min(WANTS.arrow, arrows + ARROW_STEP);
   out.push({ key: 'arrows', item: 'arrow', carried: arrows, wants: WANTS.arrow, short: arrows < WANTS.arrow, target: step,
     says: `Get more arrows first: ${arrows} carried, the code would take ${WANTS.arrow}. ${rehearsedSays()} Here arrows come from skeletons, none to two each, at night or in caves, or are crafted from a feather, a flint and a stick, the feathers from chickens: chosen, it hunts skeletons until ${step} are carried or a quarter hour has gone, and this is asked again.` });
   // Snowballs for the crystals where the arrows are few (note 1342): any
@@ -230,7 +230,7 @@ async function topUp(bot, task, goal, save, actions, item) {
   // hunted chickens forty minutes with 28 arrows' makings in its pack.
   if (item.key === 'arrows') {
     const k = Math.min(countOf(bot, 'feather'), countOf(bot, 'flint'));
-    const can = countOf(bot, 'arrow') + 4 * k;
+    const can = require('./skills').arrowsCarried(bot) + 4 * k;
     if (k > 0 && can < item.target) {
       goal.step = { action: 'prepare_end_supplies', item: 'arrow', count: can, from: 'the feathers and flint carried' }; save();
       await actions.acquireStep(bot, task, 'arrow', can, goal, save);

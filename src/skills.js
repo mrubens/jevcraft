@@ -38,6 +38,10 @@ function inventoryCounts(bot) {
   for (const i of (bot?.inventory?.items?.() || [])) if (i?.name) out[i.name] = (out[i.name] || 0) + (i.count || 0);
   return out;
 }
+// Arrows of every kind a bow shoots (note 2634; the project review of 2026-10-30, item 3): plain, spectral (a piglin's
+// barter gives 6 to 12 at weight 40 of 469, about 77 for 100 ingots) and tipped. The game's arrow tag holds all three.
+const ARROW_KINDS = ['arrow', 'spectral_arrow', 'tipped_arrow'];
+function arrowsCarried(bot) { return ARROW_KINDS.reduce((n, k) => n + countOf(bot, k), 0); }
 function countOf(bot, item) {
   return bot.inventory.items().filter((i) => i.name === item).reduce((n, i) => n + i.count, 0);
 }
@@ -1144,7 +1148,7 @@ function closeStrayWindow(bot) {
   return String(w.type || 'a window').replace(/^minecraft:/, '').replace(/_/g, ' ');
 }
 
-module.exports = { inventoryCounts, digWithTool, emptyHand, SCOOPED_COST, noteStallSpot, stallsToward, repeatStallSays, WalksFailing, REPEAT_TIMES, badSteps, noteHazard, hazardSpots, HAZARD_COST, STALL_SPOT_COST, openWindow, opensOnClick, closeStrayWindow, wholeGoal, goalGuardPlugin, digGuardPlugin, pickaxeDurability,
+module.exports = { arrowsCarried, ARROW_KINDS, inventoryCounts, digWithTool, emptyHand, SCOOPED_COST, noteStallSpot, stallsToward, repeatStallSays, WalksFailing, REPEAT_TIMES, badSteps, noteHazard, hazardSpots, HAZARD_COST, STALL_SPOT_COST, openWindow, opensOnClick, closeStrayWindow, wholeGoal, goalGuardPlugin, digGuardPlugin, pickaxeDurability,
   Task,
   Cancelled,
   navigate,
