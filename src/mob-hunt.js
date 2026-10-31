@@ -3237,7 +3237,8 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
       // The pathfinder's survey toward the nearest only: a survey is up to
       // half a second on a loaded machine.
       const route = i === 0 && actions.navigate ? await routeSurvey(bot, task, new goals.GoalNear(s.x, s.y, s.z, 4), new Vec3(s.x, s.y, s.z)) : null;
-      options[key] = { description: `Go to the blaze spawner ${spawnerSays(bot, goal, state, k, planned, route)} While the bot is within 16 of it, it makes up to 4 blazes every 10 to 40 seconds. The walk is on foot first; where it finds no way, the way there is asked (fortress_approach). There, with no blaze near, the stand is asked (empty_spawner).${ended ? ` The last try at it ended: ${ended.why}.` : ''}`,
+      let stoodRec = ''; try { stoodRec = ` ${require('./blaze-fight').STOOD_RECORD}`; } catch (_) { stoodRec = ''; }
+      options[key] = { description: `Go to the blaze spawner ${spawnerSays(bot, goal, state, k, planned, route)} While the bot is within 16 of it, it makes up to 4 blazes every 10 to 40 seconds.${stoodRec} The walk is on foot first; where it finds no way, the way there is asked (fortress_approach). There, with no blaze near, the stand is asked (empty_spawner).${ended ? ` The last try at it ended: ${ended.why}.` : ''}`,
         target: { x: s.x, y: s.y, z: s.z },
         run: () => { state.spawnerWait = { x: s.x, y: s.y, z: s.z, until: Date.now() + SPAWNER_GO_MS, startedAt: Date.now(), go: true }; delete state.spawnerWaitEnded; save(); return 'goto'; } };
     }
@@ -4876,8 +4877,13 @@ function fortressInView(bot, goal, save, state, bricks, { stay, map = null, plan
       const d = Math.round(spawner.offset(0.5, 0.5, 0.5).distanceTo(here));
       const steps = fm.stepsTo(map, planned, spawner);
       const way = steps === null ? 'No floor seen joins it to where the bot stands: the walk there is on foot first, and where it finds no way the way there is asked (fortress_approach).' : `Floors seen join it to where the bot stands, about ${steps} steps.`;
-      facts.spawner = `a spawner seen ${d} blocks off at (${spawner.x}, ${spawner.y}, ${spawner.z})`;
-      others.wait_at_spawner = { description: `Wait by the spawner seen at (${spawner.x}, ${spawner.y}, ${spawner.z}), ${d} blocks off, for ${SPAWNER_WAIT_MS / 60000} minutes: a fortress's spawners are blaze spawners, and while a player is within sixteen blocks of one it makes up to four blazes within four blocks of itself every ten to forty seconds, and the hunt takes each one as it comes into view. ${way} ${capital(seen)}${known.s.lastThereAt ? `; ${known.s.kills || 0} killed and ${known.s.rods || 0} rods taken within 16 of it` : ''}. The legs are asked again after.${state.spawnerWaitEnded ? ` The last wait here ended: ${state.spawnerWaitEnded}.` : ''}`,
+      // Known from the rock and not yet seen (note 2687) said as such, and the drill's record of where the fight is stood
+      // beside it (note 2693; the Fable check-in of 2026-10-31 08:00Z): mid-full-63-fortress-5 (25590, 08:26Z) was offered
+      // 'the spawner seen at (-232, 69, -51), 37 blocks off' for one never seen, and took stay in fortress six times.
+      const seenSays = known.s.unseen ? 'known from the rock about and not yet seen' : 'seen';
+      facts.spawner = `a spawner ${seenSays} ${d} blocks off at (${spawner.x}, ${spawner.y}, ${spawner.z})`;
+      let stood = ''; try { stood = ` ${require('./blaze-fight').STOOD_RECORD}`; } catch (_) { stood = ''; }
+      others.wait_at_spawner = { description: `Wait by the spawner ${seenSays} at (${spawner.x}, ${spawner.y}, ${spawner.z}), ${d} blocks off, for ${SPAWNER_WAIT_MS / 60000} minutes: a fortress's spawners are blaze spawners, and while a player is within sixteen blocks of one it makes up to four blazes within four blocks of itself every ten to forty seconds, and the hunt takes each one as it comes into view. ${way} ${capital(seen)}${known.s.lastThereAt ? `; ${known.s.kills || 0} killed and ${known.s.rods || 0} rods taken within 16 of it` : ''}. The legs are asked again after.${state.spawnerWaitEnded ? ` The last wait here ended: ${state.spawnerWaitEnded}.` : ''}${stood}`,
         spawner: { x: spawner.x, y: spawner.y, z: spawner.z },
         // The spawner's next blazes, by its clock where a try was seen (waits.js, note 698).
         waits: require('./waits').spawnerTry(bot, spawner),
