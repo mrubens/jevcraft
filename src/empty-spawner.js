@@ -386,11 +386,15 @@ function outOfRange(bot, cage) {
 // a mob at its reach, a push by a drop, the body's own dangers or its own
 // failure; then held as the hunt holds a stand.
 async function buildAndHold(bot, task, goal, save, actions, option, secs) {
+  // Said as it begins and as it ends (note 2737): the built hole was chosen eight times on the fortress trials of
+  // 2026-10-31 16:40 to 17:45Z and a block of it went down once, with no line saying the run began, failed or ended.
+  if (option.key === 'build_hole_at_spawner') console.log(`[cage] building the hole at ${option.site?.hole} (${option.site?.blocks} blocks, ${option.site?.steps} steps): begun`);
   bot._buildCommit = { until: Date.now() + (secs + 10) * 1000, kinds: ['blaze'], what: option.key };
   const p = bot.entity.position.floored();
   goal.emptySpawner = { ...(goal.emptySpawner || {}), built: { key: option.key, at: Date.now(), from: { x: p.x, y: p.y, z: p.z } } }; save?.();
   try { await require('./blaze-stand').huntFromStand(bot, task, goal, save, actions, option, { item: 'blaze_rod', want: require('./skills').countOf(bot, 'blaze_rod') + 1 }); }
-  finally { delete bot._buildCommit; }
+  catch (err) { if (option.key === 'build_hole_at_spawner') console.log(`[cage] building the hole at ${option.site?.hole} failed: ${String(err.message || err).slice(0, 160)}`); throw err; }
+  finally { delete bot._buildCommit; if (option.key === 'build_hole_at_spawner') console.log(`[cage] building the hole at ${option.site?.hole}: the run ended, in the hole ${!!require('./blaze-stand').inHole?.(bot)}`); }
 }
 async function stepOut(bot, task, goal, save, actions, out) {
   const { goals } = require('mineflayer-pathfinder');
