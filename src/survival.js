@@ -8983,7 +8983,12 @@ class Survival {
     // a shelter): the shaft still goes down where every block in it digs by
     // hand in a second, dirt and the like, and the dug dirt is the cap.
     const pick = bot.inventory.items().some(i => /_pickaxe$/.test(i.name));
-    const handSoft = b => !!b && (typeof b.digTime === 'function' ? b.digTime(null, false, false, false, [], {}) <= 1000 : /^(dirt|grass_block|podzol|mycelium|coarse_dirt|rooted_dirt|mud|clay|moss_block)$/.test(b.name));
+    // Stone and the like dig by hand too, slowly (note 2699: stone about 7.5 seconds a block, cobblestone 10, deepslate
+    // 15, no drop): a bare bot's night pocket is two such blocks, said with its seconds by shaftSeconds. full-252 (25587,
+    // 2026-10-31 08:53:45Z), bare at its night respawn, was told 'no dry column here: every one within four blocks meets
+    // ... rock too hard to dig by hand' over thin dirt on stone, took a room of 28 blocks it had none of, and was slain
+    // by zombies a minute on, the second death of two in two minutes.
+    const handSoft = b => !!b && (typeof b.digTime === 'function' ? b.digTime(null, false, false, false, [], {}) <= 16000 : /^(dirt|grass_block|podzol|mycelium|coarse_dirt|rooted_dirt|mud|clay|moss_block|stone|cobblestone|andesite|diorite|granite|tuff|sandstone|deepslate)$/.test(b.name));
     // Set aside by the column stood on, not for the whole world.
     const spot = `${feetCell(bot).x},${feetCell(bot).z}`;
     if (isSetAside(this, 'shaft_pocket', spot)) return { none: 'a shaft failed on this spot a short while ago', resting: true, spot };
