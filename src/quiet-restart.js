@@ -136,7 +136,12 @@ function watchRestartRequest(bot, file, { startedAt = Date.now(), every = 2000, 
     // is taken when the bot is out of it, by the dragon's death or its own.
     if (/end$/.test(String(bot.game?.dimension || ''))) { askedAt = now(); return; }
     const waited = now() - askedAt;
-    const why = quiet(bot) ? 'quiet now' : waited > LAST_MS ? 'forty-five minutes waited' : waited > WAIT_MS && calm(bot) ? 'fifteen minutes waited and calm now'
+    // Nor in a fight, however long the wait (note 2685): the forty-five minutes ran out for mid-235-fk-nether-1-fortress-5
+    // (25586, 2026-10-31 07:50Z) at 10.8 health in a bunker with twelve blazes about, and it was quit and put back among them;
+    // 5 of the day's 66 deaths came within 90 seconds of a build restart. A death takes the build anyway (note 1994).
+    let inFight = false;
+    try { const danger = require('./danger'); inFight = !!bot._stance || danger.hostileEntities(bot, 24).length > 0 || danger.hostileEntities(bot, SHOOTER_REACH).some(x => SHOOTERS.test(x.name)); } catch (_) { inFight = false; }
+    const why = quiet(bot) ? 'quiet now' : waited > LAST_MS && !inFight ? 'forty-five minutes waited' : waited > WAIT_MS && calm(bot) ? 'fifteen minutes waited and calm now'
       : spun(bot, now()) ? `its loop has spun for ${Math.round((bot._spin.last - bot._spin.since) / 1000)} seconds with nothing done, not hurt meanwhile` : null;
     if (why) {
       clearInterval(timer);
