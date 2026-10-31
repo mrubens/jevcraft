@@ -99,7 +99,11 @@ function standSite(bot, cage) {
 function blazeInSight(bot) {
   try {
     const eye = bot.entity.position.offset(0, 1.62, 0);
-    return Object.values(bot.entities || {}).some(e => e?.name === 'blaze' && e.isValid !== false && e.position && e.position.distanceTo(eye) <= 32 &&
+    // A blaze's fireball in the air within 24 is a blaze with a line to the bot, wherever it is (note 2749): four builds
+    // offered with no blaze in sight on the fortress trials of 2026-10-31 19:3x to 21:3xZ were ended by 'Threat nearby:
+    // small_fireball at 8 to 9 blocks' (mid-full-166-fortress-16, mid-full-63-fortress-17 twice).
+    if (Object.values(bot.entities || {}).some(e => e?.name === 'small_fireball' && e.position && e.position.distanceTo(eye) <= 24)) return true;
+    return Object.values(bot.entities || {}).some(e => e?.name === 'blaze' && e.isValid !== false && e.position && e.position.distanceTo(eye) <= 48 &&
       (typeof bot.canSeeEntity === 'function' ? bot.canSeeEntity(e) : require('./danger').lineClear(bot, eye, e.position.offset(0, 1.2, 0))));
   } catch (_) { return false; }
 }
