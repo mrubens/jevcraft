@@ -975,7 +975,8 @@ function quickKitShort(bot) {
   const items = bot?.inventory?.items?.() || [];
   const weapon = items.some(i => /_(sword|axe)$/.test(i.name)), pickaxe = items.some(i => /_pickaxe$/.test(i.name));
   const blocks = items.filter(i => /^(cobblestone|netherrack|dirt|cobbled_deepslate|stone|andesite|diorite|granite)$/.test(i.name)).reduce((n, i) => n + i.count, 0);
-  let food = 0; try { food = points(require('./skills').inventoryCounts(bot)); } catch (_) { food = 0; }
+  let food = 0;
+  try { const foods = bot.registry?.foodsByName || {}; food = Object.entries(require('./skills').inventoryCounts(bot)).reduce((n, [name, c]) => n + (foods[name]?.foodPoints || 0) * c, 0); } catch (_) { food = 0; }
   return [!weapon && 'a stone sword', !pickaxe && 'a stone pickaxe', blocks < 32 && `a stack of blocks (${blocks} carried)`, food < 12 && `food for the walk (${food} points carried of 12)`].filter(Boolean);
 }
 // The quick kit as the job, said on the strategy's question while it holds (note 2662): what is short, how long since it
