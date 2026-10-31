@@ -957,6 +957,13 @@ function watchRung(bot, goal, { now = Date.now(), waiting = null } = {}) {
     if (!Number.isFinite(b.best.upY)) b.best.upY = here.y;
     else if (here.y >= b.best.upY + 2) { b.best.upY = here.y; news.push(`higher on the climb to open sky (y ${Math.floor(here.y)})`); }
   }
+  // Standing in a warped forest is the pearls rung's new best (note 2682): mid-full-9-forest-5 (25591, 2026-10-31 07:16Z)
+  // reached its forest's floor after half an hour of digging and a minute later was asked '10 minutes on the obtain ender
+  // pearls without a new best', the forest unsaid; Jev took rise through, and the bot climbed back out of it.
+  if (/ender_pearl/.test(String(rung)) && !b.best.inForest) {
+    let inForest = false; try { inForest = require('./warped-pearls').inForest(bot); } catch (_) { inForest = false; }
+    if (inForest) { b.best.inForest = true; news.push('standing in a warped forest, its nylium about'); }
+  }
   if (news.length) { b.idleMs = 0; b.bestAt = now; b.lastBest = news.join(', '); goal.struggles = 0; delete b.due; return null; }
   // A hold at its cap hands off here (holds.js): due at once.
   const due = b.due && b.due.at >= b.bestAt ? b.due : null;
