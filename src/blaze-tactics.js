@@ -926,9 +926,15 @@ async function leaveAndHeal(bot, task, goal, save, site, { navigate, seconds = 6
       // waiting for it is waiting for nothing (note 638). Out of their sight
       // is what this got: it ends once the fire on the body is out (a few
       // seconds; the fire is the one thing standing here still changes).
+      // Nothing comes back, but out of their line is still out of their line (note 2719): the stay goes on to its
+      // seconds, striking what comes in reach, the shield to a volley, ending as before when a blaze gets a line to the
+      // cell or a biter comes. Ended at once, the stance ran twenty times a second at the cell and was set aside, and the
+      // food plan walked the bot out through the blazes: mid-full-166-fortress-7 (25590, 2026-10-31 11:41:15 to 11:41:34Z)
+      // at 2.45 health, hunger 17, nothing to eat, at a cell no blaze had a line to, was fireballed to death on the walk.
       if ((bot.food ?? 20) < 18) {
         if (require('./vitals').onFire(bot) && Date.now() - arrived < FIRE_WAIT_MS) { await sleep(250); continue; }
-        stats.ended = `out of their sight and the fire out; at hunger ${bot.food} nothing comes back`; stats.outOfSight = true; break;
+        stats.ended = `out of their sight, the fire out; at hunger ${bot.food} nothing comes back`; stats.outOfSight = true;
+        await sleep(250); continue;
       }
       await sleep(250);
     }
