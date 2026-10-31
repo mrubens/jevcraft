@@ -325,8 +325,9 @@ async function kitTrip(bot, task, goal, save, now = Date.now()) {
   // made since stands at: asked once a death, it was never weighed again
   // while the remaking ran its three hours (note 2393).
   if (run?.trip?.pick === 'kit_first' && now - run.trip.at >= KIT_FIRST_HOLD_MS) delete run.trip;
-  // A quick kit holds ten minutes, then the trip is asked again with what was made (note 2405).
-  if (run?.trip?.pick === 'quick_kit' && now - run.trip.at >= QUICK_KIT_MS) delete run.trip;
+  // A quick kit holds ten minutes, then the trip is asked again with what was made (note 2405); made sooner, the trip
+  // is asked again at once (note 2662).
+  if (run?.trip?.pick === 'quick_kit' && (now - run.trip.at >= QUICK_KIT_MS || !quickKitShort(bot).length)) delete run.trip;
   if (!run || run.status !== 'open' || run.trip || run.loadedAt || run.dimension !== 'nether' || dim(bot.game?.dimension) !== 'overworld' || !bot.entity?.position) return false;
   if (!Object.keys(run.items || {}).length || now - Date.parse(run.deathAt) > KEEP_MS) return false;
   const here = bot.entity.position, spot = run.position;
@@ -968,4 +969,30 @@ function stairsNear(goal, spot, dimension) {
   }
   return best;
 }
-module.exports = { stairsNear, searchReach, ageingHere, wearRecovered, armsFirstWant, dropsSeenSays, byRank, recordSays, FLEET_RECORD, TICKING, triedDeathsSays, dropsWaitSays, quickDeathsSays, TOLD, tripCameToNothing, KIT_ERRAND, kitTrip, corpseRun, corpseRunStep, worth, madeAgain, ironRemakeSays, IRON_MINUTES, underWay };
+// The quick kit's shortfall (note 2662: the kit_trip's quick_kit names a stone sword, a stone pickaxe, a stack of blocks and
+// food for the walk): what is still to make. -> [] when the kit is made.
+function quickKitShort(bot) {
+  const items = bot?.inventory?.items?.() || [];
+  const weapon = items.some(i => /_(sword|axe)$/.test(i.name)), pickaxe = items.some(i => /_pickaxe$/.test(i.name));
+  const blocks = items.filter(i => /^(cobblestone|netherrack|dirt|cobbled_deepslate|stone|andesite|diorite|granite)$/.test(i.name)).reduce((n, i) => n + i.count, 0);
+  let food = 0; try { food = points(require('./skills').inventoryCounts(bot)); } catch (_) { food = 0; }
+  return [!weapon && 'a stone sword', !pickaxe && 'a stone pickaxe', blocks < 32 && `a stack of blocks (${blocks} carried)`, food < 12 && `food for the walk (${food} points carried of 12)`].filter(Boolean);
+}
+// The quick kit as the job, said on the strategy's question while it holds (note 2662): what is short, how long since it
+// was chosen, and what lies in the Nether waiting. null when no quick kit holds. full-241 (25592, 2026-10-31 05:06 to
+// 05:12Z) chose quick_kit with iron armour, an iron sword, an iron pickaxe and 3 blaze rods lying 9 blocks from the
+// Nether portal, and the ladder's question, asked whole each minute, was answered bed, stone pickaxe, bed, stone
+// sword, nether first in turn at 0.1 to 0.34, the quick kit never named as the job.
+function quickKitSays(bot, goal, now = Date.now()) {
+  const run = goal?.corpseRun;
+  if (!run || run.status !== 'open' || run.trip?.pick !== 'quick_kit' || run.dimension !== 'nether') return null;
+  const short = quickKitShort(bot);
+  const mins = Math.round((now - run.trip.at) / 60000);
+  const portals = goal.portals || [], there = portals.filter(p => p.dimension === 'nether').slice().sort((a, b) => flat(a, run.position) - flat(b, run.position))[0];
+  const lie = `${listed(run.items)} lie in the Nether where the bot died${there ? `, ${Math.round(flat(there, run.position))} blocks from the portal on that side` : ''}; they do not age while no player is within 128 blocks of them`;
+  return short.length
+    ? `Jev chose a quick kit before the trip back for the drops, ${mins ? `${mins} minute${mins === 1 ? '' : 's'}` : 'under a minute'} ago (ten at most): still to make, ${short.join(', ')}; the rest of the ladder (iron, armour, a shield) is what the drops are. ${lie}. The trip is asked again when these are made or the ten minutes are up.`
+    : `The quick kit Jev chose before the trip back for the drops is made; the trip is asked again now. ${lie}.`;
+}
+
+module.exports = { quickKitSays, quickKitShort, stairsNear, searchReach, ageingHere, wearRecovered, armsFirstWant, dropsSeenSays, byRank, recordSays, FLEET_RECORD, TICKING, triedDeathsSays, dropsWaitSays, quickDeathsSays, TOLD, tripCameToNothing, KIT_ERRAND, kitTrip, corpseRun, corpseRunStep, worth, madeAgain, ironRemakeSays, IRON_MINUTES, underWay };

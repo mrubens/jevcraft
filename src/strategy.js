@@ -1116,7 +1116,8 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
     const underWay = errand || errandUnderWay(bot, goal, now());
     const errandSays = underWay ? { errandUnderWay: `${underWay} is under way${held ? `, begun under ${label(held.choice)} ${agoWords(now() - held.at)} ago` : ''}; another answer leaves it where it stands until it is taken up again${(() => { const f = goal.portalFrame; if (!f?.blocks || !f.cast) return ''; const n = f.blocks.filter(p => bot.blockAt?.(new Vec3(p.x, p.y, p.z))?.name === 'obsidian').length; return ` (${n || f.placedSeen || 0} of ten cast)`; })()}` } : {};
     const askedAt = Date.now();
-    const decision = await decide('win_strategy', { client, bot, task, goal, save, tree, state: strategyState(bot, goal, stage, { ...(last ? { lastStrategy: last.says } : {}), ...errandSays }) });
+    let quickKit = null; try { quickKit = require('./corpse-run').quickKitSays(bot, goal); } catch (_) { quickKit = null; }
+    const decision = await decide('win_strategy', { client, bot, task, goal, save, tree, state: strategyState(bot, goal, stage, { ...(last ? { lastStrategy: last.says } : {}), ...errandSays, ...(quickKit ? { quickKit } : {}) }) });
     // Held through an outage (note 707): nothing is done this step; the
     // next asks it fresh.
     if (decision.stale) return { stale: true };
