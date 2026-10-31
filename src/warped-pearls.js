@@ -119,8 +119,20 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
       const floor = nyliumFloor(bot);
       if (floor) {
         const t0 = Date.now(), d0 = Math.round(floor.distanceTo(bot.entity.position));
+        let walkWhy = null;
         try { await actions.navigate(bot, task, new goals.GoalNear(floor.x, floor.y, floor.z, 2), { timeoutMs: 45000, stallMs: 8000 }); }
-        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; walkWhy = String(err.message || err); }
+        // The floor walk that finds no route at all, the bot at the landmark's point already (note 2669): dug toward as
+        // the landmark walk is below (note 736), not asked again at every pass. full-238 (25588, 2026-10-31 05:57 to
+        // 06:07Z), 7 rods banked and on its pearls, stood on a ledge at (54 to 72, 47, 9 to 21) beside its forest with the
+        // floor 17 to 33 blocks off across a gap, 'not reached, 17 off in 0 s' at every pass for ten minutes, 'no route'
+        // eight walks running, hunting endermen it could not get to; the landmark's point under its feet read as arrived.
+        if (!inForest(bot) && walkWhy && /no route/i.test(walkWhy) && actions.tunnel && !(bot._forestFloorDugAt > Date.now() - 120000)) {
+          bot._forestFloorDugAt = Date.now();
+          console.log(`[warped] no route to the forest's floor at (${floor.x}, ${floor.y}, ${floor.z}) from (${feet.x}, ${feet.y}, ${feet.z}): digging toward it`);
+          try { await actions.tunnel(bot, task, goal, save, new Vec3(floor.x, floor.y, floor.z), { within: goal.step }); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[warped] the dig toward the floor ended: ${String(err.message || err).slice(0, 160)}`); }
+        }
         console.log(`[warped] to the forest's floor at (${floor.x}, ${floor.y}, ${floor.z}), ${d0} blocks off: ${inForest(bot) ? 'in the forest' : `not reached, ${Math.round(floor.distanceTo(bot.entity.position))} off`} in ${Math.round((Date.now() - t0) / 1000)} s`);
       }
     }
