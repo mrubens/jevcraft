@@ -6833,7 +6833,12 @@ class Survival {
     // next question came at 11.3 health with no way out.
     const crowdX = require('./crowd');
     const crowdNow = crowdX.crowdOf(danger, { apartIds: this.lastApart?.ids });
-    const crowdGrew = crowdX.grew(held, crowdNow);
+    // A grown crowd lets a stance go only once it has had its three seconds to act (note 2702; STANCE_LEAST_MS, as the
+    // price's clock has since note 2635): mid-full-166-forest-5 (25591, 2026-10-31 09:38:56 to 09:39:14Z) had shield guard
+    // let go 'the crowd grew' after 1, 4.4, 0.1 and 0.4 seconds as four hoglins came in one after another, nothing carried
+    // out between the askings, 20 health to 3 in eighteen seconds and slain; Fable's audit of 2026-10-29 found about ten
+    // crowd deaths with the stance re-asked every 0 to 5 seconds (note 2549).
+    const crowdGrew = crowdX.grew(held, crowdNow) && !!held && Date.now() - held.at >= STANCE_LEAST_MS;
     // The shield chosen with, broken or come to its last volley (shield-
     // wear.js, note 786): 24 shields broke under blaze fire in the spans of
     // 2026-09-30T06:08Z to 2026-10-01T05:00Z and 13 of those bots were dead
