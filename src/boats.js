@@ -130,7 +130,7 @@ function tripFacts(bot, goal, trip, { fromWater = false } = {}) {
     carriedBoat: carried, boatToMake: carried ? null : { planksWanted: 5, planksCarried: planks, logsCarried: logs, craftingTableWithin16: table, says: fromWater ? 'no boat carried; one is made at a crafting table on land, not in the water' : `no boat carried; five planks at a crafting table make one (${planks} planks and ${logs} logs carried${table ? ', a table within 16 blocks' : ', no table in view'})` },
     health: bot.health, food: bot.food, healthSays: `${bot.health} health and ${bot.food} hunger; a swimmer is slow and in reach of drowned, and a boat's rider is hit as a walker is`,
     timeOfDay: bot.time?.timeOfDay, threats: (() => { try { return require('./danger').threats(bot, 16).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), visible: t.visible })); } catch (_) { return []; } })(),
-    inventory: Object.fromEntries(items.map(i => [i.name, i.count])), safeShoreAtBothEnds: !fromWater };
+    inventory: items.reduce((o, i) => ({ ...o, [i.name]: (o[i.name] || 0) + i.count }), {}), safeShoreAtBothEnds: !fromWater };
 }
 
 async function chooseBoat(client, state, hold = null) {

@@ -357,7 +357,7 @@ async function kitTrip(bot, task, goal, save, now = Date.now()) {
   // dead at the same spawner eleven minutes after it got there.
   const foods = bot.registry?.foodsByName || {};
   const points = list => Object.entries(list).reduce((n, [name, c]) => n + (foods[name]?.foodPoints || 0) * c, 0);
-  const carriedFood = points(Object.fromEntries((bot.inventory?.items?.() || []).map(i => [i.name, i.count])));
+  const carriedFood = points(require('./skills').inventoryCounts(bot));
   const rec = goal.survival?.recovery, droppedFood = rec?.at === run.deathAt ? points(rec.inventoryBeforeDeath || {}) : null;
   const foodSays = ` ${carriedFood ? `${carriedFood} food points are carried` : 'No food is carried'}${droppedFood === null ? '' : droppedFood ? `, and about ${droppedFood} lay in the pack that dropped` : ', and none was in the pack that dropped'}: in the Nether health comes back only at hunger eighteen or more (it is ${bot.food ?? 20} now) and there is little to eat there, so what a fight at the drops takes stays lost${carriedFood || droppedFood ? ' past what that food gives back' : ''}.`;
   // No gold on, the piglins (note 1246): of the first kit trips' deaths
@@ -577,7 +577,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     let bedKit = null; try { bedKit = kitActions ? require('./bed-kit').bedKitChores(bot, goal).take_bed_kit : null; } catch (_) { bedKit = null; }
     const tree = {
       go_back: { description: `Go back for ${listed(run.items)}: ${far} blocks off${far >= 100 ? `, about ${minutes} minute${minutes > 1 ? 's' : ''}' ${climbSeconds ? 'walk and climb' : 'walk'}${rec?.walkBlocksAMinute ? ` at the ${rec.walkBlocksAMinute} blocks a minute the bot's walks have made, stalls and detours counted` : ''}` : ''}${Math.abs(spot.y - bot.entity.position.y) > 4 ? `, at y ${Math.round(spot.y)}` : ''}. ${left === null ? `They last until the bot comes within ${TICKING} blocks, then five minutes.` : `About ${left} seconds before they vanish.${walkLeft}`} ${death.cause ? `The bot ${death.cause} there; when it died, ` : 'When the bot died there, '}${about ? `about it were ${about}` : 'nothing hostile was in view'}; it wore ${death.worn?.length ? death.worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} then and wears ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} now.${aboutHits} ${hour}${underSays}${wayDownSays}${stalled}${earlier}${eyesSay}${ringSays}${walkFoodSays}${alsoLying}` },
-      leave_them: { description: `Leave them and go on with what is carried: ${listed(worth(Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])))) || 'nothing worth listing'}. What was dropped is made again, or found, later${again ? `: ${again}` : ''}.${ironRemakeSays(run.items, goal)}${took}${keptSays}` },
+      leave_them: { description: `Leave them and go on with what is carried: ${listed(worth(require('./skills').inventoryCounts(bot))) || 'nothing worth listing'}. What was dropped is made again, or found, later${again ? `: ${again}` : ''}.${ironRemakeSays(run.items, goal)}${took}${keptSays}` },
     };
     // What holds for every way (the quick deaths, the walks back that ended in one, the drops seen, the record) is said once,
     // in the question's state, not on each way (note 2268's rule, the user 2026-10-27: 'should it just be in the state always?').

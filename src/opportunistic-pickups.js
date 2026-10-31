@@ -171,7 +171,7 @@ async function opportunisticPickups(bot, task, goal, save, primary, actions, cli
     const asking = state.pickupSteps % LIMITS.primarySteps === 0 && !!client;
     const animals = asking ? animalCandidates(bot, goal) : [];
     if (!animals.length) return false;
-    const response = await require('./decisions').ask(client, { state: { request: goal.request, primary, inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
+    const response = await require('./decisions').ask(client, { state: { request: goal.request, primary, inventory: require('./skills').inventoryCounts(bot),
       limits: LIMITS, candidates: animals.map(({ entity, ...c }) => ({ ...c, position: plain(entity.position) })) },
     questions: { opportunity: ['opportunistic_animal', { options: Object.fromEntries(animals.map((c, i) => [`animal_${i}`, `${c.animal}: ${c.label}; carrying ${c.carried} of ${c.wanted} wanted; ${Math.round(c.distance)} blocks away.`])) }] },
     timeoutMs: 5000, hold: { bot, goal, task } });

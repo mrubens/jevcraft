@@ -143,7 +143,7 @@ async function opportunisticMining(bot, task, goal, save, primary, { navigate, d
     const choices = await routed(bot, task, movement, candidates, allowed, LIMITS.routeSteps);
     if (!choices.length) return false;
     const firstShort = choices.findIndex(c => neededByRule(bot, c, goal));
-    const response = !asking ? { answers: { opportunity: { choice: `ore_${Math.max(0, firstShort)}`, rule: 'no Jev: a short ore is taken' } } } : await require('./decisions').ask(client, { state: { request: goal.request, primary, health: bot.health, food: bot.food, inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
+    const response = !asking ? { answers: { opportunity: { choice: `ore_${Math.max(0, firstShort)}`, rule: 'no Jev: a short ore is taken' } } } : await require('./decisions').ask(client, { state: { request: goal.request, primary, health: bot.health, food: bot.food, inventory: require('./skills').inventoryCounts(bot),
       limits: LIMITS, candidates: choices.map(({ standing, ...c }) => ({ ...c, distance: c.position.distanceTo(start) })) },
     questions: { opportunity: ['opportunistic_ore', { options: Object.fromEntries(choices.map((c, i) => [`ore_${i}`, `${c.block}: yields ${c.resource}; already carrying ${c.carried}; ${c.routeSteps} walking steps away.${shortage(bot, c, goal) ? ` ${shortage(bot, c, goal)[0].toUpperCase()}${shortage(bot, c, goal).slice(1)}.` : ''}`])) }] },
     timeoutMs: 5000, hold: { bot, goal, task } });

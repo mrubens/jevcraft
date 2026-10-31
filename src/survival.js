@@ -12245,7 +12245,7 @@ class Survival {
             workWaiting: goal.rungTime?.phase || goal.step?.item || goal.step?.block || goal.request || null,
             ...(night ? { underground: below, minutesToDawn: minutesToDawn(bot) } : {}), ...(mineOff ? { nightMineOff: mineOff } : {}), ...(Object.keys(notNow).length ? { notNow } : {}),
             stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor),
-            inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
+            inventory: require('./skills').inventoryCounts(bot),
             ...(waitSays ? { pocketSoFar: waitSays.facts } : {}), ...pocketNotWhole(pocket),
             ...(sealHold?.read ? { sealHold: { sealedFor: sealHold.kinds, waitingFor: sealHold.read.waiting, ...(sealHold.read.askedFor ? { askedAgainFor: sealHold.read.askedFor } : {}) } } : {}),
             riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot),

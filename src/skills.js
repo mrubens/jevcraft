@@ -31,6 +31,13 @@ function pickaxeTier(bot) {
 }
 
 /** How many of `item` the bot holds. */
+// Every kind carried with its whole count, the stacks of a kind summed (note 2629; the project review of 2026-10-30,
+// item 9): six states built the map by Object.fromEntries over the items, so two stacks of 64 and 1 read as 1.
+function inventoryCounts(bot) {
+  const out = {};
+  for (const i of (bot?.inventory?.items?.() || [])) if (i?.name) out[i.name] = (out[i.name] || 0) + (i.count || 0);
+  return out;
+}
 function countOf(bot, item) {
   return bot.inventory.items().filter((i) => i.name === item).reduce((n, i) => n + i.count, 0);
 }
@@ -1137,7 +1144,7 @@ function closeStrayWindow(bot) {
   return String(w.type || 'a window').replace(/^minecraft:/, '').replace(/_/g, ' ');
 }
 
-module.exports = { digWithTool, emptyHand, SCOOPED_COST, noteStallSpot, stallsToward, repeatStallSays, WalksFailing, REPEAT_TIMES, badSteps, noteHazard, hazardSpots, HAZARD_COST, STALL_SPOT_COST, openWindow, opensOnClick, closeStrayWindow, wholeGoal, goalGuardPlugin, digGuardPlugin, pickaxeDurability,
+module.exports = { inventoryCounts, digWithTool, emptyHand, SCOOPED_COST, noteStallSpot, stallsToward, repeatStallSays, WalksFailing, REPEAT_TIMES, badSteps, noteHazard, hazardSpots, HAZARD_COST, STALL_SPOT_COST, openWindow, opensOnClick, closeStrayWindow, wholeGoal, goalGuardPlugin, digGuardPlugin, pickaxeDurability,
   Task,
   Cancelled,
   navigate,

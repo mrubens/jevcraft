@@ -954,7 +954,7 @@ function strategyState(bot, goal, stage, extra = {}) {
     riskNow: require('./risk').riskNow(bot), deathWouldCost: require('./risk').deathCost(bot, goal),
     recentPositions: require('./stillness').recentPositions(bot),
     health: bot.health, food: bot.food, experienceLevel: bot.experience?.level ?? 0,
-    inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
+    inventory: require('./skills').inventoryCounts(bot),
     deaths: (goal.survival?.deaths || []).length,
   };
 }
