@@ -3144,7 +3144,11 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
   while (true) {
     task.check(); checkAir(bot);
     if (mined && satisfied()) return;
-    if (!mined && missed >= 3) break;
+    // Planks no walk reaches, three misses running (note 2718): thrown as the walks' failure, so the source rests
+    // (executeAcquisition) and the plan goes back to logs, instead of the search step and the next pass's three more.
+    // full-261 (25592, 2026-10-31 11:33 to 11:42Z), at y 23 to 33 with an iron pickaxe and one stick, missed 35 mineshaft
+    // planks 30 blocks off in nine minutes, 'No reachable dry standing position' each, a path search apiece.
+    if (!mined && missed >= 3) { if (/_planks$/.test(String(step.block || '')) && /No reachable dry standing position/.test(goal.lastMiningError || '')) throw new Error(goal.lastMiningError); break; }
     let p = pool.shift();
     while (p && mined && p.distanceTo(bot.entity.position) > 10) p = pool.shift();
     if (!p) {
@@ -4630,7 +4634,7 @@ async function executeAcquisition(bot, task, step, goal, save) {
     // times, each plan after the same, and was cut as a loop.
     try { await mine(bot, task, step, goal, save); }
     catch (err) {
-      if (/_planks$/.test(String(step.block || '')) && walksFailed(err.message)) { setAside(goal, 'source', 'planks', `no walk reaches the ${String(step.block).replaceAll('_', ' ')} seen: ${String(err.message).slice(0, 100)}`, PLANKS_REST_MS); save(); }
+      if (/_planks$/.test(String(step.block || '')) && (walksFailed(err.message) || /No reachable dry standing position/.test(err.message || ''))) { setAside(goal, 'source', 'planks', `no walk reaches the ${String(step.block).replaceAll('_', ' ')} seen: ${String(err.message).slice(0, 100)}`, PLANKS_REST_MS); save(); }
       throw err;
     }
   }
