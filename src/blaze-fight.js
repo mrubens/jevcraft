@@ -44,13 +44,16 @@ function install(bot) {
       // Where it died and what lies under it, and two seconds on whether its rod lies there (note 2621): the fortress
       // trials of 2026-10-31 killed 20 blazes and gained no rod in four trial-hours, where the spawner drill's cavern got
       // a rod from every second kill; a blaze killed over the walkway's edge drops into the lava below, unseen.
-      const where = e.position.floored(), under = groundUnder(bot, where);
+      const where = e.position.floored(), under = groundUnder(bot, where), carriedThen = rodsCarried(bot);
       const timer = setTimeout(() => {
         try {
           const rods = Object.values(bot.entities || {}).filter(o => o && o.isValid !== false && o.position && o.name === 'item' && o.getDroppedItem?.()?.name === 'blaze_rod' && o.position.distanceTo(e.position) <= 4);
-          const here = bot.entity?.position;
-          if (rods.length) { const r = rods[0].position.floored(); console.log(`[blaze] its rod lies at (${r.x}, ${r.y}, ${r.z})${here ? `, ${Math.round(rods[0].position.distanceTo(here))} blocks from the bot` : ''}; it died over ${under}`); }
-          else console.log(`[blaze] no rod lay within 4 of where it died two seconds on (${where.x}, ${where.y}, ${where.z}); it died over ${under}`);
+          const here = bot.entity?.position, carriedNow = rodsCarried(bot);
+          // Taken already is the usual end of a kill at arm's length (note 2624): seven of the first eight kills logged by note 2621
+          // read 'no rod lay' over solid floor, the rod in the pack before the two seconds were up.
+          if (carriedNow > carriedThen) console.log(`[blaze] its rod was taken: ${carriedNow} carried, up from ${carriedThen}; it died over ${under}`);
+          else if (rods.length) { const r = rods[0].position.floored(); console.log(`[blaze] its rod lies at (${r.x}, ${r.y}, ${r.z})${here ? `, ${Math.round(rods[0].position.distanceTo(here))} blocks from the bot` : ''}; it died over ${under}`); }
+          else console.log(`[blaze] no rod lay within 4 of where it died two seconds on (${where.x}, ${where.y}, ${where.z}) and none was taken (${carriedNow} carried); it died over ${under}`);
         } catch (_) { /* a record only */ }
       }, 2000);
       timer.unref?.();
@@ -67,6 +70,7 @@ function groundUnder(bot, at) {
   }
   return 'open air for 8 blocks below';
 }
+const rodsCarried = bot => { try { return (bot.inventory?.items?.() || []).filter(i => i.name === 'blaze_rod').reduce((n, i) => n + (i.count || 0), 0); } catch (_) { return 0; } };
 function killsIn(bot, c) { return fight(bot).kills.filter(k => k.at >= c.began && Math.hypot(k.x - c.x, k.z - c.z) <= PLACE + NEAR); }
 
 // The fact for a question asked with blazes about, or null.

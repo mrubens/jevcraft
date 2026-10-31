@@ -26,7 +26,7 @@ test('a blaze killed over lava with no rod two seconds on: said so, with the gro
     bot.emit('entityDead', blaze); delete bot.entities[1];
     await wait(2200);
     assert.ok(said.some(l => /^\[blaze\] one killed 5 blocks off under charge nearest/.test(l)), said.join(' | '));
-    assert.ok(said.some(l => l === '[blaze] no rod lay within 4 of where it died two seconds on (5, 64, 0); it died over lava 3 below'), said.join(' | '));
+    assert.ok(said.some(l => l === '[blaze] no rod lay within 4 of where it died two seconds on (5, 64, 0) and none was taken (0 carried); it died over lava 3 below'), said.join(' | '));
     bot.emit('end');
   } finally { console.log = log; }
 });
@@ -38,6 +38,19 @@ test('a rod lying where it died is said with its place and distance', async () =
     bot.emit('entityDead', blaze); delete bot.entities[1];
     await wait(2200);
     assert.ok(said.some(l => l === '[blaze] its rod lies at (5, 63, 0), 5 blocks from the bot; it died over nether bricks 1 below'), said.join(' | '));
+    bot.emit('end');
+  } finally { console.log = log; }
+});
+
+test('a rod in the pack before the two seconds are up is said as taken (note 2624)', async () => {
+  const said = []; const log = console.log; console.log = (...a) => { said.push(a.join(' ')); };
+  try {
+    const { bot, blaze } = scene({ rod: false, under: 'nether_bricks', depth: 1 });
+    bot.inventory = { items: () => [{ name: 'blaze_rod', count: 2 }] };
+    bot.emit('entityDead', blaze); delete bot.entities[1];
+    bot.inventory = { items: () => [{ name: 'blaze_rod', count: 3 }] };
+    await wait(2200);
+    assert.ok(said.some(l => l === '[blaze] its rod was taken: 3 carried, up from 2; it died over nether bricks 1 below'), said.join(' | '));
     bot.emit('end');
   } finally { console.log = log; }
 });
