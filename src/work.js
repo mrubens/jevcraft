@@ -502,6 +502,28 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
     const straight = straightToward(bot, task, goal, save, failedWalk, now);
     if (straight) answers.cross_toward = straight;
   }
+  // Blocks dug from the rock about here first, then the crossing (note 2672): the crossing on offer lays what is carried
+  // and stops short when the pack runs out, and the blocks-from-shore way walks back along the way in for rock where
+  // the bot stands on rock already (shore-blocks.js offer wants none about). full-238 (25588, 2026-10-31 05:57 to 06:20Z),
+  // its rods banked, stood twenty minutes on a netherrack ledge beside its warped forest with the floor 16 to 24 blocks
+  // off across lava and 0 to 4 blocks carried: cross toward read 'laying 4 blocks ... 0 left after, ends 4 blocks nearer',
+  // none good led the answers, and tunnel toward (no rock to dig through air) was taken.
+  if (!idle && answers.cross_toward) {
+    try {
+      const bridging = require('./bridging'), carried = bridging.blocksCarried(bot), want = 24;
+      const here = bot.entity.position.floored(), pick = (bot.inventory?.items?.() || []).some(i => /_pickaxe$/.test(i.name));
+      if (carried < 16 && pick && require('./shore-blocks').rockAbout(bot, here)) {
+        const short = want - carried;
+        answers.blocks_here_then_cross = { description: `Dig ${short} blocks from the rock about here first, with the pickaxe carried (about ${Math.round(short * 1.5)} seconds, the netherrack beside and under the ledge, not the cell the bot stands on), ${carried} carried now, then the crossing with ${want}: ${answers.cross_toward.description}`,
+          run: async () => {
+            const had = bridging.blocksCarried(bot);
+            for (let r = 0; r < 6 && bridging.blocksCarried(bot) - had < short; r++) { const got = await bridging.quarryHere(bot, task, short - (bridging.blocksCarried(bot) - had)); if (!got?.gained) break; }
+            console.log(`[blocks here] ${bridging.blocksCarried(bot) - had} blocks dug from the rock about, ${bridging.blocksCarried(bot)} carried: the crossing next`);
+            await answers.cross_toward.run();
+          } };
+      }
+    } catch (_) { /* no rock read: the crossing alone stays */ }
+  }
   const rung = goal.rungTime?.phase;
   // What the rung is for and what half an hour without it costs (the
   // decision audit, 2026-09-25).
