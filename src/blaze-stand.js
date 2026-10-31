@@ -343,7 +343,11 @@ function standCost(bot, danger, { setup = 0, at = null, open = null, atOnce = In
   const hit = Math.round(ce.afterArmour(ce.FIREBALL.melee, ce.armourOf(worn)) * 10) / 10;
   for (const m of there) if (m.name === 'blaze' && !m.shoots) m.hitsBot = hit;
   const first = setup ? ce.stanceCost({ mobs: now, setup, seconds: setup }) : { damage: 0, blasts: [] };
-  const rest = ce.stanceCost({ mobs: there, seconds: ce.HOLD_SECONDS, fight: { atOnce, only: pinned ? m => !m.shoots : m => !m.shoots || m.name === 'blaze' },
+  // Held in a hole, a blaze that sees in is fought too (note 2724; the Fable check-in of 2026-10-31 13:15Z): one with a
+  // line to the bot flies at it (the game's rule) and comes to the mouth, one at a time there (atOnce), where the sword
+  // reaches it; priced only as shooting the whole hold, the hole at full-262's cage (25589, 2026-10-31 13:04:57Z) read
+  // 106 to 119 damage beside corner ambush at 5 and close in at 22 to 29, and the buried drill went 15 of 15 to seven rods.
+  const rest = ce.stanceCost({ mobs: there, seconds: ce.HOLD_SECONDS, fight: { atOnce, only: m => !m.shoots || m.name === 'blaze' },
     reaches: m => settling.has(m.id) ? SETTLE_SECONDS : m.shoots || m.name === 'creeper' || m.name === 'warden', shield });
   return { seconds: round(setup + ce.HOLD_SECONDS), setup: round(setup), damage: round(first.damage + rest.damage), blasts: [...first.blasts, ...rest.blasts], still: rest.still, later: rest.later, mobs: there,
     seeing: seeing ? seeing.size : null, settling: settling.size, shooters: shooting.length };
@@ -1637,7 +1641,7 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
     const open = new Set([cageHole.hole, cageHole.hole.offset(0, 1, 0)].map(c => `${c}`));
     const setup = round((cageHole.ms + 250) / 1000);
     const cost = standCost(bot, danger, { setup, at: cageHole.hole, open, atOnce: 1, melee: true, pinned: true });
-    const m = measuredSays('cage_hole', bot);
+    const m = { says: BURIED_DRILL };
     options.dig_in_at_spawner = { kind: 'hole', site: cageHole, sees: seeingAt(cageHole.hole), about: aboutAll.length, atSpawner: true, expects: { damage: cost.damage, seconds: cost.seconds, oneHit: oneHit(cost.mobs) },
       description: `Walk ${cageHole.steps} block${cageHole.steps === 1 ? '' : 's'} (about ${seconds(round(cageHole.walkMs / 1000))}, in their fire meanwhile) to the ${words(cageHole.rock)} ${cageHole.off} blocks from the blaze spawner's cage, dig a hole one wide and two high into it with the mouth toward the cage (2 blocks ${cageHole.with}, about ${seconds(round(cageHole.digMs / 1000))} of digging), step in and hold it${shieldCarried(bot) ? ', the shield up and facing each volley as it comes' : ''}: the spawner puts its blazes within four blocks of itself, up to four at a time every ten to forty seconds while a player is within sixteen, and one that comes within two of the bot closes to swing, into the mouth and the sword. Rock behind, beside and over the bot: every shot comes in through the mouth, from in front${shieldCarried(bot) ? ' where the shield faces' : ''}, and none lights the cell; a push meets rock. Rods that fall at the mouth are picked up between volleys.` +
         m.says + fire + costSays(cost, hp, cost.mobs, { doing: 'walking and digging in', done: 'In the hole', over: overSays(cost, 'walking and digging in') }) };
@@ -2150,7 +2154,6 @@ const SCENE_NEAR = { one: ['one_trial'], one_trial: ['one'], spawner: ['near4'],
 const MEASURED = {
   close: { near4: { runs: 10, kills: 17, rods: 7, damage: 32.2, deaths: 3, seconds: 27.3, note: 'each run ended at the first rod carried, or a death' }, one_trial: { runs: 5, kills: 5, rods: 3, damage: 1, deaths: 0, seconds: 7.2 }, one: { runs: 2, kills: 2, rods: 1, damage: 2.1, deaths: 0 }, spawner: { runs: 3, kills: 6, rods: 2, damage: 21, deaths: 1 }, wither: { runs: 3, kills: 2, rods: 0, damage: 33.1, deaths: 3 } },
   break: { spawner: { runs: 3, kills: 2, rods: 1, damage: 34.1, deaths: 2 }, wither: { runs: 3, kills: 4, rods: 0, damage: 33.7, deaths: 3 } },
-  cage_hole: { spawner: { runs: 3, kills: 1, rods: 1, damage: 29, deaths: 1 } },
   hole: { spawner: { runs: 3, kills: 1, rods: 0, damage: 3.1, deaths: 0 } },
   wall: { spawner: { runs: 3, kills: 0, rods: 0, damage: 34.7, deaths: 2 }, wither: { runs: 3, kills: 3, rods: 0, damage: 13.1, deaths: 0 } },
   open: { spawner: { runs: 3, kills: 1, rods: 0, damage: 39.9, deaths: 2 }, one: { runs: 5, kills: 4, rods: 2, damage: 12.4, deaths: 0 } },
@@ -2172,6 +2175,10 @@ function sceneNow(bot) {
   if (spawnerAt(bot)) return about.filter(t => t.entity.name === 'blaze' && t.distance <= 16).length >= 3 ? 'near4' : 'spawner';
   return about.filter(t => t.entity.name === 'blaze').length <= 1 ? 'one' : 'spawner';
 }
+// The buried cage drill (scripts' spawner drill, layout buried, artifacts/spawner-drill-buried*.log, 2026-10-10 to 13): a
+// hole dug into the cage's own rock and held there with the sword and the shield, the kit iron (note 2724, in place of the
+// three-run cage_hole row of 2026-10-03).
+const BURIED_DRILL = ' Measured in the arena, a hole dug into the rock beside a live cage and held there, an iron kit: 55 runs, 328 rods carried away, 36 runs reached seven rods, 5 deaths; the last 15 runs (the current code then) 15 of 15 to seven rods with no death, in 1.8 to 7.5 minutes, a median about 3.8. A blaze that sees into the hole flies at the bot and comes to the mouth, where the sword reaches it, one at a time.';
 function measuredSays(kind, bot = null) {
   const rows = MEASURED[kind];
   if (!rows || !Object.keys(rows).length) return { says: '', damage: null };
