@@ -35,10 +35,22 @@ function healing(bot) {
   const foods = bot.registry?.foodsByName || {};
   return (bot.inventory?.items?.() || []).some(i => foods[i.name]);
 }
+// Lava within three blocks round the feet or four below them (note 2671): the body is left where it stands through the
+// quit and the join, and a step or a knock in that second put it in. full-242 (25587, 2026-10-31 06:08Z), on its kit trip
+// over the Nether's lava, joined 'in air' twice for two builds within three minutes and was in the lava at 28 blocks
+// below; of the day's 66 deaths 5 came within ninety seconds of a build restart.
+function lavaNear(bot) {
+  try {
+    const { Vec3 } = require('vec3'); const f = bot.entity.position.floored();
+    for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) for (let dy = -4; dy <= 1; dy++) { const b = bot.blockAt(new Vec3(f.x + dx, f.y + dy, f.z + dz)); if (b && /lava/.test(b.name)) return true; }
+  } catch (_) { /* no world to read: not quiet */ return true; }
+  return false;
+}
 function quiet(bot) {
   const e = bot.entity;
   if (!e || !bot.isAlive) return false;
   if (e.onGround === false || e.isInWater || e.isInLava || bot.vehicle || bot._seatedIn != null || bot._spanning) return false;
+  if (lavaNear(bot)) return false;
   // Healed, or health that is not coming back (hunger under eighteen and
   // nothing carried to eat): waiting heals nothing then, and the wait kept
   // a bot on its old build as long as it starved. 25592 (2026-10-04 15:48
