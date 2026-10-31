@@ -19,6 +19,7 @@
 const { Vec3 } = require('vec3');
 
 const RANGE = 16;            // the spawner tries only with a player this near (BaseSpawner)
+const HOLE_HOLD_MS = 5 * 60000; // a hole stood in at the cage (note 2752)
 const HOLD_MS = 60000;       // a stay: every try comes within 40 s of the last
 const HOLD_NEAR = 4;         // a stay held from about the spot it was chosen at
 const SWORDS = ['netherite_sword', 'diamond_sword', 'iron_sword', 'stone_sword', 'golden_sword', 'wooden_sword'];
@@ -139,6 +140,15 @@ function holding(bot, goal, now = Date.now()) {
 // The held plan, with the bot in its box or at its slit: what the threat
 // rule reads. -> the plan or null
 function shelterHeld(bot, goal = bot?._goal, now = Date.now()) {
+  // A hole at the cage, built or dug, chosen within HOLD_MS and stood in (note 2752): its run was ended by each fireball
+  // as a threat, the hold had no cageHold box, and the fight question that followed took the bot out of it.
+  // mid-full-63-fortress-18 (25586, 2026-10-31 22:0xZ), in its whole hole (0 blocks, 0 steps), had the run end 'Threat
+  // nearby: small_fireball at 9 blocks'; mid-full-9-fortress-19 and mid-full-147-fortress-17 died charging and rising to
+  // strike after leaving theirs.
+  try {
+    const b = goal?.emptySpawner?.built;
+    if (b?.at && now - b.at < HOLE_HOLD_MS && /^(build_hole_at_spawner|dig_in_at_spawner)$/.test(String(b.key)) && require("./blaze-stand").inHole?.(bot)) return { choice: b.key, at: b.at, until: b.at + HOLE_HOLD_MS, hole: true };
+  } catch (_) { /* not a hole */ }
   const h0 = goal?.cageHold;
   if (!h0 || !(h0.box || h0.openings?.length) || !(h0.until > now)) return null;
   const h = holding(bot, goal, now);
