@@ -817,7 +817,14 @@ function huntAnswerJustNow(goal, bot, now = Date.now()) {
 }
 function stanceHeld(bot, now = Date.now()) {
   const s = bot?._stance;
-  if (s && now < stanceEnds(s) && (s.running || now - (s.ranAt ?? s.at) < 2000) && (bot.health ?? 0) > s.health - holdLoss(s.health)) return s;
+  // One end for a hold, wherever it is read (note 2707; the Fable check-in of 2026-10-31 11:00Z): the stance's own
+  // 'more damage than priced' (pacedLoss, as stanceStep reads it) ends the hold here too, after its three seconds, so the
+  // arbiter sees the hold dead the moment survival would, steps the body out of the fire, and the stance is asked again.
+  // Before, this read only half the health gone: mid-full-147-fortress-6 (25590, 10:03:12 to 10:03:29Z) held await in
+  // reach while a skeleton shot it from 20 to 11.5 and 7.6, the fire's ways taking every turn, the stance asked again
+  // only at 7.6 (half gone) and the bot dead at 3.
+  const priceSpent = !!s && !!s.expects && Number.isFinite(s.health) && now - s.at >= 3000 && (s.health - (bot.health ?? 20)) > pacedLoss(s.health, s.expects, (now - s.at) / 1000, { extended: !!s.hold?.extended });
+  if (s && !priceSpent && now < stanceEnds(s) && (s.running || now - (s.ranAt ?? s.at) < 2000) && (bot.health ?? 0) > s.health - holdLoss(s.health)) return s;
   return standHeld(bot, now);
 }
 // The mobs the stance holds against: those it was chosen against (its ids)
