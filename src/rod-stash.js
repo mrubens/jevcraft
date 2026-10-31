@@ -157,8 +157,23 @@ function nearStash(bot, goal) {
   const here = bot.entity?.position;
   if (!here) return null;
   const dim = dimOf(bot);
-  return stashes(goal).filter(s => s.dimension === dim).map(s => ({ s, d: here.distanceTo(V(s.position).offset(0.5, 0.5, 0.5)) }))
+  const own = stashes(goal).filter(s => s.dimension === dim).map(s => ({ s, d: here.distanceTo(V(s.position).offset(0.5, 0.5, 0.5)) }))
     .filter(x => x.d <= NEAR_STASH && bot.blockAt(V(x.s.position))?.name === 'chest').sort((a, b) => a.d - b.d)[0] || null;
+  if (own) return own;
+  // A chest already standing within the twelve, not the bot's own, is a keep too (note 2664; the user, 2026-10-31 05:40Z:
+  // 'There are a lot of chests in the dungeon already, does jev consider using those?'): a fortress's loot chest holds
+  // what it holds and takes the rods beside it, no wood or walk needed; taken, it is remembered as a stash from then on.
+  // The bot's own chests were the only ones the keep ever read.
+  try {
+    const known = new Set((goal?.rodStashes || []).map(s => `${s.position.x},${s.position.y},${s.position.z}`));
+    const found = bot.findBlocks?.({ matching: b => b && b.name === 'chest', maxDistance: NEAR_STASH, count: 8 }) || [];
+    const other = found.filter(p => !known.has(`${p.x},${p.y},${p.z}`)).map(p => ({ p, d: here.distanceTo(p.offset(0.5, 0.5, 0.5)) })).sort((a, b) => a.d - b.d)[0];
+    if (!other) return null;
+    const s = { position: { x: other.p.x, y: other.p.y, z: other.p.z }, dimension: dim, contents: {}, found: 'standing', placedAt: new Date().toISOString() };
+    (goal.rodStashes ||= []).push(s);
+    console.log(`[rod stash] a chest already standing at ${at(s.position)}, ${round(other.d)} blocks off, is the keep offered: not the bot's own`);
+    return { s, d: other.d };
+  } catch (_) { return null; }
 }
 
 // The lull by a live spawner, for the seconds against its next try (note 691).
@@ -213,7 +228,7 @@ function offerSays(offer, { riskInState = false } = {}) {
   const list = offer.what.map(w => plural(w.count, words(w.item)));
   const what = list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list.at(-1)}` : list[0];
   const where = offer.existing
-    ? `put them in the chest at ${at(offer.existing.position)}, ${offer.steps ? `a ${offer.steps}-block walk` : 'in reach'}`
+    ? `put them in the chest ${offer.existing.found === 'standing' ? 'already standing (not the bot\'s own: whatever it holds stays in it) ' : ''}at ${at(offer.existing.position)}, ${offer.steps ? `a ${offer.steps}-block walk` : 'in reach'}`
     : `set a chest down ${offer.site.off} blocks off at ${at(offer.site.cell)}, ${offer.site.seen ? 'in a blaze\'s line (no cell in reach is out of every line; a fireball neither breaks a chest nor burns it)' : 'out of every blaze\'s line'}, and put them in`;
   const fire = offer.seenBy?.length ? ` Done where the bot stands, in the line of ${plural(offer.seenBy.length, offer.seenBy.every(e => e.name === 'blaze') ? 'blaze' : 'shooter')} that ${offer.seenBy.length === 1 ? 'sees' : 'see'} it now.` : '';
   const secs = offer.lull ? require('./spawner-clock').jobSays(offer.lull, offer.seconds) : ` About ${offer.seconds} second${offer.seconds === 1 ? '' : 's'}.`;
