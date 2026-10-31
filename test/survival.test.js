@@ -6216,8 +6216,11 @@ test('a zombie at arm\'s length with bare hands: run_from is offered, priced by 
   two.entity.position = new Vec3(0.5, 64, 0.5);
   await fallback.run_from.run();
   assert.ok(ran2.length >= 2, `walks: ${ran2.length}`);
-  assert.equal(ran2[1].isEnd({ x: -23, y: 64, z: 3 }), false, 'twenty-four from the first, twenty-three from the second');
-  assert.equal(ran2[1].isEnd({ x: -26, y: 64, z: 3 }), true);
+  // The second walk is to a cell aside (note 2618): twenty-four blocks out, sixty degrees off the line away from the
+  // nearest, a goal with a heuristic of its own in place of the inverted goals (whose negative heuristic the pathfinder's
+  // bound could not hold, note 2615).
+  assert.equal(ran2[1].isEnd({ x: -23, y: 64, z: 3 }), false, 'straight away is not the cell aside');
+  assert.ok(ran2[1].isEnd({ x: -12, y: 64, z: 21 }) || ran2[1].isEnd({ x: -12, y: 64, z: -20 }), 'one of the two cells aside, twenty-four out at sixty degrees');
   // Hunger too low to sprint: not offered.
   const hungry = creeperBot({ wall: false, creeper: null, weapon: 'dirt', health: 20 }); hungry.food = 5; hungry.entities = { 7: zombie };
   const none = new Survival(hungry, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } }).stanceOptions(new Task('x'), {}, () => {}, [{ entity: zombie, distance: 1.4, visible: true }], false);

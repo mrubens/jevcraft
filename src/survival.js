@@ -1480,6 +1480,16 @@ function pushRecordOn(bot, key, o) {
   o.description += ` In the record (the flight records of 2026-10), this way chosen with a deadly drop beside it: ${n} times, the bot in the lava or fallen within 20 seconds ${fell === 0 ? 'none of them' : `${fell}`}.`;
   if (fell > 0 && o.expects && Number.isFinite(o.expects.damage)) o.expects.damage = Math.round((o.expects.damage + fell / n * (bot.health ?? 20)) * 10) / 10;
 }
+// The run's cells to either side (note 2618): the priced cell's heading turned sixty degrees each way, each a GoalNearXZ
+// with a heuristic of its own, in place of the GoalInvert and GoalCompositeAll the fallback walked by. An inverted goal's
+// heuristic is the negative of its goal's, so the pathfinder's maxCost (the start's heuristic plus searchRadius, note
+// 2615) bounds nothing on it and A* expands every node it can reach for its whole think time: mid-full-162-oom-3-fortress-1
+// (25586, 2026-10-31 00:30 and 00:31Z) ran out of a 4 GB heap twice in a minute at 'gave survival escape_threat', on the
+// bounded pathfinder, as its source save had three times before (note 2615's profile: 123 of 150 busy seconds in astar).
+function runCellsAside(here, from, blocks) {
+  const a = Math.atan2(here.z - from.z, here.x - from.x);
+  return [60, -60].map(deg => { const b = a + deg * Math.PI / 180; return { x: Math.round(here.x + Math.cos(b) * blocks), z: Math.round(here.z + Math.sin(b) * blocks) }; });
+}
 function pricedRunCell(here, from, blocks) {
   const dx = here.x - from.x, dz = here.z - from.z, len = Math.hypot(dx, dz) || 1;
   return { x: Math.round(here.x + dx / len * blocks), z: Math.round(here.z + dz / len * blocks) };
@@ -5655,7 +5665,7 @@ class Survival {
       // blows.
       const ranHere = this.state.runFromFailed && Date.now() - this.state.runFromFailed.at < 30000 && bot.entity.position.distanceTo(new Vec3(this.state.runFromFailed.from.x, this.state.runFromFailed.from.y, this.state.runFromFailed.from.z)) <= 4;
       const noWayOut = scouted && !scouted.destination && scouted.spots ? ` The search for a way out from here found none: of ${plural(scouted.candidates || scouted.spots, 'spot')} further from every mob, no walk reaches one that passes none of them. This run is into the same ground, a block dug or laid where the walk wants one.` : '';
-      if (biters.length && slowest && !onPillar && !ranHere && !options.come_down && (bot.food ?? 20) > 6 && !inWater(bot) && typeof goals.GoalInvert === 'function') {
+      if (biters.length && slowest && !onPillar && !ranHere && !options.come_down && (bot.food ?? 20) > 6 && !inWater(bot) && typeof goals.GoalNearXZ === 'function') {
         const lead = biters[0], speed = Math.round(ce.blocksPerSecond(lead.entity.name) * 10) / 10;
         // The run's seconds by this bot's own measured pace (run-pace.js, note 2162), not the sprint's 5.6.
         const secs = Math.round(RUN_FROM / Math.max(0.5, require('./run-pace').runPace(require('./run-pace').paceOf(this.state)) - speed) * 10) / 10;
@@ -5687,18 +5697,15 @@ class Survival {
             // 2026-10-03 12:53:37Z, four zombies come down into its shaft, "the run
             // from them came 1 blocks: No route"), the same run with a block dug or
             // laid where the way wants one (note 1054).
-            const away = e => new goals.GoalInvert(new goals.GoalNear(e.position.x, e.position.y, e.position.z, RUN_FROM));
-            // Away from the creepers near too (note 1998).
-            const fled = [...biters.slice(0, 4).map(t => t.entity), ...creepersNear(runCreepers)];
-            const goalAway = () => fled.length > 1 && typeof goals.GoalCompositeAll === 'function' ? new goals.GoalCompositeAll(fled.map(away)) : away(lead.entity);
-            // The way priced first (note 2013); the walk away from each where it has no route.
+            // The way priced first (note 2013); the cells to either side of it where it has no route (note 2618).
             const cell = pricedRunCell(from, fleeFrom(lead.entity, runCreepers), RUN_FROM);
+            const [aside1, aside2] = runCellsAside(from, fleeFrom(lead.entity, runCreepers), RUN_FROM);
             let priced = false;
             try { await this.actions.navigate(bot, task, new goals.GoalNearXZ(cell.x, cell.z, 4), { timeoutMs: 9000, stallMs: 2500, sprint: true, onFoot: true }); priced = true; }
             catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; priced = bot.entity.position.distanceTo(from) >= 4; }
             if (!priced) try {
-              try { await this.actions.navigate(bot, task, goalAway(), { timeoutMs: 9000, stallMs: 2500, sprint: true, onFoot: true }); }
-              catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name) || bot.entity.position.distanceTo(from) >= 4) throw err; await this.actions.navigate(bot, task, goalAway(), { timeoutMs: 9000, stallMs: 2500, sprint: true }); }
+              try { await this.actions.navigate(bot, task, new goals.GoalNearXZ(aside1.x, aside1.z, 4), { timeoutMs: 9000, stallMs: 2500, sprint: true, onFoot: true }); }
+              catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name) || bot.entity.position.distanceTo(from) >= 4) throw err; await this.actions.navigate(bot, task, new goals.GoalNearXZ(aside2.x, aside2.z, 4), { timeoutMs: 9000, stallMs: 2500, sprint: true }); }
             }
             catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; if (bot.entity.position.distanceTo(from) < 4) await sprintByHeading(bot, task, biters.map(t => t.entity), RUN_FROM); if (bot.entity.position.distanceTo(from) < 4) { const blocked = bot._runBlocked?.says ? `; ${bot._runBlocked.says}` : ''; this.state.runFromFailed = { at: Date.now(), from: { x: from.x, y: from.y, z: from.z }, blocks: Math.round(bot.entity.position.distanceTo(from)), why: `${String(err.message || err).slice(0, 120)}${blocked}` }; throw Object.assign(new Error(`the run from them came ${Math.round(bot.entity.position.distanceTo(from))} blocks: ${String(err.message || err).slice(0, 120)}${blocked}`), { name: 'StanceFailed' }); } }
           } };
@@ -5713,7 +5720,7 @@ class Survival {
       // its work, answered none good at 0.72 to 0.77, and was shot from 20
       // health to none in seventeen seconds.
       const walkers = biters.length ? [] : danger.filter(t => WALKING_SHOOTERS.test(t.entity.name) && t.visible !== false && t.distance <= 16).sort((a, b) => a.distance - b.distance);
-      if (walkers.length && !options.run_from && !onPillar && !ranHere && !options.come_down && (bot.food ?? 20) > 6 && !inWater(bot) && typeof goals.GoalInvert === 'function') {
+      if (walkers.length && !options.run_from && !onPillar && !ranHere && !options.come_down && (bot.food ?? 20) > 6 && !inWater(bot) && typeof goals.GoalNearXZ === 'function') {
         const OUT = 28, lead = walkers[0];
         const secs = Math.max(1, Math.round((OUT - lead.distance) / SPRINT * 10) / 10);
         const named = walkers.length === 1 ? `the ${lead.entity.name.replaceAll('_', ' ')}` : `the ${walkers.length} that shoot`;
@@ -5725,17 +5732,17 @@ class Survival {
             lowerShield(bot);
             const from = bot.entity.position.clone();
             require('./run-pace').watch(this, bot, from, lead.entity.name, save);
-            const away = e => new goals.GoalInvert(new goals.GoalNear(e.position.x, e.position.y, e.position.z, OUT));
             const fled = [...walkers.slice(0, 4).map(t => t.entity), ...creepersNear(runCreepers)];
-            const goalAway = () => fled.length > 1 && typeof goals.GoalCompositeAll === 'function' ? new goals.GoalCompositeAll(fled.map(away)) : away(lead.entity);
-            // The way priced first (note 2013); the walk away from each where it has no route.
-            const cell = pricedRunCell(from, { x: fled.reduce((a, e) => a + e.position.x, 0) / fled.length, z: fled.reduce((a, e) => a + e.position.z, 0) / fled.length }, OUT);
+            // The way priced first (note 2013); the cells to either side of it where it has no route (note 2618).
+            const centre = { x: fled.reduce((a, e) => a + e.position.x, 0) / fled.length, z: fled.reduce((a, e) => a + e.position.z, 0) / fled.length };
+            const cell = pricedRunCell(from, centre, OUT);
+            const [aside1, aside2] = runCellsAside(from, centre, OUT);
             let priced = false;
             try { await this.actions.navigate(bot, task, new goals.GoalNearXZ(cell.x, cell.z, 4), { timeoutMs: 9000, stallMs: 2500, sprint: true, onFoot: true }); priced = true; }
             catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; priced = bot.entity.position.distanceTo(from) >= 4; }
             if (!priced) try {
-              try { await this.actions.navigate(bot, task, goalAway(), { timeoutMs: 9000, stallMs: 2500, sprint: true, onFoot: true }); }
-              catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name) || bot.entity.position.distanceTo(from) >= 4) throw err; await this.actions.navigate(bot, task, goalAway(), { timeoutMs: 9000, stallMs: 2500, sprint: true }); }
+              try { await this.actions.navigate(bot, task, new goals.GoalNearXZ(aside1.x, aside1.z, 4), { timeoutMs: 9000, stallMs: 2500, sprint: true, onFoot: true }); }
+              catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name) || bot.entity.position.distanceTo(from) >= 4) throw err; await this.actions.navigate(bot, task, new goals.GoalNearXZ(aside2.x, aside2.z, 4), { timeoutMs: 9000, stallMs: 2500, sprint: true }); }
             }
             catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; if (bot.entity.position.distanceTo(from) < 4) await sprintByHeading(bot, task, walkers.map(t => t.entity), OUT); if (bot.entity.position.distanceTo(from) < 4) { const blocked = bot._runBlocked?.says ? `; ${bot._runBlocked.says}` : ''; this.state.runFromFailed = { at: Date.now(), from: { x: from.x, y: from.y, z: from.z }, blocks: Math.round(bot.entity.position.distanceTo(from)), why: `${String(err.message || err).slice(0, 120)}${blocked}` }; throw Object.assign(new Error(`the run from them came ${Math.round(bot.entity.position.distanceTo(from))} blocks: ${String(err.message || err).slice(0, 120)}${blocked}`), { name: 'StanceFailed' }); } }
           } };
@@ -13685,4 +13692,4 @@ function claim(bot, goal = {}, survival = null) {
   return made;
 }
 
-module.exports = { runLavaSays, blazeStanceSays, mobsMetHereSays, shooterCover, dropBesideSays, STANDING_WAYS, runGroundOf, bedAfterSleepTree, sealedWaitCostSays, bedLoopOf, caveBedSaysFor, wardenBoom, LEAVES_THE_BOOM, PUSH_RECORD, pushRecordOn, blockRecord, BLOCK_RECORD, bedClimbable, BED_CLIMB, pricedRunCell, runFromRecord, RUN_FROM_RECORD, spawnBedNear, homeBedReach, fleeFrom, furnaceFood, runFromCreeper, deadlyEdgeWalk, sprintByHeading, nightEnds, sealThreatNear, scoutBudget, SCOUT_MS, SCOUT_FAR_MS, mealSays, nightMinePickSays, bedSafetyAt, healWaitSays, WAITS_IN, wearGoldOf, piglinGoldClause, blowsLead, pastFollowOf, sealedWaitSaysFor: (bot, opts) => sealedWaitSays(bot, opts), lavaExitCost, nookSaysFor: (bot, nook, opts) => nookSays(bot, nook, opts), nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, chaseCost, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };
+module.exports = { runCellsAside, runLavaSays, blazeStanceSays, mobsMetHereSays, shooterCover, dropBesideSays, STANDING_WAYS, runGroundOf, bedAfterSleepTree, sealedWaitCostSays, bedLoopOf, caveBedSaysFor, wardenBoom, LEAVES_THE_BOOM, PUSH_RECORD, pushRecordOn, blockRecord, BLOCK_RECORD, bedClimbable, BED_CLIMB, pricedRunCell, runFromRecord, RUN_FROM_RECORD, spawnBedNear, homeBedReach, fleeFrom, furnaceFood, runFromCreeper, deadlyEdgeWalk, sprintByHeading, nightEnds, sealThreatNear, scoutBudget, SCOUT_MS, SCOUT_FAR_MS, mealSays, nightMinePickSays, bedSafetyAt, healWaitSays, WAITS_IN, wearGoldOf, piglinGoldClause, blowsLead, pastFollowOf, sealedWaitSaysFor: (bot, opts) => sealedWaitSays(bot, opts), lavaExitCost, nookSaysFor: (bot, nook, opts) => nookSays(bot, nook, opts), nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, chaseCost, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };
