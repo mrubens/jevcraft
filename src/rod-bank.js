@@ -227,6 +227,7 @@ async function askBank(bot, task, goal, save, actions, client, { now = Date.now(
   const a = goal.rodsNowAsked;
   if (a && a.rods >= offer.rods && now - a.at < ASK_AGAIN_MS) return null;
   goal.rodsNowAsked = { rods: offer.rods, at: now }; save?.();
+  try { require('./rod-stash').noteChestsSeen(bot, goal); } catch (_) { /* a look missed */ }
   const opt = option(bot, task, goal, save, actions, offer);
   let staying = ''; try { const rk = require('./rod-risk'); staying = rk.runSays(bot, goal, offer.rods) || rk.recordSays(offer.rods); } catch (_) { staying = ''; }
   // The run's own facts in place of the old days' (note 2105); the old record only where the run has no clock yet.
@@ -276,7 +277,7 @@ async function askBank(bot, task, goal, save, actions, client, { now = Date.now(
       if (far) {
         const pace = require('./game-progress').netherPaceSays(bot, far.d), p = far.c.position;
         const holds = rs().listed(far.c.contents || {});
-        ownChest = { description: `Walk ${far.d} blocks to the bot's own chest at (${p.x}, ${p.y}, ${p.z})${holds ? `, which holds ${holds}` : ''}, and put the ${plural(offer.rods, 'rod')} carried in with them: ${String(pace.says || '').trim() || `about ${Math.round(pace.seconds)} seconds at a walk`} The portal is ${offer.d} blocks off. The walk carries them, and a death on it drops them; in the chest they are kept through any death after, counted as held, and taken out on the way out. ${offer.complete ? 'Then the pearls are hunted with nothing in the pack to lose.' : `Then the hunt goes on for the ${plural(offer.left, 'rod')} still needed with nothing in the pack to lose.`}`,
+        ownChest = { description: `Walk ${far.d} blocks to ${far.c.found === 'standing' ? `the chest standing at (${p.x}, ${p.y}, ${p.z}) (a fortress's, not the bot's own: whatever it holds stays in it)` : `the bot's own chest at (${p.x}, ${p.y}, ${p.z})`}${holds ? `, which holds ${holds}` : ''}, and put the ${plural(offer.rods, 'rod')} carried in with them: ${String(pace.says || '').trim() || `about ${Math.round(pace.seconds)} seconds at a walk`} The portal is ${offer.d} blocks off. The walk carries them, and a death on it drops them; in the chest they are kept through any death after, counted as held, and taken out on the way out. ${offer.complete ? 'Then the pearls are hunted with nothing in the pack to lose.' : `Then the hunt goes on for the ${plural(offer.left, 'rod')} still needed with nothing in the pack to lose.`}`,
           trip: 'the chest', secs: Math.round(pace.seconds),
           run: async () => {
             const { goals } = require('mineflayer-pathfinder');

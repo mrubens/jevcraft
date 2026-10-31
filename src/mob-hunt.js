@@ -1695,6 +1695,8 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   // While this runs, mobs of this kind are the hunt's business and not the
   // survival layer's emergency. Refreshed every tick; it lapses in seconds.
   bot._huntingEntity = { name: step.entity, until: Date.now() + 5000 };
+  // Chests seen on the way are remembered as keeps for the rods (rod-stash.js noteChestsSeen, note 2665).
+  try { require('./rod-stash').noteChestsSeen(bot, goal); } catch (_) { /* a look missed */ }
   await roomForDrop(bot, task, goal, step.item);
   // What the bot's time at each spawner known comes to (note 686): said
   // with the way back to it.

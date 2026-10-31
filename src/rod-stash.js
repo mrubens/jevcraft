@@ -563,4 +563,31 @@ async function collect(bot, task, goal, save, actions = {}) {
   }
 }
 
-module.exports = { putBackHeld, PEARLS_LOST, pearlsLostSays, keepOption, nearStash, stashes, withContents, listed, dimOf, countOf, KEPT, HELD, ROD_MIN, stashed, stashSays, heldSays, carriedSays, chestCell, chestMaking, stashOffer, offerSays, stashRods, collectStage, collect, withStash, rodsEquivalent };
+// Chests seen on the way, remembered (note 2665; the user, 2026-10-31 05:45Z: chests noticed in passing, offered from
+// farther off, 'as long as he remembers stuff that's in them'): every chest block within CHEST_SEEN of the bot in the
+// Nether, not the bot's own, goes into goal.rodStashes as a standing chest with empty contents, so rod-bank's own_chest
+// walk (within 96 blocks and nearer than the portal) offers it with its distance; put into, it is read and its contents
+// kept as every stash's are. Looked for once in CHEST_LOOK_MS, at most CHEST_MAX standing chests remembered.
+const CHEST_SEEN = 24, CHEST_LOOK_MS = 5000, CHEST_MAX = 24;
+function noteChestsSeen(bot, goal, now = Date.now()) {
+  try {
+    if (!goal || !inNether(bot) || !bot.entity?.position || !bot.findBlocks) return 0;
+    if (bot._chestsLookedAt > now - CHEST_LOOK_MS) return 0;
+    bot._chestsLookedAt = now;
+    const list = (goal.rodStashes ||= []);
+    if (list.filter(s => s.found === 'standing').length >= CHEST_MAX) return 0;
+    const known = new Set(list.map(s => `${s.position.x},${s.position.y},${s.position.z}`));
+    const dim = dimOf(bot);
+    let added = 0;
+    for (const p of bot.findBlocks({ matching: b => b && b.name === 'chest', maxDistance: CHEST_SEEN, count: 16 })) {
+      const key = `${p.x},${p.y},${p.z}`;
+      if (known.has(key)) continue;
+      list.push({ position: { x: p.x, y: p.y, z: p.z }, dimension: dim, contents: {}, found: 'standing', seenAt: new Date(now).toISOString(), placedAt: new Date(now).toISOString() });
+      known.add(key); added++;
+    }
+    if (added) console.log(`[rod stash] ${added} chest${added === 1 ? '' : 's'} seen standing within ${CHEST_SEEN} blocks remembered as keeps (${list.filter(s => s.found === 'standing').length} standing in all)`);
+    return added;
+  } catch (_) { return 0; }
+}
+
+module.exports = { noteChestsSeen, putBackHeld, PEARLS_LOST, pearlsLostSays, keepOption, nearStash, stashes, withContents, listed, dimOf, countOf, KEPT, HELD, ROD_MIN, stashed, stashSays, heldSays, carriedSays, chestCell, chestMaking, stashOffer, offerSays, stashRods, collectStage, collect, withStash, rodsEquivalent };
