@@ -230,7 +230,11 @@ async function one() {
     let kept = 0; try { kept = (bot._goal?.rodStashes || []).filter(s => !s.lostAt).reduce((n, s) => n + (s.contents?.blaze_rod || 0), 0); } catch (_) { kept = 0; }
     const rods = count('blaze_rod') + kept;
     while (rodsAt.length < rods) { rodsAt.push(Math.round((Date.now() - started) / 100) / 10); say({ rod: rodsAt.length, seconds: rodsAt.at(-1), kept }); }
-    if (rods >= RODS) { run.ended = 'rods'; break; }
+    // The game's own need met (note 2650: twelve eyes want twelve powder, six rods; eye-need.js says what this bot still
+    // wants) ends the run as 'rods' too: open run 2 of 2026-10-31 03:06Z put six rods in its chest in two minutes and
+    // left for the pearls, read as 'left the cage'.
+    let left = null; try { left = require('../src/eye-need').need(bot, bot._goal || {}).rodsLeft; } catch (_) { left = null; }
+    if (rods >= RODS || left === 0) { run.ended = 'rods'; run.needMet = left === 0; break; }
     if (Date.now() - started > MINUTES * 60000) { run.ended = 'time'; break; }
     // Gone from the cage (for food, for a kit, to bank the rods): alive, with what it carries.
     { const p = bot.entity.position; if (Math.hypot(p.x - cage[0], p.y - cage[1], p.z - cage[2]) > LEFT_AT) { run.ended = 'left the cage'; break; } }
