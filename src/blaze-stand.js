@@ -159,7 +159,22 @@ function spawnerHoleSite(bot, cage = spawnerAt(bot), { steps = 30, avoid = [] } 
     return best;
   };
   const found = walkTo(bot, c => c.offset(0.5, 0.5, 0.5).distanceTo(centre) <= SPAWNER_HOLE + 1 && !siteFailedNear(bot, c) && knockLands(bot, c) && !!beside(c), { steps, avoid });
-  if (!found) return null;
+  if (!found) {
+    // Why no hole (note 2697), kept for the cage question's state: mid-full-63-fortress-5 (25590, 2026-10-31 08:30 to
+    // 08:50Z) stood five blocks from a cage with seven to nine blazes behind rock within sixteen, no hole on offer and no
+    // word why, and answered stand, hunt on and none good for twenty minutes, two kills.
+    try {
+      const nearCage = []; walkTo(bot, c => { if (c.offset(0.5, 0.5, 0.5).distanceTo(centre) <= SPAWNER_HOLE + 1) nearCage.push(c); return false; }, { steps, avoid });
+      let why;
+      if (!nearCage.length) why = `no standable cell within ${SPAWNER_HOLE + 1} blocks of the cage is reached on foot from here in ${steps} steps (the cage ${round(centre.distanceTo(bot.entity.position))} blocks off): the rock between is dug first`;
+      else {
+        const failed = nearCage.filter(c => siteFailedNear(bot, c)).length, drops = nearCage.filter(c => !knockLands(bot, c)).length;
+        why = `${nearCage.length} standable cell${nearCage.length === 1 ? '' : 's'} within ${SPAWNER_HOLE + 1} of the cage ${nearCage.length === 1 ? 'is' : 'are'} reached on foot, none with two blocks of rock beside it to hole into (walls or floor open, or the rock not dug)${drops ? `; ${drops} of them with a drop a knock would land in` : ''}${failed ? `; ${failed} where a hole failed before` : ''}`;
+      }
+      bot._spawnerHoleWhy = { at: Date.now(), cage: `${cage}`, why };
+    } catch (_) { /* no reason kept */ }
+    return null;
+  }
   const h = beside(found.cell);
   const walkMs = found.steps * 250;
   return { ...h, spawner: cage, off: round(h.off), steps: found.steps, walkMs, ms: walkMs + h.digMs };

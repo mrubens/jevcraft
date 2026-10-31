@@ -488,6 +488,8 @@ async function atSpawner(bot, task, goal, save, actions = {}, now = Date.now()) 
   if (!Object.keys(tree).length) return false;
   const { state } = facts(bot, goal, known);
   if (noBoxSees) state.noBoxSees = noBoxSees;
+  // No hole beside the cage on offer: why (blaze-stand.js spawnerHoleSite, note 2697).
+  { const w = bot._spawnerHoleWhy; if (w && !tree.dig_in_at_spawner && Date.now() - w.at < 30000 && known.cage && w.cage === `${known.cage}`) state.noHole = `No hole beside the cage (the drill's buried stand, 9 of 13 runs to the rods at full health) is on offer: ${w.why}.`; }
   if (known.lineHere) state.lineHere = lineHereSays(bot, known);
   // In the lull the facts are said once, short (the plain cap, note 672):
   // health and food are the question's own facts here.
