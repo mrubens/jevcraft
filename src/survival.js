@@ -2633,7 +2633,19 @@ function workWaiting(goal, bot = null) {
     const parts = [frame ? `${placed} of the frame's ten obsidian in, the frame ${far(frame.origin)} blocks off` : 'no frame begun',
       way === 'cast' ? 'to be cast from lava and water' : way === 'build' ? 'from ten obsidian mined' : way === 'ruin' ? 'a ruined portal to finish' : null,
       near ? `the lava chosen ${far(near)} blocks off` : null].filter(Boolean);
-    return `the reach nether step (the portal: ${parts.join('; ')})`;
+    // What is left of it in minutes, and that the Nether has no night (note 2753, the Fable check-in of 2026-10-31
+    // 22:10Z): of 436 minutes from the first lava bucket to the Nether on full-260 to full-293, 179 were night and 76 the
+    // shelter chain while the portal waited. full-291 (25589, 21:3x to 21:48Z), the frame's ten in 74 blocks off, chose
+    // secure shelter and a night mine over staying up priced to dawn (9 minutes, 'about 1 in 9 of a death'); ten
+    // minutes lost with only the walk and the flint left.
+    let left = '';
+    if (frame) {
+      const walk = Math.round(far(frame.origin) / 4.3 + 5);
+      left = placed >= 10
+        ? `; what is left is the walk to the frame, about ${walk} seconds, and lighting it, then through it: the Nether has no night, and the minutes to dawn are not waited there`
+        : `; ${10 - placed} of its ten still to cast, a lava bucket each, besides the walk to it, about ${walk} seconds; once through, the Nether has no night`;
+    }
+    return `the reach nether step (the portal: ${parts.join('; ')}${left})`;
   }
   if (phase && phase !== 'complete') return `the ${phase.replaceAll('_', ' ')} step`;
   const step = goal?.step;
