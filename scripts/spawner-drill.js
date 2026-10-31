@@ -44,7 +44,7 @@ const KIT = {
   offhand: 'shield',
   // A chest as the trials carry one (rod-bank.js keep_here): without it the rods question's only keeping was the walk
   // to the drill's portal 135 blocks off, and six of ten runs of 2026-10-31 02:2xZ left the cage with four or five rods.
-  items: [['iron_sword', 1], ['iron_pickaxe', 1], ['cobblestone', 32], ['netherrack', 32], ['chest', 1], ['cooked_beef', Number(process.env.SPAWNER_FOOD || 10)]],
+  items: [['iron_sword', 1], ['iron_pickaxe', 1], ['cobblestone', 32], ['netherrack', 32], ['chest', 1], ['shield', 1], ['cooked_beef', Number(process.env.SPAWNER_FOOD || 10)]],
 };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const command = async line => { fs.writeFileSync(consolePath, line + '\n'); await sleep(120); };
