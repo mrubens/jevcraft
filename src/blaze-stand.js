@@ -1713,7 +1713,9 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
   // same second; the fight's own question had no such way, and the bot fought eight minutes in the open at its cage
   // (charge nearest, box here, leave and heal 30 times) and was fireballed at 16:49:52.
   if (!cageHole && !pocket) {
-    const built = (() => { try { return builtHoleSite(bot, undefined, { avoid: biting }); } catch (_) { return null; } })();
+    // A hole already built whole (no block left to lay) is offered in the fight too (note 2748): the building under fire
+    // is what was withdrawn (2738), not the walk back into a hole that stands.
+    const built = (() => { try { const b = builtHoleSite(bot, undefined, { avoid: biting, lull: true }); return b && (BUILT_HOLE_OFFERED || b.blocks === 0) ? b : null; } catch (_) { return null; } })();
     if (built) {
       const open = new Set(built.open.map(c => `${c}`));
       const setup = round((built.ms + 250) / 1000);

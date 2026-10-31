@@ -303,7 +303,10 @@ function lullOptions(bot, task, goal, save, actions, known, quiet, { now = Date.
     // No rock beside the cage for a hole: one built of the blocks carried (blaze-stand.js builtHoleSite, note 2730), in
     // the lull, before the crowd forms, the one moment the buried drill ever chose its stand.
     if (!hole) {
-      const built = (() => { try { return blazeInSight(bot) ? null : stand.builtHoleSite(bot, cage, { lull: true }); } catch (_) { return null; } })();
+      // One standing whole (no block to lay) is offered with a blaze in sight too (note 2748): mid-full-147-fortress-17 (25590,
+      // 2026-10-31 20:4x to 21:07Z) built its hole whole, came out of it, and at 21:04 to 21:06 was asked the lull three times
+      // without it (stand by the spawner, box here, box in line, hunt on), went up to strike and burned to death at 21:07:21.
+      const built = (() => { try { const b = stand.builtHoleSite(bot, cage, { lull: true }); return b && (b.blocks === 0 || !blazeInSight(bot)) ? b : null; } catch (_) { return null; } })();
       if (built) {
         const secs = round((built.steps || 0) / WALK + built.blocks * 0.6);
         let price = ''; try { const { threats } = require('./danger'); const c = stand.standCost(bot, threats(bot, 48), { setup: secs, at: built.hole, open: new Set(built.open.map(o => `${o}`)), atOnce: 1, melee: true, pinned: true }); price = `This way: about ${c.damage} damage over about ${c.seconds} seconds, from ${round(bot.health ?? 20)} health. `; } catch (_) { price = ''; }
