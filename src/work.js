@@ -3161,7 +3161,14 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
     // which block.
     if (goal?.step?.action === 'mine') { goal.step.target = { x: p.x, y: p.y, z: p.z }; goal.step.from = { ...bot.entity.position.floored() }; }
     const approachAt = Date.now();
+    // A tunnel toward this ore under way and the ore still farther than the arm (note 2715): the walk is not tried
+    // again before each stair. The try failed every pass (the ore sits behind rock that no walk reaches until the
+    // tunnel is there) and cost 2.4 to 3.4 seconds a stair against the stair's own 2 to 2.7 (full-260, 25589,
+    // 2026-10-31 11:2xZ, the gravel at (-24, 28, 137), the stair-pace record of note 2711); within six blocks the
+    // walk is tried again, since the last stairs may have opened a stand beside it.
+    const tunnelUnderWay = goal.tunnelOre && goal.tunnelOre.x === p.x && goal.tunnelOre.y === p.y && goal.tunnelOre.z === p.z && bot.entity.position.distanceTo(p) > 6 && /_ore$|^gravel$/.test(step.block || '');
     try {
+      if (tunnelUnderWay) throw new Error(`No reachable dry standing position tried: the tunnel toward it is under way, ${Math.round(bot.entity.position.distanceTo(p))} blocks off`);
       await approachDryMining(bot, task, p, { navigate, dig });
       access = miningMovement(bot);
       await dig(bot, task, p, { done: () => countOf(bot, step.drops) > before, requiredTool: step.tool, enchantment: step.enchantment,
@@ -3190,7 +3197,7 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
       // dry standing position' each, set each aside and turned to the next; the user watching: 'mining any blocks in
       // the way make a ton of sense'.
       // The same ore tried again from where the last try began: the tunnel got nowhere, so it is set aside as before.
-      const again = goal.tunnelOre && goal.tunnelOre.x === p.x && goal.tunnelOre.y === p.y && goal.tunnelOre.z === p.z && goal.tunnelOre.from &&
+      const again = !tunnelUnderWay && goal.tunnelOre && goal.tunnelOre.x === p.x && goal.tunnelOre.y === p.y && goal.tunnelOre.z === p.z && goal.tunnelOre.from &&
         bot.entity.position.distanceTo(new Vec3(goal.tunnelOre.from.x, goal.tunnelOre.from.y, goal.tunnelOre.from.z)) < 1.5;
       // Gravel too (note 2514): flint's gravel seen through the rock was set aside one block after another, 'No reachable
       // dry standing position', never dug toward. full-99 (25588, 2026-10-29 15:5xZ), on its flint for the portal, turned
@@ -3207,7 +3214,7 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
         // Timed (note 2713): each pass toward ore behind rock tries the walk again before the next stair, and the
         // run's stairs measured 1.9 to 10.7 seconds each against 2 to 2.7 inside the stair itself.
         console.log(`[mine] no stand beside the ${wasBlock} at ${p}, ${Math.round(bot.entity.position.distanceTo(p))} blocks off: tunnelling to it (the walk's try and the dig through took ${Math.round((Date.now() - approachAt) / 100) / 10} s)`);
-        goal.tunnelOre = { x: p.x, y: p.y, z: p.z, from: { x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z } }; save();
+        if (!tunnelUnderWay) { goal.tunnelOre = { x: p.x, y: p.y, z: p.z, from: { x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z } }; save(); }
         // A tunnel that cannot start from here sets the ore aside as before (note 2305): full-10 (2026-10-27 17:31 to
         // 17:34Z), in a pocket of a ruined portal's netherrack with lava beside it, met 'No route from here' on the first
         // stair a block away, and the mine step and the tunnel turned eleven times in 33 seconds on the same ore.
