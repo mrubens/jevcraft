@@ -2849,7 +2849,7 @@ function spawnerSays(bot, goal, state, { s, off }, planned = null, route = null,
     : route && !route.cells ? 'The pathfinder found no route toward it from here (it digs no netherrack).'
     : route ? `The pathfinder found ${route.status === 'success' ? 'a whole route' : 'a route part of the way'} of ${route.cells} cells, placing ${route.place} and digging ${route.dig}.`
     : 'No floor seen joins it to here.';
-  return `at (${s.x}, ${s.y}, ${s.z}), ${off} blocks off${Math.abs(dy) >= 2 ? ` and ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''}, seen ${ago(s.seenAt || now)}: ${seen ? `blazes seen near it ${plural(seen, 'time')}` : 'no blaze seen near it'}; ${tally}. ${way}${stood === null ? '' : ` The bot has stood ${stood} blocks from it.`}`;
+  return `at (${s.x}, ${s.y}, ${s.z}), ${off} blocks off${Math.abs(dy) >= 2 ? ` and ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''}, ${s.unseen ? `known from the rock about since ${ago(s.knownAt || now)}, not yet seen (blazes spawn within four blocks of it)` : `seen ${ago(s.seenAt || now)}`}: ${seen ? `blazes seen near it ${plural(seen, 'time')}` : 'no blaze seen near it'}; ${tally}. ${way}${stood === null ? '' : ` The bot has stood ${stood} blocks from it.`}`;
 }
 function blazeSpotSays({ spot, off }, here, now = Date.now()) {
   const dy = Math.round(spot.y - here.y), mins = Math.round((now - (spot.at || now)) / 60000);

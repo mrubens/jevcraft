@@ -127,8 +127,18 @@ function features(bot, map, eye, now) {
   const find = (n, count) => id(n) === undefined || typeof bot.findBlocks !== 'function' ? [] : (bot.findBlocks({ matching: id(n), maxDistance: LOOK, count }) || []);
   const visible = p => [[0.5, 0.5, 0.5], [0.5, 1.02, 0.5], [0.5, 0.5, -0.02], [0.5, 0.5, 1.02], [-0.02, 0.5, 0.5], [1.02, 0.5, 0.5]].some(([a, b, c]) => sees(bot, eye, p.offset(a, b, c)));
   for (const p of find('spawner', 4)) {
-    if (bot.blockAt(p)?.name !== 'spawner' || !visible(p)) continue;
+    if (bot.blockAt(p)?.name !== 'spawner') continue;
     const known = map.spawners.find(s => s.x === p.x && s.y === p.y && s.z === p.z);
+    // A spawner in the loaded rock and not in sight is known too, said as not seen (note 2687; the Fable check-in of
+    // 2026-10-31 08:00Z): the cage was recorded only when seen through open air, and in 11 of 12 fortress-stage trials
+    // tonight no spawner was ever seen while the hunt chased blazes hovering 9 to 20 blocks off between the fortress's
+    // levels (480 stance askings, the nearest blaze a median 9.6 blocks off, 44% over 12) and killed one in ten minutes;
+    // at the cage the buried drill takes seven rods in 1.6 to 7.5 minutes, twenty of twenty.
+    if (!visible(p)) {
+      if (!known) { const kind = spawnerKind(bot, p); if (kind.blaze) map.spawners.push({ x: p.x, y: p.y, z: p.z, knownAt: now, unseen: true, ...(kind.mob ? { mob: kind.mob } : {}) }); }
+      continue;
+    }
+    if (known && known.unseen) { delete known.unseen; known.seenAt = now; }
     // A blaze spawner only (note 750d): a bastion's treasure room holds a
     // magma cube spawner, and 25589 (mid-243-ma, 17:13:35Z) took one at
     // (-238, 39, 26), 16 blocks from a bastion it had just noticed, for its
@@ -429,7 +439,7 @@ function mapSays(bot, map, planned, { now = Date.now() } = {}) {
     joinedOnFoot: planned.from ? `${planned.joined} of the ${planned.seen} floors seen are joined to where the bot stands${planned.seen > planned.joined ? `; the other ${planned.seen - planned.joined} lie apart from it${planned.groups.length ? `, in ${planned.groups.length} part${planned.groups.length === 1 ? '' : 's'} with floors unwalked` : ''}` : ''}` : 'the bot stands on no floor it has seen' };
   out.waysOnFoot = planned.frontiers.length ? `${planned.frontiers.length} seen floor${planned.frontiers.length === 1 ? '' : 's'} running on into unseen space that the bot can walk to, the nearest ${planned.frontiers[0].steps} steps along the floors` : 'none: every floor joined to here that runs on into unseen space has been walked, or its walk failed';
   const off = s => `${Math.round(Math.hypot(s.x + 0.5 - here.x, s.y + 0.5 - here.y, s.z + 0.5 - here.z))} blocks off`;
-  if (map.spawners.length) out.spawnersSeen = map.spawners.map(s => { const st = stepsTo(map, planned, s); return `(${s.x}, ${s.y}, ${s.z}), ${off(s)}, ${st === null ? 'no floor seen joins it to here' : `about ${st} steps along the floors`}${s.broken ? ', seen broken' : ''}`; });
+  if (map.spawners.length) out.spawnersSeen = map.spawners.map(s => { const st = stepsTo(map, planned, s); return `(${s.x}, ${s.y}, ${s.z}), ${off(s)}${s.unseen ? ', known from the rock about and not yet seen' : ''}, ${st === null ? 'no floor seen joins it to here' : `about ${st} steps along the floors`}${s.broken ? ', seen broken' : ''}`; });
   const stairs = Object.entries(map.cells).filter(([, c]) => c[2]);
   if (stairs.length) out.stairsSeen = `${stairs.length} nether brick stair${stairs.length === 1 ? '' : 's'} seen (a fortress's stairs lead up to its spawner rooms), ${stairs.filter(([, c]) => c[0]).length} walked`;
   if (map.wart) out.wartSeen = `nether wart at (${map.wart.x}, ${map.wart.y}, ${map.wart.z}), ${off(map.wart)}: the wart room`;
