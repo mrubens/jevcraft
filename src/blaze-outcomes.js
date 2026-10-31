@@ -38,12 +38,27 @@ function rowOf(question, key, file = fileNow()) {
   const r = data?.questions?.[question]?.[key];
   return r && r.n >= LEAST ? r : null;
 }
+// The same at the health the bot has now (note 2616): the band of its health (16 or more, 10 to 15, under 10), or null
+// where the band holds under five picks. A way that kills at full health and is followed by a death at ten reads one
+// way in the whole and another in its band: on 2026-10-31 charge nearest at 16 or more was a kill after 51% and a
+// death after 5%, under 10 a death after 50%; back to wall priced 1.7 at 8 health was mid-full-5-fortress-1's last.
+const BANDS = Object.freeze({ high: '16 or more health', mid: '10 to 15 health', low: 'under 10 health' });
+const bandOf = health => !Number.isFinite(health) ? null : health >= 16 ? 'high' : health >= 10 ? 'mid' : 'low';
+function bandRow(question, key, health, file = fileNow()) {
+  const band = bandOf(health), data = load(file);
+  const r = band && data?.questions?.[question]?.[key]?.bands?.[band];
+  return r && r.n >= LEAST ? { ...r, band, says: BANDS[band] } : null;
+}
+const bandSays = (question, key, health, file) => {
+  const b = bandRow(question, key, health, file);
+  return b ? ` At ${b.says}, as now: chosen ${b.n} times, a blaze killed within two minutes after ${b.kill} (${pct(b.kill, b.n)}%), a death within two minutes after ${b.died} (${pct(b.died, b.n)}%).` : '';
+};
 
 // The option's own sentence.
-function ownSays(question, key, file = fileNow()) {
+function ownSays(question, key, file = fileNow(), health = null) {
   const data = load(file), r = rowOf(question, key, file);
   if (!r) return '';
-  return ` In the record of ${when(data)}, this way chosen here ${r.n} times: a blaze killed within two minutes after ${r.kill} (${pct(r.kill, r.n)}%), a death within two minutes after ${r.died} (${pct(r.died, r.n)}%)${r.lost !== null && r.lost !== undefined ? `, about ${r.lost} health lost in the next thirty seconds` : ''}.`;
+  return bandSays(question, key, health, file) + ` In the record of ${when(data)}, this way chosen here ${r.n} times: a blaze killed within two minutes after ${r.kill} (${pct(r.kill, r.n)}%), a death within two minutes after ${r.died} (${pct(r.died, r.n)}%)${r.lost !== null && r.lost !== undefined ? `, about ${r.lost} health lost in the next thirty seconds` : ''}.`;
 }
 
 // A stance with a deadly drop beside the feet (note 2608): the same record under its own key, a death within a minute
@@ -57,18 +72,20 @@ function dropSays(key, file = fileNow()) {
 }
 
 // The rows of the ways on offer, for the question's state: killers first (the drop's, the safest first).
-function tableSays(question, offered, file = fileNow()) {
+function tableSays(question, offered, file = fileNow(), health = null) {
   const data = load(file);
   if (!data) return '';
   const rows = (offered || []).filter(k => k !== 'none_good').map(k => [k, rowOf(question, k, file)]).filter(([, r]) => r);
   if (!rows.length) return '';
+  // Each row's figure at the bot's own health band beside the whole (note 2616), where the band holds five picks.
+  const atBand = k => { const b = bandRow(question, k, health, file); return b ? ` (at ${b.says}, as now, ${b.n}: a kill after ${pct(b.kill, b.n)}%, a death after ${pct(b.died, b.n)}%)` : ''; };
   if (question === DROP) {
     rows.sort((a, b) => (a[1].died / a[1].n - b[1].died / b[1].n) || (b[1].n - a[1].n));
     const said = rows.map(([k, r]) => `${words(k)} ${r.n}: dead within a minute after ${pct(r.died, r.n)}%`);
     return `Of the ways on offer here, what each led to with a deadly drop beside the feet in the record of ${when(data)} (times chosen; followed within a minute by a death): ${said.join('; ')}. A way not listed was chosen under five times.`;
   }
   rows.sort((a, b) => (b[1].kill / b[1].n - a[1].kill / a[1].n) || (a[1].died / a[1].n - b[1].died / b[1].n));
-  const said = rows.map(([k, r]) => `${words(k)} ${r.n}: a kill after ${pct(r.kill, r.n)}%, a death after ${pct(r.died, r.n)}%`);
+  const said = rows.map(([k, r]) => `${words(k)} ${r.n}: a kill after ${pct(r.kill, r.n)}%, a death after ${pct(r.died, r.n)}%${atBand(k)}`);
   return `Of the ways on offer here, what each led to in the record of ${when(data)} (times chosen; followed within two minutes by a blaze killed; by a death): ${said.join('; ')}. A way not listed was chosen under five times.`;
 }
 
@@ -77,9 +94,10 @@ function tableSays(question, offered, file = fileNow()) {
 // died-of-n of its picks is priced at that share of the health the bot has, over its estimate. Rows under ten picks
 // price nothing. -> the damage added, or 0.
 function deathShare(question, key, health, file = fileNow()) {
-  const r = rowOf(question, key, file);
+  // The band's own rate where it holds ten picks (note 2616), else the whole's.
+  const b = bandRow(question, key, health, file), r = b && b.n >= PRICED_FROM ? b : rowOf(question, key, file);
   if (!r || r.n < PRICED_FROM || !r.died) return 0;
   return Math.round(r.died / r.n * (Number.isFinite(health) ? health : 20) * 10) / 10;
 }
 
-module.exports = { FILE, DROP, LEAST, PRICED_FROM, load, rowOf, ownSays, dropSays, tableSays, deathShare };
+module.exports = { FILE, DROP, LEAST, PRICED_FROM, BANDS, bandOf, load, rowOf, bandRow, ownSays, dropSays, tableSays, deathShare };

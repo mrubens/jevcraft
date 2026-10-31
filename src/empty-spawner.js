@@ -499,7 +499,7 @@ async function atSpawner(bot, task, goal, save, actions = {}, now = Date.now()) 
   // The rods carried and what a death does to them, where the chest is offered (note 704).
   if (tree.stash_rods) state.rodsCarried = tree.stash_rods.rodsCarried;
   // What every way on offer led to at spawners on the runs now playing (note 2602).
-  { const t = require('./blaze-outcomes').tableSays('empty_spawner', Object.keys(tree)); if (t) state.blazeRecordToday = t; }
+  { const t = require('./blaze-outcomes').tableSays('empty_spawner', Object.keys(tree), undefined, bot.health); if (t) state.blazeRecordToday = t; }
   // The trip home not offered for its walk cannot begin from here (note 706).
   if (!tree.go_back && (bot.food ?? 20) < 18) { try { const c = require('./mob-hunt').tripHomeClosed(bot, goal); if (c) state.tripHome = c.says; } catch (_) { /* none */ } }
   // Physical safety (note 883): under eight health with no way to heal

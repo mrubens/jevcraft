@@ -65,10 +65,15 @@ function tally(logs) {
   for (const { answers, kills, deaths, hps } of logs) {
     kills.sort((a, b) => a - b); deaths.sort((a, b) => a - b); hps.sort((a, b) => a[0] - b[0]);
     for (const a of answers) {
-      const q = by[a.q] ||= {}, r = q[a.key] ||= { n: 0, kill: 0, died: 0, lostSum: 0, lostN: 0 };
+      const q = by[a.q] ||= {}, r = q[a.key] ||= { n: 0, kill: 0, died: 0, lostSum: 0, lostN: 0, bands: {} };
       r.n++;
-      if (kills.some(t => t >= a.at && t - a.at <= KILL_MS)) r.kill++;
-      if (deaths.some(t => t >= a.at && t - a.at <= (a.deathMs || DEATH_MS))) r.died++;
+      const killed = kills.some(t => t >= a.at && t - a.at <= KILL_MS), died = deaths.some(t => t >= a.at && t - a.at <= (a.deathMs || DEATH_MS));
+      if (killed) r.kill++;
+      if (died) r.died++;
+      // The same by the health the answer was given at (note 2616): 16 or more, 10 to 15, under 10. A way that kills at
+      // full health and is followed by a death at ten reads one way in the whole and another by band.
+      const band = a.health === null ? null : a.health >= 16 ? 'high' : a.health >= 10 ? 'mid' : 'low';
+      if (band) { const b = r.bands[band] ||= { n: 0, kill: 0, died: 0 }; b.n++; if (killed) b.kill++; if (died) b.died++; }
       if (a.health !== null) {
         const later = hps.filter(([t]) => t > a.at && t - a.at <= LOST_MS).map(([, h]) => h);
         if (later.length) { r.lostSum += Math.max(0, a.health - Math.min(...later)); r.lostN++; }

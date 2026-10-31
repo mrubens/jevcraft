@@ -29,8 +29,13 @@ test('the tally: picks, a kill within two minutes, a death within two minutes, t
   fs.writeFileSync(path.join(dir, 'first-days-full-1.log'), lines.join('\n') + '\n');
   const out = await script.compute({ dir, hours: 24 * 365 * 10 });
   const es = out.questions.encounter_stance;
-  assert.deepEqual(es.charge_nearest, { n: 2, kill: 1, died: 0, lost: 1.5 });
-  assert.deepEqual(es.take_cover, { n: 1, kill: 0, died: 1, lost: 6 });
+  // The rows carry the health bands too (note 2616): the whole's figures as before, the band's beside them.
+  const { bands: cb, ...charge } = es.charge_nearest;
+  assert.deepEqual(charge, { n: 2, kill: 1, died: 0, lost: 1.5 });
+  assert.deepEqual(cb, { high: { n: 2, kill: 1, died: 0 } });
+  const { bands: tb, ...cover } = es.take_cover;
+  assert.deepEqual(cover, { n: 1, kill: 0, died: 1, lost: 6 });
+  assert.ok(tb && Object.values(tb).reduce((n, b) => n + b.n, 0) === 1);
   assert.equal(es.fight, undefined);
   assert.equal(out.questions.empty_spawner.box_here.n, 1);
 });
@@ -91,7 +96,9 @@ test('the drop record: counted from the push priced on an option, said as a deat
   const lines = [drop(0, 'keep_working', 20), JSON.stringify({ death: { status: 'pending', at: at(40), dimension: 'the_nether', position: { x: 0, y: 30, z: 0 } } }), drop(300, 'keep_working', 20), drop(600, 'await_in_reach', 20)];
   fs.writeFileSync(path.join(dir, 'first-days-full-2.log'), lines.join('\n') + '\n');
   const out = await script.compute({ dir, hours: 24 * 365 * 10 });
-  assert.deepEqual(out.questions['encounter_stance@drop'].keep_working, { n: 2, kill: 0, died: 1, lost: null });
+  const { bands: kb, ...keep } = out.questions['encounter_stance@drop'].keep_working;
+  assert.deepEqual(keep, { n: 2, kill: 0, died: 1, lost: null });
+  assert.ok(kb);
   assert.equal(out.questions['encounter_stance@drop'].await_in_reach.n, 1);
   assert.equal(out.questions.encounter_stance, undefined, 'no blaze within sixteen: not a blaze fight');
   const file = path.join(dir, 'blaze-outcomes.json');

@@ -6341,7 +6341,7 @@ class Survival {
     // five times running, priced 8 to 12 against corner_ambush's 0.2 to 2.5, and died at the fifth, nothing said of how
     // charging had gone before.
     // The runs' own record first (blaze-outcomes.js, note 2602), the 2026-10-27 table where a way has none yet.
-    if (danger.some(t => t.entity.name === 'blaze')) for (const [k, o] of Object.entries(options)) if (o && typeof o.description === 'string') { const live = require('./blaze-outcomes').ownSays('encounter_stance', k); o.description += (live || blazeStanceSays(k)) + (o.recordAdded ? ` That death rate's share of the health now, about ${o.recordAdded}, is in this way's damage figure above (note 2605).` : ''); }
+    if (danger.some(t => t.entity.name === 'blaze')) for (const [k, o] of Object.entries(options)) if (o && typeof o.description === 'string') { const live = require('./blaze-outcomes').ownSays('encounter_stance', k, undefined, bot.health); o.description += (live || blazeStanceSays(k)) + (o.recordAdded ? ` That death rate's share of the health now, about ${o.recordAdded}, is in this way's damage figure above (note 2605).` : ''); }
     // A creeper about: what the first answer to one came to in the record,
     // on each way it has a record for (creeper-first.js, note 1123; the record by the creeper's distance is creeper-record.js).
     if (danger.some(t => t.entity.name === 'creeper')) {
@@ -7245,7 +7245,7 @@ class Survival {
         holdEnds: `A way chosen here is asked again once it has cost more than its own estimate at the estimate's pace (six health where it gives none), and in any case once half the health it is chosen at is gone: from ${Math.round(bot.health * 10) / 10} health, at ${Math.round(bot.health * 5) / 10}.`,
         riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot),
         // What every way on offer led to at blaze fights on the runs now playing (note 2602): one table for all of them.
-        ...((t => t ? { blazeRecordToday: t } : {})(require('./blaze-record').blazesAbout(bot).within16 ? require('./blaze-outcomes').tableSays('encounter_stance', Object.keys(options)) : '')),
+        ...((t => t ? { blazeRecordToday: t } : {})(require('./blaze-record').blazesAbout(bot).within16 ? require('./blaze-outcomes').tableSays('encounter_stance', Object.keys(options), undefined, bot.health) : '')),
         ...(this.state.stanceNoStrike ? { noStrike: this.state.stanceNoStrike } : {}),
         // What every way on offer led to with a deadly drop beside the feet on the runs now playing (note 2608).
         ...(shared.dropTable ? { dropRecordToday: shared.dropTable } : {}) };
