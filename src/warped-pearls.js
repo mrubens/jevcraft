@@ -127,7 +127,9 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
         // 06:07Z), 7 rods banked and on its pearls, stood on a ledge at (54 to 72, 47, 9 to 21) beside its forest with the
         // floor 17 to 33 blocks off across a gap, 'not reached, 17 off in 0 s' at every pass for ten minutes, 'no route'
         // eight walks running, hunting endermen it could not get to; the landmark's point under its feet read as arrived.
-        if (!inForest(bot) && walkWhy && /no route/i.test(walkWhy) && actions.tunnel && !(bot._forestFloorDugAt > Date.now() - 120000)) {
+        // A walk that comes back inside two seconds short of the floor found no way as surely as one that says so (note 2670):
+        // full-238's floor walks ended 'not reached, 34 off in 0 s' and threw nothing, so note 2669's test never ran.
+        if (!inForest(bot) && ((walkWhy && /no route/i.test(walkWhy)) || (Date.now() - t0 < 2000 && floor.distanceTo(bot.entity.position) > 4)) && actions.tunnel && !(bot._forestFloorDugAt > Date.now() - 120000)) {
           bot._forestFloorDugAt = Date.now();
           console.log(`[warped] no route to the forest's floor at (${floor.x}, ${floor.y}, ${floor.z}) from (${feet.x}, ${feet.y}, ${feet.z}): digging toward it`);
           try { await actions.tunnel(bot, task, goal, save, new Vec3(floor.x, floor.y, floor.z), { within: goal.step }); }
