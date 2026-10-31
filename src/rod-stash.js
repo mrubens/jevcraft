@@ -21,6 +21,17 @@ const { setAside, isSetAside } = require('./progress');
 
 // What goes in: the rods and what the eyes are made of.
 const KEPT = Object.freeze(['blaze_rod', 'blaze_powder', 'ender_pearl', 'ender_eye']);
+// And the valuables carried with them (note 2725, the user 2026-10-31: 'Shouldn't it have stashed it?'): what a death in
+// the Nether loses for good and the fight does not use. full-262 (25589, 2026-10-31 13:05:11Z) stashed three rods at
+// 13:01 and was slain at its cage carrying 17 diamonds, 13 gold ingots and its diamond pickaxe.
+const VALUABLES = Object.freeze(['diamond', 'diamond_block', 'emerald', 'gold_ingot', 'gold_block', 'raw_gold', 'ancient_debris', 'netherite_scrap', 'netherite_ingot']);
+// A diamond or netherite pickaxe goes in when another pickaxe is carried for the digging here.
+const SPARE_PICKS = ['netherite_pickaxe', 'diamond_pickaxe'];
+const spareTools = bot => {
+  const picks = (bot.inventory?.items?.() || []).filter(i => /_pickaxe$/.test(i.name));
+  return picks.some(i => !SPARE_PICKS.includes(i.name)) ? SPARE_PICKS.filter(n => picks.some(i => i.name === n)) : [];
+};
+const stashNames = bot => [...KEPT, ...VALUABLES, ...spareTools(bot)];
 // From the first rod (note 931), as the bank (rod-bank.js BANK_MIN, note
 // 874): a rod kept is a rod kept, whatever the count.
 const ROD_MIN = 1;
@@ -77,7 +88,7 @@ function stashed(goal) {
   }
   return out;
 }
-const listed = contents => KEPT.filter(n => (contents?.[n] || 0) > 0).map(n => plural(contents[n], words(n))).join(', ');
+const listed = contents => [...KEPT, ...VALUABLES, ...SPARE_PICKS].filter(n => (contents?.[n] || 0) > 0).map(n => plural(contents[n], words(n))).join(', ');
 // One line where the rods are said: the chest, its place and what is in it.
 function stashSays(goal) {
   const s = stashed(goal);
@@ -207,17 +218,18 @@ function stashOffer(bot, goal, { now = Date.now(), underFire = false } = {}) {
   const T = require('./blaze-tactics');
   const seenBy = shooters(bot).filter(e => T.lineThrough(bot, e.position.offset(0, (e.height || 1.8) * 0.85, 0), eyeOf, new Set()));
   if (seenBy.length && !underFire) return null;
-  const what = KEPT.filter(n => countOf(bot, n) > 0).map(n => ({ item: n, count: countOf(bot, n) }));
+  const names = stashNames(bot);
+  const what = names.filter(n => countOf(bot, n) > 0).map(n => ({ item: n, count: countOf(bot, n) }));
   const near = nearStash(bot, goal);
   if (near) {
     const steps = Math.max(0, Math.round(near.d - 3));
-    return { existing: near.s, what, rods, wanted, seconds: round(steps / WALK + PUT_SECONDS), steps, seenBy, lull: seenBy.length ? null : lullNow(bot, now) };
+    return { existing: near.s, what, names, rods, wanted, seconds: round(steps / WALK + PUT_SECONDS), steps, seenBy, lull: seenBy.length ? null : lullNow(bot, now) };
   }
   const site = chestCell(bot, { underFire });
   if (!site) return null;
   const making = chestMaking(bot);
   if (!making) return null;
-  return { site, making, what, rods, wanted, seconds: round(PUT_SECONDS + making.seconds), seenBy, lull: seenBy.length ? null : lullNow(bot, now) };
+  return { site, making, what, names, rods, wanted, seconds: round(PUT_SECONDS + making.seconds), seenBy, lull: seenBy.length ? null : lullNow(bot, now) };
 }
 
 // The option's words: short (note 672). What goes in, where, the seconds
@@ -288,6 +300,7 @@ async function stashRods(bot, task, goal, save, actions, offer, { step = 'stash_
       return done;
     });
     if (!stored.length) throw new Error('Nothing went into the chest');
+    { const extra = stored.map(m => m.item).filter(n => !KEPT.includes(n)); if (extra.length) entry.also = [...new Set([...(entry.also || []), ...extra])]; }
     entry.storedAt = new Date().toISOString(); save?.();
     try { require('./after-rod').noteRods(bot); } catch (_) { /* no record */ }
     const what = listed(Object.fromEntries(stored.map(m => [m.item, m.count])));
@@ -330,8 +343,9 @@ function stepOutOffer(bot, goal, now = Date.now()) {
   if (!making) return null;
   let site = null; try { site = T.healSite(bot, all); } catch (_) { site = null; }
   if (!site || site.build?.length || !site.steps) return null;
-  const what = KEPT.filter(n => countOf(bot, n) > 0).map(n => ({ item: n, count: countOf(bot, n) }));
-  return { stepOut: { cell: site.cell, steps: site.steps, nearest: site.nearest }, making, what, rods, wanted, seenBy, seconds: round(site.steps / WALK + PUT_SECONDS + making.seconds) };
+  const names = stashNames(bot);
+  const what = names.filter(n => countOf(bot, n) > 0).map(n => ({ item: n, count: countOf(bot, n) }));
+  return { stepOut: { cell: site.cell, steps: site.steps, nearest: site.nearest }, making, what, names, rods, wanted, seenBy, seconds: round(site.steps / WALK + PUT_SECONDS + making.seconds) };
 }
 function keepOption(bot, task, goal, save, actions, { then = null, thenSays = '' } = {}) {
   let offer = stashOffer(bot, goal);
@@ -524,7 +538,7 @@ async function collect(bot, task, goal, save, actions = {}) {
     const taken = await withStash(bot, task, entry, save, async window => {
       const done = [];
       // A chest left before a chosen death holds the whole kit (note 2251): all of it comes back out.
-      for (const i of window.containerItems().filter(i => entry.all || KEPT.includes(i.name))) {
+      for (const i of window.containerItems().filter(i => entry.all || KEPT.includes(i.name) || (entry.also || []).includes(i.name))) {
         task?.check?.();
         try { await window.withdraw(i.type, null, i.count); done.push({ item: i.name, count: i.count }); }
         catch (err) {
