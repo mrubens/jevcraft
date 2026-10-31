@@ -1260,6 +1260,20 @@ async function closeIn(bot, task, goal, save, { navigate, seconds = 45, item = '
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
         continue;
       }
+      // A fire burning within reach is put out between strikes (note 2647): a rod dropped on a fire block is gone in
+      // under a second (the spawner drill of 2026-10-31 02:4xZ, artifacts/spawner-drill-mvvsmp31 buried runs 1 to 3:
+      // 27 rods dropped, 7 of them gone in 0.4 to 0.9 seconds on 'fire'), too soon for any step to it, and a fireball's
+      // fire on netherrack burns until put out. A punch puts a fire block out at once; no blaze in reach first.
+      if (!inReach && !(bot._fireOutAt > Date.now() - 1500)) {
+        let fire = null;
+        try { fire = bot.findBlock?.({ matching: b => b && /^(soul_)?fire$/.test(b.name), maxDistance: 3.5, count: 1 }); } catch (_) { fire = null; }
+        if (fire) {
+          bot._fireOutAt = Date.now();
+          try { await bot.lookAt(fire.position.offset(0.5, 0.5, 0.5), true); await bot.dig(fire, true); bot._firesOut = (bot._firesOut || 0) + 1; console.log(`[blaze] a fire put out at (${fire.position.x}, ${fire.position.y}, ${fire.position.z}), ${bot._firesOut} in this life: a rod dropped on fire is gone in under a second`); }
+          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+          continue;
+        }
+      }
       if (inReach) {
         const wait = (ce.SWING_MS.sword || 625) - (Date.now() - (bot._defenseAttackAt || 0));
         if (wait > 0) { await sleep(Math.min(wait, 150)); continue; }
