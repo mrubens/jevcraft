@@ -29,7 +29,7 @@
     "plan": "node scripts/try-plan.js",
     "live": "node scripts/live-test.js",
     "pretest": "node scripts/check-node.js",
-    "test": "echo no tests (the user, 2026-10-31)",
+    "test": "echo no tests, removed 2026-10-31",
     "accept": "node scripts/acceptance.js",
     "build-followup": "node scripts/build-followup-test.js",
     "skin": "node scripts/create-robot-skin.js"

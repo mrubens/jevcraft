@@ -33,6 +33,8 @@ const END_BEDS = 4, END_BED_MS = 20 * 60000;
 // eyes held, was four hours on the bow alone with 192 arrows still to come
 // from skeletons after it.
 const WANTS = { arrow: 64, cobblestone: 64, water_bucket: 2, food: 64, health: 18 };
+// Sword uses a winning End fight took in the drills (note 2636).
+const SWORD_USES = 60;
 const HOLD_MS = 15 * 60000, ARROW_STEP = 32, FILL_HOLD_MS = 30 * 60000;
 // A home by the portal (note 2017): with the portal lit and the bed slept in
 // last far from it, a bed carried to the ring and slept in there, so a death
@@ -157,6 +159,13 @@ function kitItems(bot, goal, actions = {}, now = Date.now()) {
   const ingots = countOf(bot, 'iron_ingot'), sticks = countOf(bot, 'stick'), tableCarried = countOf(bot, 'crafting_table');
   out.push({ key: 'spare_pickaxe', item: 'iron_pickaxe', carried: Math.max(0, picks.length - 1), wants: 1, short: pick && picks.length < 2 && usesLeft < 250,
     says: `Make a second iron pickaxe first (${usesLeft} blocks of digging left in the one carried; a fresh one has 250): in the End a tunnel under the island to a crystal's foot is 70 to 150 digs, the column dug down after a blow 20 to 40, and a hole two deep 2; the End grows no wood for sticks or a table, and the pickaxe spent there ends the tunnels, the holes and the way down the columns. Carried now: ${ingots} iron ingots, ${sticks} sticks, ${tableCarried ? 'a' : 'no'} crafting table; three ingots and two sticks make one at a table.` });
+  // A sword with life enough for the fight (note 2636; the project review of 2026-10-30, item 4): the drills' winning
+  // fights took about 60 swings at the perched head, and mob-policy's durable() counts 16 uses as the floor of a sword
+  // that can still swing, so an iron sword at 30 uses passed the kit and stopped counting six swings in.
+  const swordsAll = bot.inventory.items().filter(i => /_sword$/.test(i.name));
+  const swordUses = swordsAll.reduce((n, i) => Math.max(n, Math.max(0, (bot.registry.itemsByName[i.name]?.maxDurability || 0) - (i.durabilityUsed || 0))), 0);
+  out.push({ key: 'sword', item: 'iron_sword', carried: swordUses >= SWORD_USES ? 1 : 0, wants: 1, short: swordUses < SWORD_USES, target: countOf(bot, 'iron_sword') + 1, usesLeft: swordUses,
+    says: swordsAll.length ? `The best sword carried has ${swordUses} uses left; the drills' winning fights took about ${SWORD_USES} swings at the perched head, and a sword that will not last the fight leaves the blows to a pickaxe or a fist. ${swordUses >= SWORD_USES ? 'Enough for the fight.' : 'Make an iron sword first: two iron ingots and a stick.'}` : `No sword is carried: make an iron sword first (two iron ingots and a stick); the drills' winning fights took about ${SWORD_USES} swings at the perched head.` });
   const water = countOf(bot, 'water_bucket');
   out.push({ key: 'water', item: 'water_bucket', carried: water, wants: WANTS.water_bucket, short: water < WANTS.water_bucket, target: WANTS.water_bucket,
     says: `Fill water buckets up to two first (${water} carried): one for a landing after the dragon's wing throws the bot, one poured at its feet against endermen it has turned, which water hurts. A bucket is three iron ingots at a crafting table (${countOf(bot, 'bucket')} empty bucket${countOf(bot, 'bucket') === 1 ? '' : 's'}, ${countOf(bot, 'iron_ingot')} iron ingots and ${countOf(bot, 'raw_iron')} raw iron carried), filled at any water. ${LIVE_END_SAYS}` });

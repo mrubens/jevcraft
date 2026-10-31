@@ -2519,7 +2519,8 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
     // under the same checks as the rest of the fight. In the rehearsal the
     // survival layer answered instead and sealed the bot in where the
     // dragon's breath pooled; that is not how the run plays it.
-    const sword = bot.inventory.items().find(i => /_sword$/.test(i.name) && durable(bot.registry, i));
+    // A sword with life enough first, else any sword that still swings (note 2636): a worn one is still a sword, not a fist.
+    const sword = bot.inventory.items().find(i => /_sword$/.test(i.name) && durable(bot.registry, i)) || bot.inventory.items().find(i => /_sword$/.test(i.name) && (bot.registry.itemsByName[i.name]?.maxDurability || 0) - (i.durabilityUsed || 0) >= 1);
     // The sword on its cooldown and the shield up between swings, the way
     // the survival layer fights (combat.js defendNearby): swinging alone,
     // the recorded rehearsal traded blow for blow with an enderman through
