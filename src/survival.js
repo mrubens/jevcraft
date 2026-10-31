@@ -685,6 +685,11 @@ const UNSEEN_HOLD_MS = 30000;
 // Rod-holders slain by wither skeletons on 2026-10-30, said on the ceiling offered ahead of them (note 2583).
 const WITHER_AFTER_ROD = " Of the runs that took a first blaze rod on 2026-10-30, three (full-164 at 56 minutes, full-166 at 1h22, full-177 two minutes after finding its fortress at 1h39) were slain by wither skeletons 2 to 5 minutes after it, each in the open with two to four blazes shooting and health already down; the ceiling was offered to each only once a skeleton was in view, and by then priced past the health left (full-177: about 19 damage from 17.1, the blazes firing through its building).";
 const WAITS_FOR_MOB = new Set(['shield_guard', 'shield_the_charge', 'back_to_wall', 'await_in_reach', 'corner_ambush', 'fight', 'fight_from_footing']);
+// A biter held against from farther than this, now within arm's length, is asked about again (note 2617).
+const BITER_AT_ARM = 2.5, BITER_CLOSED_FROM = 4;
+// The stances a walker coming to the body does not break (note 2617): those that wait for it (WAITS_FOR_MOB) and those that
+// put the body out of its reach or behind blocks; a hoglin at the pillar's foot is the pillar working (note 599).
+const CLOSED_IN_EXEMPT = new Set([...WAITS_FOR_MOB, 'pillar', 'cap_fight', 'box_here', 'hold_box', 'seal', 'bunker', 'nook', 'dig_down', 'dig_in', 'dig_in_and_fight', 'low_ceiling', 'creeper_dance', 'shaft_pocket']);
 // A standoff with one creeper behind blocks (note 778, the critic's ~02:54Z
 // item 4): this long with it within ten blocks, the bot not hurt by it, and
 // the block's hold ends with the standoff said; each later end comes when
@@ -6753,6 +6758,14 @@ class Survival {
     // in three seconds and it was slain.
     const newcomerReach = t => t.entity?.name === 'wither_skeleton' && /nether/.test(String(bot.game?.dimension || '')) ? 16 : STANCE_NEWCOMER;
     const newcomer = held?.ids && danger.find(t => t.distance <= newcomerReach(t) && !held.ids.includes(t.entity.id) && !held.kinds?.split(',').includes(t.entity.name));
+    // A biter the stance was chosen with at a distance, now at arm's length (note 2617): it was priced where it stood, and
+    // a stance that does not wait for it (a fight at the blazes, cover, a seal, the work kept) is asked again with it at
+    // the body, before its blow. mid-full-19-fortress-1 (25586, 2026-10-30 23:49Z) took corner ambush at 20 health with a
+    // wither skeleton 13 blocks off among blazes and a skeleton; the ruling held as it walked up, the first blows took
+    // 20 to 8.3 in half a second 'with no survival response', and the stance was asked again at 8.3 and lost. Three of the
+    // fortress loop's first three deaths were a wither skeleton's so.
+    const closedIn = held?.mobs && !CLOSED_IN_EXEMPT.has(held.choice) ? danger.find(t => t.entity?.name !== 'creeper' && !shooter(t.entity) && t.distance <= BITER_AT_ARM
+      && (held.mobs || []).some(m => m.name === t.entity.name && m.distance > BITER_CLOSED_FROM) && !(held.ids || []).every(id => id !== t.entity.id)) : null;
     // But a crowd grown at arm's length is news, whatever the kinds: two or
     // more within four blocks now and more than when the stance was chosen
     // (crowd.js, note 778). 25593 (mid-237-ap, 20:54:33Z) held shield_guard
@@ -6853,7 +6866,7 @@ class Survival {
     if (held && heldNow.length && heldNow.every(t => (!t.visible || WAITS_FOR_MOB.has(held.choice)) && noNearer(t))) held.unseenSince ||= Date.now(); else if (held) delete held.unseenSince;
     const unseenLong = !!held?.unseenSince && Date.now() - held.unseenSince >= UNSEEN_HOLD_MS;
     if (unseenLong) this.state.stanceFailed = [...[].concat(this.state.stanceFailed || []).filter(f => Date.now() - f.at < 20000), { choice: held.choice, kinds, where: { x: feet.x, y: feet.y, z: feet.z }, at: Date.now(), why: `held ${Math.round((Date.now() - held.at) / 1000)} seconds with the ${heldNow.map(t => t.entity.name.replaceAll('_', ' ')).join(' and the ')} ${heldNow.every(t => !t.visible) ? 'out of sight and ' : ''}no nearer for ${Math.round((Date.now() - held.unseenSince) / 1000)}: nothing for it to answer` }];
-    const physical = !!held && !leftBe && !runStuck && !unseenLong && !crowdGrew && !shieldChanged && !outageLow && (held.ids ? !newcomer : held.kinds === kinds) && !hitSince && !offSpot && !lineAgain.length && !shotThrough && !blockAgain && !pushedOpen && !held.lethalAgain;
+    const physical = !!held && !leftBe && !runStuck && !unseenLong && !crowdGrew && !shieldChanged && !outageLow && !closedIn && (held.ids ? !newcomer : held.kinds === kinds) && !hitSince && !offSpot && !lineAgain.length && !shotThrough && !blockAgain && !pushedOpen && !held.lethalAgain;
     // More damage than priced by now, at the estimate's pace (past its
     // seconds, while held on, at its rate); without an estimate, six health.
     const extendedHold = !!held?.hold?.extended;
@@ -6866,7 +6879,7 @@ class Survival {
     // Why a held stance is let go, said once each time (note 1949): full-3 (2026-10-20 08:18:54 to 57Z) turned cap_fight, shield_guard, cap_fight, shield_guard, cap_fight, cap_fight, shield_guard, cap_fight, cap_fight in three seconds among three endermen, 17.3 health to none, every answer replaced before its run began and nothing in the record saying what ended each hold; the stall watch alone saw 'turning between shield guard and cap overhead 4 times in 1 seconds'.
     if (held && !holding) {
       const why = leftBe ? 'leaving them be ended at a threat in reach' : runStuck ? 'the run got nowhere' : unseenLong ? (heldNow.every(t => !t.visible) ? 'its mobs long out of sight' : 'its mobs long no nearer') : crowdGrew ? 'the crowd grew' : shieldChanged ? 'the shield changed' : outageLow ? 'Jev down and the health low'
-        : (held.ids ? newcomer : held.kinds !== kinds) ? `a newcomer within ${newcomer ? newcomerReach(newcomer) : STANCE_NEWCOMER}: ${newcomer?.entity?.name || kinds}` : hitSince ? 'hit while leaving them be' : offSpot ? 'off its spot' : lineAgain.length ? 'a shooter has its line again' : shotThrough ? 'shot through' : blockAgain ? 'the creeper block is due again' : pushedOpen ? 'pushed open' : held.lethalAgain ? 'lethal again'
+        : closedIn ? `a biter at arm's length: the ${closedIn.entity.name.replaceAll('_', ' ')} ${Math.round(closedIn.distance * 10) / 10} blocks off, ${(held.mobs || []).find(m => m.name === closedIn.entity.name)?.distance} when the stance was chosen` : (held.ids ? newcomer : held.kinds !== kinds) ? `a newcomer within ${newcomer ? newcomerReach(newcomer) : STANCE_NEWCOMER}: ${newcomer?.entity?.name || kinds}` : hitSince ? 'hit while leaving them be' : offSpot ? 'off its spot' : lineAgain.length ? 'a shooter has its line again' : shotThrough ? 'shot through' : blockAgain ? 'the creeper block is due again' : pushedOpen ? 'pushed open' : held.lethalAgain ? 'lethal again'
         : damageOver ? `more damage than priced (${Math.round((held.health - (bot.health ?? 0)) * 10) / 10} of ${held.health} gone in ${Math.round(elapsed * 10) / 10} s)` : !inTime ? 'its time is up' : 'no reason named';
       console.log(`[stance] ${String(held.choice).replaceAll('_', ' ')} let go after ${Math.round((Date.now() - held.at) / 100) / 10} s: ${why}`);
       // Kept for the next stance question (note 2549): each stance's time held and why it ended.
