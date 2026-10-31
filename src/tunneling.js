@@ -546,6 +546,25 @@ function noteStairPace(goal, here, now = Date.now()) {
   }
   pace.last = { at: now, x: here.x, y: here.y, z: here.z };
 }
+// Where a stair's seconds go (the Fable check-in of 2026-10-31 11:00Z, D: measure the dig before pricing it): the step's
+// phases timed, kept with the pace, and said in the log every twenty stairs. Tunnel steps moved 11.4 blocks a minute
+// on the fresh runs of 10-30/31 (a block 11.3 s at the median, 2.8 at the quarter, 44 at the three-quarter) and Jev's
+// questions during them cost about one per cent of it; the rest is the step itself, split here into the ore dug from
+// the walls before the step (climb ore), the step's choice, the dig of its cells, the walk onto it, and the ore and
+// pickups after.
+const STAIR_PHASES = ['ore_before', 'choose', 'dig', 'walk', 'ore_after'];
+function noteStairPhase(goal, phase, ms) {
+  const pace = goal.stairPace ||= { ms: 0, stairs: 0, last: null };
+  const ph = pace.phases ||= {};
+  ph[phase] = (ph[phase] || 0) + ms;
+  if (phase === 'ore_after') {
+    ph.steps = (ph.steps || 0) + 1;
+    if (ph.steps % 20 === 0) {
+      const total = STAIR_PHASES.reduce((a, k) => a + (ph[k] || 0), 0) || 1;
+      console.log(`[stair pace] ${ph.steps} steps, ${Math.round(total / ph.steps / 100) / 10} s a step: ` + STAIR_PHASES.map(k => `${k.replace('_', ' ')} ${Math.round((ph[k] || 0) / ph.steps / 100) / 10} s (${Math.round(100 * (ph[k] || 0) / total)}%)`).join(', '));
+    }
+  }
+}
 // Seconds a stair at this run's pace, where twenty stairs or more have been measured; null otherwise.
 const stairSecondsMeasured = goal => { const p = goal?.stairPace; return p && p.stairs >= 20 ? Math.round(p.ms / p.stairs / 100) / 10 : null; };
 
@@ -568,6 +587,8 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, place 
   // And what it drops taken up from the stairs (note 2475): the dig left it lying in the wall. The user, watching full-85
   // (25590, 2026-10-29 11:0xZ): 'Jev just didn't pick up some iron that he mined'; '[climb ore] iron ore at (41, 39, 32)
   // dug from where the climb stands', no pickup tried.
+  let phaseAt = Date.now();
+  const phase = name => { const t = Date.now(); noteStairPhase(goal, name, t - phaseAt); phaseAt = t; };
   try {
     const om = require('./opportunistic-mining'), had = ['raw_iron', 'raw_gold', 'diamond', 'emerald'].map(n => [n, require('./skills').countOf(bot, n)]);
     if (await om.mineWithinReach(bot, task)) {
@@ -578,6 +599,7 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, place 
       }
     }
   } catch (err) { if (['Cancelled', 'NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; }
+  phase('ore_before');
   // Where a way down began at the surface, remembered: the way back up is
   // the stairs already dug (surface.js returnToSurface). mid-207-k spent
   // forty-four of its minutes climbing, each time digging a new staircase
@@ -728,6 +750,7 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, place 
   const tunnelling = { target: { ...target }, destination: { ...choice.destination }, steps: tunnel.steps };
   goal.step = within ? { ...within, phase: 'tunnel', ...tunnelling } : { action: 'tunnel', ...tunnelling };
   save();
+  phase('choose');
   let destination = choice.destination;
   for (const p of choice.clear) {
     // Gravel can fall into a cleared headspace. Recheck it before entering.
@@ -770,6 +793,7 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, place 
   if (choice.drain) await drainColumn(bot, task, destination, dig, choice.top || 1);
   const floor = bot.blockAt(destination.offset(0, -1, 0));
   if (dangerous(floor) || floor.boundingBox !== 'block') throw new Error('Staircase footing changed during excavation');
+  phase('dig');
   // One block away: walked in seconds or not at all. At the default fifteen
   // seconds without movement, and a recovery try after, a stair that could not
   // be stepped onto cost thirty seconds a time in trial 16 (2026-09-24).
@@ -777,12 +801,14 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, place 
   tunnel.workPosition = { ...bot.entity.position.floored() };
   tunnel.dimension = bot.game?.dimension;
   save();
+  phase('walk');
   // The shaft walls are where most ore is seen, and the mine step's own
   // check never ran here: coal for the next smelt went by unmined.
   const step = goal.step;
   await opportunisticMining(bot, task, goal, save, { drops: tunnel.resource || null }, { navigate, dig });
   await opportunisticPickups(bot, task, goal, save, { drops: tunnel.resource || null }, { navigate });
   goal.step = step;
+  phase('ore_after');
 }
 
 // A stair cell over open air two deep (work.js opensPit): dug, and a
@@ -956,4 +982,4 @@ function descentTargets(feet, depth) {
   return [24, 48].flatMap(r => unit.map(([dx, dz]) => feet.offset(Math.round(dx * r / Math.hypot(dx, dz)), depth - feet.y, Math.round(dz * r / Math.hypot(dx, dz)))));
 }
 
-module.exports = { noteStairPace, stairSecondsMeasured, stairChoices, restsOnSolid, fallingOver, drainColumn, STAIR_ACROSS, stairFromHere, stairSays, digSeconds, caveUnder, liftStaircaseRest, landingKey, STAIRCASE_REST_MS, descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, restsFromHere, LANDING_NEAR, staircaseWhy, staircaseUntil, restingSays, restingWay, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
+module.exports = { noteStairPace, noteStairPhase, stairSecondsMeasured, stairChoices, restsOnSolid, fallingOver, drainColumn, STAIR_ACROSS, stairFromHere, stairSays, digSeconds, caveUnder, liftStaircaseRest, landingKey, STAIRCASE_REST_MS, descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, restsFromHere, LANDING_NEAR, staircaseWhy, staircaseUntil, restingSays, restingWay, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
