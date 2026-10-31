@@ -81,8 +81,16 @@ function tally(logs) {
 
 async function compute({ dir, hours }) {
   const sinceMs = Date.now() - hours * 3600000;
-  const files = fs.readdirSync(dir).filter(f => /^first-days-full-\d+\.log$/.test(f)).map(f => path.join(dir, f))
-    .filter(f => { try { return fs.statSync(f).mtimeMs >= sinceMs; } catch (_) { return false; } });
+  // The full runs' logs, the staged fortress and Nether trials' (artifacts/midgame-mid-*.log, scripts/trials/stage-loop.sh)
+  // and the spawner drills' (artifacts/spawner-drill-*/<layout>-<n>/session.log, scripts/spawner-drill.js) (note 2614):
+  // the fortress loop and the drills fight blazes many times an hour, and their answers are the same questions' answers.
+  const fresh = f => { try { return fs.statSync(f).mtimeMs >= sinceMs; } catch (_) { return false; } };
+  const files = fs.readdirSync(dir).filter(f => /^(first-days-full-\d+|midgame-mid-.*)\.log$/.test(f)).map(f => path.join(dir, f)).filter(fresh);
+  for (const d of fs.readdirSync(dir).filter(f => /^spawner-drill-/.test(f))) {
+    const base = path.join(dir, d);
+    let runs = []; try { runs = fs.readdirSync(base).filter(r => fs.statSync(path.join(base, r)).isDirectory()); } catch (_) { runs = []; }
+    for (const r of runs) { const f = path.join(base, r, 'session.log'); if (fresh(f)) files.push(f); }
+  }
   const logs = [];
   for (const f of files) { try { logs.push(await readLog(f, sinceMs)); } catch (_) { /* a log mid-rotation */ } }
   return { from: new Date(sinceMs).toISOString(), to: new Date().toISOString(), logs: files.length, questions: tally(logs) };
