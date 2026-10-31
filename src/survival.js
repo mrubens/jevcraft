@@ -564,6 +564,13 @@ const RUN_FROM_RECORD = Object.freeze({
     far: { within: 8, runs: 33, median: 0, quarter: 1.5, sixOrMore: 21, dead: 0 },
   },
 });
+// The run from shooters on the fresh runs (note 2739), by whether the search for a way out found one: with no way out the
+// run digs or lays its way and makes a median 9 blocks in the 15 seconds after, still in their range, where the option
+// said 'about 3 seconds at a sprint' and priced a median 3.35. full-282 (25589, 2026-10-31 18:10:27Z), 5 minutes in, bare,
+// three skeletons and a creeper in a cave its tunnel opened, was told 3.5 damage, took the run at 0.25, made 8 blocks and
+// lost 11.2; asked again, told 7 and lost 12.7 more; it died at 2.8 health eight minutes later.
+const RUN_FROM_SHOOTERS_RECORD = Object.freeze({ from: '2026-10-31 03:55Z', to: '2026-10-31 18:10Z',
+  noWay: { runs: 10, median: 5.5, sixOrMore: 5, blocks: 9 }, way: { runs: 28, median: 0, sixOrMore: 1, blocks: 20.7 } });
 function runFromRecord(d, climbing = false) {
   const t = RUN_FROM_RECORD[climbing ? 'climb' : 'flat'];
   return d <= t.near.within ? t.near : d <= t.mid.within ? t.mid : d <= t.far.within ? t.far : null;
@@ -5820,8 +5827,12 @@ class Survival {
         const secs = Math.max(1, Math.round((OUT - lead.distance) / SPRINT * 10) / 10);
         const named = walkers.length === 1 ? `the ${lead.entity.name.replaceAll('_', ' ')}` : `the ${walkers.length} that shoot`;
         const runC = runFromCreeper(bot, runCreepers, fleeFrom(lead.entity, runCreepers), OUT - lead.distance, runWorn);
-        options.run_from = { expects: { damage: Math.round((runShotCost(secs) + runC.damage) * 10) / 10, seconds: secs, oneHit },
-          description: runC.says.trim() + (runC.says ? ' ' : '') + `Run from ${named} at a sprint, out of ${walkers.length === 1 ? 'its' : 'their'} range: to the first cell the walk reaches ${OUT} blocks or more from ${walkers.length === 1 ? 'it' : 'every one of them'}, no footing picked beforehand and nothing searched while standing. A skeleton sets on a player within 16 blocks and aims to about 15: past that it has no shot, and one that has lost the bot does not come after it. About ${secs} seconds at the bot's ${SPRINT} blocks a second, the back to ${walkers.length === 1 ? 'it' : 'them'} and the shield down while it runs; ${walkers.length === 1 ? 'it shoots' : 'they shoot'} until the bot is out of range.${noWayOut || ' Where it ends is open ground, and what follows is asked of there.'}`,
+        // With no way out found, the run digs and lays its way under their fire: its seconds and damage are the record's.
+        const SR = RUN_FROM_SHOOTERS_RECORD, dug = !!noWayOut;
+        const runSecs = dug ? 15 : secs;
+        const recSays = ` Runs from shooters on the fresh runs (${SR.from} to ${SR.to}): with no way out found, ${SR.noWay.runs} runs made a median ${SR.noWay.blocks} blocks in the 15 seconds after, still in their range, and lost a median ${SR.noWay.median} health, 6 or more in ${SR.noWay.sixOrMore} of ${SR.noWay.runs}; with a way out found, ${SR.way.runs} runs made a median ${SR.way.blocks} blocks and lost a median ${SR.way.median}, 6 or more in ${SR.way.sixOrMore} of ${SR.way.runs}.`;
+        options.run_from = { expects: { damage: Math.round(((dug ? SR.noWay.median : runShotCost(secs)) + runC.damage) * 10) / 10, seconds: runSecs, oneHit },
+          description: runC.says.trim() + (runC.says ? ' ' : '') + `Run from ${named} at a sprint, out of ${walkers.length === 1 ? 'its' : 'their'} range: to the first cell the walk reaches ${OUT} blocks or more from ${walkers.length === 1 ? 'it' : 'every one of them'}, no footing picked beforehand and nothing searched while standing. A skeleton sets on a player within 16 blocks and aims to about 15: past that it has no shot, and one that has lost the bot does not come after it. ${dug ? `With no walk out, not a sprint: the way is dug or laid block by block, ${walkers.length === 1 ? 'it shooting' : 'them shooting'} meanwhile.` : `About ${secs} seconds at the bot's ${SPRINT} blocks a second, the back to ${walkers.length === 1 ? 'it' : 'them'} and the shield down while it runs; ${walkers.length === 1 ? 'it shoots' : 'they shoot'} until the bot is out of range.`}${noWayOut || ' Where it ends is open ground, and what follows is asked of there.'}${recSays}`,
           run: async () => {
             this.report(goal, save, { action: 'run_from', threats: walkers.map(t => t.entity.name).slice(0, 4), health: bot.health, stance: true });
             lowerShield(bot);
