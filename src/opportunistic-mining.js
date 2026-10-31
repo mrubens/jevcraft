@@ -307,6 +307,14 @@ async function digThroughTo(bot, task, p) {
 
 async function mineWithinReach(bot, task, { now = Date.now(), label = 'from where the climb stands' } = {}) {
   if (!bot?.entity?.position || !bot.inventory?.items || now - (bot._climbLookAt || 0) < 800) return 0;
+  // Not in a fight (note 2676): a stance held, or a shooter in sight, is no passing. mid-full-241-fortress-4 (25590,
+  // 2026-10-31 06:56:59 to 06:57:27Z) chose charge nearest at 20 health against three blazes and dug nether gold ore
+  // in reach instead, the survival layer not looked to for 13 and then 19 seconds ('hit with no survival response',
+  // digging nether_gold_ore), 20 to 16 to 6 to dead; 43 such digs with blazes about across the night's logs.
+  try {
+    const danger = require('./danger'), { shooter } = require('./mob-policy');
+    if (danger.stanceHeld(bot, now) || danger.threats(bot, 24).some(t => t.visible && shooter(t.entity))) return 0;
+  } catch (_) { /* no world to read: dig as before */ }
   bot._climbLookAt = now;
   const ids = passingKinds(bot, bot._goal).map(n => bot.registry?.blocksByName?.[n]?.id).filter(id => id !== undefined);
   if (!ids.length) return 0;
