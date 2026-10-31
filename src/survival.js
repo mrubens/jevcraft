@@ -3470,7 +3470,16 @@ class Survival {
     for (const t of all) if (t.visible && shooter(t.entity)) seenShooters.set(t.entity.id, now);
     for (const [id, at] of seenShooters) if (now - at > SHOOTER_KEPT_MS) seenShooters.delete(id);
     const keptShooter = t => shooter(t.entity) && seenShooters.has(t.entity.id) && t.distance <= (RANGE[t.entity.name] || 15);
-    const danger = all.filter(t => (t.distance <= 24 || keptShooter(t)) && (t.visible || keptShooter(t) || (t.entity.name === 'creeper' && t.distance <= 4) || (t.entity.name === 'warden' && t.distance <= 24)));
+    // A wither skeleton in the Nether is in the stance's danger from twelve blocks whether seen or not (note 2645): the
+    // server tells the client of it and a player hears its rattle through the fortress wall; by the ray it is first seen
+    // round a corner at arm's length. Of 63 first sightings of a wither skeleton in the stance asks of the fortress
+    // trials and full-220 to full-235 (2026-10-30/31), 27 were within 5 blocks and 25 within 8: two seconds of its walk
+    // (3.9 blocks a second), too late for a sprint away or a seal. mid-full-63-fortress-2 (25586, 02:45:36Z) held
+    // charge nearest against a blaze with no wither skeleton listed, was asked again with two at 3.6 and 4.9 blocks, and
+    // was slain 4.5 seconds later from 18.6 health. Listed as unseen, with its distance, for Jev to weigh.
+    const WITHER_HEARD = 12;
+    const withers = t => t.entity.name === 'wither_skeleton' && t.distance <= WITHER_HEARD && /nether/.test(String(bot.game?.dimension || ''));
+    const danger = all.filter(t => (t.distance <= 24 || keptShooter(t)) && (t.visible || keptShooter(t) || (t.entity.name === 'creeper' && t.distance <= 4) || (t.entity.name === 'warden' && t.distance <= 24) || withers(t)));
     const urgent = require('./danger').immediateThreat(bot) || require('./danger').immediateThreat(bot, { stoodOff: true }) || require('./danger').immediateThreat(bot, { huntKin: true });
     if (urgent && !urgent.projectile && !danger.some(t => t.entity.id === urgent.entity.id)) danger.push(urgent), danger.sort((a, b) => a.distance - b.distance);
     // A ghast in sight past the twenty-four looked at, whose push can put
