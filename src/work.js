@@ -3161,6 +3161,13 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
       if (!pool.length) break;
       continue;
     }
+    // Mobs about the ore it walks or tunnels to (note 2744): which ore is Jev's when some are near this one and another
+    // ore of the kind has none near it. full-287 (25589, 2026-10-31 19:42 to 19:45Z), seven minutes in and bare, went for
+    // iron 20 blocks off in a cave with 11 to 14 mobs about it, 7 to 9 of them shooters, and was knocked to its death;
+    // full-282 (18:10Z) the same at five minutes. The ore was the nearest, picked by its distance alone.
+    if (ore && !mined && p.distanceTo(bot.entity.position) > 6) {
+      try { const alt = await mineTargetChoice(bot, task, goal, save, p, pool); if (alt) { pool = [p, ...pool.filter(q => !q.equals(alt))]; p = alt; } } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err; }
+    }
     const before = countOf(bot, step.drops), wasBlock = bot.blockAt(p)?.name;
     let access;
     // Where the step is going, for the record: the day audit saw the mine
@@ -9424,6 +9431,38 @@ function foodTopUpSays(bot, goal, pending, item) {
 // What a climb to the surface comes out into at night: the minutes to dawn,
 // the surface's record by night against the day's, and the bot as it is.
 // -> { climb, below } or null by day or off the Overworld.
+// The mobs within ten blocks of an ore, by kind, the shooters among them (note 2744).
+function mobsNear(bot, at, within = 10) {
+  let list = []; try { list = require('./danger').threats(bot, 48); } catch (_) { list = []; }
+  return list.filter(t => t.entity?.position && t.entity.position.distanceTo(at) <= within);
+}
+const kindsSay = mobs => { const by = {}; for (const t of mobs) { const k = String(t.entity.name).replaceAll('_', ' '); by[k] = (by[k] || 0) + 1; } return Object.entries(by).map(([k, n]) => `${n} ${k}${n === 1 ? '' : 's'}`).join(', '); };
+// This ore or the nearest of the pool with no mob near it (note 2744): asked once an ore a minute, only where mobs are
+// near this one and another has none. -> the other ore's position when Jev takes it, else null.
+async function mineTargetChoice(bot, task, goal, save, p, pool, now = Date.now()) {
+  const client = task.opportunityClient;
+  if (!client || !/overworld/.test(String(bot.game?.dimension || 'overworld'))) return null;
+  const near = mobsNear(bot, p);
+  if (!near.length) return null;
+  const key = `${p.x},${p.y},${p.z}`, asked = (goal.mineTargetAsked ||= {});
+  if (asked[key] && now - asked[key].at < 60000) return asked[key].alt ? new (require('vec3').Vec3)(asked[key].alt.x, asked[key].alt.y, asked[key].alt.z) : null;
+  const feet = bot.entity.position;
+  const alt = pool.filter(q => !q.equals(p) && q.distanceTo(feet) <= 48).sort((a, b) => a.distanceTo(feet) - b.distanceTo(feet)).find(q => !mobsNear(bot, q).length);
+  if (!alt) return null;
+  const worn = [5, 6, 7, 8].map(n => bot.inventory?.slots?.[n]?.name).filter(Boolean);
+  const kit = `The bot wears ${worn.length ? worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'nothing'} and holds ${require('./combat').defenseWeapon(bot)?.name?.replaceAll('_', ' ') || 'bare hands'}, health ${Math.round((bot.health ?? 20) * 10) / 10}.`;
+  const shooters = near.filter(t => /skeleton|stray|bogged|parched|pillager|witch|blaze|ghast/.test(String(t.entity.name))).length, seen = near.filter(t => t.visible).length;
+  const name = String(bot.blockAt(p)?.name || 'ore').replaceAll('_', ' ');
+  const tree = {
+    this_ore: { description: `Go on to the ${name} ${Math.round(p.distanceTo(feet))} blocks off at (${p.x}, ${p.y}, ${p.z}), the nearest: ${near.length} mob${near.length === 1 ? '' : 's'} within ten blocks of it (${kindsSay(near)}${shooters ? `; ${shooters} shoot${shooters === 1 ? 's' : ''}` : ''}; ${seen} in sight of the bot now), and the way there comes out among them. ${kit}` },
+    other_ore: { description: `Go to the ${String(bot.blockAt(alt)?.name || 'ore').replaceAll('_', ' ')} ${Math.round(alt.distanceTo(feet))} blocks off at (${alt.x}, ${alt.y}, ${alt.z}) instead: no mob known within ten blocks of it now, ${Math.round(alt.distanceTo(feet) - p.distanceTo(feet))} blocks farther than the nearest. ${kit}` },
+  };
+  const decision = await decide('mine_target', { client, bot, task, goal, save, tree, state: { mobsNearTheNearest: near.length, shooters, armourWorn: worn.length } });
+  if (decision.stale) return null;
+  const pick = decision.path.at(-1);
+  asked[key] = { at: now, alt: pick === 'other_ore' ? { x: alt.x, y: alt.y, z: alt.z } : null }; save?.();
+  return pick === 'other_ore' ? alt : null;
+}
 function nightUpSays(bot) {
   try {
     const { DAY: D } = require('./day'), tod = bot.time?.timeOfDay;

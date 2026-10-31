@@ -55,6 +55,23 @@ const IDLE_OPTIONS = [
 // to_other_lava, dig_to_lava, cast_at_pool) and the fetch's own switches of
 // lava: 895 asks and 432 plan changes on 172 portal rungs, 199 of them the
 // fetch's own (2026-09-30T17:00Z to 2026-10-01T04:58Z).
+// Which ore the mine step goes to when mobs are near the nearest (note 2744): full-287 and full-282 went bare for the
+// nearest iron in a cave full of mobs at seven and five minutes.
+define({
+  id: 'mine_target', area: 'resources', parent: 'rung_progress', kind: 'mining', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'Mobs are near the nearest ore the mine step is going to, and another ore of the kind has none near it: go on to the nearest, or to the other?',
+  trigger: 'At the mine step in the Overworld, before walking or tunnelling to an ore more than six blocks off, when a mob is within ten blocks of it and another candidate within 48 blocks has none; asked once an ore a minute (note 2744).',
+  source: 'src/work.js (mineTargetChoice)',
+  instructions: {
+    task: 'The bot is going to mine an ore and mobs are near the nearest one. Choose which ore it goes to.',
+    guidance: 'Each way says the ore, how far, the mobs within ten blocks of it by kind and the shooters among them, and what the bot wears and holds. The goal is the fastest dragon kill: weigh the extra blocks against the fight the nearest ore brings.',
+  },
+  options: [
+    { key: 'this_ore', label: 'go on to the nearest ore, among the mobs near it', when: 'always; said with the mobs within ten of it and the kit', level: 'root' },
+    { key: 'other_ore', label: 'go to the nearest ore with no mob near it instead', when: 'another ore of the step within 48 blocks has no mob within ten of it', level: 'root' },
+  ],
+});
+
 define({
   id: 'mining_depth', area: 'resources', parent: 'rung_progress', kind: 'mining', primitive: 'choice', stakes: 'low', tree: true,
   question: 'Ore is wanted and some is in view well above the depth the game puts most of it at: mine the nearest in view, or dig down to the depth first and tunnel there?',
