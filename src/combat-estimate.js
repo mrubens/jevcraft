@@ -682,6 +682,8 @@ const shooting = (m, shield) => m.visible ? (m.hitsBot * landsPerSecond(m) + (m.
 // effect ends. `since`: the seconds from now the timeline starts at (a
 // fight after a stance's setup).
 const FIRE_SHOTS = new Set(['blaze']);
+// A blaze's flight toward its target, blocks a second (its speed attribute 0.23, as the walk-speed table below has it at 1.8).
+const BLAZE_CLOSE = 1.8;
 const shotPieces = (m, shield, from, to, since = 0, { struck = false } = {}) => {
   if (FIRE_SHOTS.has(m.name) && m.fireproofFor > 0) from = Math.max(from, m.fireproofFor - since);
   if (!m.visible || !(to > from)) return [];
@@ -695,6 +697,15 @@ const shotPieces = (m, shield, from, to, since = 0, { struck = false } = {}) => 
   // caps what several land.
   // The one being struck swings a third as often, as a biter struck does (its knockback takes it out of reach).
   if (m.name === 'blaze' && m.meleeHit > 0 && (m.distance || 0) <= FIREBALL.meleeReach) return [{ from, to, perSecond: m.meleeHit * f * (struck ? 1 / 3 : 1), hit: m.meleeHit }];
+  // A blaze a step past arm's length closes to it inside the stand (note 2721): priced as shots until it is there (its
+  // flight toward the bot at BLAZE_CLOSE blocks a second) and as blows after. mid-full-9-fortress-8 (25590, 2026-10-31
+  // 12:10:36Z) at 17.7 health with blazes at 2.7 and 3.8 blocks was told eat 'about 3.7 damage over 2 seconds' and step
+  // out and eat 'about 0.8', priced as shooters; a second on the body's question counted 'the mobs at arm's length,
+  // 10 blows (34)', and the bot went 17.7 to 15 to 8 to 5.6 to 1 and burned to death at 12:10:52.
+  if (m.name === 'blaze' && m.meleeHit > 0 && (m.distance || 0) <= FIREBALL.meleeReach + BLAZE_CLOSE * (to - from)) {
+    const at = from + ((m.distance || 0) - FIREBALL.meleeReach) / BLAZE_CLOSE;
+    return [{ from, to: at, perSecond: m.hitsBot * landsPerSecond(m) * f, hit: m.hitsBot }, ...(m.burns ? burnRamp(f * landsPerSecond(m), from, at) : []), { from: at, to, perSecond: m.meleeHit * f * (struck ? 1 / 3 : 1), hit: m.meleeHit }];
+  }
   return [{ from, to, perSecond: m.hitsBot * landsPerSecond(m) * f, hit: m.hitsBot }, ...(m.burns ? burnRamp(f * landsPerSecond(m), from, to) : [])];
 };
 // A body that has just been hurt cannot be hurt again for half a second
