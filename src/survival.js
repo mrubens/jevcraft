@@ -3479,7 +3479,11 @@ class Survival {
     // (3.9 blocks a second), too late for a sprint away or a seal. mid-full-63-fortress-2 (25586, 02:45:36Z) held
     // charge nearest against a blaze with no wither skeleton listed, was asked again with two at 3.6 and 4.9 blocks, and
     // was slain 4.5 seconds later from 18.6 health. Listed as unseen, with its distance, for Jev to weigh.
-    const WITHER_HEARD = 12;
+    // Sixteen, as the arbiter's own newcomer rule and note 2577 read it (note 2657, from 12): mid-full-147-fortress-3
+    // (25590, 2026-10-31 04:01:51 to 04:03:22Z) held corner ambush 78 seconds while the arbiter logged 'a wither_skeleton
+    // came within 16 blocks' three times against the work; the stance learned of it at 3.3 blocks, in sight, two more
+    // came unseen from 8 and 11, and 20 health was gone in twelve seconds.
+    const WITHER_HEARD = 16;
     const withers = t => t.entity.name === 'wither_skeleton' && t.distance <= WITHER_HEARD && /nether/.test(String(bot.game?.dimension || ''));
     const danger = all.filter(t => (t.distance <= 24 || keptShooter(t)) && (t.visible || keptShooter(t) || (t.entity.name === 'creeper' && t.distance <= 4) || (t.entity.name === 'warden' && t.distance <= 24) || withers(t)));
     const urgent = require('./danger').immediateThreat(bot) || require('./danger').immediateThreat(bot, { stoodOff: true }) || require('./danger').immediateThreat(bot, { huntKin: true });
