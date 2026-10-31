@@ -140,8 +140,10 @@ function spareArmourOwed(bot, goal) {
   return SPARE_ORDER.find(name => bot.inventory?.slots?.[SPARE_SLOT[name]]?.name === name && !pockets.some(i => i.name === name) && !(store[name] > 0)) || null;
 }
 const ARMOUR_PIECES = ['iron_armour', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'];
+// Diamond armour by armour for its diamonds (note 2726): a chestplate 8 for 8 points, leggings 7 for 6, a helmet 5 for 3, boots 4 for 3.
+const DIAMOND_PIECES = [['chestplate', 8], ['leggings', 7], ['helmet', 5], ['boots', 4]];
 // The crossing's kit may wait too (crossing-kit.js kitRungs, note 673).
-const DEFERRABLE = new Set(['spare_armour', 'bed', 'home_site', 'home_level', 'home_stash', 'home_bed', 'home_water', 'home_plot', 'home_pen', 'shield', 'leather_armour', 'copper_armour', 'fishing_rod', 'iron_sword', 'bucket', 'water_bucket', 'golden_boots', 'bow', 'arrows', 'diamond_pickaxe', 'diamond_sword', ...ARMOUR_PIECES, 'nether_pickaxe', 'nether_blocks', 'nether_food', 'nether_chest']);
+const DEFERRABLE = new Set(['spare_armour', 'bed', 'home_site', 'home_level', 'home_stash', 'home_bed', 'home_water', 'home_plot', 'home_pen', 'shield', 'leather_armour', 'copper_armour', 'fishing_rod', 'iron_sword', 'bucket', 'water_bucket', 'golden_boots', 'bow', 'arrows', 'diamond_pickaxe', 'diamond_sword', 'diamond_armour', ...ARMOUR_PIECES, 'nether_pickaxe', 'nether_blocks', 'nether_food', 'nether_chest']);
 const RUNG_BUDGET_MS = 20 * 60 * 1000, RUNG_WAIT_MS = 30 * 60 * 1000;
 function preparationRung(bot, goal = {}, now = Date.now()) {
   const resting = attemptsFor(goal).of('rung', now);
@@ -564,6 +566,15 @@ function ladderRung(bot, goal, waiting, { allOptional = false } = {}) {
   // Once this run has worn out iron pickaxes (two made), where the wear is its own cost.
   if (best('pickaxe') < 4 && (goal.toolsMade?.iron_pickaxe || 0) >= 2 && ready({ phase: 'diamond_pickaxe' })) return another('diamond_pickaxe');
   if (best('sword') < 4 && ready({ phase: 'diamond_sword' })) return another('diamond_sword');
+  // Diamond armour from the diamonds carried (note 2726, the user 2026-10-31: 'If Diamond is significantly better maybe
+  // that should even be a path'): a piece at a time, the most armour for its diamonds first, while the diamonds carried
+  // make it and the piece worn is not diamond already. full-262 (25589, 2026-10-31 13:05:11Z) fought five blazes at its
+  // cage in iron with 17 diamonds in its pack and was slain. Deferrable as the sword is.
+  {
+    const dia = bot.inventory.items().filter(i => i.name === 'diamond').reduce((n, i) => n + i.count, 0);
+    const piece = DIAMOND_PIECES.find(([p, cost]) => dia >= cost && !worn.some(n => /^(diamond|netherite)_/.test(n) && n.endsWith(`_${p}`)) && !carried.includes(`diamond_${p}`));
+    if (piece && ready({ phase: 'diamond_armour' })) return { phase: 'diamond_armour', action: 'acquire', item: `diamond_${piece[0]}`, count: 1 };
+  }
   // Last before the portal, the crossing's kit: a spare pickaxe, blocks and
   // food for the stay (crossing-kit.js kitRungs, note 673).
   // Back through the portal for food (return_for_food, chosen in the
