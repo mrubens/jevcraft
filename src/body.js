@@ -50,6 +50,9 @@ const WAYS_NOW = { fire: bot => require('./vitals').inFire(bot) ? null : Object.
 // blocks read).
 const RECHECK_MS = 250;
 // A way a blow stopped is said to the questions asked this soon after.
+// What followed each way while burning, within the minute after (note 2648): the fortress trials, spawner drills and
+// full runs of 2026-10-30/31, 419 answers; a death after is a death from any cause within sixty seconds.
+const FIRE_WAYS_RECORD = 'What followed each way taken while burning in the fortress trials, spawner drills and full runs of 2026-10-30/31 (419 answers; a death within the minute after, from any cause): out of fire 105 times, a death after 37%; out of their line 98, 11%; eat meal 86, 41%; strike at arm 51, 29%; run from them 29, 45%; rise on a block 15, 13%; swim to air 31, 13%. Most of these were taken with blazes in sight.';
 const STOPPED_SAID_MS = 10000;
 
 const round = n => Math.round(n * 10) / 10;
@@ -215,12 +218,28 @@ async function answer(bot, task, key, ways, { client = null, goal = null, save =
   let creepers = null;
   try { creepers = creepersNear(bot); } catch (_) { creepers = null; }
   const stopped = bot?._bodyWayStopped && t0 - bot._bodyWayStopped.at < STOPPED_SAID_MS ? bot._bodyWayStopped : null;
+  // Alight with the shooters that lit the body in sight (note 2648): said with the question, since every way here stands
+  // or walks in their fire, and what followed each way in the record. In the fortress trials, spawner drills and full
+  // runs of 2026-10-30/31 (419 answers to this question while burning): out of fire 105 times, a death within the
+  // minute after 37%; out of their line 98, 11%; eat meal 86, 41%; strike at arm 51, 29%; run from them 29, 45%;
+  // rise on a block 15, 13%. The drill bots of 02:5xZ took eat meal at 9.4, 6 and 3.3 health under blaze fire and died.
+  let shooters = null;
+  if (key === 'fire') {
+    try {
+      const { FIRE_REACH } = require('./combat-estimate');
+      const seen = require('./danger').threats(bot, 64).filter(t => t.visible && ['blaze', 'ghast'].includes(t.entity?.name) && t.distance <= (FIRE_REACH[t.entity.name] || 16));
+      if (seen.length) shooters = `${seen.length} ${seen.every(t => t.entity.name === 'blaze') ? 'blaze' : 'shooter'}${seen.length === 1 ? '' : 's'} in sight that set the body alight, the nearest ${Math.round(seen[0].distance)} blocks off: every way here is done in their fire, and a fireball that lands sets the body alight for five seconds more. Standing still to eat (about 1.6 seconds) is done with the shield down.`;
+    } catch (_) { shooters = null; }
+  }
+  const record = key === 'fire' ? FIRE_WAYS_RECORD : null;
   let decision, by = 'jev';
   try {
     decision = await (decide || require('./decisions').decide)('body_way', { client, bot, task: only, goal, save, tree, watchAir: false,
       context: { ...context, default: keys[0] },
       state: { condition: key, says: conditionSays(bot, key, facts), health: bot.health, ...lasts(bot, key, facts), ...facts,
         ...(blows ? { atArmsLength: blows.says } : {}),
+        ...(shooters ? { shootersInSight: shooters } : {}),
+        ...(record ? { waysRecord: record } : {}),
         ...(creepers ? { creepersNear: creepers } : {}),
         ...(stopped ? { lastWay: `${stopped.way.replaceAll('_', ' ')} was chosen ${round((t0 - stopped.at) / 1000 + stopped.after)} seconds ago and stopped ${stopped.after} seconds in: ${stopped.why}.` } : {}) },
       interrupt: () => { if (Date.now() - t0 >= ASK_MS) throw Object.assign(new Error(`body_way: no answer in ${ASK_MS / 1000} seconds`), { name: 'CutShort' }); } });
