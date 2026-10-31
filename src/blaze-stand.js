@@ -1769,7 +1769,7 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
   // blazes to come to the sword, priced by whether any can see it, and by
   // what the holds already made from about here came to (note 585). The
   // close-in and the spawner's breaking are no holds.
-  if (hunted) for (const o of Object.values(options)) o.description += (TACTICS.has(o.kind) ? '' : ' Rods that fall within a step are taken at once, a blaze in reach or not; farther ones between volleys.') + (['close', 'charge', 'break', ...TACTICS].includes(o.kind) ? '' : holdSays(bot, o, holds));
+  if (hunted) for (const o of Object.values(options)) o.description += (TACTICS.has(o.kind) ? '' : ' Rods that fall within four blocks are taken at once, a blaze in reach or not; farther ones between volleys.') + (['close', 'charge', 'break', ...TACTICS].includes(o.kind) ? '' : holdSays(bot, o, holds));
   if (need > 0) {
     const cage = spawnerAt(bot), live = !!cage && cage.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position) <= 16;
     for (const o of Object.values(options)) o.description += towardRods(need, gainOf(o), { spawner: live, of });
@@ -1803,8 +1803,9 @@ function deathsHereSays(bot, { now = Date.now() } = {}) {
 // said with the rules of the game it rests on, a price worked out from the
 // fight at hand (the walk and the building in their fire, then what reaches
 // the bot there) and what the arena measured of it, fight by fight.
-// A rod this near is a step and back (note 2627).
-const ROD_STEP = 2.5;
+// A rod this near is a step or two and back (note 2627; 4 since note 2640: the rods the record of note 2624 saw lying two
+// seconds after a kill lay 2 to 4 blocks off, 3 the most often, the kill's own distance, and 2.5 reached none of them).
+const ROD_STEP = 4;
 const TACTICS = new Set(['box', 'light', 'corner', 'heal', 'far']);
 const PLACE_SECONDS = 0.45, TORCH_SECONDS = 0.45;
 function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket, dig, runs = CLOSE_SECONDS, hunted = false, planned = false }) {
