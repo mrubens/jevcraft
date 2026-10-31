@@ -224,6 +224,16 @@ function judge(bot, goal, id, { asked = false, now = Date.now() } = {}) {
   const nothing = noRise || nothingSays(o.mark, here, o.by);
   let why = null;
   try { why = require('./repeats').whyItEnded(bot, goal, o.at); } catch (_) { why = null; }
+  // Its question back before its own time is not its run come back (note 2643): a question is asked again by a
+  // threat, a stall, a hurt, another layer's turn, or because the answer hands the pass on by design (while_cooking's
+  // leave cooking, hunt_target's charge nearest to the fight's own loop). Before the time the way itself said, the
+  // way is judged only where its end is known as its own: a failure noted since it was chosen (lastFailure, a walk
+  // failed), or its ledger entry settled; else it keeps its time and the sweep judges it then. An answer that ended
+  // in its first second is at-once.js's, and one asked again and again with the same facts repeats.js's, both said.
+  // Of 420 'changed nothing' judgements in the logs of full-220 to full-235 and the fortress trials of 2026-10-30/31,
+  // 352 were made under ten seconds into a way whose own time was thirty seconds or more; full-232 (25592, 02:2xZ)
+  // had 'open the wall' recorded failed 3 seconds in (its own time 90) and stood walled in with a blaze 3 blocks off.
+  if (asked && took < o.ms && !why && !(e && e.outcome !== 'pending')) { memo[id] = o; return null; }
   // Ended by a threat or a push about, not by its own way (note 2385): the survival layer's to answer, and the way not
   // judged as having changed nothing. full-21 (25589, 2026-10-28 14:5x to 15:1xZ), a fortress 73 to 80 blocks off,
   // ghasts about: each way in ('head toward', 'tunnel') was stopped within a second by 'Threat nearby: ghast' or
