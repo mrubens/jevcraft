@@ -688,6 +688,8 @@ const WAITS_FOR_MOB = new Set(['shield_guard', 'shield_the_charge', 'back_to_wal
 // A biter held against from farther than this, now within arm's length, is asked about again (note 2617).
 const BITER_AT_ARM = 2.5, BITER_CLOSED_FROM = 4;
 const STANCE_LEAST_MS = 3000;
+// The longest build the lethal-line rule makes before the stance is asked (note 2653): about one blaze volley's interval.
+const LETHAL_BUILD_MAX_S = 3;
 // The stances a walker coming to the body does not break (note 2617): those that wait for it (WAITS_FOR_MOB) and those that
 // put the body out of its reach or behind blocks; a hoglin at the pillar's foot is the pillar working (note 599).
 // And the runs and the leaves (note 2635): a biter closing on a bot leaving is the chase the run prices, not news.
@@ -6650,6 +6652,12 @@ class Survival {
     const way = require('./lethal-line').wayOut(bot, danger, L, { blocks: shelter.materialStock(bot), canPlace: typeof this.actions.place === 'function', avoid: biting });
     const fail = did => { this.state.lethalLineFailed = { at: Date.now(), feet: `${feet}`, did }; this.state.lethalLine = { at: Date.now(), says: L.says, did }; return false; };
     if (!way) return fail('no cell out of every line within eight blocks of walking, and no block could go in every line');
+    // A build longer than a volley's interval is not done before the stance (note 2653): the rule put 22 blocks in the
+    // lines of twelve blazes at 7.2 health in the spawner drill of 2026-10-31 03:44Z (artifacts/spawner-drill-mvvu*/open-5),
+    // was hit to 2 while placing ('hit with no survival response'), put 5 more at 2.5, and the stance came at 0.5 and
+    // lost; of 14 such builds in the fortress trials and drills of the day, 7 were nine blocks or more. The stance is
+    // asked at once instead, with the lethal line said, and the cover it offers (take cover, box here) is Jev's to price.
+    if (way.how === 'block' && way.seconds > LETHAL_BUILD_MAX_S) return fail(`${way.cells} blocks in the lines would take about ${way.seconds} seconds, longer than the ${LETHAL_BUILD_MAX_S} seconds between volleys: not built before the stance`);
     this.report(goal, save, { action: 'out_of_line', how: way.how, health: bot.health, shooters: L.lined.map(l => l.e.name), ...(way.cell ? { to: { x: way.cell.x, y: way.cell.y, z: way.cell.z }, blocks: way.steps } : { cells: way.cells }) });
     console.log(`[lethal line] ${Math.round(bot.health * 10) / 10} health, one ${L.worst.e.name.replaceAll('_', ' ')} shot ends it: ${way.how === 'walk' ? `walking ${way.steps} block${way.steps === 1 ? '' : 's'} out of every line` : `putting ${way.cells} block${way.cells === 1 ? '' : 's'} in the lines`} before the stance`);
     if (way.how === 'walk') {
