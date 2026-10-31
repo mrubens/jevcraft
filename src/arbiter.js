@@ -689,6 +689,19 @@ async function arbitrate(bot, claims, ctx = {}) {
     // The air read as the question goes out, not as the claim was made (note 1921): full-3 (2026-10-19 21:10:32Z) read 'air 19 of 20' with its air at 8, the claim eleven seconds old, and gave the turn to the work (0.52); it dug on under water and drowned at 21:11:01.
     for (const c of live) if (c.layer === 'vitals' && c.action === 'surface' && c.facts && bot?.oxygenLevel != null) c.facts.air = bot.oxygenLevel;
     const tree = Object.fromEntries(live.map(c => withUnkept(bot, state, c, now)).map(c => [c.layer, withSays(optionOf(c, held, now), c, bot, state, mobsNow, now)]));
+    // The surface's night by armour on the work, where the shelter for the surface's night is its rival (note 2741): the
+    // shelter said the mobs spawn in the open until dawn and the work said only its step and the health. full-276 (25587,
+    // 2026-10-31 16:42:53Z), nine minutes in, bare, dawn nine minutes off, gave the work (mine oak log) the turn at 0.51 over
+    // the shelter's 0.33, three times from 16:40, and was slain by a zombie at 16:45:11 among eight mobs.
+    try {
+      const shelter = live.find(c => c.layer === 'survival' && c.action === 'secure_shelter' && c.facts?.night && c.facts.underground === false);
+      const tod = bot?.time?.timeOfDay, D = require('./day').DAY;
+      if (shelter && tree.work?.description?.does && Number.isFinite(tod)) {
+        const toDawn = Math.round(((D.DAWN - tod + 24000) % 24000) / 1200);
+        const rec = require('./night-record').keepOnSays('surface', { minutesToDawn: toDawn, bot }).trim();
+        if (rec) tree.work = { ...tree.work, description: { ...tree.work.description, does: `${tree.work.description.does} The work goes on in the open at night: ${rec}` } };
+      }
+    } catch (_) { /* no record */ }
     // The biters in sight within sixteen, counted, with how soon the nearest
     // is at the bot at its speed and what their blows come to together (note
     // 1025), said on survival's answer and on the work chosen over it. The
