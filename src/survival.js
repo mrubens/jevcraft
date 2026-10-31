@@ -13162,6 +13162,17 @@ class Survival {
     }
     // This respawn point's record (respawn-record.js, note 2210): how the lives that began at the bed went.
     { const rr = require('./respawn-record').respawnSays(this.state); if (rr) state.respawnRecord = rr; }
+    // After a night death, what the first way chosen came to in the record (note 2684, a shared fact for every way here):
+    // of 36 night deaths on the fresh runs of 2026-10-30/31, 14 were followed by another within ten minutes, 9 of them in
+    // deserts (full-233 six in four minutes, 239, 240, 245), the first way after the respawn food or the drops as often as
+    // a shelter, and nothing said what each had come to.
+    try {
+      const last = (this.state.deaths || []).at(-1), ago = last?.at ? Date.now() - Date.parse(last.at) : Infinity;
+      if (ago < 10 * 60000 && night(bot) && /overworld/.test(String(bot.game?.dimension || 'overworld'))) {
+        const sandy = /desert|badlands|beach/.test(String(bot.blockAt?.(bot.entity.position.floored())?.biome?.name || ''));
+        state.afterNightDeath = `The bot died ${Math.max(1, Math.round(ago / 60000))} minute${ago < 90000 ? '' : 's'} ago and it is night. In the record (fresh runs 2026-10-20 to 31, 299 deaths at night), the first way chosen after the respawn and a second death within ten minutes of the first: sleep in a bed 7 of 80; seal a shelter 19 of 80; go for food 19 of 67; carry on with the work 12 of 27; go back for the drops 4 of 10; walk home to the bed 2 of 8; rest to heal 3 of 4. In sand biomes (desert, badlands, beach) 10 of 18 died again within ten minutes, elsewhere 56 of 281${sandy ? '; this is one of them' : ''}. Digging sand by hand drops sand to wall with (a block of it placed over open air falls), and sandstone dug by hand drops nothing.`;
+      }
+    } catch (_) { /* not said */ }
     // Next to no armour on at night in the Overworld: each answer says what it came to in the record (night-record.js, note 1228).
     if (night(bot) && /overworld/.test(String(bot.game?.dimension || 'overworld'))) {
       const nr = require('./night-record');
