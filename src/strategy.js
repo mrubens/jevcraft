@@ -915,6 +915,19 @@ function errandUnderWay(bot, goal, now = Date.now()) {
   return null;
 }
 
+// The Overworld fights by what was worn, on the fresh runs of 2026-10-31 (full-240 to full-289, note 2746): each
+// encounter_stance asked in the Overworld, and a death within two minutes of one credited to the kit of the last.
+// Said where nothing is worn: the rungs said a piece takes 'about half off a mob's hit', and full-288 (25592, 20:12:25Z),
+// bare at six minutes, chose the iron sword at 0.62 over the shield (0.07) and the armour (0.06) and was slain at ten.
+const KIT_RECORD = Object.freeze({ day: '2026-10-31', runs: 'full-240 to full-289',
+  bare: { asks: 509, deaths: 9 }, armoured: { asks: 552, deaths: 2 }, armouredShield: { asks: 378, deaths: 1 }, shieldOnly: { asks: 24, deaths: 0 } });
+function kitRecordSays(bot) {
+  try {
+    if (!/overworld/.test(String(bot.game?.dimension || 'overworld')) || [5, 6, 7, 8].some(n => bot.inventory?.slots?.[n])) return null;
+    const r = KIT_RECORD, per = o => Math.round(o.deaths / o.asks * 1000) / 10;
+    return `Nothing is worn now. In the Overworld fights of the fresh runs of ${r.day} (${r.runs}), a death followed within two minutes ${per(r.bare)} times in 100 with nothing worn and no shield (${r.bare.deaths} in ${r.bare.asks}), ${per(r.armoured)} in 100 in any armour without a shield (${r.armoured.deaths} in ${r.armoured.asks}), and ${per(r.armouredShield)} in 100 in armour with a shield (${r.armouredShield.deaths} in ${r.armouredShield.asks}); a shield with nothing worn came up ${r.shieldOnly.asks} times, too few to say. Of 9 of the day's deaths in the first 40 minutes looked at, 8 were with nothing worn and none had a shield.`;
+  } catch (_) { return null; }
+}
 function strategyState(bot, goal, stage, extra = {}) {
   const clock = goal.rungClocks?.[stage.phase];
   const t = bot.time?.timeOfDay ?? 0;
@@ -935,6 +948,7 @@ function strategyState(bot, goal, stage, extra = {}) {
       if (E.eyeTarget(goal) === 0) return { goalStill: `The End portal's frames are all filled: no blaze rod or ender pearl is wanted any more; what is left of the goal is the End and the dragon${goal.endPortal?.center ? `, the ring at (${Math.round(goal.endPortal.center.x)}, ${Math.round(goal.endPortal.center.y)}, ${Math.round(goal.endPortal.center.z)})` : ''}.` };
       return n.rods + n.pearls + n.eyes + n.powder > 0 || goal.gameProgress?.milestones?.nether_entered ? { goalStill: E.says(bot, goal) } : {};
     } catch (_) { return {}; } })(),
+    ...((k => k ? { kitRecord: k } : {})(kitRecordSays(bot))),
     ...extra,
     // The day where there is one (note 677).
     ...(/overworld/.test(String(bot.game?.dimension || 'overworld')) ? { timeOfDay: t, daylightMinutesRemaining: Math.round(Math.max(0, DAY.DUSK - t) / 1200 * 10) / 10 } : {}),
