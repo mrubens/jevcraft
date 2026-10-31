@@ -5687,6 +5687,30 @@ class Survival {
     const afterRun = follower ? ` The figure is for the run alone: the ${follower.entity.name.replaceAll('_', ' ')} ${Math.round(follower.distance)} blocks off is alive at the end of it, comes after a player it has seen and shoots again from wherever it has a line; the fight's figure is to the last of them dead.` : '';
     options.retreat = { ...(runExpects ? { expects: runExpects } : {}), description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.' + afterRun + backShots + riderSays + endermanSays + footing + chase + runChase.says + unseen,
       run: () => this.runAway(task, goal, save, danger) };
+    // Off the edge of the walkway, down to the floor below (note 2708; the Fable check-in of 2026-10-31 11:00Z, B): on an open
+    // fortress walkway at low health every escape was gated out (no column under the bricks to dig down, seal 25 blocks and
+    // 15 seconds, no rock for a hole), and nothing priced going down off the side, though the way-down question already
+    // measures that fall. full-249 (25589, 08:50:48 and 08:51:03Z) at 8.3 and 7.3 health with five blazes about had pillar,
+    // take cover, leave and heal and retreat as its non-striking ways, charged, and was fireballed to death.
+    try {
+      const wd = require('./way-down'), perch = wd.livePerch(bot);
+      if (perch && !onPillar) {
+        const view = wd.liveView(bot);
+        const ways = wd.waysDown(view, perch, { health: bot.health ?? 20, carried: view.carried, pickaxe: view.pickaxe, pickaxeUses: view.pickaxeUses, nether: /nether/.test(String(bot.game?.dimension || '')), water: {} });
+        const w = ways.step_off;
+        if (w && w.plan && (w.plan.damage ?? 99) < (bot.health ?? 20) - 1) {
+          const end = wd.endOf(w.plan), eye = bot.entity.position.offset(0, 1.62, 0);
+          const nearEnd = end ? danger.filter(t => t.entity?.position && t.entity.position.distanceTo(end.offset(0.5, 0, 0.5)) <= 8) : [];
+          const shootersInLine = end ? danger.filter(t => shooter(t.entity) && t.entity.position && require('./danger').lineClear(bot, t.entity.position.offset(0, 1.5, 0), end.offset(0.5, 1, 0.5))).length : 0;
+          const shooters = danger.filter(t => shooter(t.entity)).length;
+          const who = nearEnd.slice(0, 4).map(t => `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.entity.position.distanceTo(end.offset(0.5, 0, 0.5)) * 10) / 10} blocks from it`).join(', ');
+          const dmg = Math.round((w.plan.damage ?? 0) * 10) / 10, hp = Math.round((bot.health ?? 20) * 10) / 10;
+          options.drop_off_side = { expects: { damage: dmg + (shootersInLine ? 2.7 : 0), seconds: 2 + Math.round((w.plan.fall || 0) / 4), oneHit: 2.7 },
+            description: `${w.description.replace(/ a walk goes on from there\.?$/, '')} From ${hp} health the fall leaves about ${Math.round((hp - dmg) * 10) / 10}. Below: ${nearEnd.length ? `${nearEnd.length} mob${nearEnd.length === 1 ? '' : 's'} within 8 blocks of the landing (${who})` : 'no mob within 8 blocks of the landing'}; of the ${shooters} shooter${shooters === 1 ? '' : 's'} about, ${shootersInLine ? `${shootersInLine} ${shootersInLine === 1 ? 'has' : 'have'} a line to the landing from where ${shootersInLine === 1 ? 'it floats' : 'they float'}` : 'none has a line to the landing from where they float now'}; a blaze follows a bot it has seen and comes down after it in time. Down there the stance is asked again with what is about.`,
+            run: async () => { this.report(goal, save, { action: 'drop_off_side', fall: w.plan.fall, damage: dmg, health: bot.health, stance: true }); await wd.stepOff(bot, task, w.plan); return true; } };
+        }
+      }
+    } catch (_) { /* no edge to step off */ }
     // Run from them with no footing picked first (note 1051): to the first
     // cell the walk reaches sixteen blocks or more from the nearest that
     // bites, at a sprint, where every biter within eight blocks is slower
