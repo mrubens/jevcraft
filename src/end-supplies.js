@@ -377,6 +377,33 @@ async function prepareEndSupplies(bot, task, goal, save, actions, client = task.
     }
     if (!home.beds) { await topUp(bot, task, goal, save, actions, { key: 'beds', item: 'bed', carried: 0, wants: 1, short: true }); return false; }
     if (home.off <= HOME_NEAR) {
+      // By day the bed sets the respawn point too (note 2638; the project review of 2026-10-30, item 7): a bed used in
+      // daylight answers 'you can only sleep at night' and sets the point all the same, so the checkpoint by the ring
+      // need not wait for bedtime; the sleep that skips a night stays the survival layer's. The server's own word
+      // (block.minecraft.set_spawn) is the proof; without it the wait below stands as before.
+      const t = bot.time?.timeOfDay, byDay = Number.isFinite(t) && !(t >= 12542 && t < 23460);
+      if (byDay && actions.place) {
+        const { bedSiteNear } = require('./survival'), { placeOriented, isBed } = require('./home-base');
+        const bed = bot.inventory.items().find(i => /_bed$/.test(i.name)), site = bedSiteNear(bot);
+        if (bed && site) {
+          try {
+            await placeOriented(bot, task, actions, site.stand, site.foot, bed.name, () => isBed(bot.blockAt(site.foot)) && isBed(bot.blockAt(site.head)));
+            const set = await new Promise(resolve => {
+              let done = false; const finish = ok => { if (done) return; done = true; bot.off?.('message', on); resolve(ok); };
+              const on = m => { const key = m?.json?.translate || m?.translate || String(m || ''); if (/set_spawn|respawn point set/i.test(key)) finish(true); };
+              bot.on?.('message', on);
+              Promise.resolve().then(() => bot.activateBlock(bot.blockAt(site.foot))).catch(() => {});
+              setTimeout(() => finish(false), 2500);
+            });
+            if (set && bot._survivalState) {
+              bot._survivalState.spawnBed = { name: bed.name, foot: { x: site.foot.x, y: site.foot.y, z: site.foot.z }, head: { x: site.head.x, y: site.head.y, z: site.head.z }, at: new Date().toISOString(), byDay: true };
+              console.log(`[home_by_portal] the respawn point set by day at the bed placed at (${site.foot.x}, ${site.foot.y}, ${site.foot.z}), ${home.off} blocks from the ring`);
+              save(); return false;
+            }
+            console.log(`[home_by_portal] the bed placed at (${site.foot.x}, ${site.foot.y}, ${site.foot.z}) by day: the server did not confirm the respawn point; the night's sleep will set it`);
+          } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[home_by_portal] the bed by day was not placed: ${String(err.message || err).slice(0, 120)}`); }
+        }
+      }
       // By the ring with a bed: the night's sleep is the survival layer's
       // (a carried bed is slept in where the bot is); the day waits here.
       goal.step = { action: 'prepare_end_supplies', item: 'home_by_portal', waiting: 'bedtime', off: home.off }; save();
