@@ -315,7 +315,11 @@ function rungOption(rung, first, bot, goal, planFor = null) {
   // Jev's to take up here, so neither changed a run.
   const earlySays = rung.phase === 'shield' && goal && !goal.gameProgress?.milestones?.nether_entered
     ? ' On the full runs of 2026-10-28 to 10-29, 7 of the 8 deaths in the Overworld in a run\'s first 40 minutes were with no shield, 6 of them with the iron pickaxe already made, shot by skeletons or struck by zombies in the caves while mining iron; a shield takes one iron ingot and six planks.' : '';
-  return { description: `Get ${what}${why ? ` (${why})` : ''}.${kit}${rung.kit ? '' : spareSays(bot, goal, rung)}${bot && goal ? searchSoFar(bot, goal, rung) : ''}${bot && goal ? woolTrip(bot, goal, rung) : ''}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}${spent}${without}${bareRate}${bareBelow}${belowSays}${level}${record}${earlySays}${netherCost}`, rung, ladderNext: first };
+  // The rung's measured minutes and the Nether's own food, on the Nether-food rung (note 2710; the Fable check-in of
+  // 2026-10-31 11:00Z, D): Jev takes this rung often (138 of 141 answers in the day to 11:00Z were its own), and two runs
+  // (full-253, full-254) spent 15 to 20 minutes on it at their frames and were replaced at 1 h 30 with no Nether.
+  const netherFoodSays = rung.phase === 'nether_food' ? ' On the fresh runs of 2026-10-30 and 31, 133 runs took this rung before crossing: a median 5.6 minutes, a quarter over 9.8, the longest 92. The Nether has food of its own: a hoglin drops 2 to 4 porkchops (3 hunger raw, 8 cooked, and cooked as it falls when the hoglin burns), the wastes and basalt deltas grow the mushrooms for stew (6 hunger a bowl); a fortress\'s chests hold none, and health does not come back under eighteen hunger there either.' : '';
+  return { description: `Get ${what}${why ? ` (${why})` : ''}.${kit}${rung.kit ? '' : spareSays(bot, goal, rung)}${bot && goal ? searchSoFar(bot, goal, rung) : ''}${bot && goal ? woolTrip(bot, goal, rung) : ''}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}${spent}${without}${bareRate}${bareBelow}${belowSays}${level}${record}${earlySays}${netherCost}${netherFoodSays}`, rung, ladderNext: first };
 }
 // A pickaxe rung with a pickaxe still carried is a spare: the ladder counts
 // one under a fifth of its uses (or sixty-four) as worn, and said only
