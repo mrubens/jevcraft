@@ -1079,21 +1079,15 @@ function outranks(bot, reflex, holder, now = Date.now()) {
   // times (body_way: out of fire twice, eat meal, rise on block, out of fire), health fell 15 to 9 to 5.9 to 1.5 with no
   // stance asked, and the stance came back at 2.5 with every way priced over it; mid-237-hb-fortress-3 (25586, 02:53Z)
   // 'turning between close in and out of fire 4 times in 4 seconds' and burned to death. A body in lava still comes first.
-  // The stance whose hold broke on damage counts here too (note 2652): stanceHeld reads null once the health it was
-  // chosen at has fallen past its hold, which is the moment the survival layer asks the stance again, and the fire
-  // taking the turn there put body_way (out of fire, eat meal) in front of that asking. Open run 3 of the drill of
-  // 2026-10-31 03:32Z chose close in at 10.7 health, was burned to 5.3 within two seconds, the fire took the turn,
-  // body_way answered out of fire and eat meal, and the stance came back at 3.3 and died. The stance's own record
-  // (bot._stance) within its time, whatever the health, is the survival layer engaged with these shooters.
+  // The fire waits for a stance that still holds (note 2646), and no longer for one whose hold broke (notes 2652 and
+  // 2655, undone by note 2659): with the wait widened, the open-cage drill went 0 of 10 against 4 of 10 the two batches
+  // before (artifacts/spawner-drill-open6..9), the bot standing in the netherrack a fireball lit while the stance it
+  // had chosen was asked again and answered a fight, nothing stepping it out; the buried cage, with little fire about,
+  // held its 4 of 5 either way. The hold broken is the moment the stance is asked again, and the step out of the fire
+  // (under a second) comes first there as it did before 2652.
   if (reflex.key === 'fire') {
-    const s = bot?._stance;
-    // Within the stance's own time (its estimate's seconds where longer than the fifteen, as survival.js inTime reads it)
-    // and five seconds over, for the asking that follows its end (note 2655): open run 2 of the drill of 2026-10-31
-    // 03:51Z held close in 24 seconds (priced longer than fifteen), and the fire took the turn at 11.2 health in that
-    // hold's second half, note 2652's fifteen seconds passed; burned to a crisp 40 seconds later.
-    const ends = s ? (s.hold?.extended ? s.hold.until : s.at + Math.max(require('./danger').STANCE_HOLD_MS, (s.expects?.seconds || 0) * 1000)) : 0;
-    const engaged = s && now < ends + 5000 && s.choice !== 'keep_working';
-    if (engaged && shooterThatLightsAbout(bot)) return false;
+    const held = require('./danger').stanceHeld(bot, now);
+    if (held && held.choice !== 'keep_working' && shooterThatLightsAbout(bot)) return false;
   }
   return true;
 }
