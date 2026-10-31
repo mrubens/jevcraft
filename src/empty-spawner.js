@@ -307,7 +307,7 @@ function lullOptions(bot, task, goal, save, actions, known, quiet, { now = Date.
       if (built) {
         const secs = round((built.steps || 0) / WALK + built.blocks * 0.6);
         let price = ''; try { const { threats } = require('./danger'); const c = stand.standCost(bot, threats(bot, 48), { setup: secs, at: built.hole, open: new Set(built.open.map(o => `${o}`)), atOnce: 1, melee: true, pinned: true }); price = `This way: about ${c.damage} damage over about ${c.seconds} seconds, from ${round(bot.health ?? 20)} health. `; } catch (_) { price = ''; }
-        tree.build_hole_at_spawner = { ...require('./cage-hold').planNode(), description: `${price}No rock beside the cage to dig a hole into: build one. Walk ${built.steps || 0} block${built.steps === 1 ? '' : 's'} to the cell ${built.off} blocks from the cage at (${built.hole.x}, ${built.hole.y}, ${built.hole.z}), and wall it at feet and head on its back and two sides and roof it (${built.blocks} block${built.blocks === 1 ? '' : 's'} of those carried, about ${round(built.blocks * 0.6)} seconds), its mouth one wide and two high toward the cage, and fight from inside: what comes, comes to the mouth one at a time, where the sword reaches it, and every fireball comes through the mouth, where the shield faces. Built now, in the lull, it is up before the spawner's next blazes gather. Measured in the arena with an iron kit: the buried cage, the bot inside rock with the room's blazes coming to it one or two at a time, the last 15 runs 15 of 15 to seven rods with no death (55 runs, 328 rods, 5 deaths in all); the same cage in the open, no hole, 3 to 5 deaths in 5 runs; a box built among four blazes already there, 3 of 5 runs lost.`,
+        tree.build_hole_at_spawner = { ...require('./cage-hold').planNode(), description: `${price}${builtTriesSays(goal, built.hole).trim()}${builtTriesSays(goal, built.hole) ? ' ' : ''}No rock beside the cage to dig a hole into: build one. Walk ${built.steps || 0} block${built.steps === 1 ? '' : 's'} to the cell ${built.off} blocks from the cage at (${built.hole.x}, ${built.hole.y}, ${built.hole.z}), and wall it at feet and head on its back and two sides and roof it (${built.blocks} block${built.blocks === 1 ? '' : 's'} of those carried, about ${round(built.blocks * 0.6)} seconds), its mouth one wide and two high toward the cage, and fight from inside: what comes, comes to the mouth one at a time, where the sword reaches it, and every fireball comes through the mouth, where the shield faces. Built now, in the lull, it is up before the spawner's next blazes gather. Measured in the arena with an iron kit: the buried cage, the bot inside rock with the room's blazes coming to it one or two at a time, the last 15 runs 15 of 15 to seven rods with no death (55 runs, 328 rods, 5 deaths in all); the same cage in the open, no hole, 3 to 5 deaths in 5 runs; a box built among four blazes already there, 3 of 5 runs lost.`,
           run: () => buildAndHold(bot, task, goal, save, actions, { kind: 'hole', site: built, key: 'build_hole_at_spawner' }, secs) };
       }
     }
@@ -393,6 +393,18 @@ function outOfRange(bot, cage) {
 // build is not cut by a blaze coming out of the spawner (arbiter.js), only by
 // a mob at its reach, a push by a drop, the body's own dangers or its own
 // failure; then held as the hunt holds a stand.
+// The built holes tried at this cage lately, said on the offer (note 2747): mid-full-166-fortress-16 (25586, 2026-10-31
+// 19:5x to 20:2xZ) began seven at one cage, a block or two apart, three failing ('Threat nearby: skeleton at 10 blocks',
+// 'Preempted by push ... a deadly drop beside it', 'small_fireball at 9 blocks'), and killed 4 blazes in 35 minutes, the
+// offer saying nothing of the tries before it.
+const BUILT_TRIES_MS = 30 * 60000;
+function builtTriesSays(goal, hole, now = Date.now()) {
+  const near = (goal.builtTries || []).filter(t => now - t.at < BUILT_TRIES_MS && Number.isFinite(t.x) && Math.hypot(t.x - hole.x, t.z - hole.z) <= 8);
+  if (!near.length) return '';
+  const inside = near.filter(t => t.inside).length, failed = near.filter(t => t.why);
+  const mins = Math.round((now - near[0].at) / 60000);
+  return ` Built holes tried at this cage in the last ${Math.max(1, mins)} minute${mins === 1 ? '' : 's'}: ${near.length}, the bot inside at the end of ${inside}${failed.length ? `; ${failed.length} ended by '${failed.at(-1).why}'${failed.length > 1 ? ' and the like' : ''}` : ''}.`;
+}
 async function buildAndHold(bot, task, goal, save, actions, option, secs) {
   // Said as it begins and as it ends (note 2737): the built hole was chosen eight times on the fortress trials of
   // 2026-10-31 16:40 to 17:45Z and a block of it went down once, with no line saying the run began, failed or ended.
@@ -400,9 +412,19 @@ async function buildAndHold(bot, task, goal, save, actions, option, secs) {
   bot._buildCommit = { until: Date.now() + (secs + 10) * 1000, kinds: ['blaze'], what: option.key };
   const p = bot.entity.position.floored();
   goal.emptySpawner = { ...(goal.emptySpawner || {}), built: { key: option.key, at: Date.now(), from: { x: p.x, y: p.y, z: p.z } } }; save?.();
+  let why = null;
   try { await require('./blaze-stand').huntFromStand(bot, task, goal, save, actions, option, { item: 'blaze_rod', want: require('./skills').countOf(bot, 'blaze_rod') + 1 }); }
-  catch (err) { if (option.key === 'build_hole_at_spawner') console.log(`[cage] building the hole at ${option.site?.hole} failed: ${String(err.message || err).slice(0, 160)}`); throw err; }
-  finally { delete bot._buildCommit; if (option.key === 'build_hole_at_spawner') console.log(`[cage] building the hole at ${option.site?.hole}: the run ended, in the hole ${!!require('./blaze-stand').inHole?.(bot)}`); }
+  catch (err) { why = String(err.message || err).slice(0, 120); if (option.key === 'build_hole_at_spawner') console.log(`[cage] building the hole at ${option.site?.hole} failed: ${String(err.message || err).slice(0, 160)}`); throw err; }
+  finally {
+    delete bot._buildCommit;
+    if (option.key === 'build_hole_at_spawner') {
+      const inside = !!require('./blaze-stand').inHole?.(bot);
+      console.log(`[cage] building the hole at ${option.site?.hole}: the run ended, in the hole ${inside}`);
+      // Each try kept, for the offer's own record at this cage (note 2747).
+      const h = option.site?.hole, now = Date.now();
+      goal.builtTries = [...(goal.builtTries || []).filter(t => now - t.at < BUILT_TRIES_MS), { at: now, x: h?.x, y: h?.y, z: h?.z, inside, why }].slice(-12); save?.();
+    }
+  }
 }
 async function stepOut(bot, task, goal, save, actions, out) {
   const { goals } = require('mineflayer-pathfinder');
