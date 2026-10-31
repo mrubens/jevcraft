@@ -848,8 +848,14 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   let underWay = null, intentionEnded = null;
   if (ledgered) {
     const g = require('../intention').gate(bot, goal, id, tree);
-    tree = g.tree; underWay = g.underWay; intentionEnded = g.ended;
-    if (g.withheld.length) console.log(`[intention] ${id}: not offered while ${goal.intention?.choice} holds: ${g.withheld.join(', ')}`);
+    // A deliberate death is never the one way left (note 2661): with the gate's withholding leaving respawn_fresh alone,
+    // the gate stands down and the question is asked whole. full-237 (25589, 2026-10-31 04:50Z), at 118 minutes with
+    // iron armour and a sword at its fortress's edge fetching stems for blocks, had nether_gather's 'without' withheld
+    // while fetch_stems held, read '[one way] nether_gather: respawn fresh, the only way offered', took it unasked, and
+    // died in the lava lake; mid-237-hh-fortress-3 (25590, 03:29Z) went the same way with five rods carried.
+    const left = oneWay(g.tree);
+    if (g.withheld.length && left && left.path.at(-1) === 'respawn_fresh') console.log(`[intention] ${id}: ${g.withheld.join(', ')} withheld while ${goal.intention?.choice} holds would leave respawn fresh the only way: offered after all`);
+    else { tree = g.tree; underWay = g.underWay; intentionEnded = g.ended; if (g.withheld.length) console.log(`[intention] ${id}: not offered while ${goal.intention?.choice} holds: ${g.withheld.join(', ')}`); }
   }
   // A rung set aside holds like a trip (asides.js, note 749): an option that
   // would take it back is not offered until something named has changed.
