@@ -255,7 +255,7 @@ function tree(bot, goal, r, now = Date.now()) {
     out.barter_gold = { description: `Barter with the piglins in reach now: ${o.gold}. A piglin turns on a player in no gold, so a gold piece is worn first. Held while gold is left to throw and a piglin is within 32, then the rods again. ${record.routeSays('barter_gold', goal)} Pearls ${o.pearls}.` };
   }
   if (r.goldOre) {
-    const g = r.goldOre, ingots = Math.round(g.count * 4 / 9 * 10) / 10, pearls = Math.round(ingots / 9 * 10) / 10;
+    const g = r.goldOre, ingots = Math.round(g.count * 4 / 9 * 10) / 10, pearls = Math.round(ingots / (record.BARTER_TABLE?.perPearl || 15.6) * 10) / 10; // the game's table (pearl-record.js), not the nine an older measure said (note 2630)
     let rec = ''; try { rec = ` ${record.routeSays('mine_gold_for_barter', goal)}`; } catch (_) { rec = ''; }
     // Bartering wants a piglin in view (note 2407): said, with how many are, so the mining is chosen knowing it.
     const piglinsNow = Object.values(bot.entities || {}).filter(e => e?.name === 'piglin' && e.position && bot.entity?.position && e.position.distanceTo(bot.entity.position) <= 32).length;
