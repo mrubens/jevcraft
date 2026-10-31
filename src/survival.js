@@ -3092,6 +3092,13 @@ async function sprintByHeading(bot, task, mobs, want, ms = 6000) {
     return solid(at(0)) && open(at(1)) && open(at(2)) ? 'jump' : null;
   };
   let markAt = start.clone(), markT = Date.now();
+  // A heading the motion helper refused (lava, fire or a deadly fall ahead that this look did not see: it reads two
+  // cells, the helper's reads the body's whole path) is not taken again this run (note 2613): full-227 (25589,
+  // 2026-10-30 23:58Z), at the lava sea's edge, had 'run by heading: lava at (-49, 31, -56) ahead; not walked into' 229
+  // times in 25 seconds over four runs chosen in turn, stood there, and was in the lava. With every heading refused the
+  // run ends, and why is left on the bot (bot._runBlocked) for the stance's failure to say.
+  const refusedTurns = new Set();
+  delete bot._runBlocked;
   try {
     while (Date.now() < until) {
       task.check();
@@ -3101,14 +3108,22 @@ async function sprintByHeading(bot, task, mobs, want, ms = 6000) {
       const base = Math.atan2(az, ax);
       let way = null;
       for (const turn of [0, 45, -45, 90, -90]) {
+        if (refusedTurns.has(turn)) continue;
         const a = base + turn * Math.PI / 180, dx = Math.cos(a), dz = Math.sin(a);
         const one = ahead(dx, dz, 1), two = ahead(dx, dz, 2);
-        if (one && two) { way = { dx, dz, jump: one === 'jump' }; break; }
+        if (one && two) { way = { dx, dz, jump: one === 'jump', turn }; break; }
       }
       if (!way) break;
       await bot.lookAt(here.offset(way.dx * 4, 1.6, way.dz * 4), true);
       // The keys are held by the motion helper (its own stops for a drop or a fire ahead stand).
-      await require('./motion').move(bot, task, { label: 'run by heading', keys: way.jump ? ['forward', 'sprint', 'jump'] : ['forward', 'sprint'], sneak: false, why: 'a run from mobs at a sprint', maxMs: 250 });
+      const before = Date.now();
+      const moved = await require('./motion').move(bot, task, { label: 'run by heading', keys: way.jump ? ['forward', 'sprint', 'jump'] : ['forward', 'sprint'], sneak: false, why: 'a run from mobs at a sprint', maxMs: 250 });
+      if (moved === false && bot._moveRefused && bot._moveRefused.at >= before) {
+        refusedTurns.add(way.turn);
+        const r = bot._moveRefused;
+        bot._runBlocked = { ...r, turns: [...refusedTurns], says: `the run by heading was stopped: ${String(r.name || '').replace('_', ' ')} at (${r.x}, ${r.y}, ${r.z}) ahead${refusedTurns.size > 1 ? `, ${refusedTurns.size} headings refused` : ''}` };
+        continue;
+      }
       if (mobs.every(m => !m?.position || Math.hypot(bot.entity.position.x - m.position.x, bot.entity.position.z - m.position.z) >= want)) break;
       if (Date.now() - markT > 1200) { if (bot.entity.position.distanceTo(markAt) < 1) break; markAt = bot.entity.position.clone(); markT = Date.now(); }
     }
@@ -5680,7 +5695,7 @@ class Survival {
               try { await this.actions.navigate(bot, task, goalAway(), { timeoutMs: 9000, stallMs: 2500, sprint: true, onFoot: true }); }
               catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name) || bot.entity.position.distanceTo(from) >= 4) throw err; await this.actions.navigate(bot, task, goalAway(), { timeoutMs: 9000, stallMs: 2500, sprint: true }); }
             }
-            catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; if (bot.entity.position.distanceTo(from) < 4) await sprintByHeading(bot, task, biters.map(t => t.entity), RUN_FROM); if (bot.entity.position.distanceTo(from) < 4) { this.state.runFromFailed = { at: Date.now(), from: { x: from.x, y: from.y, z: from.z }, blocks: Math.round(bot.entity.position.distanceTo(from)), why: String(err.message || err).slice(0, 120) }; throw Object.assign(new Error(`the run from them came ${Math.round(bot.entity.position.distanceTo(from))} blocks: ${String(err.message || err).slice(0, 120)}`), { name: 'StanceFailed' }); } }
+            catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; if (bot.entity.position.distanceTo(from) < 4) await sprintByHeading(bot, task, biters.map(t => t.entity), RUN_FROM); if (bot.entity.position.distanceTo(from) < 4) { const blocked = bot._runBlocked?.says ? `; ${bot._runBlocked.says}` : ''; this.state.runFromFailed = { at: Date.now(), from: { x: from.x, y: from.y, z: from.z }, blocks: Math.round(bot.entity.position.distanceTo(from)), why: `${String(err.message || err).slice(0, 120)}${blocked}` }; throw Object.assign(new Error(`the run from them came ${Math.round(bot.entity.position.distanceTo(from))} blocks: ${String(err.message || err).slice(0, 120)}${blocked}`), { name: 'StanceFailed' }); } }
           } };
       }
       // From shooters that walk, with nothing that bites near: out of their
@@ -5717,7 +5732,7 @@ class Survival {
               try { await this.actions.navigate(bot, task, goalAway(), { timeoutMs: 9000, stallMs: 2500, sprint: true, onFoot: true }); }
               catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name) || bot.entity.position.distanceTo(from) >= 4) throw err; await this.actions.navigate(bot, task, goalAway(), { timeoutMs: 9000, stallMs: 2500, sprint: true }); }
             }
-            catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; if (bot.entity.position.distanceTo(from) < 4) await sprintByHeading(bot, task, walkers.map(t => t.entity), OUT); if (bot.entity.position.distanceTo(from) < 4) { this.state.runFromFailed = { at: Date.now(), from: { x: from.x, y: from.y, z: from.z }, blocks: Math.round(bot.entity.position.distanceTo(from)), why: String(err.message || err).slice(0, 120) }; throw Object.assign(new Error(`the run from them came ${Math.round(bot.entity.position.distanceTo(from))} blocks: ${String(err.message || err).slice(0, 120)}`), { name: 'StanceFailed' }); } }
+            catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; if (bot.entity.position.distanceTo(from) < 4) await sprintByHeading(bot, task, walkers.map(t => t.entity), OUT); if (bot.entity.position.distanceTo(from) < 4) { const blocked = bot._runBlocked?.says ? `; ${bot._runBlocked.says}` : ''; this.state.runFromFailed = { at: Date.now(), from: { x: from.x, y: from.y, z: from.z }, blocks: Math.round(bot.entity.position.distanceTo(from)), why: `${String(err.message || err).slice(0, 120)}${blocked}` }; throw Object.assign(new Error(`the run from them came ${Math.round(bot.entity.position.distanceTo(from))} blocks: ${String(err.message || err).slice(0, 120)}${blocked}`), { name: 'StanceFailed' }); } }
           } };
       }
     }
