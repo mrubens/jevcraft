@@ -137,8 +137,21 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
         if (!inForest(bot) && ((walkWhy && /no route/i.test(walkWhy)) || (Date.now() - t0 < 2000 && offNow > 4)) && actions.tunnel && (gaining || !(bot._forestFloorDugAt > Date.now() - 120000))) {
           bot._forestFloorDugAt = Date.now();
           console.log(`[warped] no route to the forest's floor at (${floor.x}, ${floor.y}, ${floor.z}) from (${feet.x}, ${feet.y}, ${feet.z}), ${Math.round(offNow)} off${gaining ? ` (${Math.round(dugBefore.off - offNow)} nearer since the last dig)` : ''}: digging toward it`);
-          try { await actions.tunnel(bot, task, goal, save, new Vec3(floor.x, floor.y, floor.z), { within: goal.step }); }
-          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[warped] the dig toward the floor ended: ${String(err.message || err).slice(0, 160)}`); }
+          // A whole flight, not one step (note 2680): the tunnel action is one staircase step, and a pass here dug one
+          // block and then measured it against the two-minute rest, so mid-full-9-forest-5 (25591, 2026-10-31 07:00 to
+          // 07:30Z), its floor nineteen blocks below a ledge, dug a block every pass or two for half an hour and stood 17
+          // off at the end. The steps go on while they gain toward the floor (three in a row gaining under half a block
+          // ends the flight), to the forest, or for a minute.
+          const fl = new Vec3(floor.x, floor.y, floor.z), dugAt = Date.now(); let steps = 0, flat = 0, last = fl.distanceTo(bot.entity.position), ended = null;
+          try {
+            while (!inForest(bot) && Date.now() - dugAt < 60000 && steps < 48 && flat < 3) {
+              await actions.tunnel(bot, task, goal, save, fl, { within: goal.step });
+              steps++;
+              const off = fl.distanceTo(bot.entity.position);
+              flat = last - off < 0.5 ? flat + 1 : 0; last = off;
+            }
+          } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; ended = String(err.message || err).slice(0, 160); }
+          console.log(`[warped] the dig toward the floor: ${steps} step${steps === 1 ? '' : 's'} in ${Math.round((Date.now() - dugAt) / 1000)} s, ${Math.round(fl.distanceTo(bot.entity.position))} off${ended ? `, ended: ${ended}` : flat >= 3 ? ', the last steps gained nothing' : ''}`);
           bot._forestFloorDug = { off: floor.distanceTo(bot.entity.position), at: Date.now() };
         }
         console.log(`[warped] to the forest's floor at (${floor.x}, ${floor.y}, ${floor.z}), ${d0} blocks off: ${inForest(bot) ? 'in the forest' : `not reached, ${Math.round(floor.distanceTo(bot.entity.position))} off`} in ${Math.round((Date.now() - t0) / 1000)} s`);
