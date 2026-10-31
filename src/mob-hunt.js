@@ -4987,6 +4987,8 @@ function fortressInView(bot, goal, save, state, bricks, { stay, map = null, plan
 // way there is Jev's (fortress_approach, the walk's failure said), leaving
 // that way among the ways. How it ended is said with the next offer.
 const GO_TO_NEAR = 8;
+// The farthest a player can stand for a spawner to try (the server jar: sixteen blocks), less a step (note 2674).
+const SPAWNER_ACTIVE = 15;
 // How far above or below its cage the bot can be and still be at it: a cage's room is a few blocks high (note 2418).
 const CAGE_LEVEL = 6;
 const GO_TO_SAYS = { blazes: 'where blazes were seen', blazes_about: 'the blazes about now', unwalked: 'unwalked floors of the fortress, seen across a gap' };
@@ -5090,7 +5092,11 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // 19:05Z), 15 blocks under its cage in the rock below the fortress, was held 'at the spawner' with no approach asked;
   // every walk up ended 'no route', and fortress_approach and way_down were asked ten times in 46 seconds from outside.
   const atCageLevel = atCage && Math.abs(bot.entity.position.y - atCage.cage.y) <= CAGE_LEVEL;
-  if (atCage && atCageLevel && (atCage.off <= GO_TO_NEAR || cageExtent)) {
+  // And within the spawner's own reach (note 2674): a spawner tries only while a player is within sixteen blocks of it, so a
+  // hold 'at the spawner' from farther off waits for blazes that cannot come. The fortress trials and full runs of
+  // 2026-10-30/31 logged 309 such holds at 16 to 24 blocks against one within eight; mid-full-166-fortress-4 (25586,
+  // 06:24 to 06:28Z) stood 16 blocks from its cage, 'no visit, approach or leg asked from here', 224 passes of a second.
+  if (atCage && atCageLevel && atCage.off <= SPAWNER_ACTIVE && (atCage.off <= GO_TO_NEAR || cageExtent)) {
     if (goal.step?.action !== 'at_spawner') console.log(`[fortress] at the spawner at (${atCage.cage.x}, ${atCage.cage.y}, ${atCage.cage.z}), ${atCage.off} blocks off${cageExtent ? `, within the fortress's own ${Math.max(fa.extent || 0, GO_TO_NEAR)} blocks` : ''}, ${atCage.need} rods wanted: no visit, approach or leg asked from here`);
     goal.step = { action: 'at_spawner', target: { x: atCage.cage.x, y: atCage.cage.y, z: atCage.cage.z }, off: atCage.off, legs: state.legs || 0 }; save();
     await sleep(1000); task.check(); return;
