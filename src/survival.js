@@ -3249,7 +3249,14 @@ class Survival {
         // was digging down out of it when the stop aborted the dig at 14
         // health ('Digging aborted'), and it fell to its death at 8.
         const inEnd = /end$/.test(String(bot.game?.dimension || ''));
-        if (!inEnd && bot._hurtTimes.filter(t => now - t < 4000).length >= (byMob ? 1 : 2) && !answering && !(bot._threatResponseAt > now - 3000) && !(bot._threatAbortAt > now - 5000) && (bot.health ?? 0) > 0) {
+        // A strike is an answer only while the stance that strikes still holds (note 2658): the close-in loop sets
+        // _threatResponseAt at every swing, and so the fight itself kept this stop off while the survival pass that
+        // reads the hold's let-go (half the health, more than priced) never ran, work holding the turn. The spawner
+        // drill's buried run 1 of 2026-10-31 04:04:50Z chose close in at 20 health, killed three blazes in the next ten
+        // seconds and was at 5.3 before anything asked; mid-236-er-nether-1-fortress-3 (02:52Z) went 19.4 to 2.5 the
+        // same way. With the stance's hold broken (bot._stance kept, stanceHeld null), a swing no longer stands in.
+        const holdBroken = !!bot._stance && !held && bot._stance.choice !== 'keep_working';
+        if (!inEnd && bot._hurtTimes.filter(t => now - t < 4000).length >= (byMob ? 1 : 2) && !answering && !(bot._threatResponseAt > now - 3000 && !holdBroken) && !(bot._threatAbortAt > now - 5000) && (bot.health ?? 0) > 0) {
           bot._threatAbortAt = now; bot._threatAbort = true;
           const was = require('./turn').stopForTurn(bot);
           console.log(`[hurt] hit with no survival response (health ${Math.round(bot.health)}): the step is stopped for the survival layer ${JSON.stringify({
