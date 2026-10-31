@@ -10916,6 +10916,13 @@ class Survival {
       const hunger = bot.food ?? 20, hp = Math.round((bot.health ?? 20) * 10) / 10;
       tree.seal_and_wait = { description: `Stop the mine and seal a pocket here to wait for dawn, about ${mins} real minute${mins === 1 ? '' : 's'} off: standing still spends no hunger (hunger ${hunger} stays ${hunger}; each block dug spends it), and the pickaxe's uses are kept; the minutes to dawn gain nothing.${hunger < 18 && hp < 20 ? ` Health ${hp} does not come back meanwhile: hunger is under eighteen.` : ''}` };
     }
+    // Back to the portal from the night mine (note 2754, the Fable check-in of 2026-10-31 22:10Z): chosen as the night's
+    // shelter, the mine offered only ore, a branch and a seal, no way back to the frame. full-291 (25589, 21:3x to 21:48Z)
+    // picked ore fifteen times with the frame's ten in, 74 blocks off; full-292 seven times.
+    {
+      const phase = goal?.rungTime?.phase || goal?.gameProgress?.phase;
+      if (phase === 'reach_nether' && goal?.portalFrame) tree.back_to_the_frame = { description: `Stop the night mine and go back to ${workWaiting(goal, bot)}. The surface is night until dawn, about ${minutesToDawn(bot)} real minutes off, the way up comes out among its mobs, and it holds two minutes at a time as staying up does.` };
+    }
     const decision = await this.decide(task, goal, save, { id: 'night_mine_target', tree: Object.fromEntries(Object.entries(tree).map(([k, o]) => [k, { description: o.description, ...(o.target ? { target: o.target } : {}), ...(o.commit ? { commit: o.commit } : {}) }])), context: {},
       state: { ...(place ? { place: place.state } : {}), timeOfDay: bot.time?.timeOfDay, feetY: feet.y, riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot), stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor), pickaxe: bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name} (${remainingUses(bot, i)} uses)`), afterThePickaxes: pickaxeReserve(bot, feet), freeSlots: bot.inventory.emptySlotCount?.() ?? null } });
     if (decision.stale) return null;
@@ -10926,6 +10933,7 @@ class Survival {
       return { lit: true };
     }
     if (pick === 'seal_and_wait') return { seal: true };
+    if (pick === 'back_to_the_frame') return { stop: true };
     if (pick === 'branch_away') { const mine = this.state.nightMine; if (mine) mine.heading = tree.branch_away.heading; return null; }
     return pick === 'branch' ? null : choices.find(c => oreKey(c) === pick) || null;
   }
@@ -10977,6 +10985,12 @@ class Survival {
       if (atSurface && !mine.sunkAt && await this.shaftPocket(task, goal, save)) { mine.sunkAt = Date.now(); save(); return true; }
       const ore = !atSurface && await this.nightTarget(task, goal, save, feet);
       if (ore?.lit) return true;
+      if (ore?.stop) {
+        this.report(goal, save, { action: 'night_mine_stop', mined: mine.mined, health: bot.health, food: bot.food, for: 'the portal' });
+        delete this.state.nightMine; this.state.nightMineStopped = { at: Date.now(), health: bot.health ?? 20 };
+        this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000 }; save();
+        return false;
+      }
       if (ore?.seal) {
         this.report(goal, save, { action: 'night_mine_stop', mined: mine.mined, health: bot.health, food: bot.food });
         delete this.state.nightMine; this.state.nightMineStopped = { at: Date.now(), health: bot.health ?? 20 }; save();
