@@ -9442,9 +9442,15 @@ function nightUpSays(bot) {
     const weapon = require('./combat').defenseWeapon(bot)?.name?.replaceAll('_', ' ') || 'bare hands';
     const worn = [5, 6, 7, 8].map(n => bot.inventory?.slots?.[n]?.name).filter(Boolean);
     const shield = bot.inventory?.slots?.[45]?.name === 'shield' || (bot.inventory?.items?.() || []).some(i => i.name === 'shield');
+    // What the bot comes out with and the surface's night record, said at dusk as at night (note 2740): the dusk branch
+    // ended 'The bot comes out with' and nothing after it, the kit and the record by armour left off. full-282 (25589,
+    // 2026-10-31 18:14:03Z), at 2.8 health, bare, hunger 16 and no food, a minute before the dark, was told of the climb
+    // only that dusk was on, and of the wait the record under the rock by armour; it climbed at 0.96 and was shot five
+    // minutes later.
+    const kit = ` The bot comes out with ${weapon}, ${worn.length ? worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'nothing worn'} and ${shield ? 'a shield' : 'no shield'}.${require('./night-record').keepOnSays('surface', { minutesToDawn: toDawn, bot })}`;
     return {
       toDawn,
-      climb: dusk ? ` It is dusk up there: the dark comes in ${mins(toDark)}, and from then mobs spawn in the open until dawn, ${mins(toDawn)} off; the zombies and skeletons out at dawn burn in the sun. The bot comes out with` : ` It is night up there, ${mins(toDawn)} to dawn: mobs spawn in the open until then, and the zombies and skeletons out at dawn burn in the sun. The bot comes out with ${weapon}, ${worn.length ? worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'nothing worn'} and ${shield ? 'a shield' : 'no shield'}.${require('./night-record').keepOnSays('surface', { minutesToDawn: toDawn, bot })}`,
+      climb: dusk ? ` It is dusk up there: the dark comes in ${mins(toDark)}, and from then mobs spawn in the open until dawn, ${mins(toDawn)} off; the zombies and skeletons out at dawn burn in the sun.${kit}` : ` It is night up there, ${mins(toDawn)} to dawn: mobs spawn in the open until then, and the zombies and skeletons out at dawn burn in the sun.${kit}`,
       below: dusk ? ` Up there dusk is on: the dark comes in ${mins(toDark)} and the night lasts until dawn, ${mins(toDawn)} off; this keeps the bot under the rock meanwhile.` : ` Up there it is night for ${mins(toDawn)} more; this keeps the bot under the rock meanwhile.`,
     };
   } catch (_) { return null; }
