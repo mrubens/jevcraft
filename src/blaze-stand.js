@@ -436,15 +436,24 @@ function blazeRate(list, { shield, shieldUp, fireHit, meleeHit, extra = 0, extra
 // mid-208-k-fortress-5 chose close_in at 15.3 on a price of the blazes
 // alone; the walk went twenty blocks on to two wither skeletons and one
 // struck it from 15.3 to 5.7 inside the stance (2026-09-28 13:56:57).
-function biteCost(bot, danger, seconds) {
+// As many of them at arm's length at once as the open cells round the cell stood in allow (survival.js openCells, the
+// fight option's own count), not one at a time (note 2712): a corner's wall keeps off the blazes' line, not a walker,
+// and a wither skeleton that comes round it stands beside the others. mid-full-63-fortress-7 (25586, 2026-10-31
+// 11:09:55Z) at 20 health with four wither skeletons 7.8 to 14.6 off and a blaze was told corner ambush 'about 48.6
+// damage' (33 from the four, one at a time) beside fight's 242 and shield guard's 128 for the same mobs, took the
+// corner, was struck 20 to 13.9 in six seconds, let go for the crowd grown, and was slain two seconds after choosing
+// low ceiling with three of them at 2.7 to 4.8 blocks.
+function biteCost(bot, danger, seconds, { at = null } = {}) {
   const { shooter, defenseWeapon } = require('./combat');
   const biters = danger.filter(t => t.entity.name !== 'blaze' && !shooter(t.entity));
-  if (!biters.length || !(seconds > 0)) return { damage: 0, biters: [] };
+  if (!biters.length || !(seconds > 0)) return { damage: 0, biters: [], atOnce: 0 };
   const worn = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean);
   const mobs = ce.fightEstimate({ threats: biters.map(t => ({ name: t.entity.name, distance: t.distance, shoots: false, visible: !!t.nearStrike || t.visible !== false, id: t.entity.id })),
     armour: worn, weapon: defenseWeapon(bot)?.name || null, health: bot.health ?? 20, shield: shieldCarried(bot) }).mobs;
-  const cost = ce.stanceCost({ mobs, seconds, fight: { atOnce: 1 }, reaches: () => true, effectsTo: bot.health ?? 20 });
-  return { damage: round(cost.damage), biters: biters.map(t => ({ name: t.entity.name, distance: round(t.distance), ...(t.nearStrike ? { nearStrike: true } : {}) })), seconds };
+  let atOnce = 1;
+  try { const cell = at ? new Vec3(at.x, at.y, at.z) : bot.entity.position.floored(); atOnce = Math.max(1, Math.min(biters.length, require('./survival').openCells(bot, cell))); } catch (_) { atOnce = 1; }
+  const cost = ce.stanceCost({ mobs, seconds, fight: { atOnce }, reaches: () => true, effectsTo: bot.health ?? 20 });
+  return { damage: round(cost.damage), biters: biters.map(t => ({ name: t.entity.name, distance: round(t.distance), ...(t.nearStrike ? { nearStrike: true } : {}) })), seconds, atOnce };
 }
 // `upTo` kills and the run ends there, asked again (charge_nearest). With
 // no shield there is nothing to stop behind for a volley: the walk goes on
@@ -2101,11 +2110,12 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
   // aside for shield_guard at 47.7 and was dead three seconds on.
   for (const o of Object.values(options)) {
     if (!['corner', 'light', 'heal'].includes(o.kind) || !o.expects) continue;
-    const bite = biteCost(bot, danger, o.expects.seconds);
+    const bite = biteCost(bot, danger, o.expects.seconds, { at: o.kind === 'corner' ? o.site?.cell : null });
     if (!(bite.damage > 0)) continue;
     o.expects.damage = round(o.expects.damage + bite.damage);
     const who = bite.biters.map(b => `the ${b.name.replaceAll('_', ' ')} ${b.distance} blocks off`).join(', ');
-    o.description += ` Not kept off by it: ${who}, walkers that come to the bot wherever it stands; about ${bite.damage} from them over its ${o.expects.seconds} seconds, counted in the figure above.`;
+    const once = bite.biters.length > 1 ? ` (${bite.atOnce >= bite.biters.length ? 'every one of them' : `at most ${bite.atOnce}`} at arm's length at once, by the open cells round ${o.kind === 'corner' ? 'the corner\'s cell' : 'the bot'}; a wall against the blazes' line keeps no walker off)` : '';
+    o.description += ` Not kept off by it: ${who}, walkers that come to the bot wherever it stands; about ${bite.damage} from them over its ${o.expects.seconds} seconds${once}, counted in the figure above.`;
   }
   return options;
 }
