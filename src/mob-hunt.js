@@ -5478,6 +5478,17 @@ async function findFortressStep(bot, task, goal, save, actions) {
     if (await chooseLeg(bot, task, goal, save, actions, state, setAside) !== true) return;
     if (leftOnLeg) require('./fortress-hold').leave(bot, state, { ...leftOnLeg, left: ['its ways in from here, then a leg away'], save, goal });
     beginLeg(state, here);
+    state.legPickaxe = require('./block-stock').pickaxeCarried(bot);
+  }
+  // The last pickaxe broken on the leg ends the leg (note 2722, as tunnelStep's note 2369): the leg was priced and chosen
+  // with the pickaxe ('about 0.6 seconds a cell with the pickaxe carried'), and by hand its rock is 4 to 5 seconds a cell;
+  // asked again, every heading is surveyed by hand. full-258 (25587, 2026-10-31 12:02 to 12:2xZ) broke its last pickaxe
+  // two minutes into a 96-block leg south and dug on by hand: spans of 31 steps in 150 and 163 seconds, 130 and 142 of
+  // them clearing rock, the leg's figure 53 seconds in all.
+  if (state.legPickaxe === true && !require('./block-stock').pickaxeCarried(bot)) {
+    console.log(`[leg] the last pickaxe broke on the leg: the rest of it would be by hand, so the leg is asked again with every heading priced so`);
+    state.legPickaxe = false; delete state.target; delete state.rememberedTarget; save();
+    return;
   }
   goal.step = { action: 'find_fortress', target: state.target, legs: state.legs }; save();
   // A leg round what stopped a heading (round_<heading>) steps to the side
