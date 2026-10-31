@@ -7322,7 +7322,10 @@ class Survival {
         // trials of 2026-10-27 to 31, read at 04:46Z on the 31st, a death from any cause within the minute after.
         ...(danger.some(t => t.entity?.name === 'wither_skeleton' && t.distance <= 12) ? { witherRecord: WITHER_RECORD } : {}),
         // What every way led to with three or more blazes within eight blocks, by the health it was chosen at (note 2677).
-        ...(danger.filter(t => t.entity?.name === 'blaze' && t.distance <= 8).length >= 3 ? { blazeCrowdRecord: BLAZE_CROWD_RECORD } : {}),
+        // Said from three blazes within twelve, or three with a line to the bot (note 2698): full-249 (25589, 2026-10-31
+        // 08:50:48Z) at 7.3 health had five blazes seeing it at 6.6 to 11.8 blocks, one within eight, and the record went
+        // unsaid; it charged, and again at 6.8, and was fireballed to death at 1 h 31 with a rod in hand.
+        ...(danger.filter(t => t.entity?.name === 'blaze' && (t.distance <= 12 || (t.distance <= 24 && t.visible))).length >= 3 ? { blazeCrowdRecord: BLAZE_CROWD_RECORD } : {}),
         ...(danger.some(t => t.entity?.name === 'creeper' && t.distance <= 16) ? { creeperRecord: CREEPER_RECORD } : {}),
         // What every way on offer led to with a deadly drop beside the feet on the runs now playing (note 2608).
         ...(shared.dropTable ? { dropRecordToday: shared.dropTable } : {}) };
