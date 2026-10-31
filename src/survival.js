@@ -10125,6 +10125,27 @@ class Survival {
     // behind the lid for twenty minutes because every door was within
     // twenty blocks of one (2026-09-26).
     const { exit, pocket, cap } = this.leaveExit(refuge, { past });
+    // A pocket already open on a side (note 2716): a side whose cell at the feet and at the head are both open is a
+    // doorway, walked out by, no wall to dig. full-259 (25588, 2026-10-31 11:16 to 11:3xZ) sealed on a sand beach at
+    // dusk, its wall opened by its own mining (six cells of the shell open, the north side at feet and head among
+    // them), and by day at full health with nothing within sixteen chose to leave three times and was told 'no wall of
+    // this pocket can be opened as a door' each time (the sand walls are no door and the cells beyond no exit), stood
+    // at (-875, 63, 186) from 11:16Z on, the pocket's every way resting.
+    if (!exit && refuge.kind !== 'house') {
+      const o = pos(refuge.origin), open = shelter.missingShell(bot, refuge);
+      const has = c => open.some(q => q.x === c.x && q.y === c.y && q.z === c.z);
+      const doorway = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)].map(d => o.plus(d)).find(c => has(c) && has(c.offset(0, 1, 0)));
+      if (doorway) {
+        this.report(goal, save, { action: 'leave_shelter', origin: refuge.origin, reason, via: 'an open doorway', doorway: { x: doorway.x, y: doorway.y, z: doorway.z }, ...(this.state.leaveChosen ? { chosen: true } : {}) });
+        delete this.state.leaveChosen; delete this.state.leaveRefused;
+        if (refuge.kind !== 'house') { this.state.shelters = this.state.shelters.filter(s => s !== refuge); save(); }
+        const beyond = doorway.plus(doorway.minus(o));
+        const to = [beyond, doorway].find(c => { const b = bot.blockAt(c), f = bot.blockAt(c.offset(0, -1, 0)); return b && b.boundingBox === 'empty' && f && f.boundingBox === 'block'; }) || doorway;
+        try { await this.actions.navigate(bot, task, new goals.GoalBlock(to.x, to.y, to.z), { timeoutMs: 8000, stallMs: 3000 }); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+        return true;
+      }
+    }
     if (!exit) {
       // Said as it is: a door refused for a mob, or no door at all.
       const sides = shelter.exits(bot, refuge).length + shelter.closures(bot, refuge).length + (cap ? 1 : 0);
