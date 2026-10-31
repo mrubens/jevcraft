@@ -451,7 +451,8 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // there is the plan. Working free is said as leading away from it, and a
   // slit opened toward the cage and a stay to fight are offered beside it.
   const cage = !idle ? require('./cage-hold').cageFight(bot, goal) : null;
-  if (terrain) answers.work_free = { description: `Work free of the terrain one move at a time, choosing each move (walk, climb, dig, place a block, pillar, swim): ${terrain.aim}${terrain.says ? ` (${terrain.says})` : ''}.${walled ? ` It is ${walled}.` : ''}${cage ? require('./cage-hold').workFreeSays(cage) : ''}${risingSays}${spellSays}`,
+  const walksFail = terrain ? (() => { try { const fpl = require('./failed-places'), here = bot.entity.position, now2 = Date.now(); const f = fpl.failedWalks(bot, now2).filter(w => w.from && Math.hypot(w.from.x - here.x, w.from.y - here.y, w.from.z - here.z) <= fpl.HERE && now2 - w.at < fpl.WINDOW_MS); return f.length >= fpl.PACING ? `Every walk from here has failed (${f.length} in the last ${Math.max(1, Math.round((now2 - f[0].at) / 60000))} minutes); this works the bot off the spot a move at a time, the first moves digging or placing where no walk goes, and ends once a walk leaves from where it stands. ` : ''; } catch (_) { return ''; } })() : '';
+  if (terrain) answers.work_free = { description: `${walksFail}Work free of the terrain one move at a time, choosing each move (walk, climb, dig, place a block, pillar, swim): ${terrain.aim}${terrain.says ? ` (${terrain.says})` : ''}.${walled ? ` It is ${walled}.` : ''}${cage ? require('./cage-hold').workFreeSays(cage) : ''}${risingSays}${spellSays}`,
     run: () => require('./unstuck').workFree(bot, task, goal, save, { client, dig, aim: terrain }) };
   // Where the walks fail from here, the way that changes the bot's height is
   // its own answer, priced, not a move inside working free: 25589's
@@ -9053,6 +9054,18 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
       const near = require('./danger').threats(bot, 12).filter(t => t.entity?.position);
       const list = near.slice(0, 5).map(t => `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off${t.visible ? ' (in sight)' : ''}`).join(', ');
       context.sealedIn = `${w.says} ${near.length ? `Outside, within twelve blocks: ${list}${near.length > 5 ? ` and ${near.length - 5} more` : ''}. Every way here but staying put opens the pocket, and the body is among them as it steps out; health ${Math.round((bot.health ?? 20) * 10) / 10}.` : 'No mob within twelve blocks outside it now.'}`;
+    }
+  } catch (_) { /* not said */ }
+  // Every walk from here failing (note 2733): said as the fact it is, a walk does not leave this spot. full-278 (25588,
+  // 2026-10-31 16:48 to 16:56Z) stood eight minutes at (223, 16, -130), every walk 'No path to the goal' (the water
+  // bucket, mine nearby, the water elsewhere, the climb), and answered mine nearby, differently, pick up drops and wait
+  // it out; work free was on offer each time, said as a climb to the surface 79 blocks up, and was never taken.
+  try {
+    const fpl = require('./failed-places'), here = bot.entity.position;
+    const fails = fpl.failedWalks(bot, now).filter(w => w.from && Math.hypot(w.from.x - here.x, w.from.y - here.y, w.from.z - here.z) <= fpl.HERE && now - w.at < fpl.WINDOW_MS);
+    if (fails.length >= fpl.PACING) {
+      const mins = Math.max(1, Math.round((now - fails[0].at) / 60000));
+      context.walksFailHere = `${fails.length} walks begun from about here in the last ${mins} minute${mins === 1 ? '' : 's'} all failed (${[...new Set(fails.map(w => w.kind).filter(Boolean))].join(', ') || 'no route'}): from this spot a walk does not leave it. A way that begins with a walk (the work, mine nearby, a search) begins with that walk; working free chooses each move, a dig or a block placed among them.`;
     }
   } catch (_) { /* not said */ }
   {
