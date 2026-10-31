@@ -186,6 +186,11 @@ function spawnerHoleSite(bot, cage = spawnerAt(bot), { steps = 30, avoid = [] } 
 // died five times at their cages with four or five blazes about. A standable cell within reach of the cage, walled at
 // feet and head on its back and two sides and roofed, its mouth toward the cage: the drill's geometry, of the blocks
 // carried. -> { hole, stand (the mouth's cell), side, build, open, blocks, steps, walkMs, ms, off } or null.
+// Its reach from the cage (note 2735): the dug hole's 4.5 is the rock beside the cage; a built one needs none, and a
+// blaze that sees the bot comes to the mouth from anywhere in the room. After note 2734 every refusal at the fortress
+// trials' cages (25586, 25590, 25591, 2026-10-31 17:05 to 17:15Z) was 'over 4.5 from the cage' or 'no cell within reach
+// of the cage walked to'.
+const BUILT_REACH = 8;
 function builtHoleSite(bot, cage = spawnerAt(bot), { steps = 30, avoid = [] } = {}) {
   if (!cage) return null;
   const centre = cage.offset(0.5, 0.5, 0.5);
@@ -195,7 +200,7 @@ function builtHoleSite(bot, cage = spawnerAt(bot), { steps = 30, avoid = [] } = 
   const no = k => { why[k] = (why[k] || 0) + 1; return null; };
   const site = cell => {
     if (!open(cell) || !open(cell.offset(0, 1, 0)) || !solid(bot.blockAt(cell.offset(0, -1, 0))) || /magma/.test(bot.blockAt(cell.offset(0, -1, 0))?.name || '')) return no('not standable');
-    if (cell.offset(0.5, 0.5, 0.5).distanceTo(centre) > SPAWNER_HOLE) return no(`over ${SPAWNER_HOLE} from the cage`);
+    if (cell.offset(0.5, 0.5, 0.5).distanceTo(centre) > BUILT_REACH) return no(`over ${BUILT_REACH} from the cage`);
     // The mouth toward the cage: of the sides that face it at all, the one most toward it whose cell is open at feet and
     // head (note 2734: only the most direct side was tried, and at mid-full-63-fortress-12's cage (25591, 2026-10-31
     // 17:0xZ) nine cells were refused 'the mouth toward the cage not open').
@@ -209,7 +214,7 @@ function builtHoleSite(bot, cage = spawnerAt(bot), { steps = 30, avoid = [] } = 
     if (build.length > carried) return no(`more blocks than the ${carried} carried`);
     return { hole: cell, stand: mouth, side: toward.scaled(-1), build, open: [mouth, mouth.offset(0, 1, 0)], blocks: build.length, off: round(cell.offset(0.5, 0.5, 0.5).distanceTo(centre)) };
   };
-  const found = walkTo(bot, c => c.offset(0.5, 0.5, 0.5).distanceTo(centre) <= SPAWNER_HOLE + 1 && (siteFailedNear(bot, c) ? no('a walk there failed lately') : !knockLands(bot, c) ? no('a knock from it lands in a drop or lava') : !!site(c)), { steps, avoid });
+  const found = walkTo(bot, c => c.offset(0.5, 0.5, 0.5).distanceTo(centre) <= BUILT_REACH + 1 && (siteFailedNear(bot, c) ? no('a walk there failed lately') : !knockLands(bot, c) ? no('a knock from it lands in a drop or lava') : !!site(c)), { steps, avoid });
   if (!found) {
     // Why not, said once a minute (note 2731): mid-full-9-fortress-12 (25590, 2026-10-31 16:39Z) reached ten standable
     // cells within 5.5 of its cage and was offered no built hole, and nothing said which check refused them.
