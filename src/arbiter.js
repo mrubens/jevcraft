@@ -1079,9 +1079,16 @@ function outranks(bot, reflex, holder, now = Date.now()) {
   // times (body_way: out of fire twice, eat meal, rise on block, out of fire), health fell 15 to 9 to 5.9 to 1.5 with no
   // stance asked, and the stance came back at 2.5 with every way priced over it; mid-237-hb-fortress-3 (25586, 02:53Z)
   // 'turning between close in and out of fire 4 times in 4 seconds' and burned to death. A body in lava still comes first.
+  // The stance whose hold broke on damage counts here too (note 2652): stanceHeld reads null once the health it was
+  // chosen at has fallen past its hold, which is the moment the survival layer asks the stance again, and the fire
+  // taking the turn there put body_way (out of fire, eat meal) in front of that asking. Open run 3 of the drill of
+  // 2026-10-31 03:32Z chose close in at 10.7 health, was burned to 5.3 within two seconds, the fire took the turn,
+  // body_way answered out of fire and eat meal, and the stance came back at 3.3 and died. The stance's own record
+  // (bot._stance) within its time, whatever the health, is the survival layer engaged with these shooters.
   if (reflex.key === 'fire') {
-    const held = require('./danger').stanceHeld(bot, now);
-    if (held && held.choice !== 'keep_working' && shooterThatLightsAbout(bot)) return false;
+    const s = bot?._stance;
+    const engaged = s && now < (s.hold?.extended ? s.hold.until : s.at + require('./danger').STANCE_HOLD_MS) && s.choice !== 'keep_working';
+    if (engaged && shooterThatLightsAbout(bot)) return false;
   }
   return true;
 }
