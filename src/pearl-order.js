@@ -315,7 +315,9 @@ function rodsAgain(bot, goal, now = Date.now()) {
 // came back stale (asked again at the next pass).
 async function ask(bot, task, goal, save, actions = {}, { now = Date.now() } = {}) {
   const r = routes(bot, goal, now), kinds = Object.keys(r);
-  const because = askAgainBecause(bot, goal, kinds, now);
+  // The reason the stage found (orderStage), where this second look finds none (note 2668): askAgainBecause notes each way
+  // seen as it names it, so asked twice it answered 'not asked before' with an answer held.
+  const because = askAgainBecause(bot, goal, kinds, now) || (goal.step?.action === 'pearl_order' ? goal.step.because : null) || null;
   const { tree: options, overlap: shared } = tree(bot, goal, r, now);
   const prev = goal.pearlOrder;
   if (prev) record.settle(goal, prev, { pearls: count(bot, 'ender_pearl'), deaths: deathsSince(goal, prev.at, now), now });
@@ -340,7 +342,13 @@ async function ask(bot, task, goal, save, actions = {}, { now = Date.now() } = {
   // minutes, not half an hour.
   const pick = decision.path.at(-1);
   const at = Date.now();
-  goal.pearlOrder = { pick, at, until: at + (decision.noneGood ? NONE_GOOD_MS : HOLD_MS), ...(decision.noneGood ? { noneGood: true } : {}), offered: kinds, pearlsAt: count(bot, 'ender_pearl'), deathsAt: 0, because: because || null, fortressKnown: !!fortressNow(bot, goal) };
+  // The ways seen carry over from the answer before (note 2668): each new answer began a fresh seenSince, so a piglin
+  // pacing in and out of the barter's thirty-two blocks, or gold ore coming in and out of view, was news at every return
+  // and the question was asked again each time, the answer the same. mid-full-241-fortress-1 (25590, 2026-10-31 05:21 to
+  // 05:55Z) was asked 14 times in 28 minutes, rods_first every time, 'gold to throw with a piglin in reach' and 'goldOre'
+  // the news, while it crossed its fortress east and west.
+  const seenBefore = prev && prev.pick === pick ? (prev.seenSince || []) : [];
+  goal.pearlOrder = { pick, at, until: at + (decision.noneGood ? NONE_GOOD_MS : HOLD_MS), ...(decision.noneGood ? { noneGood: true } : {}), offered: kinds, seenSince: [...new Set([...seenBefore, ...kinds])], pearlsAt: count(bot, 'ender_pearl'), deathsAt: 0, because: because || null, fortressKnown: !!fortressNow(bot, goal) };
   if (KIND[pick]) bot.chat?.(({ hunt_enderman: 'An enderman in reach: its pearl first, the rods after.', warped_forest: 'To the warped forest for pearls, then the rods.', barter_gold: 'Bartering for pearls, then the rods.', bastion_gold: 'To the bastion for gold, then a barter for pearls, then the rods.', mine_gold_for_barter: 'Mining nether gold to barter for pearls, then the rods.' })[pick]);
   save();
   return pick;
