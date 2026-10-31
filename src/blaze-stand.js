@@ -196,8 +196,12 @@ const BUILT_REACH = 8;
 // against Jev's own answers in the same cage (open14-built: 10 rods, 5 deaths, 1.4 minutes): the hole built in their
 // line costs more than it saves. Kept for a stand prepared out of their sight before the cage is engaged.
 const BUILT_HOLE_OFFERED = false;
-function builtHoleSite(bot, cage = spawnerAt(bot), { steps = 30, avoid = [] } = {}) {
-  if (!BUILT_HOLE_OFFERED || !cage) return null;
+// Offered in the lull, before a blaze is in sight (note 2743): the Fable check-in of 2026-10-31 19:10Z read the twelve
+// fortress picks of 15:00 to 18:05Z as all made 1.4 to 7.7 blocks from the cage with a blaze in sight within 5 to 20
+// seconds, none finished; the arena's open drill (2738) built under fire. The fortress trials asked the lull 448 times,
+// 427 of them with no blaze in sight and 368 with no rock beside the cage for the dug hole. In the fight it stays withdrawn.
+function builtHoleSite(bot, cage = spawnerAt(bot), { steps = 30, avoid = [], lull = false } = {}) {
+  if (!(BUILT_HOLE_OFFERED || lull) || !cage) return null;
   const centre = cage.offset(0.5, 0.5, 0.5);
   const T = require('./blaze-tactics'), carried = T.blocksCarried(bot, { standing: true });
   const open = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'empty' && !/lava|water|fire/.test(b.name); };

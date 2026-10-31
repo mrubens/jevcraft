@@ -95,6 +95,14 @@ function standSite(bot, cage) {
   try { return require('./blaze-stand').spawnerSite(bot, cage); } catch (_) { return null; }
 }
 
+// A blaze the bot can see now (note 2743): the built hole is offered only while none is.
+function blazeInSight(bot) {
+  try {
+    const eye = bot.entity.position.offset(0, 1.62, 0);
+    return Object.values(bot.entities || {}).some(e => e?.name === 'blaze' && e.isValid !== false && e.position && e.position.distanceTo(eye) <= 32 &&
+      (typeof bot.canSeeEntity === 'function' ? bot.canSeeEntity(e) : require('./danger').lineClear(bot, eye, e.position.offset(0, 1.2, 0))));
+  } catch (_) { return false; }
+}
 // The ways, each a real route from here. `actions` as the hunt has them.
 function options(bot, task, goal, save, actions, known, { now = Date.now() } = {}) {
   const { cage, off } = known;
@@ -295,7 +303,7 @@ function lullOptions(bot, task, goal, save, actions, known, quiet, { now = Date.
     // No rock beside the cage for a hole: one built of the blocks carried (blaze-stand.js builtHoleSite, note 2730), in
     // the lull, before the crowd forms, the one moment the buried drill ever chose its stand.
     if (!hole) {
-      const built = (() => { try { return stand.builtHoleSite(bot, cage); } catch (_) { return null; } })();
+      const built = (() => { try { return blazeInSight(bot) ? null : stand.builtHoleSite(bot, cage, { lull: true }); } catch (_) { return null; } })();
       if (built) {
         const secs = round((built.steps || 0) / WALK + built.blocks * 0.6);
         let price = ''; try { const { threats } = require('./danger'); const c = stand.standCost(bot, threats(bot, 48), { setup: secs, at: built.hole, open: new Set(built.open.map(o => `${o}`)), atOnce: 1, melee: true, pinned: true }); price = `This way: about ${c.damage} damage over about ${c.seconds} seconds, from ${round(bot.health ?? 20)} health. `; } catch (_) { price = ''; }
