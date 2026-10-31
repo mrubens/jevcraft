@@ -3160,6 +3160,7 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
     // step walk twelve blocks up its own staircase and could not say toward
     // which block.
     if (goal?.step?.action === 'mine') { goal.step.target = { x: p.x, y: p.y, z: p.z }; goal.step.from = { ...bot.entity.position.floored() }; }
+    const approachAt = Date.now();
     try {
       await approachDryMining(bot, task, p, { navigate, dig });
       access = miningMovement(bot);
@@ -3203,7 +3204,9 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
             if (countOf(bot, step.drops) > before) return;
           }
         } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
-        console.log(`[mine] no stand beside the ${wasBlock} at ${p}, ${Math.round(bot.entity.position.distanceTo(p))} blocks off: tunnelling to it`);
+        // Timed (note 2713): each pass toward ore behind rock tries the walk again before the next stair, and the
+        // run's stairs measured 1.9 to 10.7 seconds each against 2 to 2.7 inside the stair itself.
+        console.log(`[mine] no stand beside the ${wasBlock} at ${p}, ${Math.round(bot.entity.position.distanceTo(p))} blocks off: tunnelling to it (the walk's try and the dig through took ${Math.round((Date.now() - approachAt) / 100) / 10} s)`);
         goal.tunnelOre = { x: p.x, y: p.y, z: p.z, from: { x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z } }; save();
         // A tunnel that cannot start from here sets the ore aside as before (note 2305): full-10 (2026-10-27 17:31 to
         // 17:34Z), in a pocket of a ruined portal's netherrack with lava beside it, met 'No route from here' on the first
