@@ -1226,6 +1226,13 @@ function nextGameStage(bot, goal, skip = new Set()) {
     }
     if (rodStage) return rodStage;
   }
+  // The rods had, the pearls short, in the Nether: the pearls here or home with the rods is Jev's (pearl-order.js, note
+  // 2766), asked and held, before the ladder's own order of barter, bastion, forest and stash below.
+  if (where === 'nether' && !rodsShort && pearlsHereShort) {
+    const order = require('./pearl-order').orderStage(bot, goal, { count: target - eyes, phase: 'return_with_blaze_supplies' });
+    if (order?.action === 'home_with_rods') return collect || { phase: 'return_with_blaze_supplies', action: 'home_with_rods' };
+    if (order) return order;
+  }
   // Short of pearls with gold on hand and a piglin in view: barter before
   // going back. The enderman hunt in the Overworld is the other way.
   if (where === 'nether' && pearlsHereShort && barterReady(bot, goal)) return { phase: 'obtain_ender_pearls', action: 'barter', item: 'ender_pearl', count: target - eyes };

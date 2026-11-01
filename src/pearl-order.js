@@ -37,7 +37,10 @@ const record = require('./pearl-record');
 const HOLD_MS = 30 * 60000, NONE_GOOD_MS = 5 * 60000;
 const ENDERMAN_REACH = 24, HUNT_SIGHT = 48, FOREST_REACH = 512;
 const KIND = { hunt_enderman: 'enderman', warped_forest: 'forest', barter_gold: 'barter', bastion_gold: 'bastion', mine_gold_for_barter: 'gold ore' };
-const PICKS = new Set(['rods_first', ...Object.keys(KIND)]);
+const PICKS = new Set(['rods_first', 'home_with_rods', ...Object.keys(KIND)]);
+// The rods the goal wants all had, carried or kept (eye-need.js rodsLeft 0), in the Nether: the question is then the pearls
+// here or home with the rods (note 2766), not the pearls or the rods.
+const rodsMet = (bot, goal) => { try { return inNether(bot) && require('./eye-need').need(bot, goal).rodsLeft === 0; } catch (_) { return false; } };
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const count = (bot, name) => (bot.inventory?.items?.() || []).filter(i => i.name === name).reduce((n, i) => n + i.count, 0);
 const inNether = bot => /nether/.test(String(bot?.game?.dimension || ''));
@@ -132,6 +135,7 @@ function askAgainBecause(bot, goal, kinds, now = Date.now()) {
   if (!h) return 'not asked before';
   if (now >= h.until) return `the answer held (${h.pick.replaceAll('_', ' ')}, ${Math.round((now - h.at) / 60000)} minutes ago) has run its time`;
   if (deathsSince(goal, h.at, now)) return 'the bot has died since the answer';
+  if (h.pick !== 'home_with_rods' && !h.rodsMet && rodsMet(bot, goal)) return 'the rods the goal wants are all had now (carried or kept): the pearls here, or home with the rods';
   // A fortress found since the answer (note 2502): the rods' leg is a walk now, not a search. full-89, -91 and -93
   // (2026-10-29) found theirs while a pearl way held, and none fought a blaze.
   if (!h.fortressKnown && fortressNow(bot, goal)) return `a fortress is known now (${fortressNow(bot, goal).distance} blocks off), where none was at the answer: the rods are a walk there`;
@@ -158,6 +162,11 @@ function orderStage(bot, goal, { count: want = 1, now = Date.now(), phase = 'obt
   if (!(inNether(bot) || inOverworld(bot)) || goal?.kind !== 'win') return null;
   const r = routes(bot, goal, now), kinds = Object.keys(r);
   const h = held(goal, now);
+  // Home with the rods held (note 2766): the walk back, the pearl ways here left; asked again only at a named change.
+  if (h && h.pick === 'home_with_rods' && rodsMet(bot, goal)) {
+    const because = askAgainBecause(bot, goal, Object.keys(routes(bot, goal, now)), now);
+    return because ? { phase, action: 'pearl_order', item: 'ender_pearl', because } : { phase: 'return_with_blaze_supplies', action: 'home_with_rods', via: 'pearl_order' };
+  }
   if (h && KIND[h.pick] && !h.ended) {
     const stage = stageFor(bot, goal, h.pick, r, want, now);
     if (stage) return stage;
@@ -256,7 +265,16 @@ function tree(bot, goal, r, now = Date.now()) {
   // joining beside its fortress, had 'rods first was chosen 1 second ago and changed nothing within 1 second (its own
   // time 10 minutes) ... recorded failed', then 'barter gold, the only way offered' and 'mine gold for barter', and dug
   // for gold under the fortress with 7 rods owed; the same on full-21 (2026-10-28 15:24Z and 19:04Z).
-  out.rods_first = { ladderNext: true, handsOff: true, description: inNether(bot)
+  if (rodsMet(bot, goal)) {
+    // The walk back said at its measured pace (game-progress.js netherPaceSays, the walks back to a portal), so the pearls
+    // here are weighed against it: mid-full-9-fortress-23 (25590, 2026-11-01 00:27 to 02:37Z) had its rods at 8 minutes and
+    // spent the next two hours between the forest's pearls, the rod stash and the walk back by the ladder's rules, never
+    // asked, and never left the Nether.
+    let pace = '';
+    try { const d = require('./game-progress').portalDistance(bot, goal); if (d != null) pace = require('./game-progress').netherPaceSays(bot, d, { toPortal: true }).says || ''; } catch (_) { pace = ''; }
+    out.home_with_rods = { ladderNext: true, handsOff: true,
+      description: `Go back to the portal with the rods now, the pearls left for the Overworld's night hunt or a later way: ${o.portalBack}; rods ${o.rods}; pearls ${o.pearls}.${pace} Held: the pearl ways here are not taken meanwhile, asked again after a death, at a way to the pearls not on offer now, or when the half hour is out.` };
+  } else out.rods_first = { ladderNext: true, handsOff: true, description: inNether(bot)
     ? `Go on with the rods now: ${o.fortress}; rods ${o.rods}. The pearls then, or while the rods rest: a warped forest's endermen, a barter, or the Overworld's night hunt. ${record.routeSays('rods_first', goal)}${DAY_PEARLS_FIRST}`
     : `Go on to the Nether for the rods now: rods ${o.rods}. The pearls then, or while the rods rest: a warped forest's endermen, a barter, or the Overworld's night hunt. ${record.routeSays('rods_first', goal)}` };
   if (r.enderman) {
@@ -369,7 +387,7 @@ async function ask(bot, task, goal, save, actions = {}, { now = Date.now() } = {
   // 05:55Z) was asked 14 times in 28 minutes, rods_first every time, 'gold to throw with a piglin in reach' and 'goldOre'
   // the news, while it crossed its fortress east and west.
   const seenBefore = prev && prev.pick === pick ? (prev.seenSince || []) : [];
-  goal.pearlOrder = { pick, at, until: at + (decision.noneGood ? NONE_GOOD_MS : HOLD_MS), ...(decision.noneGood ? { noneGood: true } : {}), offered: kinds, seenSince: [...new Set([...seenBefore, ...kinds])], pearlsAt: count(bot, 'ender_pearl'), deathsAt: 0, because: because || null, fortressKnown: !!fortressNow(bot, goal) };
+  goal.pearlOrder = { pick, at, ...(rodsMet(bot, goal) ? { rodsMet: true } : {}), until: at + (decision.noneGood ? NONE_GOOD_MS : HOLD_MS), ...(decision.noneGood ? { noneGood: true } : {}), offered: kinds, seenSince: [...new Set([...seenBefore, ...kinds])], pearlsAt: count(bot, 'ender_pearl'), deathsAt: 0, because: because || null, fortressKnown: !!fortressNow(bot, goal) };
   if (KIND[pick]) bot.chat?.(({ hunt_enderman: 'An enderman in reach: its pearl first, the rods after.', warped_forest: 'To the warped forest for pearls, then the rods.', barter_gold: 'Bartering for pearls, then the rods.', bastion_gold: 'To the bastion for gold, then a barter for pearls, then the rods.', mine_gold_for_barter: 'Mining nether gold to barter for pearls, then the rods.' })[pick]);
   save();
   return pick;
