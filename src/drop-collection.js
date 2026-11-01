@@ -137,7 +137,12 @@ class PickupGoal extends goals.GoalBlock {
 }
 
 // The drops dug to through a block or two (note 2601), and the ground dug through for them.
-const DIG_FOR = /^(raw_iron|raw_gold|diamond|emerald|ancient_debris|gold_nugget|blaze_rod|ender_pearl|obsidian)$/;
+// And the kit (note 2759): a death drops the tools, the armour, the shield and the buckets where the bot fell, often
+// inside its own pocket or bunker of cobblestone, and the walk does not break crafted blocks (movement.js) nor stone
+// without a pickaxe, the pickaxe being among the drops. full-301 (25592, 2026-11-01 00:40 to 00:44Z) stood 2.9 blocks
+// from its iron pickaxe, its own two-high cobblestone wall between, 'No path to the goal!' each try, and left it; full-298
+// (00:0xZ) its pile 5 blocks off in deepslate the same.
+const DIG_FOR = /^(raw_iron|raw_gold|diamond|emerald|ancient_debris|gold_nugget|blaze_rod|ender_pearl|obsidian|(wooden|stone|iron|golden|diamond|netherite)_(pickaxe|sword|axe|shovel)|(leather|chainmail|iron|golden|diamond|netherite|copper)_(helmet|chestplate|leggings|boots)|shield|bucket|water_bucket|lava_bucket|flint_and_steel|bow|crossbow|ender_eye|iron_ingot|gold_ingot)$/;
 const DUG_THROUGH = /^(stone|deepslate|cobblestone|cobbled_deepslate|granite|diorite|andesite|tuff|dirt|coarse_dirt|gravel|netherrack|basalt|blackstone|soul_soil|calcite|sandstone|sand|red_sand|terracotta)$/;
 async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item), origin = bot.entity.position.clone(),
   radius = 16, timeoutMs = 6500, waitForSpawnMs = 0, onTarget = () => {}, move = navigate, allowExcavation = false,
