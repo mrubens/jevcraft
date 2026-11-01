@@ -17,6 +17,31 @@ const { setAside, isSetAside } = require('./progress');
 const SEARCH_AWAY_MS = 5 * 60 * 1000, RETRY_NEAR = 32, NEARER_BY = 24;
 const LEG = 64, FOREST_REACH = 512, SEARCH_LEGS = 8, SEARCH_MS = 15 * 60 * 1000, REST_MS = 30 * 60 * 1000, STALL_MS = 15 * 60 * 1000, AWAY_MS = 60 * 1000, TUNNEL_NEAR = 96;
 const HEADINGS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+// The ground the sweeps have covered (note 2785, the user 2026-11-01 'Yes, make both changes'): the places each leg
+// reached, kept on the goal across sweeps; each leg's heading is the one of eight whose end lies farthest from all of
+// them, so sweeps fan out rather than walking one line or the same ground again. -> [dx, dz] unit-ish.
+const EIGHT = [[1, 0], [0.71, 0.71], [0, 1], [-0.71, 0.71], [-1, 0], [-0.71, -0.71], [0, -1], [0.71, -0.71]];
+const EIGHT_NAMES = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
+function freshHeading(goal, here, prefer = null, spent = {}) {
+  const covered = (goal.warpedCovered || []).slice(-200);
+  const open = EIGHT.map((h, i) => i).filter(i => !spent[EIGHT_NAMES[i]]);
+  if (!open.length) return null;
+  if (!covered.length) { const i = prefer != null ? (prefer * 2) % 8 : 0; return EIGHT[open.includes(i) ? i : open[0]]; }
+  let best = null;
+  EIGHT.forEach((h, i) => {
+    if (!open.includes(i)) return;
+    const ex = here.x + h[0] * LEG, ez = here.z + h[1] * LEG;
+    const d = Math.min(...covered.map(c => Math.hypot(c.x - ex, c.z - ez)));
+    if (!best || d > best.d + 1) best = { h, i, d };
+  });
+  return best.h;
+}
+function noteCovered(goal, at) {
+  const c = goal.warpedCovered ||= [];
+  const last = c.at(-1);
+  if (!last || Math.hypot(last.x - at.x, last.z - at.z) >= 16) c.push({ x: Math.round(at.x), z: Math.round(at.z) });
+  if (c.length > 400) c.splice(0, c.length - 400);
+}
 const count = (bot, name) => bot.inventory.items().filter(i => i.name === name).reduce((n, i) => n + i.count, 0);
 const inNether = l => /nether/.test(String(l.dimension || ''));
 
@@ -269,6 +294,22 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
   // And time spent, not tries: stuck on a pillar, twenty-four tries went in
   // a minute. Eight legs, or a quarter of an hour, and the search rests.
   if (search.legs >= SEARCH_LEGS || now() - search.startedAt > SEARCH_MS) {
+    // The rods all had, the sweep is the pearls' best way here (note 2785): on or not is Jev's, said with the ground
+    // covered, not a rest by rule; the rest left Jev the gold, the crossings and home meanwhile.
+    let rodsMet = false; try { rodsMet = require('./eye-need').need(bot, goal).rodsLeft === 0; } catch (_) { rodsMet = false; }
+    if (rodsMet) {
+      const covered = goal.warpedCovered || [];
+      const minutes = Math.round((now() - search.startedAt) / 60000);
+      const xs = covered.map(c => c.x), zs = covered.map(c => c.z);
+      const span = covered.length ? `${Math.max(...xs) - Math.min(...xs)} by ${Math.max(...zs) - Math.min(...zs)} blocks` : 'none';
+      const tree = {
+        sweep_on: { description: `Sweep on for a warped forest: another ${SEARCH_LEGS} legs of ${LEG} blocks or a quarter of an hour, each leg heading for the ground farthest from what the sweeps have covered (${covered.length} places, a span of ${span}), so it fans out rather than going back over it. This sweep: ${search.legs} legs in ${minutes} minutes, no forest seen. In the record a forest's slot made 16 to 21 pearls an hour.` },
+        stop_sweep: { description: `Stop sweeping for half an hour: the pearl ways on offer meanwhile (endermen in reach, a barter or a bastion, home for the Overworld's endermen at about 0.4 pearls an hour).` },
+      };
+      let pick = 'sweep_on';
+      try { const d = await require('./decisions').decide('forest_sweep', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree, state: { legs: search.legs, minutes, covered: covered.length, span } }); if (!d.stale) pick = d.path.at(-1); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      if (pick === 'sweep_on') { Object.assign(search, { legs: 0, fails: 0, tries: 0, startedAt: now() }); save(); return true; }
+    }
     const knownOnes = (goal.landmarks || []).filter(l => l.kind === 'warped_forest').length;
     setAside(goal, 'rung', 'warped_search', knownOnes ? `${SEARCH_LEGS} legs without reaching a warped forest (${knownOnes} known, not reached)` : `${SEARCH_LEGS} legs without a warped forest`, REST_MS); delete goal.warpedSearch; save();
     // Forests known but not reached are said as that (note 970): 25597
@@ -279,7 +320,12 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
     return false;
   }
   const here = bot.entity.position;
-  const [dx, dz] = HEADINGS[search.heading % 4];
+  noteCovered(goal, here);
+  // A heading tried three times from about here and come to nothing is not taken again from here (search.spent).
+  const spentHere = search.spent && Math.hypot(search.spent.from.x - here.x, search.spent.from.z - here.z) <= SPENT_NEAR ? search.spent.headings : {};
+  const fresh = freshHeading(goal, here, search.heading, spentHere) || HEADINGS[search.heading % 4];
+  search.lastName = EIGHT.includes(fresh) ? EIGHT_NAMES[EIGHT.indexOf(fresh)] : HEADING_NAMES[search.heading % 4];
+  const [dx, dz] = fresh;
   const leg = new Vec3(Math.round(here.x + dx * LEG), Math.max(40, Math.min(90, Math.round(here.y))), Math.round(here.z + dz * LEG));
   goal.step = { action: 'warped_search', leg: search.legs + 1, target: { x: leg.x, y: leg.y, z: leg.z } }; save();
   if (search.legs === 0 && !search.said) { search.said = true; bot.chat?.('Looking for a warped forest: endermen, and their pearls.'); }
@@ -326,9 +372,9 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
     const at = bot.entity.position;
     const spent = search.spent && Math.hypot(search.spent.from.x - at.x, search.spent.from.z - at.z) <= SPENT_NEAR ? search.spent
       : (search.spent = { from: { x: Math.round(at.x), y: Math.round(at.y), z: Math.round(at.z) }, headings: {} });
-    spent.headings[HEADING_NAMES[search.heading % 4]] = search.lastError;
+    spent.headings[search.lastName || HEADING_NAMES[search.heading % 4]] = search.lastError;
     search.heading++; search.fails = 0;
-    if (Object.keys(spent.headings).length >= HEADINGS.length) {
+    if (Object.keys(spent.headings).length >= EIGHT.length) {
       const why = `The sweep for a warped forest got nowhere from (${spent.from.x}, ${spent.from.y}, ${spent.from.z}): every heading came to nothing (${Object.entries(spent.headings).map(([h, w]) => `${h}: ${w}`).join('; ')}); the sweep rests half an hour`;
       setAside(goal, 'rung', 'warped_search', why.slice(0, 300), REST_MS); delete goal.warpedSearch; save();
       require('./tried').record(bot, goal, { q: 'step', method: 'warped_pearls', outcome: 'blocked', why });

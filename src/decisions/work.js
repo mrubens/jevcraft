@@ -737,6 +737,18 @@ define({
 });
 
 define({
+  id: 'forest_sweep', area: 'work', parent: 'rung_progress', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'A sweep of the Nether for a warped forest has run its legs with none seen, the rods all had: sweep on toward ground not yet covered, or stop for half an hour?',
+  trigger: 'In the Nether, the rods the goal wants all had, a warped forest sweep ended (its eight legs or quarter of an hour) with no forest seen (note 2785).',
+  source: 'src/warped-pearls.js (warpedPearls, freshHeading, noteCovered)',
+  options: [
+    { key: 'sweep_on', label: 'sweep on, each leg toward the ground farthest from what the sweeps have covered', when: 'always here; said with the ground covered, this sweep\'s legs and minutes, and the record of a forest slot', level: 'root' },
+    { key: 'stop_sweep', label: 'stop sweeping for half an hour, the other pearl ways meanwhile', when: 'always here; said with those ways and the Overworld\'s rate', level: 'root' },
+  ],
+  instructions: workInstructions('A sweep for a warped forest found none; the rods are all had. Choose whether to sweep on toward ground not yet covered, or stop for half an hour for the other ways to the pearls.'),
+});
+
+define({
   id: 'nether_shortcut', area: 'resources', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'The End portal is found and the eyes are in a chest of the bot\'s far off in the Overworld: go there and back through the Nether, or walk?',
   trigger: 'In the Overworld, the stronghold located, about to walk to a chest of the bot\'s more than 600 blocks off; asked once for each chest.',
