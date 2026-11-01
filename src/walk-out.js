@@ -227,13 +227,29 @@ function endSays(way, portal, here) {
 }
 function wayBackSays(bot, way, facts) {
   const where = way.reaches ? 'to the portal it came in by' : `to where the way kept begins, (${way.start.x}, ${way.start.y}, ${way.start.z})`;
-  return `Back the way it came in: ${facts.cells} cells it stood on before${facts.spans ? `, ${facts.spans} of them on its own laid blocks` : ''}, from the nearest, ${way.off} block${way.off === 1 ? '' : 's'} off, ${where}, about ${facts.blocks} blocks, walked by the pathfinder in legs of ${LEG_CELLS} cells along them, by its ordinary rules: the way's drops and the cells beside lava are walked as they were coming in, not refused for the rods carried. ` +
+  return `Back the way it came in: ${facts.cells} cells it stood on before${facts.spans ? `, ${facts.spans} of them on its own laid blocks` : ''}, from the nearest, ${way.off} block${way.off === 1 ? '' : 's'} off, ${where}, about ${facts.blocks} blocks, retraced cell by cell, crouched (what fills a cell dug, a floor laid where the way's own is gone, a step up taken), the pathfinder's legs of ${LEG_CELLS} cells where a step is a climb or a drop of more than one, by its ordinary rules: the way's drops and the cells beside lava are walked as they were coming in, not refused for the rods carried. ` +
     `${facts.lava || facts.edge ? `${facts.lava} of them have lava round them and ${facts.edge} are beside a drop into lava or of four or more; walked before, crouched on the edges.` : 'None of them is beside lava or a drop.'}`;
 }
 
 // The way back walked: legs of LEG_CELLS cells, each to a cell on the way by
 // the pathfinder (the rods' rules on, the way's own cells allowed at the
 // edge). Returns { tried, ok, reached, why, walked }.
+// The run of the way's cells from `i` that the crossing's walker can step: each a step from the one before along x or z (a
+// corner, a step along both, split into its two, the first of them), a rise or fall of one block at most. -> { cells (the
+// steps, the cell at `i` not among them), upTo (the way's index the run ends at) }.
+const LITERAL_RUN = 48;
+function literalRun(cells, i) {
+  const out = [];
+  let at = cells[i], k = i;
+  while (k + 1 < cells.length && out.length < LITERAL_RUN) {
+    const n = cells[k + 1], dx = n.x - at.x, dz = n.z - at.z, dy = n.y - at.y;
+    if (Math.abs(dy) > 1 || Math.abs(dx) > 1 || Math.abs(dz) > 1 || (!dx && !dz)) break;
+    if (dx && dz) out.push({ x: at.x + dx, y: dy > 0 ? at.y : n.y, z: at.z });
+    out.push({ x: n.x, y: n.y, z: n.z });
+    at = n; k++;
+  }
+  return { cells: out, upTo: k };
+}
 async function walkBack(bot, task, goal, portal, navigate, { force = false } = {}) {
   const trail = wayInOf(bot, goal), here = bot.entity.position;
   const way = backTrail(trail, here, portal);
@@ -249,6 +265,24 @@ async function walkBack(bot, task, goal, portal, navigate, { force = false } = {
   try {
   while (i < way.cells.length - 1) {
     task.check();
+    // Retraced cell by cell first (note 2769, the user 2026-11-01: 'Do the literal retrace too'): the run of the way's
+    // next cells a step apart (a corner split into its two steps, a rise or fall of one at most) walked by the crossing's
+    // own walker (bridging.js crossAlong), which digs what fills a cell, lays a floor where the way's own is gone and
+    // steps up a block, crouched; a pathfinder's leg planned afresh found no route where the way in had been.
+    const run = literalRun(way.cells, i);
+    if (run.cells.length >= 2) {
+      const from = way.cells[i], last = run.cells.at(-1);
+      try {
+        await require('./bridging').crossAlong(bot, task, { from: [from.x, from.y, from.z], to: [last.x, last.y, last.z], cells: run.cells }, { navigate });
+        walked += run.upTo - i; i = run.upTo; continue;
+      } catch (err) {
+        task.check();
+        if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+        bot._wayBackLiteral = { at: Date.now(), why: String(err.message || err).slice(0, 160) };
+      }
+    }
+    // A step the walker does not take (a drop or a climb of more than one, a gap) or a run it stopped on: the pathfinder's
+    // leg to the way's cell further on, by its ordinary rules on the way's own cells (note 2768).
     const j = Math.min(way.cells.length - 1, i + LEG_CELLS), c = way.cells[j];
     try { await navigate(bot, task, new goals.GoalNear(c.x, c.y, c.z, 1), { timeoutMs: 30000, stallMs: 8000 }); }
     catch (err) {
@@ -268,4 +302,4 @@ async function walkBack(bot, task, goal, portal, navigate, { force = false } = {
   return { tried: true, ok: true, walked, reached: way.reaches };
 }
 
-module.exports = { OPEN_WALK_MS, openWalk, leadsAway, endSays, rodsCarried, noteCell, noteWayIn, wayInPlugin, wayInOf, onWayIn, backTrail, wayFacts, rodsSays, wayBackSays, walkBack, feetOf, ROD_DROP_MAX, ROD_COST, LEG_CELLS, WAY_NEAR, WAY_IN_MOST };
+module.exports = { OPEN_WALK_MS, openWalk, leadsAway, endSays, rodsCarried, noteCell, noteWayIn, wayInPlugin, wayInOf, onWayIn, backTrail, wayFacts, rodsSays, wayBackSays, walkBack, literalRun, feetOf, ROD_DROP_MAX, ROD_COST, LEG_CELLS, WAY_NEAR, WAY_IN_MOST };
