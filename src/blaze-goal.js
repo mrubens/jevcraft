@@ -192,7 +192,7 @@ function knownBlazes(bot, goal) {
   try {
     for (const s of mh.blazeSpots(bot, goal)) if (!left(s.spot)) {
       const mins = Math.round((Date.now() - (s.spot.at || Date.now())) / 60000);
-      out.push({ kind: 'seen', at: s.spot, off: s.off, says: `blazes seen ${plural(s.spot.seen || 1, 'time')} at ${P(s.spot)}, ${s.off} blocks off, last ${mins ? `${plural(mins, 'minute')} ago` : 'just now'}${s.spot.tries ? `; walked back toward ${plural(s.spot.tries, 'time')}, the last ending: ${s.spot.why || 'unsaid'}` : ''}` });
+      out.push({ kind: 'seen', at: s.spot, off: s.off, failed: !!(s.spot.tries && s.spot.why), says: `blazes seen ${plural(s.spot.seen || 1, 'time')} at ${P(s.spot)}, ${s.off} blocks off, last ${mins ? `${plural(mins, 'minute')} ago` : 'just now'}${s.spot.tries ? `; walked back toward ${plural(s.spot.tries, 'time')}, the last ending: ${s.spot.why || 'unsaid'}` : ''}` });
     }
   } catch (_) { /* no sightings */ }
   return out.sort((a, b) => a.off - b.off);
@@ -232,6 +232,12 @@ function gate(bot, goal, id, tree, { area = null } = {}) {
   let refused = null;
   try { refused = require('./failed-places').pacingSays(bot, null); } catch (_) { refused = null; }
   if (refused) return { tree, facts: [`${plural(owed, 'blaze rod')} still needed and blazes are known, but walks from here are not begun: ${refused}. Every option is offered.`] };
+  // Only sightings whose last walk back ended short (mob-hunt.js return_to_blazes, spot.why): the way to them is a walk
+  // that has failed, the same as walks not begun, so nothing is withheld, said (note 2767). full-306 (25587, 2026-11-01
+  // 03:55 to 04:17Z) had 'blazes seen 6 times at (302, 60, 198), 16 blocks off, last 23 minutes ago; walked back toward
+  // 4 times, the last ending: navigation timed out without reaching new ground', the errands withheld, and was asked
+  // with keep at it or mine nearby the only way for twenty minutes, 3 rods of 7, at (304, 65, 212).
+  if (known.every(k => k.kind === 'seen' && k.failed)) return { tree, facts: [`${plural(owed, 'blaze rod')} still needed; the blazes known are sightings only (${known.slice(0, 2).map(b => b.says).join('; ')}), and the last walk back to them ended short: every option is offered.`] };
   const atBlazes = known[0].off <= BLAZES_AT;
   const s = sieve(id, keys, { rodsOwed: owed, known: true, atBlazes, rodsCarried, needsFood: hungry });
   if (!s.gated) return none;
