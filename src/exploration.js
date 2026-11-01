@@ -73,33 +73,27 @@ function biomeNear(bot, name, { reach = 128, step = 16 } = {}) {
   }
   return best ? at(best.p, { biome: true }) : null;
 }
-// The biome anywhere in the loaded ground, read at each loaded chunk's middle at heights round the bot's (note 2779, the
-// user 2026-11-01 'Are there any better techniques for finding warped forest?'): the client holds every loaded chunk's
-// biomes, the server's view distance round it (ten chunks, about 160 blocks), and the Nether's biomes change with
-// height; biomeNear read one height on a sixteen-block grid within 128. full-320 (25592, 2026-11-01 15:48 to 16:34Z)
-// swept its legs 46 minutes for a warped forest and found none. Looked at once every twenty seconds. -> at() or null.
-const loadedSeen = new WeakMap();
-function biomeLoaded(bot, name, { now = Date.now() } = {}) {
-  const here = bot.entity?.position?.floored?.();
-  if (!here || typeof bot.blockAt !== 'function' || typeof bot.world?.getColumns !== 'function') return null;
-  const memo = loadedSeen.get(bot);
-  if (memo && memo.name === name && now - memo.at < 20000) return memo.found;
-  let best = null;
-  const ys = [-32, -16, 0, 16, 32].map(d => here.y + d).filter(y => y >= 8 && y <= 120);
-  for (const c of bot.world.getColumns()) {
-    const cx = Number(c.chunkX), cz = Number(c.chunkZ);
-    if (!Number.isFinite(cx) || !Number.isFinite(cz)) continue;
-    const x = cx * 16 + 8, z = cz * 16 + 8, d = (x - here.x) ** 2 + (z - here.z) ** 2;
-    if (best && d >= best.d) continue;
-    for (const y of ys) {
-      const b = bot.blockAt(new Vec3(x, y, z));
-      if (!b?.biome) continue;
-      const biome = String(bot.registry?.biomes?.[b.biome.id]?.name || b.biome.name || '').replace('minecraft:', '');
-      if (biome === name) { best = { d, p: new Vec3(x, y, z) }; break; }
+// A warped forest seen (note 2780, the user 2026-11-01: 'Extending the view distance kind of feels like cheating, no?',
+// then 'Cut 2779 back to line of sight, keep the view distance'): its blocks (warped stems, wart blocks, nylium) within
+// the loaded ground that have a clear line from the bot's eyes, as a player sees the forest's blue across the wastes, not
+// the biome stored in chunks behind rock (2779 read those). Nearest first, from three seen; looked at once every twenty
+// seconds. -> at() or null.
+const seenForest = new WeakMap();
+function forestInSight(bot, { now = Date.now() } = {}) {
+  if (!bot.entity?.position || typeof bot.findBlocks !== 'function' || typeof bot.canSeeBlock !== 'function') return null;
+  const memo = seenForest.get(bot);
+  if (memo && now - memo.at < 20000) return memo.found;
+  const ids = ['warped_stem', 'warped_wart_block', 'warped_nylium'].map(n => bot.registry?.blocksByName?.[n]?.id).filter(n => n !== undefined);
+  let found = null;
+  if (ids.length) {
+    const seen = [];
+    for (const p of bot.findBlocks({ matching: ids, maxDistance: 256, count: 300 })) {
+      const b = bot.blockAt(p);
+      if (b && bot.canSeeBlock(b)) { seen.push(p); if (seen.length >= 3) break; }
     }
+    if (seen.length >= 3) found = at(seen[0], { warped: seen.length, seen: true });
   }
-  const found = best ? at(best.p, { biome: true, loaded: true }) : null;
-  loadedSeen.set(bot, { name, at: now, found });
+  seenForest.set(bot, { at: now, found });
   return found;
 }
 // The biome under the bot, and the others within the loaded area with their
@@ -351,7 +345,7 @@ const DETECTORS = [
   // ground it had loaded and never looked at.
   { kind: 'warped_forest', dimension: 'nether', same: 96, detect: bot => {
     const warped = find(bot, ['warped_nylium', 'warped_stem', 'warped_wart_block'], 48, 64);
-    return warped.length >= 24 ? at(warped[0], { warped: warped.length }) : biomeNear(bot, 'warped_forest') || biomeLoaded(bot, 'warped_forest');
+    return warped.length >= 24 ? at(warped[0], { warped: warped.length }) : biomeNear(bot, 'warped_forest') || forestInSight(bot);
   } },
   { kind: 'bastion', dimension: 'nether', same: 64, detect: bot => {
     const gilded = find(bot, ['gilded_blackstone', 'gold_block'], 48, 16).filter(p => near(bot, p, ['polished_blackstone_bricks', 'blackstone', 'cracked_polished_blackstone_bricks'], 3));
