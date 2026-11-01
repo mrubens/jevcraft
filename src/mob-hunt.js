@@ -1469,6 +1469,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
     // What every fight of the kind says alike is said once (said-once.js, note 1104).
     require('./said-once').saidOnce(tree, Object.keys(tree).filter(k => /^hunt_/.test(k)));
     const interrupt = () => { if (!canBegin(bot, handler)) throw Object.assign(new Error('Combat decision interrupted'), { name: 'CombatInterrupted' }); };
+    if (state.entity === 'blaze') { try { const ih = require('./blaze-stand').inHoleSays(bot); if (ih) snapshot.inHole = ih; } catch (_) { /* no hole */ } }
     try { decision = await decide('hunt_target', { client, bot, task, goal, save, tree, state: snapshot, interrupt,
       isFresh: () => canBegin(bot, handler) && bot.health >= snapshot.health - 4 && candidates.every(e => !positions.has(e.id) ||
         valid(bot, e) && e.position.distanceTo(positions.get(e.id)) < 2 && isolated(bot, e, handler)) }); }
@@ -4546,6 +4547,7 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest, 
   let pick = approach.choice && approach.until > Date.now() && options[approach.choice] ? approach.choice : null;
   if (!pick) {
     const tree = Object.fromEntries(Object.entries(options).map(([key, o]) => [key, { description: o.description, run: o.run }]));
+    try { const ih = require('./blaze-stand').inHoleSays(bot); if (ih) facts.inHole = ih; } catch (_) { /* no hole */ }
     const decision = await decide('fortress_approach', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree, state: facts,
       context: { failed: approach.failed.map(f => f.choice) }, target: found });
     if (decision.stale) return;

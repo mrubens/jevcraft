@@ -593,6 +593,10 @@ async function atSpawner(bot, task, goal, save, actions = {}, now = Date.now()) 
   if (await require('./rod-bank').askBank(bot, task, goal, save, actions, client, { now }) === 'banked') return true;
   goal.step = { action: 'at_spawner', target: P(known.cage), off: known.off, health: bot.health, food: bot.food }; save?.();
   try { const bf = require('./blaze-fight').says(bot); if (bf) state.blazeFight = bf; } catch (_) { /* no record */ }
+  // In a hole, said (note 2770): mid-full-63-fortress-28 (25586, 2026-11-01 04:39 to 04:41:26Z) stood in its hole at
+  // (-236, 61, -53), answered hunt on here and cross level at the fortress's approach, walked out among 20 blazes, and was
+  // slain by a wither skeleton two minutes later; the hole was said only in the fight's question.
+  try { const ih = require('./blaze-stand').inHoleSays(bot); if (ih) state.inHole = ih; } catch (_) { /* no hole */ }
   const decision = await require('./decisions').decide('empty_spawner', { client, bot, task, goal, save, tree, state, target: P(known.cage) });
   if (decision.stale) return true;
   const pick = decision.path.at(-1);

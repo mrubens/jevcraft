@@ -2629,4 +2629,15 @@ function chargeRecord(hp, others) {
   return { charges, died, says: ` In the flight records, of ${charges} charges of the nearest blaze chosen at ${low ? 'under 12 health' : '12 health or more'} with ${many ? 'three or more' : 'two or fewer'} other blazes about, ${died} ended in the bot's death within 30 seconds.` };
 }
 
-module.exports = { builtHoleSite, inCageBox, deathsHereSays, chargeRecord, biterInReach, riseOrAwait, reachWalk, REACH_MEMO_MS, sortieFloor, eatInHold, fourNearSays, FOUR_NEAR, walkTakes, behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze, blazeReach, pushedOnly, REACH_STEPS, riseSite, riseOrAwait };
+// The hole stood in, said to the work's questions at the blazes (note 2770), as the fight's question says it (note 2761):
+// a fact of every option, said once in the state. Null out of a hole or with no blaze within 24.
+function inHoleSays(bot) {
+  try {
+    if (!inHole(bot)) return null;
+    const here = bot.entity?.position;
+    const blazes = Object.values(bot.entities || {}).filter(e => e?.name === 'blaze' && e.position && here && e.position.distanceTo(here) <= 24).length;
+    if (!blazes) return null;
+    return `The bot stands in a hole now (walls behind, beside and over it, one mouth open), ${blazes} blaze${blazes === 1 ? '' : 's'} within 24. A way that walks, crosses or tunnels from here (the hunt on foot, the fortress's walks and crossings, a pull back, a leg away) leaves it, open to every blaze in sight on the way; holding at the spawner from it keeps the walls.`;
+  } catch (_) { return null; }
+}
+module.exports = { inHoleSays, builtHoleSite, inCageBox, deathsHereSays, chargeRecord, biterInReach, riseOrAwait, reachWalk, REACH_MEMO_MS, sortieFloor, eatInHold, fourNearSays, FOUR_NEAR, walkTakes, behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze, blazeReach, pushedOnly, REACH_STEPS, riseSite, riseOrAwait };
