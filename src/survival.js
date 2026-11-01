@@ -7465,6 +7465,10 @@ class Survival {
         // (25586, 10:29 to 10:32:17Z) chose close in and charge nearest at 20 health after its rods were done and a wither
         // skeleton slew it; mid-235-fk-nether-1-fortress-6 (09:33 to 09:41:37Z) the same with nine rods carried.
         ...(needMetSays ? { rodsNeedMet: needMetSays } : {}),
+        // In a hole at the cage, said as a fact of every way (note 2761): mid-full-9-fortress-24 (25590, 2026-11-01 02:5x to
+        // 03:10Z) stood in its whole hole twice, went out to close in, and fell from 20 to death in ten seconds in the open;
+        // mid-full-147-fortress-17, mid-full-9-fortress-19 and full-293 died charging or rising to strike out of theirs.
+        ...((h => h ? { inHole: h } : {})((() => { try { if (!danger.some(t => t.entity?.name === 'blaze')) return null; const ih = require('./blaze-stand').inHole(bot); return ih ? 'The bot stands in a hole now: walls behind, beside and over it, one mouth open. The ways that walk or charge out (close in, charge nearest, rise to strike, back to wall, corner ambush, leave and heal, retreat, the run) leave it, open to every blaze in sight; the ways that hold it, fight at its mouth, eat or stash keep it.' : null; } catch (_) { return null; } })())),
         // What every way on offer led to with a deadly drop beside the feet on the runs now playing (note 2608).
         ...(shared.dropTable ? { dropRecordToday: shared.dropTable } : {}) };
       // At a live cage, what the stay there has come to, on each hold, and
