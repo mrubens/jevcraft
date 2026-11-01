@@ -5547,7 +5547,12 @@ class Survival {
     // charge_nearest, leave_and_heal and corner_ambush; the drops aged out with none taken up.
     const kit = this.kitHereOption(task, goal, save, { mobs, oneHit });
     if (kit) options.grab_kit = kit;
-    if (!coming.some(t => t.distance <= 3 && !calmAtReach.includes(t))) options.keep_working = { expects: { damage: keepDamage, seconds: 15, oneHit }, description: `Carry on with the work${(w => w ? ` (${atCage ? w : w.replaceAll('_', ' ')})` : '')(workLabel)} and leave these mobs be for fifteen seconds${coming.length ? ` (nearest that can get to the bot ${Math.round(coming[0].distance)} blocks)` : ''}.${calmAtReach.length ? ` The enderman ${Math.round(calmAtReach[0].distance * 10) / 10} blocks off is calm: it hits nothing until it is struck or looked in the eye, and the gaze is kept off every enderman's head while the work goes on.` : ''}${this.workProgress(goal)}${reachSays} The work stops at once if one comes within three blocks or lands a hit. Suits mobs that are far, slow, cannot reach the bot, or are not coming this way.${creeperCount ? (() => {
+    // Offered only where its own end would not end it at once (note 2771): held, keep working is let go at the threat check's
+    // first find (leftBe: danger.js immediateThreat), which reaches past three blocks (a creeper at 3.1, a mob lit or
+    // coming). full-312 (25592, 2026-11-01 04:50:47Z) took it with a creeper 3.1 blocks off, 'keep working let go after 0
+    // s: leaving them be ended at a threat in reach' twenty times in a second, set aside and the loop spun.
+    const leftBeNow = (() => { try { return !!require('./danger').immediateThreat(bot); } catch (_) { return false; } })();
+    if (!leftBeNow && !coming.some(t => t.distance <= 3 && !calmAtReach.includes(t))) options.keep_working = { expects: { damage: keepDamage, seconds: 15, oneHit }, description: `Carry on with the work${(w => w ? ` (${atCage ? w : w.replaceAll('_', ' ')})` : '')(workLabel)} and leave these mobs be for fifteen seconds${coming.length ? ` (nearest that can get to the bot ${Math.round(coming[0].distance)} blocks)` : ''}.${calmAtReach.length ? ` The enderman ${Math.round(calmAtReach[0].distance * 10) / 10} blocks off is calm: it hits nothing until it is struck or looked in the eye, and the gaze is kept off every enderman's head while the work goes on.` : ''}${this.workProgress(goal)}${reachSays} The work stops at once if one comes within three blocks or lands a hit. Suits mobs that are far, slow, cannot reach the bot, or are not coming this way.${creeperCount ? (() => {
       // When the work would stop, against when the creeper lights: the
       // work stops at three blocks, which is where the fuse starts (the
       // decision review, 2026-09-26).
