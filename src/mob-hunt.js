@@ -2032,6 +2032,22 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     // sight, so nothing was visible, nothing was a candidate, and it opened
     // one door a quarter of a minute and never moved. The staircase cuts a
     // passage the bot's own height and keeps cutting.
+    // In a hole at the blazes (walls behind, beside and over, one mouth
+    // open: blaze-stand.js inHole), the stalk digs no passage and opens no
+    // door of its own: leaving the hole is Jev's, asked in the hunt's
+    // question as open the wall and in the fight's as the ways that walk out
+    // (note 2761). mid-full-166-fortress-30 (25591, 2026-11-01 03:56 to
+    // 03:58:51Z) stood in its built hole at (59, 54, 5), its work went to
+    // open a door toward a blaze 3 blocks off out of sight, the wall came
+    // open, and thirteen blazes in sight burned it in two minutes.
+    const holeHeld = near.name === 'blaze' && (() => { try { return require('./blaze-stand').inHole(bot); } catch (_) { return false; } })();
+    if (holeHeld) {
+      if (state.stairsTo) { delete state.stairsTo; save(); }
+      if (!state.holeHeldSaid || Date.now() - state.holeHeldSaid > 60000) { state.holeHeldSaid = Date.now(); console.log(`[hunt] in a hole at the blazes: no passage dug and no door opened toward the ${near.name} ${Math.round(near.position.distanceTo(bot.entity.position))} blocks off; open the wall is Jev's (hunt_target)`); }
+      goal.step = { action: 'stalk_mob', entity: step.entity, inHole: true }; save();
+      await sleep(500);
+      return;
+    }
     const stairs = state.stairsTo;
     const target = stairs && new Vec3(stairs.x, stairs.y, stairs.z);
     if (stairs && stairs.until > Date.now() && actions.tunnel && target.distanceTo(bot.entity.position) > 3.5) {
