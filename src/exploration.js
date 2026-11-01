@@ -73,6 +73,35 @@ function biomeNear(bot, name, { reach = 128, step = 16 } = {}) {
   }
   return best ? at(best.p, { biome: true }) : null;
 }
+// The biome anywhere in the loaded ground, read at each loaded chunk's middle at heights round the bot's (note 2779, the
+// user 2026-11-01 'Are there any better techniques for finding warped forest?'): the client holds every loaded chunk's
+// biomes, the server's view distance round it (ten chunks, about 160 blocks), and the Nether's biomes change with
+// height; biomeNear read one height on a sixteen-block grid within 128. full-320 (25592, 2026-11-01 15:48 to 16:34Z)
+// swept its legs 46 minutes for a warped forest and found none. Looked at once every twenty seconds. -> at() or null.
+const loadedSeen = new WeakMap();
+function biomeLoaded(bot, name, { now = Date.now() } = {}) {
+  const here = bot.entity?.position?.floored?.();
+  if (!here || typeof bot.blockAt !== 'function' || typeof bot.world?.getColumns !== 'function') return null;
+  const memo = loadedSeen.get(bot);
+  if (memo && memo.name === name && now - memo.at < 20000) return memo.found;
+  let best = null;
+  const ys = [-32, -16, 0, 16, 32].map(d => here.y + d).filter(y => y >= 8 && y <= 120);
+  for (const c of bot.world.getColumns()) {
+    const cx = Number(c.chunkX), cz = Number(c.chunkZ);
+    if (!Number.isFinite(cx) || !Number.isFinite(cz)) continue;
+    const x = cx * 16 + 8, z = cz * 16 + 8, d = (x - here.x) ** 2 + (z - here.z) ** 2;
+    if (best && d >= best.d) continue;
+    for (const y of ys) {
+      const b = bot.blockAt(new Vec3(x, y, z));
+      if (!b?.biome) continue;
+      const biome = String(bot.registry?.biomes?.[b.biome.id]?.name || b.biome.name || '').replace('minecraft:', '');
+      if (biome === name) { best = { d, p: new Vec3(x, y, z) }; break; }
+    }
+  }
+  const found = best ? at(best.p, { biome: true, loaded: true }) : null;
+  loadedSeen.set(bot, { name, at: now, found });
+  return found;
+}
 // The biome under the bot, and the others within the loaded area with their
 // distance and direction: what lives where is Jev's to know (sheep graze in
 // plains and meadows, not deserts), so the questions carry it. Sampled on a
@@ -322,7 +351,7 @@ const DETECTORS = [
   // ground it had loaded and never looked at.
   { kind: 'warped_forest', dimension: 'nether', same: 96, detect: bot => {
     const warped = find(bot, ['warped_nylium', 'warped_stem', 'warped_wart_block'], 48, 64);
-    return warped.length >= 24 ? at(warped[0], { warped: warped.length }) : biomeNear(bot, 'warped_forest');
+    return warped.length >= 24 ? at(warped[0], { warped: warped.length }) : biomeNear(bot, 'warped_forest') || biomeLoaded(bot, 'warped_forest');
   } },
   { kind: 'bastion', dimension: 'nether', same: 64, detect: bot => {
     const gilded = find(bot, ['gilded_blackstone', 'gold_block'], 48, 16).filter(p => near(bot, p, ['polished_blackstone_bricks', 'blackstone', 'cracked_polished_blackstone_bricks'], 3));
