@@ -6198,16 +6198,26 @@ class Survival {
         run: async () => {
           this.report(goal, save, { action: 'shield_the_blast', target: 'creeper', threats: ['creeper'], health: bot.health, stance: true });
           if (!shielded) { const sh = bot.inventory.items().find(i => i.name === 'shield'); if (sh) await bot.equip(sh, 'off-hand'); }
+          // Held until it goes off or is gone, as the option says: a creeper
+          // lit when the reckoned hold runs out keeps the shield up for the
+          // rest of its fuse. full-310 (25592, 2026-11-01 03:51:35 to 39Z)
+          // held it 3.9 s with the creeper 2.6 blocks off, let go 'its time
+          // is up', and the blast landed 0.2 s later on the lowered shield,
+          // 20 health to 8.7; zombies finished it 14 s after.
           const until = Date.now() + Math.max(2500, secs * 1000 + 1500);
-          while (Date.now() < until) {
+          const fuseEnd = Date.now() + Math.max(2500, secs * 1000 + 1500) + ceS.FUSE * 1000 + 500;
+          for (;;) {
             task.check();
             const c = threats(bot, 12).find(t => t.entity.id === creeperNear.entity.id);
             if (!c || c.entity.isValid === false) return true;
+            if (Date.now() >= until) {
+              const lit = creeperLitFor(bot, c.entity);
+              if (!Number.isFinite(lit) || Date.now() >= fuseEnd) return true;
+            }
             await bot.lookAt?.(c.entity.position.offset(0, 1, 0), true);
             raiseShield(bot);
             await sleep(100);
           }
-          return true;
         } };
     }
     const fungus = this.warpedFungusOption(task, goal, save, { coming, mobs, shielded, oneHit, edge });
