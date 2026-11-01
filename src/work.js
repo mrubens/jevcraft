@@ -5456,9 +5456,30 @@ async function preparePortalSupports(bot, task, goal, save, needed) {
 // walking into obsidian.
 function lowestPortalBlock(bot) {
   const blocks = find(bot, ['nether_portal'], 64, 32);
-  if (!blocks.length) return null;
+  if (!blocks.length) return sheetAtRemembered(bot);
   const nearest = blocks[0];
   return blocks.filter(b => Math.hypot(b.x - nearest.x, b.z - nearest.z) <= 3).sort((a, b) => a.y - b.y)[0];
+}
+// The sheet read cell by cell round each portal remembered within 16 blocks (note 2776, the user 2026-11-01: 'jev wasn't
+// able to get into the portal because it was a square too tall'): the frame's own cells, from a block under its bottom
+// to four over, two to each side, where the search over the loaded world found none. full-320 (25592, 2026-11-01
+// 13:33:40 to 13:42:30Z) tunnelled home to (40, 38, 10), under the bottom of its lit portal at (40, 41, 10), and
+// read 'The portal at (40, 41, 10) is out: no sheet stands in its frame' 12,034 times in nine minutes, its sheet two
+// blocks over its head; at 13:59 it walked into the same sheet from beside it and crossed. -> the lowest sheet cell, or null.
+function sheetAtRemembered(bot) {
+  const here = bot.entity?.position, goal = bot._goal;
+  if (!here || typeof bot.blockAt !== 'function') return null;
+  const where = /nether/.test(String(bot.game?.dimension || '')) ? 'nether' : /overworld/.test(String(bot.game?.dimension || '')) ? 'overworld' : null;
+  const near = (goal?.portals || []).filter(q => q.dimension === where && Math.hypot(q.x - here.x, q.y - here.y, q.z - here.z) <= 16);
+  for (const q of near) {
+    const cells = [];
+    for (let dy = -1; dy <= 4; dy++) for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) {
+      const c = new Vec3(Math.floor(q.x) + dx, Math.floor(q.y) + dy, Math.floor(q.z) + dz);
+      if (bot.blockAt(c)?.name === 'nether_portal') cells.push(c);
+    }
+    if (cells.length) return cells.sort((a, b) => a.y - b.y || a.distanceTo(here) - b.distanceTo(here))[0];
+  }
+  return null;
 }
 // A portal takes a player who stands in it for four seconds. This used to
 // face the portal and hold forward for eight: at walking speed the bot
