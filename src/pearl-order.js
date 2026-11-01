@@ -409,4 +409,4 @@ function minedSays(goal, bot, now = Date.now()) {
   const dug = goes.reduce((n, g) => n + (g.dug || 0), 0), tried = goes.reduce((n, g) => n + (g.tried || 0), 0);
   return ` Mined from about here ${goes.length} time${goes.length === 1 ? '' : 's'} in the last twenty minutes: ${dug} ore${dug === 1 ? '' : 's'} dug of ${tried} walked toward${dug ? '' : ', the walk to each ending short of it'}.`;
 }
-module.exports = { endHeld, rodsAgain, routes, held, askAgainBecause, orderStage, stageFor, overlap, tree, ask, HOLD_MS, NONE_GOOD_MS, ENDERMAN_REACH, HUNT_SIGHT, FOREST_REACH, KIND };
+module.exports = { fightSays, endHeld, rodsAgain, routes, held, askAgainBecause, orderStage, stageFor, overlap, tree, ask, HOLD_MS, NONE_GOOD_MS, ENDERMAN_REACH, HUNT_SIGHT, FOREST_REACH, KIND };

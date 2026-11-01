@@ -13011,6 +13011,30 @@ class Survival {
             : 'Spend the next action on the player request while outside. Suitable when hunger and the remaining daylight leave time for survival preparations afterwards, or when a verified shelter is already close enough to reach.',
         run: async () => { if (stayUp) { this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000 }; this.report(goal, save, { action: 'stay_up', armed, ...(this.state.shelterFailed && Date.now() - this.state.shelterFailed.at < 180000 ? { shelterFailed: this.state.shelterFailed.why } : {}) }); } } },
     };
+    // The night out for the pearls (note 2778, the user 2026-11-01 'Yes'): with the pearls the ladder's step in the
+    // Overworld, endermen walk the surface at night and the work's own hunt (the pearl patrol) is what the night is for.
+    // full-320 (25592, 2026-11-01 14:00 to 15:40Z), 7 rods kept and no pearl, no warped forest known, sealed itself in
+    // every night, secure shelter answered ten times and 136 minutes of its clock sealed waiting, and was never offered
+    // the night as the pearls' time.
+    {
+      const phase = goal?.rungTime?.phase || goal?.gameProgress?.phase;
+      let need = null; try { need = require('./eye-need').need(bot, goal); } catch (_) { need = null; }
+      const overworld = /overworld/.test(String(bot.game?.dimension || ''));
+      if (needsShelter && overworld && !underground && need && need.pearlsLeft > 0 && (phase === 'obtain_ender_pearls' || need.rodsLeft === 0)) {
+        const here = bot.entity.position;
+        const ender = Object.values(bot.entities || {}).filter(e => e?.name === 'enderman' && e.position && e.position.distanceTo(here) <= 64);
+        const nearest = ender.length ? Math.round(Math.min(...ender.map(e => e.position.distanceTo(here)))) : null;
+        let fight = ''; try { fight = ` ${require('./pearl-order').fightSays(bot, need)}`; } catch (_) { fight = ''; }
+        const toDawn = minutesToDawn(bot);
+        // Against the warped forest (the user 2026-11-01: 'Nether seems better right, especially if it knows where the forest
+        // is?'): the record's rates, and the forest known or not, said on the night out (pearl-order.js note 2689's figures).
+        let forest = '';
+        try { const known = require('./warped-pearls').warpedKnown(goal); forest = known.length ? ` A warped forest is known in the Nether at (${known[0].x}, ${known[0].z}).` : ' No warped forest is known yet; the Nether\'s sweep for one is the other way to them.'; } catch (_) { forest = ''; }
+        forest = ` In the record the Overworld's endermen came to about 0.4 pearls an hour, against 16 to 21 an hour at a warped forest's slot in the Nether.${forest}`;
+        tree.night_for_pearls = { description: `Stay out tonight for the pearls: the work's enderman hunt (the pearl patrol, on the surface) goes on through the night, until dawn in about ${toDawn} real minutes, the shelter not taken meanwhile; endermen walk the surface at night and about half drop a pearl. ${ender.length ? `${ender.length} enderm${ender.length === 1 ? 'an' : 'en'} within 64 blocks now, the nearest ${nearest} blocks off.` : 'No enderman within 64 blocks now.'} Pearls: ${need.pearls} carried of ${need.pearlsWanted} wanted (${need.pearlsLeft} still needed); rods ${need.rods} carried, ${need.rodsLeft} still needed.${fight}${forest} The other mobs of the night come too and are answered as they come; ${kitSaysNow}.${healing}`,
+          run: async () => { this.state.nightPlan = { plan: 'stay_up', until: Date.now() + Math.max(2, toDawn) * 60000, for: 'pearls' }; this.report(goal, save, { action: 'night_for_pearls', endermen: ender.length, pearlsLeft: need.pearlsLeft }); } };
+      }
+    }
     if (stayUp) {
       for (const [key, o] of Object.entries(this.huntOptions(goal))) tree[key] = { description: o.description,
         run: async () => { this.state.nightPlan = { plan: 'hunt', kind: o.kind, until: Date.now() + 120000, startHealth: bot.health }; this.report(goal, save, { action: 'night_hunt_chosen', kind: o.kind }); } };
