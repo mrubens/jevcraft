@@ -272,8 +272,9 @@ function tree(bot, goal, r, now = Date.now()) {
     // asked, and never left the Nether.
     let pace = '';
     try { const d = require('./game-progress').portalDistance(bot, goal); if (d != null) pace = require('./game-progress').netherPaceSays(bot, d, { toPortal: true }).says || ''; } catch (_) { pace = ''; }
+    const carried = require('./walk-out').rodsCarried(bot);
     out.home_with_rods = { ladderNext: true, handsOff: true,
-      description: `Go back to the portal with the rods now, the pearls left for the Overworld's night hunt or a later way: ${o.portalBack}; rods ${o.rods}; pearls ${o.pearls}.${pace} Held: the pearl ways here are not taken meanwhile, asked again after a death, at a way to the pearls not on offer now, or when the half hour is out.` };
+      description: `${carried ? 'Go back to the portal with the rods now' : `Go back to the Overworld now, no rod carried (the rods wanted are kept there already)`}, the pearls left for the Overworld's night hunt or a later way: ${o.portalBack}; rods ${o.rods}; pearls ${o.pearls}.${pace} Held, here and on the far side: the pearl ways here are not taken meanwhile, and the warped forest's way is set aside for the half hour, so the Overworld does not send the bot back in for it; asked again after a death, at a way to the pearls not on offer now, or when the half hour is out.` };
   } else out.rods_first = { ladderNext: true, handsOff: true, description: inNether(bot)
     ? `Go on with the rods now: ${o.fortress}; rods ${o.rods}. The pearls then, or while the rods rest: a warped forest's endermen, a barter, or the Overworld's night hunt. ${record.routeSays('rods_first', goal)}${DAY_PEARLS_FIRST}`
     : `Go on to the Nether for the rods now: rods ${o.rods}. The pearls then, or while the rods rest: a warped forest's endermen, a barter, or the Overworld's night hunt. ${record.routeSays('rods_first', goal)}` };
@@ -388,6 +389,11 @@ async function ask(bot, task, goal, save, actions = {}, { now = Date.now() } = {
   // the news, while it crossed its fortress east and west.
   const seenBefore = prev && prev.pick === pick ? (prev.seenSince || []) : [];
   goal.pearlOrder = { pick, at, ...(rodsMet(bot, goal) ? { rodsMet: true } : {}), until: at + (decision.noneGood ? NONE_GOOD_MS : HOLD_MS), ...(decision.noneGood ? { noneGood: true } : {}), offered: kinds, seenSince: [...new Set([...seenBefore, ...kinds])], pearlsAt: count(bot, 'ender_pearl'), deathsAt: 0, because: because || null, fortressKnown: !!fortressNow(bot, goal) };
+  // Home held on both sides of the portal (note 2777): the Overworld's ladder sent the bot back in for the warped forest
+  // (game-progress.js, warpedOpen) the moment it came out. full-317 (25587, 2026-11-01 14:56 to 15:37Z), its 10 rods in
+  // an Overworld chest, crossed its portal some twenty times in 40 minutes, 'obtain ender pearls: enter nether' there and
+  // home_with_rods here, 75 minutes of its clock going in and 44 coming out, no pearl.
+  if (pick === 'home_with_rods') { try { require('./progress').setAside(goal, 'rung', 'warped_pearls', 'home with the rods chosen at pearl_order: the pearls left for the Overworld', HOLD_MS); } catch (_) { /* no aside */ } }
   if (KIND[pick]) bot.chat?.(({ hunt_enderman: 'An enderman in reach: its pearl first, the rods after.', warped_forest: 'To the warped forest for pearls, then the rods.', barter_gold: 'Bartering for pearls, then the rods.', bastion_gold: 'To the bastion for gold, then a barter for pearls, then the rods.', mine_gold_for_barter: 'Mining nether gold to barter for pearls, then the rods.' })[pick]);
   save();
   return pick;
