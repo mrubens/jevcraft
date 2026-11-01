@@ -90,4 +90,28 @@ function runNightsSays(goal) {
   return ` This run so far: ${hours(waited)} sealed in waiting through nights (${share}% of its ${hours(played)} of play), ${hours(mins('night_mine'))} night-mining, ${hours(mins('sleep'))} asleep; a night with a bed carried and set down at bedtime passes in seconds, one waited out awake is about ${NIGHT_MINUTES} real minutes.`;
 }
 
-module.exports = { nightAheadSays, pickaxeSays, runNightsSays, NIGHT_MINUTES };
+// The body against the coming night (note 2773, the user 2026-11-01 'Build that'): from five real minutes before dusk
+// and through the night, the health, the hunger and the food carried, whether health comes back through the night as
+// things stand (the game heals at hunger 18 or more), and the food animals within 32. full-312 (25592, 2026-11-01 04:5xZ)
+// came to dusk underground at 11.7 health, hunger 17 and nothing to eat; its food search went for the surface, the climb
+// out was resting, and it sealed in for the night with health that could not come back.
+const FOOD_ANIMALS = /^(cow|pig|sheep|chicken|rabbit|mooshroom|salmon|cod)$/;
+function nightBodySays(bot) {
+  const t = bot.time?.timeOfDay;
+  if (!Number.isFinite(t) || !/overworld/.test(String(bot.game?.dimension || 'overworld'))) return null;
+  const toDusk = ((DAY.DUSK - t + 24000) % 24000) / 1200, atNight = t >= DAY.DUSK && t < DAY.DAWN;
+  if (!atNight && toDusk > 5) return null;
+  const health = Math.round((bot.health ?? 20) * 10) / 10, hunger = bot.food ?? 20;
+  let points = 0, carried = [];
+  try { points = Math.round(require('./foraging').foodSupply(bot) || 0); } catch (_) { points = 0; }
+  try { const foods = bot.registry?.foodsByName || {}; carried = (bot.inventory?.items?.() || []).filter(i => foods[i.name] && !/^(rotten_flesh|spider_eye|poisonous_potato|pufferfish|suspicious_stew)$/.test(i.name)).map(i => `${i.count} ${label(i.name)}`); } catch (_) { carried = []; }
+  const heals = hunger >= 18 ? 'health comes back while hunger stays at 18 or more' : carried.length ? `health comes back once something is eaten to bring hunger to 18 (hunger ${hunger} now)` : `health does not come back through the night: hunger ${hunger} is under the 18 the game heals at, and nothing carried is food`;
+  const here = bot.entity?.position;
+  const kinds = {};
+  if (here) for (const e of Object.values(bot.entities || {})) if (e?.position && FOOD_ANIMALS.test(e.name || '') && e.position.distanceTo(here) <= 32) { const k = kinds[e.name] ||= { n: 0, d: Infinity }; k.n++; k.d = Math.min(k.d, Math.round(e.position.distanceTo(here))); }
+  const animals = Object.entries(kinds).map(([k, v]) => `${v.n} ${label(k)}${v.n === 1 ? '' : 's'} (nearest ${v.d} blocks)`).join(', ');
+  const when = atNight ? `Night now, dawn in about ${Math.round((DAY.DAWN - t) / 1200 * 10) / 10} real minutes` : `Dusk in about ${Math.round(toDusk * 10) / 10} real minutes, then about ${NIGHT_MINUTES} real minutes of night`;
+  return `${when}. Health ${health}, hunger ${hunger}; food carried: ${carried.length ? carried.join(', ') : 'none'}${points ? ` (${points} food points)` : ''}; ${heals}. Food animals within 32: ${animals || 'none seen'}. A night sealed in or mining keeps the health it begins with where it cannot heal; the food got before dusk is the healing through it.`;
+}
+
+module.exports = { nightAheadSays, nightBodySays, pickaxeSays, runNightsSays, NIGHT_MINUTES };

@@ -10988,7 +10988,7 @@ class Survival {
       if (phase === 'reach_nether' && goal?.portalFrame) tree.back_to_the_frame = { description: `Stop the night mine and go back to ${workWaiting(goal, bot)}. The surface is night until dawn, about ${minutesToDawn(bot)} real minutes off, the way up comes out among its mobs, and it holds two minutes at a time as staying up does.` };
     }
     const decision = await this.decide(task, goal, save, { id: 'night_mine_target', tree: Object.fromEntries(Object.entries(tree).map(([k, o]) => [k, { description: o.description, ...(o.target ? { target: o.target } : {}), ...(o.commit ? { commit: o.commit } : {}) }])), context: {},
-      state: { ...(place ? { place: place.state } : {}), timeOfDay: bot.time?.timeOfDay, feetY: feet.y, riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot), stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor), pickaxe: bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name} (${remainingUses(bot, i)} uses)`), afterThePickaxes: pickaxeReserve(bot, feet), freeSlots: bot.inventory.emptySlotCount?.() ?? null } });
+      state: { ...(place ? { place: place.state } : {}), ...((() => { try { const n = require('./night-ahead').nightBodySays(bot); return n ? { nightBody: n } : {}; } catch (_) { return {}; } })()), timeOfDay: bot.time?.timeOfDay, feetY: feet.y, riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot), stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor), pickaxe: bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name} (${remainingUses(bot, i)} uses)`), afterThePickaxes: pickaxeReserve(bot, feet), freeSlots: bot.inventory.emptySlotCount?.() ?? null } });
     if (decision.stale) return null;
     const pick = decision.path.at(-1);
     if (pick === 'light_tunnel') {
@@ -12934,6 +12934,7 @@ class Survival {
       ...(require('./exploration').biomeView(bot) || {}),
       playerUrgency: goal.urgency ? { level: goal.urgency.level, meaning: 'How much the wording of the request pressed for speed: relaxed, ordinary or pressed. Pressure is a reason to keep working while it is still safe, never a reason to skip shelter once night is close.' } : undefined,
       health: bot.health, food: bot.food, safeFoodCarried: !!chooseFood(bot),
+      ...((() => { try { const n = require('./night-ahead').nightBodySays(bot); return n ? { nightBody: n } : {}; } catch (_) { return {}; } })()),
       // The day's facts where there is a day (note 677).
       survivalFacts: { difficulty: bot.game.difficulty, ...(/overworld/.test(String(bot.game?.dimension || 'overworld')) ? { hostileMobsSpawnAtNight: true,
         nightStartsAt: DAY.NIGHT, dawnAt: DAY.DAWN, daylightTicksRemaining: Math.max(0, DAY.NIGHT - bot.time.timeOfDay) } : {}),
