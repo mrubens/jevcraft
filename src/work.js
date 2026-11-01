@@ -9579,7 +9579,12 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   const turnedBackLately = !!goal.foodTurnBack && Date.now() - goal.foodTurnBack.at < 30 * 60000;
   const goingWithoutStands = (g, at) => { const r = require('./progress').attemptsFor(g).of('rung', at).nether_food; return !!r && require('./game-progress').GOING_WITHOUT.test(r.why || ''); };
   // Food under the Nether's reserve is offered whether or not the food rung rests (note 1942): resting was the condition, and of 45 cross_now answers on 2026-10-19/20 (full-1..4) 29 crossed under the reserve of 36, the food on offer at the 10 with none carried and at none of the 19 with 2 to 30; full-4 (02:23:47Z) crossed with 8 of 80 and a chest, gold, wood and four pickaxes all in hand. Jev's own going without still stands.
-  const empty = left.filter(i => /^(food|blocks)$/.test(i.key) && ((i.carried === 0 && (seen[i.key] || 0) > 0) || (i.key === 'food' && i.carried < NETHER_FLOOR && (stallRest(goal, 'nether_food', now) || !goingWithoutStands(goal, now)))
+  // Under the reserve the food is offered whatever going without was chosen before (note 2762): the going without stood
+  // and hid it, said on the option instead. full-300 (25587, 2026-11-01 01:15 to 01:33Z) chose the Nether stage over the
+  // food rung (0.02 to 0.04) twice, and at the crossing with 0 of 80 food points was offered cross now, a spare shield, wood
+  // and a cache, no food; it crossed at 0.55 and had no rod by 2h10. full-296 crossed with 8.
+  const foodWithout = goingWithoutStands(goal, now) ? (() => { try { const r = require('./progress').attemptsFor(goal).of('rung', now).nether_food; return r?.why ? String(r.why).slice(0, 140) : 'going without was chosen'; } catch (_) { return 'going without was chosen'; } })() : null;
+  const empty = left.filter(i => /^(food|blocks)$/.test(i.key) && ((i.carried === 0 && (seen[i.key] || 0) > 0) || (i.key === 'food' && i.carried < NETHER_FLOOR)
     || (i.key === 'food' && i.carried === 0 && turnedBackLately)
     // With no food at all, the food is offered unless Jev's own going
     // without stands (note 1224): a bot back from a death has none and had
@@ -9718,7 +9723,7 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     const back = ` The last crossing turned back through the portal for food ${ago} minute${ago === 1 ? '' : 's'} ago, the first thing asked on the far side; ${foodItem.carried} food points are carried now and hunger is ${hungerNow}: crossed so, the same question is asked there again.`;
     tree.cross_now.description += back; crossFoodSays += back;
   }
-  for (const i of empty) tree[`take_up_${i.key}`] = { takesUp: `nether_${i.key}`, description: `Take up the ${i.key} for the Nether again first: ${i.carried === 0 ? `it is empty now, 0 of ${i.wants} carried${seen[i.key] ? ` (${seen[i.key]} when the crossing last looked)` : ''}` : `${i.carried} of ${i.wants} points carried, under the Nether's reserve of ${NETHER_FLOOR}`}, and its step was set aside by the ladder; its rest is lifted and the ladder takes it up next.${i.key === 'food' ? takeUpFoodSays(bot, goal, i) : ''}` };
+  for (const i of empty) tree[`take_up_${i.key}`] = { takesUp: `nether_${i.key}`, description: `${i.key === 'food' && foodWithout ? `Going on without the food was chosen before (${foodWithout}); it is on offer again here at the crossing. ` : ''}Take up the ${i.key} for the Nether again first: ${i.carried === 0 ? `it is empty now, 0 of ${i.wants} carried${seen[i.key] ? ` (${seen[i.key]} when the crossing last looked)` : ''}` : `${i.carried} of ${i.wants} points carried, under the Nether's reserve of ${NETHER_FLOOR}`}, and its step was set aside by the ladder; its rest is lifted and the ladder takes it up next.${i.key === 'food' ? takeUpFoodSays(bot, goal, i) : ''}` };
   const pickMade = noPickaxe ? (countOf(bot, 'iron_ingot') >= 3 ? 'iron_pickaxe' : ['cobblestone', 'cobbled_deepslate', 'blackstone'].some(n => countOf(bot, n) >= 3) ? 'stone_pickaxe' : 'wooden_pickaxe') : null;
   if (noPickaxe) {
     let budget = null; try { budget = require('./pickaxe-budget').pickaxeBudget(bot, goal); } catch (_) { budget = null; }
