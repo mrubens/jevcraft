@@ -344,8 +344,10 @@ const DETECTORS = [
   // anywhere in the loaded ground: the first live search walked legs past
   // ground it had loaded and never looked at.
   { kind: 'warped_forest', dimension: 'nether', same: 96, detect: bot => {
-    const warped = find(bot, ['warped_nylium', 'warped_stem', 'warped_wart_block'], 48, 64);
-    return warped.length >= 24 ? at(warped[0], { warped: warped.length }) : biomeNear(bot, 'warped_forest') || forestInSight(bot);
+    // By sight alone (note 2781, the user 2026-11-01 'Yes drop it'): the count of warped blocks within 48 and the stored
+    // biome at the bot's height within 128 (biomeNear) both read through rock; the biome stood in is the game's own F3.
+    const here = (() => { try { const b = bot.blockAt(bot.entity.position.floored()); return String(bot.registry?.biomes?.[b?.biome?.id]?.name || '').replace('minecraft:', '') === 'warped_forest'; } catch (_) { return false; } })();
+    return here ? at(bot.entity.position.floored(), { biome: true, standing: true }) : forestInSight(bot);
   } },
   { kind: 'bastion', dimension: 'nether', same: 64, detect: bot => {
     const gilded = find(bot, ['gilded_blackstone', 'gold_block'], 48, 16).filter(p => near(bot, p, ['polished_blackstone_bricks', 'blackstone', 'cracked_polished_blackstone_bricks'], 3));
