@@ -404,7 +404,9 @@ function pullBackOption(bot, task, goal, save, fight, { navigate = null, now = D
   const secs = Math.round((site.steps / 4.3 + site.digs * 0.6) * 10) / 10;
   const description = `Pull back out of their sight: ${site.digs ? `dig out through ${site.digs === 1 ? 'a block' : `${site.digs} blocks`} of the bot's own and ` : ''}walk ${site.steps} blocks (about ${secs} seconds${seeing ? `, ${seeing} blaze${seeing === 1 ? '' : 's'} in sight now` : ''}) to a cell ${site.off} from the cage, past 16 and in no blaze's line, ${site.far ? '33 or more from every blaze known about' : 'not yet 32 from all of them'}, and wait there up to ${Math.round(PULL_WAIT_MS / 1000)} seconds, then back to the cage. ` +
     `${within16.length} blazes are within 16 (${unseen} out of sight); ${atCap} of them within the spawner's own range of the cage, which it caps at ${cap}${atCap >= cap ? ': at its cap it makes none more' : ''}; the other ${within16.length - atCap} are blazes it already made that drifted off, and each shoots whenever it sees the bot. By the game's rules: past 16 of the cage the spawner makes none and its delay stops; a blaze shoots only with a line to the bot; a monster with no player within 32 blocks for 30 seconds is removed at random, one chance in 800 a tick (about half within another 28 seconds, about nine in ten within 90), so ${site.far ? 'waiting there thins the stack' : 'the stack stays while the bot is within 32 of them'}. ${fight.need} rod${fight.need === 1 ? '' : 's'} still needed: none meanwhile.`;
-  return { description, secs,
+  // The seconds in their fire (note 2760): the digging out and the first eight blocks of the walk, past which the cell's route is out of their line.
+  const fireSecs = Math.round((site.digs * 0.6 + Math.min(site.steps, 8) / 4.3) * 10) / 10;
+  return { description, secs, fireSecs,
     run: async () => {
       bot.chat?.(`${within16.length} blaze${within16.length === 1 ? '' : 's'} here: pulling back out of their sight for a minute or so.`);
       const { goals } = require('mineflayer-pathfinder');

@@ -5002,8 +5002,11 @@ class Survival {
         const ch = require('./cage-hold'), fight = ch.cageFight(bot, goal);
         const pb = fight && !stands.pull_back && ch.pullBackOption(bot, task, goal, save, fight, { navigate: this.actions.navigate });
         if (pb) {
-          let cost = null; try { cost = require('./blaze-stand').standCost(bot, danger, { setup: pb.secs }); } catch (_) { cost = null; }
-          options.pull_back = { ...(cost ? { expects: { damage: cost.damage, seconds: pb.secs } } : {}), description: `${cost ? `This way: about ${cost.damage} damage over about ${pb.secs} seconds, from ${Math.round((bot.health ?? 20) * 10) / 10} health. ` : ''}${pb.description}`,
+          // Priced for the seconds in their fire only (note 2760): over the whole walk, every blaze within 24 counted as
+          // shooting, it read 57.5 damage on mid-full-166-fortress-22 (25591, 2026-11-01 00:5x to 01:16Z), offered 27 times
+          // at a median 0.06 and never taken; box here 14 times, no blaze killed, burned at 01:16:37.
+          let cost = null; try { cost = require('./blaze-stand').standCost(bot, danger.filter(t => t.visible !== false), { setup: pb.fireSecs ?? pb.secs }); } catch (_) { cost = null; }
+          options.pull_back = { ...(cost ? { expects: { damage: cost.damage, seconds: pb.secs } } : {}), description: `${pb.description} The price is for the ${pb.fireSecs ?? pb.secs} seconds in their fire, the digging out and the first eight blocks; past them the way is out of their line.`,
             run: async () => { this.report(goal, save, { action: 'pull_back', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true }); await pb.run(); return true; } };
           standKeys.add('pull_back');
         }
