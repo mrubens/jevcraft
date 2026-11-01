@@ -100,4 +100,17 @@ function deathShare(question, key, health, file = fileNow()) {
   return Math.round(r.died / r.n * (Number.isFinite(health) ? health : 20) * 10) / 10;
 }
 
-module.exports = { FILE, DROP, LEAST, PRICED_FROM, BANDS, bandOf, load, rowOf, bandRow, ownSays, dropSays, tableSays, deathShare };
+// The record as the price (note 2774): where the band at the bot's health (else the whole) holds ten picks with a
+// measured loss, the health lost in the thirty seconds after the pick plus the death's share of the health now. The
+// estimate by the game's numbers ran far over what came: on the last day dig down priced about 59 and 0.4 lost, seal 66
+// and 1.6, take cover 45 and 1.1, close in 24 and 3.8; 28 dig downs priced past the health were followed by no death.
+// -> { damage, n, lost, died, band } or null.
+function measuredPrice(question, key, health, file = fileNow()) {
+  const b = bandRow(question, key, health, file);
+  const r = b && b.n >= PRICED_FROM && Number.isFinite(b.lost) ? b : (() => { const w = rowOf(question, key, file); return w && w.n >= PRICED_FROM && Number.isFinite(w.lost) ? w : null; })();
+  if (!r) return null;
+  const hp = Number.isFinite(health) ? health : 20;
+  return { damage: Math.round((r.lost + r.died / r.n * hp) * 10) / 10, n: r.n, lost: r.lost, died: r.died, band: r.band ? BANDS[r.band] : null };
+}
+
+module.exports = { measuredPrice, FILE, DROP, LEAST, PRICED_FROM, BANDS, bandOf, load, rowOf, bandRow, ownSays, dropSays, tableSays, deathShare };

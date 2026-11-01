@@ -48,7 +48,10 @@ async function readLog(file, sinceMs) {
       if (dec.id === 'encounter_stance' && !(st.threats || []).some(t => t && t.name === 'blaze' && t.distance <= 16)) continue;
       if (dec.id === 'hunt_target' && !(st.resource === 'blaze_rod' || /blaze/.test(JSON.stringify(st.blazes || '')) || Object.keys(dec.options || {}).some(k => /^(charge_nearest|close_in|box_here|box_at_spawner)$/.test(k)))) continue;
       seen.add(dec.askedAt);
-      answers.push({ at, q: dec.id, key, health: Number.isFinite(st.health) ? st.health : null });
+      // The price the chosen way was offered at (note 2774): its damage estimate, the record's share in it taken back out.
+      const ex = dec.options && dec.options[key] && dec.options[key].expects;
+      const priced = ex && Number.isFinite(ex.damage) ? ex.damage : null;
+      answers.push({ at, q: dec.id, key, health: Number.isFinite(st.health) ? st.health : null, priced });
     } else if (line.startsWith('[blaze] one killed')) {
       // The log's lines carry no time: the kill is placed at the last decision's time (within a few seconds of it).
       if (lastAt) kills.push(lastAt);
@@ -64,23 +67,44 @@ function tally(logs) {
   const by = {};
   for (const { answers, kills, deaths, hps } of logs) {
     kills.sort((a, b) => a - b); deaths.sort((a, b) => a - b); hps.sort((a, b) => a[0] - b[0]);
+    // A death is the last answer's (note 2774): of each question's answers in the window before it, only the last one
+    // given, the way held when it came. Counted on every answer in the window, a way taken and left within seconds for
+    // another carried the other's death: mid-full-166-fortress-26 (2026-11-01 02:46:45Z) pulled back at 20 health, left
+    // it for leave and heal three seconds later, and died at 02:48:01 after eleven more answers; pull back read 57% dead.
+    const lastBefore = new Set();
+    for (const t of deaths) {
+      const best = {};
+      for (const a of answers) if (a.at <= t && t - a.at <= (a.deathMs || DEATH_MS) && (!best[a.q] || a.at > best[a.q].at)) best[a.q] = a;
+      for (const a of Object.values(best)) lastBefore.add(a);
+    }
     for (const a of answers) {
-      const q = by[a.q] ||= {}, r = q[a.key] ||= { n: 0, kill: 0, died: 0, lostSum: 0, lostN: 0, bands: {} };
+      const q = by[a.q] ||= {}, r = q[a.key] ||= { n: 0, kill: 0, died: 0, lostSum: 0, lostN: 0, pricedSum: 0, pricedN: 0, lethal: 0, lethalDied: 0, bands: {} };
       r.n++;
-      const killed = kills.some(t => t >= a.at && t - a.at <= KILL_MS), died = deaths.some(t => t >= a.at && t - a.at <= (a.deathMs || DEATH_MS));
+      const killed = kills.some(t => t >= a.at && t - a.at <= KILL_MS), died = lastBefore.has(a);
       if (killed) r.kill++;
       if (died) r.died++;
       // The same by the health the answer was given at (note 2616): 16 or more, 10 to 15, under 10. A way that kills at
       // full health and is followed by a death at ten reads one way in the whole and another by band.
       const band = a.health === null ? null : a.health >= 16 ? 'high' : a.health >= 10 ? 'mid' : 'low';
-      if (band) { const b = r.bands[band] ||= { n: 0, kill: 0, died: 0 }; b.n++; if (killed) b.kill++; if (died) b.died++; }
+      const b = band ? (r.bands[band] ||= { n: 0, kill: 0, died: 0, lostSum: 0, lostN: 0 }) : null;
+      if (b) { b.n++; if (killed) b.kill++; if (died) b.died++; }
+      // The price against what came (note 2774): picks priced at the health or more ('more than the bot has'), and how
+      // many of them a death followed.
+      if (Number.isFinite(a.priced)) { r.pricedSum += a.priced; r.pricedN++; if (a.health !== null && a.priced >= a.health) { r.lethal++; if (died) r.lethalDied++; } }
       if (a.health !== null) {
         const later = hps.filter(([t]) => t > a.at && t - a.at <= LOST_MS).map(([, h]) => h);
-        if (later.length) { r.lostSum += Math.max(0, a.health - Math.min(...later)); r.lostN++; }
+        // A death within the thirty seconds is the whole health lost.
+        const lost = died && deaths.some(t => t >= a.at && t - a.at <= LOST_MS) ? a.health : later.length ? Math.max(0, a.health - Math.min(...later)) : null;
+        if (lost !== null) { r.lostSum += lost; r.lostN++; if (b) { b.lostSum += lost; b.lostN++; } }
       }
     }
   }
-  for (const q of Object.values(by)) for (const r of Object.values(q)) { r.lost = r.lostN ? Math.round(r.lostSum / r.lostN * 10) / 10 : null; delete r.lostSum; delete r.lostN; }
+  const mean = (sum, n) => n ? Math.round(sum / n * 10) / 10 : null;
+  for (const q of Object.values(by)) for (const r of Object.values(q)) {
+    r.lost = mean(r.lostSum, r.lostN); r.priced = mean(r.pricedSum, r.pricedN);
+    delete r.lostSum; delete r.lostN; delete r.pricedSum; delete r.pricedN;
+    for (const b of Object.values(r.bands)) { b.lost = mean(b.lostSum, b.lostN); delete b.lostSum; delete b.lostN; }
+  }
   return by;
 }
 

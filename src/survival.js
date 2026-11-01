@@ -6478,6 +6478,16 @@ class Survival {
     // was said beside the figure (note 2602) and the figure still read as the cheap way.
     if (danger.some(t => t.entity.name === 'blaze')) for (const [k, o] of Object.entries(options)) {
       if (!o?.expects || !Number.isFinite(o.expects.damage)) continue;
+      // The record as the price where it holds ten picks (note 2774, the user 2026-11-01 'Yes, do both'): the estimate by
+      // the game's numbers said beside it. Priced past the health on 89 close ins and 28 dig downs of the last day, the
+      // estimate was followed by a death after 4% and none, and Jev read 'more than the bot has' as noise.
+      const m = require('./blaze-outcomes').measuredPrice('encounter_stance', k, bot.health ?? 20);
+      if (m) {
+        const est = o.expects.damage;
+        o.expects.damage = m.damage; o.recordPriced = { est, ...m };
+        if (typeof o.description === 'string') o.description += ` The price is the record's: ${m.n} picks of this way${m.band ? ` at ${m.band}` : ''} on the runs of the last day lost about ${m.lost} health in the thirty seconds after, and a death came while it was the way held after ${m.died} of them; by the game's numbers alone it is about ${Math.round(est * 10) / 10}.`;
+        continue;
+      }
       const add = require('./blaze-outcomes').deathShare('encounter_stance', k, bot.health ?? 20);
       if (add > 0) { o.expects.damage = Math.round((o.expects.damage + add) * 10) / 10; o.recordAdded = add; }
     }
