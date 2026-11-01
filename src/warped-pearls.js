@@ -351,11 +351,23 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
   // with no safe step, rested the sweep within a minute each time, and went
   // back through the portal with no pearl: five crossings in five hours.
   let crossWhy = null;
-  if (bot.entity.position.distanceTo(start) < 2 && actions.cross && !toWalk()) {
+  // The lava sea across the leg and too few blocks carried to lay over it (note 2787, the user 2026-11-01 'Yeah fix
+  // it'): the heading is spent from here at once, said, and the next fresh heading taken, not crossed a cell at a time.
+  // full-320 (25592, 2026-11-01 18:47 to 18:57Z) took sweep on and stood at (3, 33, 56) on the sea's shore, its leg
+  // south across it, no block carried: 'No route' ten times a minute and the crossing laying nothing.
+  let seaWhy = null;
+  if (bot.entity.position.distanceTo(start) < 2 && !toWalk()) {
+    try {
+      const br = require('./bridging'), sv = br.surveyCrossing(bot, leg, { cells: 48 }), carried = br.blocksCarried(bot);
+      if (sv && sv.overLava > 0 && sv.bridge > carried) seaWhy = `the lava sea across it: ${sv.bridge} blocks to lay in the next ${sv.cells}, ${sv.overLava} of them over lava, ${carried} carried`;
+    } catch (_) { seaWhy = null; }
+  }
+  if (seaWhy) { search.lastError = `the walk ${walkWhy ? `failed (${walkWhy})` : 'came no nearer'}; ${seaWhy}`; search.fails = 2; }
+  else if (bot.entity.position.distanceTo(start) < 2 && actions.cross && !toWalk()) {
     try { crossWhy = await actions.cross(bot, task, goal, save, leg); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; crossWhy = String(err.message || err).slice(0, 160); }
   }
-  search.lastError = `the walk ${walkWhy ? `failed (${walkWhy})` : bot.entity.position.distanceTo(start) < 2 ? 'came no nearer' : 'went on'}${actions.tunnel ? `, the staircase ${stairWhy ? `failed (${stairWhy})` : 'came no nearer'}` : ''}${actions.cross && crossWhy ? `, the span ${crossWhy}` : ''}`;
+  if (!seaWhy) search.lastError = `the walk ${walkWhy ? `failed (${walkWhy})` : bot.entity.position.distanceTo(start) < 2 ? 'came no nearer' : 'went on'}${actions.tunnel ? `, the staircase ${stairWhy ? `failed (${stairWhy})` : 'came no nearer'}` : ''}${actions.cross && crossWhy ? `, the span ${crossWhy}` : ''}`;
   const after = Math.hypot(leg.x - bot.entity.position.x, leg.z - bot.entity.position.z);
   search.tries = (search.tries || 0) + 1;
   if (after < before - 16 || toWalk()) { search.legs++; search.fails = 0; delete search.spent; }
