@@ -4997,6 +4997,17 @@ class Survival {
       // A fact of the stands, not a way (note 2603): lifted into the question's state.
       if (typeof stands._noStrike === 'string') { this.state.stanceNoStrike = stands._noStrike; delete stands._noStrike; } else delete this.state.stanceNoStrike;
       for (const key of Object.keys(stands)) standKeys.add(key);
+      // Pulling back out of their sight at the cage, offered in the fight as in the hunt (note 2758).
+      try {
+        const ch = require('./cage-hold'), fight = ch.cageFight(bot, goal);
+        const pb = fight && !stands.pull_back && ch.pullBackOption(bot, task, goal, save, fight, { navigate: this.actions.navigate });
+        if (pb) {
+          let cost = null; try { cost = require('./blaze-stand').standCost(bot, danger, { setup: pb.secs }); } catch (_) { cost = null; }
+          options.pull_back = { ...(cost ? { expects: { damage: cost.damage, seconds: pb.secs } } : {}), description: `${cost ? `This way: about ${cost.damage} damage over about ${pb.secs} seconds, from ${Math.round((bot.health ?? 20) * 10) / 10} health. ` : ''}${pb.description}`,
+            run: async () => { this.report(goal, save, { action: 'pull_back', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true }); await pb.run(); return true; } };
+          standKeys.add('pull_back');
+        }
+      } catch (_) { /* no pull back */ }
       for (const [key, o] of Object.entries(stands)) options[key] = { expects: o.expects, ...(o.judgeBy ? { judgeBy: o.judgeBy } : {}), description: o.description + (o.kind === 'hole' && !o.site.inside ? buildCost : '') + hitsLeft,
         run: async () => {
           this.report(goal, save, { action: key, threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });

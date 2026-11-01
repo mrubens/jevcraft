@@ -391,7 +391,11 @@ function pullBackOption(bot, task, goal, save, fight, { navigate = null, now = D
   let about = [];
   try { about = require('./danger').threats(bot, 48).filter(t => t.entity.name === 'blaze'); } catch (_) { about = []; }
   const within16 = about.filter(t => t.distance <= RANGE);
-  if (within16.length < STACKED) return null;
+  // Offered with any blaze within 16, not only a stack of STACKED (note 2758, the user 2026-11-01: 'Sure do both'): full
+  // runs reach the cage with three to eleven blazes in sight and no lull, and charged into them (full-292, 2026-10-31
+  // 22:33Z, 3 to 11 blazes in 40 seconds, dead at 96 minutes; full-293 at 87). Pulled back out of their sight, the lull
+  // that follows offers the built hole (notes 2743, 2748).
+  if (!within16.length) return null;
   const site = pullBackSite(bot, fight.cage, about.map(t => t.entity));
   if (!site) return null;
   let atCap = 0, cap = 6;
@@ -402,7 +406,7 @@ function pullBackOption(bot, task, goal, save, fight, { navigate = null, now = D
     `${within16.length} blazes are within 16 (${unseen} out of sight); ${atCap} of them within the spawner's own range of the cage, which it caps at ${cap}${atCap >= cap ? ': at its cap it makes none more' : ''}; the other ${within16.length - atCap} are blazes it already made that drifted off, and each shoots whenever it sees the bot. By the game's rules: past 16 of the cage the spawner makes none and its delay stops; a blaze shoots only with a line to the bot; a monster with no player within 32 blocks for 30 seconds is removed at random, one chance in 800 a tick (about half within another 28 seconds, about nine in ten within 90), so ${site.far ? 'waiting there thins the stack' : 'the stack stays while the bot is within 32 of them'}. ${fight.need} rod${fight.need === 1 ? '' : 's'} still needed: none meanwhile.`;
   return { description, secs,
     run: async () => {
-      bot.chat?.(`Too many blazes stacked here (${within16.length}): pulling back out of their sight for a minute or so.`);
+      bot.chat?.(`${within16.length} blaze${within16.length === 1 ? '' : 's'} here: pulling back out of their sight for a minute or so.`);
       const { goals } = require('mineflayer-pathfinder');
       goal.step = { action: 'pull_back_from_spawner', target: { x: site.cell.x, y: site.cell.y, z: site.cell.z }, blazes: within16.length, health: bot.health }; save?.();
       // Its own blocks on the way dug first, a cell at a time (the walk
