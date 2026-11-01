@@ -126,6 +126,7 @@ define({
     { pattern: 'ore_\\d+', names: 'the ore block, by the number it was given when first offered, kept for it (keys.js)', label: 'dig to this ore', when: 'the nearest of its kind, with its distance, what is carried and what it is for', level: 'root', dynamic: true },
     { key: 'branch', label: 'dig a branch down and along', when: 'always', level: 'root' },
     { key: 'branch_away', label: 'dig the branch away from the spawner or structure that makes the mobs here', when: 'a mob spawner within sixteen blocks, or a dungeon or mineshaft remembered within twenty-four; said with where its end lies from it. Every option here is said with what the place is (mobSourceAbout)', level: 'root' },
+    { key: 'sealed_tunnel', label: 'dig on level from here, sealing as it goes: the cell behind, any open side and gaps over and under filled after each step', when: 'eight or more building blocks carried; said with the minutes to dawn, the blocks carried, the hunger and the pickaxe\'s wear (note 2772)', level: 'root' },
     { key: 'seal_and_wait', label: 'stop the mine and seal a pocket here to wait for dawn', when: 'always; said with the minutes to dawn, that standing still spends no hunger, and whether health comes back meanwhile (note 1379)', level: 'root' },
     { key: 'light_tunnel', label: 'put a torch in the tunnel here', when: 'torches carried and the cells around are dark enough for monsters', level: 'root' },
   ],

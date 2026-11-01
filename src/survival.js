@@ -9037,6 +9037,26 @@ class Survival {
     if (shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) { refuge.verifiedAt = new Date().toISOString(); save(); return true; }
     return false;
   }
+  // The sealed tunnel's step (note 2772): round the cell the bot stands in, every open cell at the feet and the head but
+  // the face ahead toward the target, the cell over the head and the floor are filled, nearest the open air first.
+  async sealTunnelStep(task, goal, save, target) {
+    const bot = this.bot, feet = feetCell(bot);
+    const toward = target ? new Vec3(Math.sign(target.x - feet.x), 0, Math.sign(target.z - feet.z)) : null;
+    const ahead = c => toward && c.y - feet.y <= 1 && c.y >= feet.y && c.x - feet.x === toward.x && c.z - feet.z === toward.z && (toward.x === 0 || toward.z === 0);
+    const cells = [feet.offset(0, 2, 0), feet.offset(0, -1, 0)];
+    for (const dy of [0, 1]) for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) cells.push(feet.offset(dx, dy, dz));
+    const open = cells.filter(c => !ahead(c) && (() => { const b = bot.blockAt(c); return !!b && b.boundingBox !== 'block' && !/lava/.test(b.name); })());
+    let laid = 0;
+    for (const c of open) {
+      task.check();
+      const name = shelter.buildingItem(bot)?.name; if (!name) break;
+      try { await this.actions.place(bot, task, c, name, { stay: true, replaceLiquid: true }); laid++; }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    }
+    if (laid) { const m = this.state.nightMine; if (m) { m.sealLaid = (m.sealLaid || 0) + laid; save(); } }
+    return laid;
+  }
+
   async sealHere(task, goal, save, danger) {
     const bot = this.bot;
     if (shelter.materialStock(bot) < 12) return this.digIn(task, goal, save, danger);
@@ -10949,6 +10969,17 @@ class Survival {
       const hunger = bot.food ?? 20, hp = Math.round((bot.health ?? 20) * 10) / 10;
       tree.seal_and_wait = { description: `Stop the mine and seal a pocket here to wait for dawn, about ${mins} real minute${mins === 1 ? '' : 's'} off: standing still spends no hunger (hunger ${hunger} stays ${hunger}; each block dug spends it), and the pickaxe's uses are kept; the minutes to dawn gain nothing.${hunger < 18 && hp < 20 ? ` Health ${hp} does not come back meanwhile: hunger is under eighteen.` : ''}` };
     }
+    // A tunnel sealed as it goes (note 2772, the user 2026-11-01 'Build that'): the night spent digging, not waited out,
+    // where no mob reaches. full-312 (25592, 2026-11-01 04:57Z), 32 minutes in at 11.7 health, hunger 17, nothing to eat,
+    // no iron pickaxe, was offered a branch down where it had been hurt seven times in fifteen minutes or a sealed pocket
+    // for eight real minutes that 'gain nothing', took the pocket at 0.6 and none good at 0.18, and stood still to dawn.
+    {
+      const blocks = shelter.materialStock(bot);
+      if (blocks >= 8) {
+        const tod = bot.time?.timeOfDay ?? 0, mins = Math.round(((23000 - tod + 24000) % 24000) / 1200);
+        tree.sealed_tunnel = { description: `Dig on level from here, two high and one wide, twenty-four blocks along, sealing as it goes: after each step the cell behind, any open side at the feet or the head (a cave, a ravine met) and a gap overhead or underfoot are filled with a block, so nothing comes in from behind or the sides and only the face ahead is open; ore in the walls is seen as it is passed. About ${mins} real minute${mins === 1 ? '' : 's'} to dawn; ${blocks} blocks carried, about one laid a step in solid rock and more where it opens into air. Each block dug spends a little hunger (${bot.food ?? 20} now); the pickaxe wears a use a block.` };
+      }
+    }
     // Back to the portal from the night mine (note 2754, the Fable check-in of 2026-10-31 22:10Z): chosen as the night's
     // shelter, the mine offered only ore, a branch and a seal, no way back to the frame. full-291 (25589, 21:3x to 21:48Z)
     // picked ore fifteen times with the frame's ten in, 74 blocks off; full-292 seven times.
@@ -10966,6 +10997,7 @@ class Survival {
       return { lit: true };
     }
     if (pick === 'seal_and_wait') return { seal: true };
+    if (pick === 'sealed_tunnel') return { sealed: true };
     if (pick === 'back_to_the_frame') return { stop: true };
     if (pick === 'branch_away') { const mine = this.state.nightMine; if (mine) mine.heading = tree.branch_away.heading; return null; }
     return pick === 'branch' ? null : choices.find(c => oreKey(c) === pick) || null;
@@ -11030,7 +11062,14 @@ class Survival {
         await this.sealHere(task, goal, save, []);
         return true;
       }
-      if (ore) { target = ore.position; mine.targetOre = ore.name; }
+      if (ore?.sealed) {
+        // The sealed tunnel chosen: level along the mine's heading, the walls closed round each step (sealTunnelStep).
+        const [sx, sz] = [[1, 0], [0, 1], [-1, 0], [0, -1]][mine.heading % 4];
+        mine.sealed = true; mine.targetOre = 'sealed_tunnel';
+        target = feet.offset(sx * 24, 0, sz * 24);
+        mine.target = { x: target.x, y: target.y, z: target.z };
+      }
+      else if (ore) { target = ore.position; mine.targetOre = ore.name; }
       else {
         // No ore in reach of the eye: a branch, down to a working depth
         // and then along, in the mine's heading, and from the surface the
@@ -11060,6 +11099,7 @@ class Survival {
         }
       } else {
         await tunnelStep(bot, task, mine, save, target, { dig: this.actions.dig, navigate: this.actions.navigate, strict: true });
+        if (mine.sealed && mine.targetOre === 'sealed_tunnel') await this.sealTunnelStep(task, goal, save, target);
         mine.failures = 0;
         // Steps that do not move the bot at all: the server kept putting the
         // blocks back (a client and server that disagree), every step wore

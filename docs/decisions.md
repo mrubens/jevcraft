@@ -158,6 +158,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `ore_\d+` (pattern: names the ore block, by the number it was given when first offered, kept for it (keys.js)) | root | dig to this ore | the nearest of its kind, with its distance, what is carried and what it is for |
 | `branch` | root | dig a branch down and along | always |
 | `branch_away` | root | dig the branch away from the spawner or structure that makes the mobs here | a mob spawner within sixteen blocks, or a dungeon or mineshaft remembered within twenty-four; said with where its end lies from it. Every option here is said with what the place is (mobSourceAbout) |
+| `sealed_tunnel` | root | dig on level from here, sealing as it goes: the cell behind, any open side and gaps over and under filled after each step | eight or more building blocks carried; said with the minutes to dawn, the blocks carried, the hunger and the pickaxe's wear (note 2772) |
 | `seal_and_wait` | root | stop the mine and seal a pocket here to wait for dawn | always; said with the minutes to dawn, that standing still spends no hunger, and whether health comes back meanwhile (note 1379) |
 | `light_tunnel` | root | put a torch in the tunnel here | torches carried and the cells around are dark enough for monsters |
 
