@@ -8,7 +8,7 @@ One rule holds for every question about playing the game (`src/decisions/unchang
 
 Three more rules from note 749 (`src/decisions/loops.js`, `src/decisions/keys.js`, `src/intention.js`). A key names its thing: every dynamic option says what its key names (`names`: by name, by where it is, by entity id), never its place in the list, so what came of an option is said on the same thing at the next asking. A question asked round and round goes up: its askings each within a minute of the one before are its spell, said from the third (`spellSoFar`: how many, what was answered, how far the bot walked and how far it is from where they began, whether anything new is carried, how often none of the options was good); when none good was Jev's likeliest at three of its last five askings, or six askings over ninety seconds or more have left the bot within 48 blocks of where they began with nothing new carried, the answers it gave rest from there and the question above is asked with that said (not the stance, the body's way, the shield or the routing, which are said only). And a trip holds: an answer to a question about the plan whose option walks to a target, or whose catalogue entry says where it goes (`trip`), is the intention until it arrives, is done, fails, the dimension changes, health falls a blow's worth, a walk brings nothing for three minutes or ten minutes pass; its own question asked again offers only it. A rung set aside holds the same way (`src/decisions/asides.js`): an option that would take it back (`takeBack` on its node) is not offered for five minutes unless the bot is 16 blocks from where it was set aside, carries a new kind of thing or its health band changes (`asideHolds`). An answer thrown away as stale that keeps on with what is under way is kept, and from the second stale answer in a row within 30 seconds a question is watched a second first and not sent while its facts are still changing.
 
-128 questions: 77 decision trees and 51 batched questions.
+130 questions: 79 decision trees and 51 batched questions.
 
 ## Batches
 
@@ -1045,6 +1045,22 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `keep_here` | root | put the eyes in a chest here, then the errand | always here; said with the chest, what a death does to what is carried, when they are taken out again and the record of eyes lost |
 | `carry_on` | root | go on the errand with the eyes in the pack | always here; said with what a death takes and the record of eyes lost |
 
+### `blind_travel`
+
+**The eyes' bearings put the stronghold far off in the Overworld: go there through the Nether and build a portal under the estimate, or walk?**
+
+- When: In the Overworld on the way to the stronghold, its estimate from the eyes' bearings more than 600 blocks off, the portal's kit carried (ten obsidian, a lighter, three blocks) and a portal known within 600 blocks; asked once for each estimate (note 2783).
+- Decision tree, choice; stakes medium; ledger kind `strategy`
+- Bar: none
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
+- Options built in: src/nether-shortcut.js (blindDue, askBlind), src/work.js (returnFromNether)
+- Nothing left to try: the stall's question, as before (nothing above it)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `through_nether` (trip: the Nether) | root | through the Nether to under the estimate, a portal built there, out near it | always here; said with both distances and the Overworld's record walk |
+| `walk` | root | walk to the estimate over the ground | always here; said with the distance and the record |
+
 ### `water_way`
 
 **Water is in view but no walk reaches any of it: which source should the bot dig a staircase toward, or should it look for water elsewhere on the surface?**
@@ -1565,6 +1581,22 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `swim_on` | root | swim straight at the ring along its line, the head kept up, a minute at a time | always; said with the water on the ground along the line (from, to, land past it, or none seen within 128), the swim's seconds at two blocks a second, the drowned, health and hunger |
 | `tunnel_under` | root | dig a tunnel straight at the ring through the rock, two high, down to its level | a pickaxe carried; said with the cells and digs, the minutes at three seconds a cell, and the pickaxe's digs left against them |
+
+### `portal_home`
+
+**In the Nether with the portal's kit carried (ten obsidian, a lighter, three blocks): build a portal here and go through, or walk back to the portal the bot came in by?**
+
+- When: In the Nether at the start of the walk back to a known portal, ten obsidian, flint and steel or a fire charge, and three building blocks carried; the answer held half an hour (note 2783).
+- Decision tree, choice; stakes medium; ledger kind `strategy`
+- Bar: none
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
+- Options built in: src/work.js (walkToKnownPortal, portalHomeAsk, portalHere), src/nether-travel.js (portalHereSays)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `build_here` | root | build a portal here from the obsidian carried, light it and go through | always here; said with where it comes out in the Overworld and the portal the bot came in by's distance |
+| `walk_back` | root | walk back to the portal the bot came in by, the obsidian kept | always here; said with the distance and the measured pace of the walks back to a portal |
 
 ### `sculk_work`
 

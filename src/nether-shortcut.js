@@ -32,11 +32,50 @@ async function ask(bot, task, goal, save, chest, far) {
   return true;
 }
 
+// The portal's own kit carried (note 2782): ten obsidian, a lighter, three blocks to stand the lintel on.
+function portalKit(bot) {
+  const n = name => (bot.inventory?.items?.() || []).filter(i => i.name === name).reduce((a, i) => a + i.count, 0);
+  let supports = 0; try { supports = require('./build-sites').portalSupports(bot).count; } catch (_) { supports = 0; }
+  return n('obsidian') >= 10 && n('flint_and_steel') + n('fire_charge') > 0 && supports >= 3;
+}
+// To the stronghold through the Nether with a portal built under it (note 2783, the user 2026-11-01 'Yes do both': the
+// speedrunners' blind travel): in the Overworld, the bearings' estimate more than FAR off, the stronghold not yet found,
+// the portal's kit carried and a portal known within FAR, asked once for each estimate.
+function blindDue(bot, goal) {
+  const est = goal?.strongholdSearch?.estimate, here = bot.entity?.position;
+  if (!est || !here || stronghold(goal) || goal.kind !== 'win' || goal.netherShortcut) return null;
+  if (!/overworld/.test(String(bot.game?.dimension || ''))) return null;
+  const far = Math.round(flat(here, est));
+  if (far <= FAR) return null;
+  if (goal.blindAsked && flat(goal.blindAsked, est) < 64) return null;
+  if (!portalKit(bot)) return null;
+  const portal = (goal.portals || []).filter(p => p.dimension === 'overworld').sort((a, b) => flat(a, here) - flat(b, here))[0];
+  if (!portal || flat(portal, here) > FAR) return null;
+  return { est, far, portal, portalOff: Math.round(flat(portal, here)) };
+}
+async function askBlind(bot, task, goal, save) {
+  const d = blindDue(bot, goal);
+  if (!d) return false;
+  goal.blindAsked = { x: d.est.x, z: d.est.z, at: Date.now() }; save?.();
+  const tx = Math.round(d.est.x / 8), tz = Math.round(d.est.z / 8);
+  const tree = {
+    through_nether: { description: `Go to the stronghold's estimate at (${Math.round(d.est.x)}, ${Math.round(d.est.z)}) through the Nether: in by the portal ${d.portalOff} blocks off, about ${Math.round(d.far / 8)} blocks there to under the estimate, (${tx}, ${tz}), a portal built there from the ten obsidian carried and lit, and out in the Overworld near the estimate, where the eyes are thrown again; in place of ${d.far} blocks on foot. No eye of ender goes through with the bot (they are put away first). ${SAYS}.` },
+    walk: { description: `Walk the ${d.far} blocks to the estimate over the ground, the eyes thrown on the way as before. ${SAYS}.` },
+  };
+  const decision = await require('./decisions').decide('blind_travel', { client: task.opportunityClient, bot, task, goal, save, tree, state: { blocksOnFoot: d.far, blocksInTheNether: Math.round(d.far / 8), estimate: { x: Math.round(d.est.x), z: Math.round(d.est.z) } } });
+  if (decision.stale || decision.path.at(-1) !== 'through_nether') return false;
+  goal.netherShortcut = { phase: 'blind', target: { x: d.est.x, z: d.est.z }, at: Date.now() };
+  goal.errand = { dimension: 'nether', items: [], for: ERRAND, at: Date.now() };
+  bot.chat?.(`To the stronghold through the Nether: ${Math.round(d.far / 8)} blocks there in place of ${d.far} here, a portal built under it.`);
+  save?.();
+  return true;
+}
 // Where the way out of the Nether should come out: the chest on the way
 // there, the End portal on the way back. -> {x, z} or null
 function exitTarget(goal) {
   const s = goal?.netherShortcut;
   if (s?.phase === 'out') return s.chest;
+  if (s?.phase === 'blind') return s.target;
   return stronghold(goal);
 }
 
@@ -48,6 +87,9 @@ function settle(bot, goal, save, { eyesCarried = 0, wanted = 12 } = {}) {
   if (!s || !/overworld/.test(String(bot.game?.dimension || ''))) return;
   const here = bot.entity.position, sh = stronghold(goal);
   const ours = goal.errand?.for === ERRAND;
+  // Out near the estimate, or the stronghold found meanwhile: the blind travel is done (note 2783).
+  if (s.phase === 'blind' && (flat(here, s.target) <= 256 || sh)) { delete goal.netherShortcut; if (ours) delete goal.errand; save?.(); return; }
+  if (s.phase === 'blind') return;
   // Out for a corpse run's drop (note 1393): arrived within reach, the way is
   // done; the corpse run walks the rest.
   if (s.for === 'corpse_run' && flat(here, s.chest) <= FAR) { delete goal.netherShortcut; if (ours) delete goal.errand; save?.(); return; }
@@ -66,5 +108,6 @@ function settle(bot, goal, save, { eyesCarried = 0, wanted = 12 } = {}) {
   }
 }
 const carriesEyesBack = goal => goal?.netherShortcut?.phase === 'back';
+const blindTarget = goal => goal?.netherShortcut?.phase === 'blind' ? goal.netherShortcut.target : null;
 
-module.exports = { FAR, ERRAND, ask, exitTarget, settle, carriesEyesBack };
+module.exports = { FAR, ERRAND, ask, askBlind, blindDue, blindTarget, portalKit, exitTarget, settle, carriesEyesBack };

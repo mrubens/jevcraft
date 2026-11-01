@@ -1118,6 +1118,8 @@ function nextGameStage(bot, goal, skip = new Set()) {
   // The search goes with the spare in the pack and the twelve put away, where that was chosen (eye-bank.js, note 1197).
   // With the place the bearings meet known, the walk there wants no eye in the pack (stronghold.js throws none there, note 1151): the eyes in the chest are enough (note 1269).
   if (where === 'overworld' && !m.stronghold_located && goal.strongholdSearch && ((count(bot, 'ender_eye') + eyesBanked >= eyeTarget(goal) && (count(bot, 'ender_eye') >= 1 || (goal.strongholdSearch.estimate && (goal.strongholdSearch.bearings || []).length >= 2))) || goal.strongholdSearch.pendingPickup)) {
+    // Through the Nether to the estimate, Jev's, where the portal's kit is carried (note 2783).
+    try { if (require('./nether-shortcut').blindDue(bot, goal)) return { phase: 'find_stronghold', action: 'blind_travel' }; } catch (_) { /* the walk */ }
     return { phase: 'find_stronghold', action: 'find_stronghold' };
   }
   // The one number of enough (eye-need.js): the twelve frames and the spare
@@ -1486,6 +1488,7 @@ async function gameStep(bot, task, goal, save, actions) {
   else if (stage.action === 'elsewhere') await elsewhereStep(bot, task, goal, save, stage, null, actions);
   else if (stage.action === 'rods_waiting') await leaveNetherStep(bot, task, goal, save, stage, actions);
   else if (stage.action === 'pearl_order') await require('./pearl-order').ask(bot, task, goal, save, actions);
+  else if (stage.action === 'blind_travel') await require('./nether-shortcut').askBlind(bot, task, goal, save);
   else if (stage.action === 'pearl_route') await require('./pearl-routes').askRoute(bot, task, goal, save, actions);
   else if (stage.action === 'collect_rod_stash') await require('./rod-stash').collect(bot, task, goal, save, actions.stashActions || actions);
   else if (stage.action === 'bank_rods') await require('./rod-bank').bank(bot, task, goal, save, actions.stashActions || actions);

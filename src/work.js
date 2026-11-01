@@ -5743,6 +5743,9 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
   }
   // At the place worked out and still none in view: it is not there.
   if (p.estimated && Math.hypot(p.x - here.x, p.z - here.z) <= 8) return false;
+  // A portal built here or the walk back, Jev's, where the portal's kit is carried (note 2783, the user 2026-11-01 'Yes
+  // do both'): asked at the walk's start, once a stay, before any walk, not only once a walk has failed (portal_way).
+  if (where === 'nether' && await portalHomeAsk(bot, task, goal, save, p)) return true;
   goal.step = { action: 'return_to_portal', portal: { x: p.x, y: p.y, z: p.z } }; save();
   // A tunnel chosen toward this portal (portal_way's tunnel_home) goes on from
   // where it stopped, before any walk (note 866): 25597 (mid-241-cc-nether-1,
@@ -6356,6 +6359,28 @@ const cornerlessFrame = o => [
   ...[1, 2].flatMap(x => [o.offset(x, 0, 0), o.offset(x, 4, 0)]),
   ...[1, 2, 3].flatMap(y => [o.offset(0, y, 0), o.offset(3, y, 0)]),
 ].sort((a, b) => a.y - b.y).map(p => ({ ...p }));
+const PORTAL_HOME_HOLD_MS = 30 * 60000;
+async function portalHomeAsk(bot, task, goal, save, p) {
+  if (!require('./nether-shortcut').portalKit(bot)) return false;
+  const here = bot.entity.position, distance = Math.round(Math.hypot(p.x - here.x, p.z - here.z));
+  const held = goal.portalHome && Date.now() - goal.portalHome.at < PORTAL_HOME_HOLD_MS ? goal.portalHome : null;
+  let pick = held?.pick;
+  if (!pick) {
+    let pace = ''; try { pace = require('./game-progress').netherPaceSays(bot, distance, { toPortal: true }).says || ''; } catch (_) { pace = ''; }
+    const tree = {
+      build_here: { description: `${require('./nether-travel').portalHereSays(bot, goal)} The portal the bot came in by is ${distance} blocks off.` },
+      walk_back: { description: `Walk back to the portal the bot came in by, ${distance} blocks off, keeping the obsidian for later.${pace}` },
+    };
+    const decision = await decide('portal_home', { client: task.opportunityClient, bot, task, goal, save, tree, target: { x: p.x, y: p.y, z: p.z }, state: { portalBack: { x: p.x, y: p.y, z: p.z, distance }, obsidian: countOf(bot, 'obsidian') } });
+    if (decision.stale) return false;
+    pick = decision.path.at(-1);
+    goal.portalHome = { pick, at: Date.now() }; save();
+  }
+  if (pick !== 'build_here') return false;
+  try { for (let i = 0; i < 4; i++) { task.check(); if (await portalHere(bot, task, goal, save)) { delete goal.portalHome; save(); return true; } } }
+  catch (err) { task.check(); if (!(err instanceof Blocked)) throw err; goal.portalHome = { pick: 'walk_back', at: Date.now(), why: err.message }; save(); console.log(`[portal home] no portal built here: ${String(err.message).slice(0, 200)}`); return false; }
+  return true;
+}
 async function portalHere(bot, task, goal, save) {
   if (!goal.netherPortalFrame) {
     const site = selectPortalSite(bot);
@@ -8016,6 +8041,24 @@ async function relightPortalAt(bot, task, goal, save, where = 'nether') {
 
 async function returnFromNether(bot, task, goal, save) {
   if (dimension(bot) === 'overworld') return;
+  // Blind travel (nether-shortcut.js askBlind, note 2783): to under the stronghold's estimate, then a portal built there.
+  const ns = require('./nether-shortcut'), blind = ns.blindTarget(goal);
+  if (blind && ns.portalKit(bot)) {
+    const t = new Vec3(blind.x / 8, bot.entity.position.y, blind.z / 8), off = Math.hypot(t.x - bot.entity.position.x, t.z - bot.entity.position.z);
+    if (off > 8) {
+      goal.step = { action: 'blind_travel', target: { x: Math.round(t.x), y: Math.round(t.y), z: Math.round(t.z) }, off: Math.round(off) }; save();
+      try { await navigate(bot, task, new goals.GoalNearXZ(t.x, t.z, 4), { timeoutMs: 60000, stallMs: 10000 }); }
+      catch (err) {
+        task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+        await tunnelToward(bot, task, goal, save, t, 'blind_travel');
+      }
+      return;
+    }
+    goal.step = { action: 'portal_here', for: 'blind travel' }; save();
+    try { for (let i = 0; i < 4; i++) { task.check(); if (await portalHere(bot, task, goal, save)) break; } }
+    catch (err) { task.check(); if (!(err instanceof Blocked)) throw err; console.log(`[blind travel] no portal built here: ${String(err.message).slice(0, 200)}`); delete goal.netherShortcut; save(); }
+    return;
+  }
   const portal = lowestPortalBlock(bot);
   if (!portal) {
     if (await walkToKnownPortal(bot, task, goal, save, 'nether')) {

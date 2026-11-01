@@ -712,6 +712,30 @@ define({
 
 // The way to a far chest of the bot's through the Nether (src/nether-shortcut.js, note 1279).
 define({
+  id: 'portal_home', area: 'work', parent: 'rung_progress', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'In the Nether with the portal\'s kit carried (ten obsidian, a lighter, three blocks): build a portal here and go through, or walk back to the portal the bot came in by?',
+  trigger: 'In the Nether at the start of the walk back to a known portal, ten obsidian, flint and steel or a fire charge, and three building blocks carried; the answer held half an hour (note 2783).',
+  source: 'src/work.js (walkToKnownPortal, portalHomeAsk, portalHere), src/nether-travel.js (portalHereSays)',
+  options: [
+    { key: 'build_here', label: 'build a portal here from the obsidian carried, light it and go through', when: 'always here; said with where it comes out in the Overworld and the portal the bot came in by\'s distance', level: 'root' },
+    { key: 'walk_back', label: 'walk back to the portal the bot came in by, the obsidian kept', when: 'always here; said with the distance and the measured pace of the walks back to a portal', level: 'root' },
+  ],
+  instructions: workInstructions('The bot is in the Nether carrying ten obsidian and a lighter. Choose whether to build a portal where it stands and go through, or walk back to the portal it came in by. Each option says where it comes out, the distance and the pace.'),
+});
+
+define({
+  id: 'blind_travel', area: 'strategy', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'The eyes\' bearings put the stronghold far off in the Overworld: go there through the Nether and build a portal under the estimate, or walk?',
+  trigger: 'In the Overworld on the way to the stronghold, its estimate from the eyes\' bearings more than 600 blocks off, the portal\'s kit carried (ten obsidian, a lighter, three blocks) and a portal known within 600 blocks; asked once for each estimate (note 2783).',
+  source: 'src/nether-shortcut.js (blindDue, askBlind), src/work.js (returnFromNether)',
+  options: [
+    { key: 'through_nether', trip: 'the Nether', label: 'through the Nether to under the estimate, a portal built there, out near it', when: 'always here; said with both distances and the Overworld\'s record walk', level: 'root' },
+    { key: 'walk', label: 'walk to the estimate over the ground', when: 'always here; said with the distance and the record', level: 'root' },
+  ],
+  instructions: workInstructions('The stronghold\'s estimate is far off. Choose whether to go through the Nether, where a block is eight here, and build a portal under the estimate, or walk. Each option says its distance and its record.'),
+});
+
+define({
   id: 'nether_shortcut', area: 'resources', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'The End portal is found and the eyes are in a chest of the bot\'s far off in the Overworld: go there and back through the Nether, or walk?',
   trigger: 'In the Overworld, the stronghold located, about to walk to a chest of the bot\'s more than 600 blocks off; asked once for each chest.',
