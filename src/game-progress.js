@@ -143,7 +143,7 @@ const ARMOUR_PIECES = ['iron_armour', 'iron_helmet', 'iron_chestplate', 'iron_le
 // Diamond armour by armour for its diamonds (note 2726): a chestplate 8 for 8 points, leggings 7 for 6, a helmet 5 for 3, boots 4 for 3.
 const DIAMOND_PIECES = [['chestplate', 8], ['leggings', 7], ['helmet', 5], ['boots', 4]];
 // The crossing's kit may wait too (crossing-kit.js kitRungs, note 673).
-const DEFERRABLE = new Set(['spare_armour', 'bed', 'home_site', 'home_level', 'home_stash', 'home_bed', 'home_water', 'home_plot', 'home_pen', 'shield', 'leather_armour', 'copper_armour', 'fishing_rod', 'iron_sword', 'bucket', 'water_bucket', 'golden_boots', 'bow', 'arrows', 'diamond_pickaxe', 'diamond_sword', 'diamond_armour', ...ARMOUR_PIECES, 'nether_pickaxe', 'nether_blocks', 'nether_food', 'nether_chest']);
+const DEFERRABLE = new Set(['spare_armour', 'bed', 'home_site', 'home_level', 'home_stash', 'home_bed', 'home_water', 'home_plot', 'home_pen', 'shield', 'leather_armour', 'copper_armour', 'fishing_rod', 'iron_sword', 'bucket', 'water_bucket', 'golden_boots', 'bow', 'arrows', 'diamond_pickaxe', 'diamond_sword', 'diamond_armour', ...ARMOUR_PIECES, 'nether_obsidian', 'nether_lighter', 'nether_pickaxe', 'nether_blocks', 'nether_food', 'nether_chest']);
 const RUNG_BUDGET_MS = 20 * 60 * 1000, RUNG_WAIT_MS = 30 * 60 * 1000;
 function preparationRung(bot, goal = {}, now = Date.now()) {
   const resting = attemptsFor(goal).of('rung', now);

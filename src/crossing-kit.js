@@ -354,6 +354,7 @@ function kitBlocksWanted(bot, goal = {}) {
   if (goal?.kind !== 'win') return 0;
   try { return kitCounted(bot, goal) ? NETHER_BLOCKS : 0; } catch (_) { return 0; }
 }
+const PORTAL_OBSIDIAN = 10;
 function kitRungs(bot, goal = {}) {
   const stay = kitCounted(bot, goal);
   if (!stay) return [];
@@ -375,6 +376,14 @@ function kitRungs(bot, goal = {}) {
   // tables and planks there (of 55 lives that carried 2 or more rods, 24 had
   // the wood for a chest at their start, 15 at their end). Open while no
   // chest is carried; with the wood carried it is made now, said so.
+  // The portal's own kit (note 2782, the user 2026-11-01 'Crazy for Jev to try moving their portal if they have a diamond
+  // pickaxe?'): ten obsidian made from water poured on lava and mined with the diamond pickaxe carried (obsidian.js
+  // makeObsidian), then flint and steel, offered where a diamond pickaxe is carried; in the Nether a portal is built from
+  // them where it is wanted (work.js portalHere, portal_way and the stall's portal_here).
+  const diamondPick = require('./pickaxe-roles').carriedItems(bot).some(i => /^(diamond|netherite)_pickaxe$/.test(i.name));
+  const obsidian = countOf(bot, 'obsidian');
+  if (diamondPick && obsidian < PORTAL_OBSIDIAN) out.push({ phase: 'nether_obsidian', action: 'acquire', item: 'obsidian', count: PORTAL_OBSIDIAN, kit: 'obsidian', carried: obsidian, wants: PORTAL_OBSIDIAN });
+  if (obsidian >= PORTAL_OBSIDIAN && !(countOf(bot, 'flint_and_steel') + countOf(bot, 'fire_charge'))) out.push({ phase: 'nether_lighter', action: 'acquire', item: 'flint_and_steel', count: 1, kit: 'lighter', carried: 0, wants: 1 });
   const wood = chestWood(bot);
   if (!wood.carried) out.push({ phase: 'nether_chest', action: 'acquire', item: 'chest', count: 1, kit: 'chest', carried: wood.planks, wants: wood.wants, makesNow: wood.planks >= wood.wants });
   return out;
@@ -414,6 +423,10 @@ function kitRungSays(bot, goal, rung) {
   if (rung.kit === 'pickaxe') return ` ${rung.carried} of the ${rung.wants} pickaxes the crossing takes are carried (stone or better, ${SPARE_PICKAXE_DURABILITY} uses or more each${rung.uses != null ? `; ${rung.uses} uses between them, of the ${NETHER_PICK_USES} a stay takes: a tunnel two high wears two a block, netherrack mined for blocks one each` : ''}): the one in use and a spare, since the way out of a pocket, a wall or a buried portal is dug, and 5 of 7 bots in the Nether had no pickaxe left (notes 654, 655). ${rung.item === 'iron_pickaxe' ? (countOf(bot, 'iron_ingot') >= 3 ? `Iron: 3 of the ${countOf(bot, 'iron_ingot')} iron ingots carried, about 250 uses.` : `Iron: 3 of the ${require('./pickaxe-budget').smeltableIron(bot).says}, about 250 uses.`) : 'Stone: 3 cobblestone, about 131 uses (3 iron ingots would make it iron, about 250).'}${kitBudgetSays(bot)}${spareSaid(bot, goal)}`;
   if (rung.kit === 'blocks') return ` ${rung.carried} blocks carried of the ${rung.wants} the crossing takes (cobblestone, netherrack, dirt and the like): a portal can open on a ledge or an island over lava, a bridge takes a block a step, and spans stopped where the blocks ran out (notes 650, 655). Stone mined wears the pickaxe a use a block.`;
   if (rung.kit === 'chest') return chestRungSays(rung);
+  if (rung.kit === 'obsidian' || rung.kit === 'lighter') {
+    let walks = ''; try { const r = require('./game-progress').NETHER_TRIPS; if (r) walks = ` In the record the walks back to a portal in the Nether made ${r.slow} to ${r.fast} blocks a minute, and 13 of 83 over 60 blocks came out in the Overworld.`; } catch (_) { walks = ''; }
+    return ` ${rung.carried} of the ${rung.wants} ${rung.kit === 'obsidian' ? 'obsidian' : 'flint and steel'} carried. What it is for: ten obsidian and flint and steel carried in make a portal wherever it is wanted in the Nether, a frame without its corners and three ordinary blocks to stand the lintel on; built beside the fortress or a warped forest, the way home is a few blocks, not the walk back to the portal the bot came in by.${walks} It comes out in the Overworld at the Nether's x and z times eight, linking to a portal there within 128 blocks, else a new place with a new portal. ${rung.kit === 'obsidian' ? 'Made in the Overworld from water poured on a lava pool and mined with the diamond pickaxe, about 9.4 seconds a block; none is to be had in the Nether, where water boils away.' : 'An iron ingot and a flint (gravel dug) make it.'}`;
+  }
   if (rung.kit !== 'food') return '';
   const stay = netherStay(bot, goal), c = require('./food-facts').RECORD.crossings;
   const left = [stay.rodsLeft ? `${stay.rodsLeft} blaze rods` : null, stay.pearlsLeft ? `${stay.pearlsLeft} ender pearls` : null].filter(Boolean).join(' and ');
