@@ -110,7 +110,10 @@ function routes(bot, goal, now = Date.now()) {
   // The Nether's own gold ore, mined for the barter (note 2185; Fable 10-26): no pearl route mined it, and the barter
   // was offered only with gold already carried (5 picks of 53 asks in 25 h, no gold to throw). With a pickaxe and
   // nether gold ore within 32, the ores in view are said as ingots and pearls' worth.
-  if (!out.barter && !isSetAside(goal, 'rung', 'mine_gold_for_barter', now) && (bot.inventory?.items?.() || []).some(i => /_pickaxe$/.test(i.name))) {
+  // Not offered (note 2786, the user 2026-11-01 'Cut mine gold for barter'): its record, said on it, was 0 pearls in 79
+  // picks over a day of full runs, and it was still chosen over the forest's sweep: full-317 (25587, 18:00Z) and full-320
+  // (25592, 17:29Z) at 12 hours, 10 and 7 rods, 1 and 0 pearls. A barter with gold carried, or a bastion's gold, stays.
+  if (false && !out.barter && !isSetAside(goal, 'rung', 'mine_gold_for_barter', now) && (bot.inventory?.items?.() || []).some(i => /_pickaxe$/.test(i.name))) {
     try {
       const id = bot.registry?.blocksByName?.nether_gold_ore?.id;
       const ores = id !== undefined && typeof bot.findBlocks === 'function' ? bot.findBlocks({ matching: id, maxDistance: 32, count: 64 }) : [];
