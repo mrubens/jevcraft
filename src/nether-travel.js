@@ -43,6 +43,14 @@ const crossingSeconds = s => Math.round(s.cells / SNEAK_SPEED + (s.bridge + (s.w
 function crossingSays(s, what) {
   const work = [];
   if (s.dig) work.push(`digging ${s.dig} block${s.dig === 1 ? '' : 's'} of rock`);
+  // The pickaxes' wear against the digging (note 2775, the user 2026-11-01 'Fix the pickaxe wear on the Nether crossings'):
+  // a block dug is a use, the head's cell as well as the feet's, two a step through rock. mid-full-9-fortress-23 (25590,
+  // 2026-11-01 00:35 to 01:10Z) crossed on 31-step legs and went from a diamond, an iron and a stone pickaxe to none in 35
+  // minutes, '[span] 31 steps, 0 laid in 121.7 s: clear 101' by hand after, 663 blocks from its portal; nothing said it.
+  const wear = Number.isFinite(s.pickUses) && s.dig ? (s.pickUses >= s.dig
+    ? ` The digging takes ${s.dig} of the ${s.pickUses} pickaxe uses carried (a block a use, the head's as well as the feet's), ${s.pickUses - s.dig} left after.`
+    : s.pickUses > 0 ? ` The digging takes ${s.dig} pickaxe uses and ${s.pickUses} are carried: the pickaxes wear out about ${s.pickUses} blocks in, and the other ${s.dig - s.pickUses} are dug by hand, about 5 seconds a block of netherrack and nothing dropped, with no pickaxe after for the rest of the way.`
+    : ` No pickaxe is carried: the ${s.dig} blocks are dug by hand, about 5 seconds a block of netherrack and nothing dropped.`) : '';
   if (s.bridge) work.push(`laying ${s.bridge} block${s.bridge === 1 ? '' : 's'} over open ${s.overLava ? `air and lava (${s.overLava} of them over lava)` : 'air'}`);
   // Walled on both sides as it is laid while a biter is in reach (bridging.js
   // span, note 769): a knock off a span one wide is the fall.
@@ -50,7 +58,7 @@ function crossingSays(s, what) {
   if (!work.length) work.push('over ground already open');
   return `Go straight at ${what} at the height the bot stands, ${s.cells} blocks, ${work.join(' and ')}, crouched all the way so a step does not go over an edge: about ${crossingSeconds(s)} seconds. ` +
     `${s.carried} blocks carried${s.bridge ? `, ${s.carried - s.bridge - (s.wallBlocks || 0)} left after` : ''}.${s.bridge ? blockStock.afterSays({ noPickaxe: s.noPickaxe, left: s.carried - s.bridge - (s.wallBlocks || 0) }) : ''} It ends ${Math.round(s.gain)} blocks nearer, ${Math.round(s.from - s.gain)} from it` +
-    `${s.stoppedBy ? `; there, ${s.stoppedBy}` : ''}. Rock is dug only where no lava or water is behind it.`;
+    `${s.stoppedBy ? `; there, ${s.stoppedBy}` : ''}. Rock is dug only where no lava or water is behind it.${wear}`;
 }
 
 // Straight at `target`, through rock and over air or lava, at this height,

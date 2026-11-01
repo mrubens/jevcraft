@@ -222,7 +222,7 @@ function surveyCrossing(bot, target, { cells = 32, blocks = null, tool, from = n
   const start = from || require('./terrain').restingCell(bot) || standing(bot);
   const flat = p => Math.hypot(target.x - p.x, target.z - p.z);
   const pusher = spanPusher(bot);
-  const out = { cells: 0, dig: 0, bridge: 0, overLava: 0, wallBlocks: 0, walledFor: pusher ? { name: pusher.name, distance: Math.round(pusher.distance) } : null, carried, noPickaxe: !require('./block-stock').pickaxeCarried(bot) && !tool, stoppedBy: null, from: flat(start), end: start, gain: 0, digSeconds: 0 };
+  const out = { cells: 0, dig: 0, bridge: 0, overLava: 0, wallBlocks: 0, walledFor: pusher ? { name: pusher.name, distance: Math.round(pusher.distance) } : null, carried, noPickaxe: !require('./block-stock').pickaxeCarried(bot) && !tool, stoppedBy: null, from: flat(start), end: start, gain: 0, digSeconds: 0 , pickUses: (() => { try { return require('./pickaxe-budget').usesCarried(bot); } catch (_) { return null; } })() };
   let here = start, digMs = 0;
   for (let n = 0; n < cells; n++) {
     const step = stepToward(here, target);
