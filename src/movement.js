@@ -252,7 +252,7 @@ class SurvivalMovements extends Movements {
       // Nor a drop or a jump onto a lip beside a deadly drop, pushers or
       // not: the body's own drift carries on past the cell (the staircase's
       // rule, mid-244-q). A step there is the edge rule below (note 541).
-      else if (nether && airborne(kept[i]) && !this.besideLava?.(kept[i]) && this.deadlyDropBeside(kept[i])) { kept.splice(i, 1); this.edgeRefusals = (this.edgeRefusals || 0) + 1; }
+      else if (nether && airborne(kept[i]) && !this.besideLava?.(kept[i]) && !this.wayBackCell(kept[i]) && this.deadlyDropBeside(kept[i])) { kept.splice(i, 1); this.edgeRefusals = (this.edgeRefusals || 0) + 1; }
       // In the Nether a cell with lava round it where a touch is death or a
       // push is in line, or beside an edge whose fall ends in lava or costs
       // half the health while something can push: refused whatever the
@@ -507,9 +507,14 @@ class SurvivalMovements extends Movements {
   // cost, as a player walks a fortress bridge. mid-235-p-nether-3-fortress-
   // 2 reached none of its fortress's stretches in seventy-three minutes,
   // every bridge edge refused with nothing about (note 541).
+  // A cell of the way in while the way back along it is walked (walk-out.js walkBack, note 2768): walked before, so not
+  // refused for lava round it or an edge beside it; the option says how many such cells the way has.
+  wayBackCell(c) {
+    try { return !!this.bot?._wayBackWalk && require('./walk-out').onWayIn(this.bot, c); } catch (_) { return false; }
+  }
   besideLavaRefused(next) {
     this._lavaWhy = null;
-    if (this.besideLava?.(next)) return null;
+    if (this.besideLava?.(next) || this.wayBackCell(next)) return null;
     const lava = next._lava || lavaRound((x, y, z) => this.getBlock({ x, y, z }, 0, 0, 0)?.name, next);
     const hazard = this.lavaHazard();
     if (lava.cells.length && !hazard.resistant) {

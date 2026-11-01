@@ -53,7 +53,9 @@ const feetOf = p => ({ x: Math.floor(p.x), y: Math.ceil(p.y - 1e-4), z: Math.flo
 // ("Took to long to decide path") and tunnelled home by hand at about twelve
 // blocks a minute, its pickaxes worn out on the way.
 const OPEN_WALK_MS = 20 * 60000;
-const openWalk = (bot, now = Date.now()) => (bot?._goal?.rodWalkOpen?.until || 0) > now;
+// And while the way back the bot came in by is walked (the_way_in, note 2768): the way is not refused its own drops and
+// lava edges, which it was walked by before; they are said on the option instead (wayFacts).
+const openWalk = (bot, now = Date.now()) => !!bot?._wayBackWalk || (bot?._goal?.rodWalkOpen?.until || 0) > now;
 // Rods carried, the powder counted two to a rod (rod-stage.js's count).
 function rodsCarried(bot) {
   let rods = 0, powder = 0;
@@ -225,7 +227,7 @@ function endSays(way, portal, here) {
 }
 function wayBackSays(bot, way, facts) {
   const where = way.reaches ? 'to the portal it came in by' : `to where the way kept begins, (${way.start.x}, ${way.start.y}, ${way.start.z})`;
-  return `Back the way it came in: ${facts.cells} cells it stood on before${facts.spans ? `, ${facts.spans} of them on its own laid blocks` : ''}, from the nearest, ${way.off} block${way.off === 1 ? '' : 's'} off, ${where}, about ${facts.blocks} blocks, walked by the pathfinder in legs of ${LEG_CELLS} cells along them. ` +
+  return `Back the way it came in: ${facts.cells} cells it stood on before${facts.spans ? `, ${facts.spans} of them on its own laid blocks` : ''}, from the nearest, ${way.off} block${way.off === 1 ? '' : 's'} off, ${where}, about ${facts.blocks} blocks, walked by the pathfinder in legs of ${LEG_CELLS} cells along them, by its ordinary rules: the way's drops and the cells beside lava are walked as they were coming in, not refused for the rods carried. ` +
     `${facts.lava || facts.edge ? `${facts.lava} of them have lava round them and ${facts.edge} are beside a drop into lava or of four or more; walked before, crouched on the edges.` : 'None of them is beside lava or a drop.'}`;
 }
 
@@ -239,6 +241,12 @@ async function walkBack(bot, task, goal, portal, navigate, { force = false } = {
   if (!force && leadsAway(way, here, portal)) return { tried: false, away: true };
   const { goals } = require('mineflayer-pathfinder');
   let i = 0, walked = 0;
+  // The rods' rules set aside along it (note 2768, the user 2026-11-01: 'we shouldn't refuse the path back'):
+  // mid-full-9-fortress-23 (25590, 2026-11-01 00:27 to 02:37Z) chose the way in 56 times of 126 portal_way answers, 7 and 8
+  // rods carried, and its legs ended 'No route ... the way passes along a drop that would kill' and stalled, the way set
+  // aside each time and the two hours spent between the pearls, the stash and the walk.
+  bot._wayBackWalk = true;
+  try {
   while (i < way.cells.length - 1) {
     task.check();
     const j = Math.min(way.cells.length - 1, i + LEG_CELLS), c = way.cells[j];
@@ -256,6 +264,7 @@ async function walkBack(bot, task, goal, portal, navigate, { force = false } = {
     for (let m = i; m < way.cells.length; m++) { const w = way.cells[m], e = Math.hypot(w.x - at.x, w.y - at.y, w.z - at.z); if (e < d) { d = e; k = m; } }
     i = Math.max(j, k);
   }
+  } finally { bot._wayBackWalk = false; }
   return { tried: true, ok: true, walked, reached: way.reaches };
 }
 
