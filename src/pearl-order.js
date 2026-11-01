@@ -36,7 +36,7 @@ const record = require('./pearl-record');
 
 const HOLD_MS = 30 * 60000, NONE_GOOD_MS = 5 * 60000;
 const ENDERMAN_REACH = 24, HUNT_SIGHT = 48, FOREST_REACH = 512;
-const KIND = { hunt_enderman: 'enderman', warped_forest: 'forest', barter_gold: 'barter', bastion_gold: 'bastion', mine_gold_for_barter: 'gold ore' };
+const KIND = { hunt_enderman: 'enderman', warped_forest: 'forest', search_forest: 'forest search', barter_gold: 'barter', bastion_gold: 'bastion', mine_gold_for_barter: 'gold ore' };
 const PICKS = new Set(['rods_first', 'home_with_rods', ...Object.keys(KIND)]);
 // The rods the goal wants all had, carried or kept (eye-need.js rodsLeft 0), in the Nether: the question is then the pearls
 // here or home with the rods (note 2766), not the pearls or the rods.
@@ -91,6 +91,11 @@ function routes(bot, goal, now = Date.now()) {
     let known = [];
     try { known = require('./exploration').knownLandmarks(bot, goal, 'warped_forest', FOREST_REACH).filter(k => !isSetAside(goal, 'landmark_trip', tripKey(k.landmark), now)); } catch (_) { known = []; }
     if (known.length) out.forest = known[0];
+    // None known: the sweep for one, Jev's (note 2784, the user 2026-11-01 'I want you to figure out why they're not
+    // getting pearls', then 'Yes, build it'). The sweep ran only by the ladder's rule where nothing else was on offer
+    // here: full-320 (25592) had 8 minutes of it in eleven hours and 133 on the pearls, mine gold for barter chosen 14
+    // times and the bastion 5, none of it bringing a pearl.
+    else if (!isSetAside(goal, 'rung', 'warped_search', now)) out.search = { legs: require('./warped-pearls').SEARCH_LEGS, leg: require('./warped-pearls').LEG };
   }
   const bartering = require('./bartering');
   if (bartering.barterReady(bot, goal)) out.barter = { gold: bartering.barterGold(bot) };
@@ -151,7 +156,7 @@ function askAgainBecause(bot, goal, kinds, now = Date.now()) {
   }
   const fresh = kinds.filter(k => !(h.offered || []).includes(k) && !(h.seenSince || []).includes(k));
   h.seenSince = [...new Set([...(h.seenSince || []), ...kinds])];
-  if (fresh.length) return `a way to the pearls that was not on offer at the answer is real now: ${fresh.map(k => ({ enderman: 'an enderman in reach', forest: 'a warped forest known and open', barter: 'gold to throw with a piglin in reach', bastion: 'a bastion known, its gold to barter with', 'gold ore': 'nether gold ore within reach to mine and barter' })[k] || k).join(', ')}`;
+  if (fresh.length) return `a way to the pearls that was not on offer at the answer is real now: ${fresh.map(k => ({ enderman: 'an enderman in reach', forest: 'a warped forest known and open', barter: 'gold to throw with a piglin in reach', bastion: 'a bastion known, its gold to barter with', 'gold ore': 'nether gold ore within reach to mine and barter', search: 'a sweep for a warped forest' })[k] || k).join(', ')}`;
   return null;
 }
 
@@ -192,6 +197,7 @@ const endedWhy = pick => ({ hunt_enderman: 'no enderman left within 48 blocks', 
 function stageFor(bot, goal, pick, r, want, now) {
   const base = { phase: 'obtain_ender_pearls', item: 'ender_pearl', via: 'pearl_order' };
   if (pick === 'hunt_enderman') return endermen(bot, HUNT_SIGHT).length ? { ...base, action: 'acquire', count: count(bot, 'ender_pearl') + 1 } : null;
+  if (pick === 'search_forest') return r.search ? { ...base, action: 'warped_pearls', count: want } : null;
   if (pick === 'warped_forest') return r.forest ? (r.forest.viaPortal ? { ...base, action: 'enter_nether', count: want, via: 'warped_forest' } : { ...base, action: 'warped_pearls', count: want }) : null;
   if (pick === 'barter_gold') return r.barter ? { ...base, action: 'barter', count: want } : null;
   // The bastion's gold, then the barter with its piglins once gold is to throw.
@@ -290,6 +296,10 @@ function tree(bot, goal, r, now = Date.now()) {
     try { pace = require('./game-progress').netherPaceSays(bot, r.forest.distance, { toPortal: false }).says; } catch (_) { pace = ''; }
     out.warped_forest = { target: { x: l.x, y: Number.isFinite(l.y) ? l.y : Math.round(bot.entity.position.y), z: l.z },
       description: `${r.forest.viaPortal ? `Back through the portal${r.forest.viaPortal.portalBlocks != null ? ` ${r.forest.viaPortal.portalBlocks} blocks off at (${r.forest.viaPortal.overworld.x}, ${r.forest.viaPortal.overworld.z})` : ''}, then ${r.forest.netherBlocks} blocks in the Nether from where it comes out to the warped forest known there at (${l.x}, ${l.z})` : `Go to the warped forest at (${l.x}, ${l.z}), ${r.forest.distance} blocks off`}, and hunt its endermen one at a time for the pearls; ${o.fortress}. Held while the forest's walk and hunt do not rest (a hunt fifteen minutes without a pearl rests it), then the rods again.${pace} ${record.routeSays('warped_forest', goal)} Pearls ${o.pearls}.` };
+  }
+  if (r.search) {
+    const legs = r.search.legs, leg = r.search.leg;
+    out.search_forest = { description: `Sweep the Nether for a warped forest now, none being known: legs of ${leg} blocks out from here, up to ${legs} of them or a quarter of an hour, a forest noticed where its blue blocks come into sight or the bot stands in one, and its endermen hunted from a slot in it once found (the pearls then, the rods after). In the record a forest's slot made 16 to 21 pearls an hour; the Overworld's endermen about 0.4 an hour, and mining gold for a barter came to 0 pearls in 79 picks over a day of full runs. ${o.pearls ? `Pearls ${o.pearls}.` : ''} Held while the sweep is on; set aside half an hour once it ends with no forest.` };
   }
   if (r.barter) {
     out.barter_gold = { description: `Barter with the piglins in reach now: ${o.gold}. A piglin turns on a player in no gold, so a gold piece is worn first. Held while gold is left to throw and a piglin is within 32, then the rods again. ${record.routeSays('barter_gold', goal)} Pearls ${o.pearls}.` };
