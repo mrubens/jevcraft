@@ -928,6 +928,25 @@ function kitRecordSays(bot) {
     return `Nothing is worn now. In the Overworld fights of the fresh runs of ${r.day} (${r.runs}), a death followed within two minutes ${per(r.bare)} times in 100 with nothing worn and no shield (${r.bare.deaths} in ${r.bare.asks}), ${per(r.armoured)} in 100 in any armour without a shield (${r.armoured.deaths} in ${r.armoured.asks}), and ${per(r.armouredShield)} in 100 in armour with a shield (${r.armouredShield.deaths} in ${r.armouredShield.asks}); a shield with nothing worn came up ${r.shieldOnly.asks} times, too few to say. Of 9 of the day's deaths in the first 40 minutes looked at, 8 were with nothing worn and none had a shield.`;
   } catch (_) { return null; }
 }
+// The diamonds carried, said as what they make now and how quickly (note 2757, the user 2026-11-01: 'Yes, make the
+// diamond change'): full-293 (25587, 2026-10-31) carried 21 diamonds from 24 minutes in, was offered the diamond
+// pickaxe, armour and sword 26 times at 0 to 5 in 100, made none, and died in iron at its fortress at 87 minutes. The
+// options priced each piece by what it does; none said that all of it is a minute at a table from what is carried.
+// The fortress trials of 2026-10-30 to 31 in iron: 1.36 deaths a trial-hour (91 trials, 51 trial-hours).
+const DIAMOND_PIECES = [['diamond_pickaxe', 3, 'a pickaxe (lasts 1,561 uses against iron\'s 250, and mines obsidian)'], ['diamond_chestplate', 8, 'a chestplate (8 armour, iron\'s 6)'], ['diamond_leggings', 7, 'leggings (6, iron\'s 5)'], ['diamond_helmet', 5, 'a helmet (3, iron\'s 2)'], ['diamond_boots', 4, 'boots (3, iron\'s 2)'], ['diamond_sword', 2, 'a sword (7 damage, iron\'s 6)']];
+function diamondsSays(bot) {
+  try {
+    const items = bot.inventory?.items?.() || [];
+    let n = items.filter(i => i.name === 'diamond').reduce((t, i) => t + i.count, 0);
+    if (n < 3) return null;
+    const have = new Set([...items.map(i => i.name), ...[5, 6, 7, 8].map(k => bot.inventory?.slots?.[k]?.name).filter(Boolean)]);
+    const made = [];
+    for (const [name, cost, says] of DIAMOND_PIECES) if (!have.has(name) && n >= cost) { made.push(says); n -= cost; }
+    if (!made.length) return null;
+    const secs = 10 + made.length * 3;
+    return `${items.filter(i => i.name === 'diamond').reduce((t, i) => t + i.count, 0)} diamonds are carried. They make, from what is carried and nothing gathered, at a crafting table: ${made.join(', ')}${n ? `, ${n} left over` : ''}; about ${secs} seconds in all, the table placed and taken up. A full diamond set against a full iron one takes a blaze's blow from 3.1 to 1.6, a wither skeleton's from 4.5 to 2.2 and a fireball from 2.5 to 1.25 (the game's armour and toughness). The fortress trials of 2026-10-30 to 31 in iron died 1.36 times a trial-hour (91 trials).`;
+  } catch (_) { return null; }
+}
 function strategyState(bot, goal, stage, extra = {}) {
   const clock = goal.rungClocks?.[stage.phase];
   const t = bot.time?.timeOfDay ?? 0;
@@ -949,6 +968,7 @@ function strategyState(bot, goal, stage, extra = {}) {
       return n.rods + n.pearls + n.eyes + n.powder > 0 || goal.gameProgress?.milestones?.nether_entered ? { goalStill: E.says(bot, goal) } : {};
     } catch (_) { return {}; } })(),
     ...((k => k ? { kitRecord: k } : {})(kitRecordSays(bot))),
+    ...((d => d ? { diamonds: d } : {})(diamondsSays(bot))),
     ...extra,
     // The day where there is one (note 677).
     ...(/overworld/.test(String(bot.game?.dimension || 'overworld')) ? { timeOfDay: t, daylightMinutesRemaining: Math.round(Math.max(0, DAY.DUSK - t) / 1200 * 10) / 10 } : {}),
