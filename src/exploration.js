@@ -86,9 +86,18 @@ function forestInSight(bot, { now = Date.now() } = {}) {
   const ids = ['warped_stem', 'warped_wart_block', 'warped_nylium'].map(n => bot.registry?.blocksByName?.[n]?.id).filter(n => n !== undefined);
   let found = null;
   if (ids.length) {
+    // Only blocks with open air beside them can be seen, and the line is drawn to those alone (note 2788, the user
+    // 2026-11-01 'Yeah look into it, that's brutal'): the first 300 the search gave were mostly buried, wart in the
+    // canopy and nylium under the floor or in the ceiling, and full-317 (25587, 2026-11-01 17:58Z) stood at (268, 55,
+    // 118) twenty blocks from a forest of 316 nylium, 676 wart blocks and 152 stems (its region file) and noticed none.
+    const SIDES = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+    const open = q => SIDES.some(([dx, dy, dz]) => { const n = bot.blockAt(q.offset(dx, dy, dz)); return !!n && n.boundingBox === 'empty' && !/lava|water/.test(n.name); });
     const seen = [];
-    for (const p of bot.findBlocks({ matching: ids, maxDistance: 256, count: 300 })) {
+    let looked = 0;
+    for (const p of bot.findBlocks({ matching: ids, maxDistance: 256, count: 4000 })) {
+      if (!open(p)) continue;
       const b = bot.blockAt(p);
+      if (++looked > 600) break;
       if (b && bot.canSeeBlock(b)) { seen.push(p); if (seen.length >= 3) break; }
     }
     if (seen.length >= 3) found = at(seen[0], { warped: seen.length, seen: true });
