@@ -57,6 +57,10 @@ function timeChanges(cause, bot) {
   const text = String(cause || '');
   if (!text.trim()) return 'unknown';
   if (MOB_CAUSE.test(text)) return 'the mobs about';
+  // A hunt Jev left for a span is the mobs about too (note 2803): they move, spawn and teleport while it rests, and its
+  // end asks the hunt again. full-322 (25591, 2026-11-06 06:16 to 06:18Z), in a warped forest with the enderman hunt
+  // left for two minutes, was told 'standing here changes none of that' and asked the stall every few seconds.
+  if (/\bhunt is left for now\b|\bJev chose to leave them\b/i.test(text)) return 'the mobs about';
   const overworld = /overworld/.test(String(bot?.game?.dimension || 'overworld'));
   if (overworld && /\b(night|dark|dusk|dawn|daylight)\b/i.test(text)) return 'the hour';
   if (/\b(health|hurt)\b/i.test(text) && (bot?.food ?? 20) >= 18 && (bot?.health ?? 20) < 20) return 'health';
