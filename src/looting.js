@@ -224,7 +224,19 @@ async function lootMinecart(bot, task, goal, save, cart, { navigate, openEntity 
   const { goals } = require('mineflayer-pathfinder');
   const p = cart.position.floored();
   goal.step = { action: 'loot_minecart', position: plain(p) }; save();
-  if (cart.position.distanceTo(bot.entity.position) > 3) await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 2), { timeoutMs: 30000, stallMs: 6000 });
+  if (cart.position.distanceTo(bot.entity.position) > 3) {
+    try { await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 2), { timeoutMs: 30000, stallMs: 6000 }); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  }
+  // The walk short of it: dug to through the rock and the cobwebs between (note 2790, the user 2026-11-01 'Yes, make
+  // it dig to the minecart'), as a player tunnels the last blocks to a mineshaft's cart. full-318 (25588, 2026-11-01
+  // 04:17Z) walked at a minecart chest twice, 'navigation timed out without reaching new ground' both times, and left it.
+  if (cart.position.distanceTo(bot.entity.position) > 4 && bot.entities[cart.id] === cart) {
+    try {
+      await require('./bridging').tunnelStraight(bot, task, p, { maxSteps: 32, navigate, down: true });
+      if (cart.position.distanceTo(bot.entity.position) > 3) await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 2), { timeoutMs: 15000, stallMs: 5000 });
+    } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[loot] the dig to the minecart at ${p} stopped: ${String(err.message || err).slice(0, 160)}`); }
+  }
   if (bot.entities[cart.id] !== cart || cart.position.distanceTo(bot.entity.position) > 4) { setAside(goal, 'loot_chest', cartKey(cart), 'could not reach the minecart', 1800000); save(); return false; }
   const { took, left } = await takeWanted(bot, task, await openEntity(bot, task, cart));
   (goal.looted ||= {})[cartKey(cart)] = { at: now, structure: 'mineshaft', position: plain(p), took, left };

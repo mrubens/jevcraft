@@ -305,6 +305,36 @@ async function digThroughTo(bot, task, p) {
   return true;
 }
 
+// Cobwebs cut in passing (note 2790, the user 2026-11-01: 'shouldn't it take the string and at least put it in a chest
+// somewhere for later bows or beds?'): with a sword or shears carried, the webs within three blocks in sight, up to
+// STRING_KEPT string (three for a bow, twelve for a bed's three wool), the string walked onto as it falls. String is a
+// keepsake (home-stash.js), so the stash and the field cache put it in a chest. Only cobwebs a sword or shears drop
+// string from; by hand they drop nothing.
+const STRING_KEPT = 15;
+async function cutWebsInPassing(bot, task) {
+  const items = bot.inventory?.items?.() || [];
+  if (!items.some(i => /_sword$|^shears$/.test(i.name))) return 0;
+  const string = items.filter(i => i.name === 'string').reduce((n, i) => n + i.count, 0);
+  if (string >= STRING_KEPT) return 0;
+  const id = bot.registry?.blocksByName?.cobweb?.id;
+  if (id === undefined || typeof bot.findBlocks !== 'function') return 0;
+  const webs = bot.findBlocks({ matching: id, maxDistance: 3, count: 8 }).map(p => bot.blockAt(p)).filter(b => b && (!bot.canSeeBlock || bot.canSeeBlock(b)));
+  let cut = 0;
+  for (const b of webs) {
+    task.check();
+    const before = (bot.inventory.items() || []).filter(i => i.name === 'string').reduce((n, i) => n + i.count, 0);
+    if (before >= STRING_KEPT) break;
+    await require('./skills').digWithTool(bot, b, true); cut++;
+    await new Promise(r => setTimeout(r, 250));
+    const drop = Object.values(bot.entities || {}).find(e => e.getDroppedItem?.()?.name === 'string' && e.position.distanceTo(b.position.offset(0.5, 0, 0.5)) < 2);
+    if (drop) {
+      const gained = () => (bot.inventory.items() || []).filter(i => i.name === 'string').reduce((n, i) => n + i.count, 0) > before;
+      try { await require('./motion').move(bot, task, { label: 'walk_to_drop', keys: ['forward'], sneak: true, look: drop.position.offset(0, 0.2, 0), maxMs: 1500, tick: 50, until: gained }); } catch (_) { task.check(); }
+    }
+  }
+  if (cut) console.log(`[cobweb] cut ${cut} in passing for their string (${(bot.inventory.items() || []).filter(i => i.name === 'string').reduce((n, i) => n + i.count, 0)} carried, kept to ${STRING_KEPT}: three a bow, twelve a bed's wool)`);
+  return cut;
+}
 async function mineWithinReach(bot, task, { now = Date.now(), label = 'from where the climb stands' } = {}) {
   if (!bot?.entity?.position || !bot.inventory?.items || now - (bot._climbLookAt || 0) < 800) return 0;
   // Not in a fight (note 2676): a stance held, or a shooter in sight, is no passing. mid-full-241-fortress-4 (25590,
@@ -316,6 +346,7 @@ async function mineWithinReach(bot, task, { now = Date.now(), label = 'from wher
     if (danger.stanceHeld(bot, now) || danger.threats(bot, 24).some(t => t.visible && shooter(t.entity))) return 0;
   } catch (_) { /* no world to read: dig as before */ }
   bot._climbLookAt = now;
+  try { await cutWebsInPassing(bot, task); } catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err; }
   const ids = passingKinds(bot, bot._goal).map(n => bot.registry?.blocksByName?.[n]?.id).filter(id => id !== undefined);
   if (!ids.length) return 0;
   const eye = bot.entity.position.offset(0, 1.62, 0), feet = bot.entity.position.floored();
@@ -463,5 +494,5 @@ async function mineGoldInPassing(bot, task, goal, save, { navigate, dig }) {
   return mineInPassing(bot, task, goal, save, { navigate, dig }, null);
 }
 
-module.exports = { digThroughTo, passingOreSays, mineWithinReach, shortOfPearls, goldInPassing, mineGoldInPassing, mineInPassing, passingCandidates, passingSays, valuableInPassing: goldInPassing, mineValuableInPassing: mineGoldInPassing,
+module.exports = { cutWebsInPassing, STRING_KEPT, digThroughTo, passingOreSays, mineWithinReach, shortOfPearls, goldInPassing, mineGoldInPassing, mineInPassing, passingCandidates, passingSays, valuableInPassing: goldInPassing, mineValuableInPassing: mineGoldInPassing,
   PASSING_RADIUS, PASSING_REACH, GOLD_WORTH, VITALS, piglinsWithin, LIMITS, opportunityCandidates, opportunisticMining, fuelCarried, FUEL_UNITS_WANTED };
