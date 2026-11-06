@@ -2041,9 +2041,29 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     // 03:58:51Z) stood in its built hole at (59, 54, 5), its work went to
     // open a door toward a blaze 3 blocks off out of sight, the wall came
     // open, and thirteen blazes in sight burned it in two minutes.
-    const holeHeld = near.name === 'blaze' && (() => { try { return require('./blaze-stand').inHole(bot); } catch (_) { return false; } })();
+    const holeHeld = near.name === 'blaze' && !(state.holeOutUntil > Date.now()) && (() => { try { return require('./blaze-stand').inHole(bot); } catch (_) { return false; } })();
+    if (!holeHeld) delete state.holeHeld;
     if (holeHeld) {
       if (state.stairsTo) { delete state.stairsTo; save(); }
+      // The hold asked of Jev, not kept unasked (note 2796, the user 2026-11-06: 'Jev is just standing still', then 'I
+      // guess it's the safe thing, but man'): every 45 seconds of it, hold on, open the wall toward the blaze (its own
+      // blocks), or come out and go at it, said with the time held and where the blaze is. full-318 (25588, 2026-11-06
+      // 05:13 to 05:16Z) stood in its hole at its spawner three minutes, the blaze 8 blocks off out of sight, asked nothing.
+      const held = state.holeHeld ||= { since: Date.now(), kills: 0 };
+      if (Date.now() - (held.askedAt || held.since) >= 45000) {
+        held.askedAt = Date.now();
+        const secs = Math.round((Date.now() - held.since) / 1000), off = Math.round(near.position.distanceTo(bot.entity.position));
+        const tree = {
+          hold_the_hole: { description: `Hold the hole and wait for the blazes to come into sight of its mouth: held ${secs} seconds so far, the ${near.name} ${off} blocks off out of sight. A blaze shoots only with a line to the bot; one out of sight wanders and the spawner makes more while the bot is within 16 of it, so they come by in time, or not.` },
+          step_out: { description: `Come out of the hole and go at the ${near.name} ${off} blocks off: the stalk's ways toward it (a door in the wall, a passage dug, the walk), the hole left behind and open to every blaze in sight on the way.` },
+        };
+        const open = openWallOption(bot, task, goal, save, near); if (open) tree.open_the_wall = open;
+        let pick = 'hold_the_hole';
+        try { const d = await decide('hunt_target', { client: task.opportunityClient, bot, task, goal, save, tree, state: { inHole: require('./blaze-stand').inHoleSays(bot) || 'in a hole at the blazes', heldSeconds: secs } }); if (!d.stale) pick = d.path.at(-1); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+        if (pick === 'open_the_wall' && tree.open_the_wall) { delete state.holeHeld; save(); await tree.open_the_wall.run(); return; }
+        if (pick === 'step_out') { delete state.holeHeld; state.holeOutUntil = Date.now() + 60000; save(); return; }
+      }
       if (!state.holeHeldSaid || Date.now() - state.holeHeldSaid > 60000) { state.holeHeldSaid = Date.now(); console.log(`[hunt] in a hole at the blazes: no passage dug and no door opened toward the ${near.name} ${Math.round(near.position.distanceTo(bot.entity.position))} blocks off; open the wall is Jev's (hunt_target)`); }
       goal.step = { action: 'stalk_mob', entity: step.entity, inHole: true }; save();
       await sleep(500);
