@@ -530,7 +530,33 @@ function watchHazards(bot) {
 // stale. The stronghold stage of 2026-10-07 (25595, 23:06Z to 02:23Z), its
 // End kit chosen, walked a leg toward its ring under the sea, and after
 // every leg the work's rule swam it back to the shore, three hours on it.
+// A walk to a place far off goes in legs toward it (note 2801, the user 2026-11-06 'Yes, do the general one too', on
+// the walks that time out): a route planned the whole way over a few hundred blocks of swamp, river or rough ground
+// stood the bot still while it was worked out, and the stall watch called that stuck (note 2800's frame walks, 190
+// blocks, twice 'navigation timed out without reaching new ground'). Beyond FAR_WALK across, legs of LEG_WALK toward
+// it, each its own walk, until within FAR_WALK, then the goal itself; the caller's time is the whole walk's. Not for a
+// goal that follows an entity, and not where the caller says `noLegs`.
+const FAR_WALK = 96, LEG_WALK = 48;
 async function navigate(bot, task, goal, options = {}) {
+  const here0 = bot.entity?.position;
+  const far = goal && !goal.entity && Number.isFinite(goal.x) && Number.isFinite(goal.z) && here0 && !options.noLegs && Math.hypot(goal.x - here0.x, goal.z - here0.z) > FAR_WALK;
+  if (far) {
+    const { goals: G } = require('mineflayer-pathfinder');
+    const deadline = Date.now() + (options.timeoutMs ?? 90000);
+    for (let i = 0; i < 60; i++) {
+      task.check();
+      if (options.stopWhen?.()) return;
+      const here = bot.entity.position, d = Math.hypot(goal.x - here.x, goal.z - here.z);
+      if (d <= FAR_WALK) break;
+      const left = deadline - Date.now();
+      if (left <= 0) throw new Error('navigation timed out');
+      const k = LEG_WALK / d, leg = new G.GoalNearXZ(Math.round(here.x + (goal.x - here.x) * k), Math.round(here.z + (goal.z - here.z) * k), 4);
+      await navigateOnce(bot, task, leg, { ...options, timeoutMs: Math.min(45000, left) });
+    }
+    const left = deadline - Date.now();
+    if (left <= 0) throw new Error('navigation timed out');
+    options = { ...options, timeoutMs: left };
+  }
   try { return await navigateOnce(bot, task, goal, options); }
   finally { if (!options.shore && bot._heading && bot._heading.x === goal?.x && bot._heading.z === goal?.z) bot._heading.at = Date.now(); }
 }
