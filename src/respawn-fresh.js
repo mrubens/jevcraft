@@ -131,7 +131,40 @@ async function stashFirst(bot, task, goal, save) {
   } catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return String(err.message || err).slice(0, 80); }
 }
 
+// The Overworld's water (note 2804; the user 2026-11-06 'How are they doing now?', full-318 at 111 minutes on): head under
+// in water the body keeps going back into, no pickaxe and no block carried, so nothing digs or builds out. full-318
+// (25588, 2026-11-06 18:20 to 20:10Z), bare-handed at (-22, 11, -72), swam up and dug stone by hand in turn for nearly
+// two hours: a block of stone by hand under water is about 37 seconds, the breath 15. -> {} or null
+function offeredWater(bot) {
+  if (!/overworld/.test(String(bot.game?.dimension || 'overworld'))) return null;
+  const items = bot.inventory?.items?.() || [];
+  if (items.some(i => /_pickaxe$/.test(i.name))) return null;
+  let blocks = 0; try { blocks = require('./bridging').blocksCarried(bot); } catch (_) { blocks = 0; }
+  return blocks > 0 ? null : {};
+}
+function saysWater(bot, goal, trapSays = '') {
+  const items = bot.inventory?.items?.() || [];
+  const valued = items.filter(i => /blaze_rod|ender_pearl|ender_eye|blaze_powder|diamond|gold_ingot|iron_ingot|_sword$|shield|_helmet$|_chestplate$|_leggings$|_boots$|bed$/.test(i.name)).map(i => `${i.count} ${words(i.name)}`);
+  const sp = bot.spawnPoint, bed = goal?.survival?.spawnBed?.foot, here = bot.entity?.position;
+  const at = bed || (sp ? { x: Math.round(sp.x), y: Math.round(sp.y), z: Math.round(sp.z) } : null);
+  const far = at && here ? Math.round(Math.hypot(at.x - here.x, at.z - here.z)) : null;
+  const respawn = bed ? `the bed at (${bed.x}, ${bed.y}, ${bed.z})` : at ? `the world spawn at (${at.x}, ${at.y}, ${at.z})` : 'the world spawn';
+  const lost = valued.length ? `lost here: ${valued.join(', ')}` : `nothing of worth is carried (${items.length} stack${items.length === 1 ? '' : 's'} drop and vanish)`;
+  return `Die here on purpose and come back to life at ${respawn}${far != null ? `, ${far} blocks from here` : ''}, a position reset as speedrunners use it: stay under and let the breath run out, about 25 seconds. With no pickaxe and no block the bot can only swim and dig by hand: a block of stone by hand is about 7.5 seconds standing, five times that with the head under and five again afloat, against 15 seconds of breath. ${trapSays ? `${trapSays} ` : ''}Dying, the bot stands at the respawn within a minute, able to cut wood and make tools there; ${lost}.`;
+}
+async function runWater(bot, task, goal, save) {
+  goal.deliberateDeath = { at: Date.now(), why: 'Jev chose to come back to life fresh from the water (respawn_fresh)' }; save?.();
+  bot._chosenDeathUntil = Date.now() + DEATH_WAIT_MS;
+  bot.chat?.('Nothing to dig or build with down here. Starting over.');
+  const began = Date.now();
+  try {
+    bot.clearControlStates?.(); bot.setControlState?.('sneak', true);
+    while (Date.now() - began < DEATH_WAIT_MS && (bot.health ?? 0) > 0 && bot.isAlive !== false) { await new Promise(r => setTimeout(r, 200)); }
+  } finally { bot.setControlState?.('sneak', false); }
+  return (bot.health ?? 0) <= 0 || bot.isAlive === false;
+}
+
 // Whether the flag stands now (the lava rule and the survival step read it).
 const standing = (goal, now = Date.now()) => !!goal?.deliberateDeath && now - goal.deliberateDeath.at < DEATH_WAIT_MS;
 
-module.exports = { offered, says, run, standing, spellsSays, SPELLS, REKIT, DEATH_WAIT_MS, offeredEnd, saysEnd, runEnd };
+module.exports = { offeredWater, saysWater, runWater, offered, says, run, standing, spellsSays, SPELLS, REKIT, DEATH_WAIT_MS, offeredEnd, saysEnd, runEnd };

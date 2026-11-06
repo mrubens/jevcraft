@@ -1808,6 +1808,9 @@ async function maintainVitals(bot, task, onAction = () => {}, { client = null, g
           }
         } catch (_) { boat = null; }
         Object.assign(ways, WT.ways(bot, own, goal, save, trap, { land, boat }));
+        // A start over from here (note 2804): no pickaxe and no block, in water it keeps going back into.
+        const RF = require('./respawn-fresh');
+        if (RF.offeredWater(bot)) ways.respawn_fresh = { description: RF.saysWater(bot, goal, trapFacts.waterTrap), run: async () => { const died = await RF.runWater(bot, own, goal, save); console.log(`[respawn fresh] in the water at ${bot.entity?.position?.floored?.()}: ${died ? 'the breath ran out, as Jev chose' : 'no death in ninety seconds'}`); return died; } };
       }
     } catch (_) { trapFacts = {}; }
     // Not asked again within two and a half seconds of the last asking while the breath holds (note 2189): a way that
@@ -1968,7 +1971,7 @@ function claim(bot) {
   if (reflex) return { layer: 'vitals', action: reflex.action, urgency: 'body', reflex: reflex.key, facts: reflex.facts, preemptible: false };
   const facts = { health: bot.health, food: bot.food, air: bot.oxygenLevel, ...(bot.health < 20 ? { healing: bot.food >= 18 } : {}) };
   if (inPowderSnow(bot) || bot._freezingAt > Date.now() - 3000) return { layer: 'vitals', action: 'out_of_powder_snow', urgency: 'pressing', facts: { ...facts, freezing: true } };
-  if (headSubmerged(bot) && !atWaterTop(bot) && !(bot._surfaceFailedAt > Date.now() - 60000)) return { layer: 'vitals', action: 'surface', urgency: 'pressing', facts: { ...facts, headUnderwater: true } };
+  if (headSubmerged(bot) && !atWaterTop(bot) && !(bot._surfaceFailedAt > Date.now() - 60000) && !(bot._chosenDeathUntil > Date.now())) return { layer: 'vitals', action: 'surface', urgency: 'pressing', facts: { ...facts, headUnderwater: true } };
   if (!(bot.food <= 16 || (bot.health < 20 && bot.food < 18) || (bot.health <= 12 && bot.food < 20))) return null;
   // Hurt with hunger under eighteen, nothing heals until a meal is eaten
   // (note 1001): the meal is then claimed with a mob close or a stance held

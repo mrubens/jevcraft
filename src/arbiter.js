@@ -165,7 +165,8 @@ function observeReflexes(bot, held = bot?._arbiter?.reflexes || [], look = probe
   const hot = look.hotFloor?.(bot);
   if (hot) add('hot_floor', { hotFloor: hot.block?.name || true, health: bot.health });
   const air = bot.oxygenLevel ?? 20;
-  if (air <= AIR + (was.has('air') ? HYSTERESIS : 0)) add('air', { air });
+  // Not while a death Jev chose in the water runs (note 2804).
+  if (air <= AIR + (was.has('air') ? HYSTERESIS : 0) && !(bot._chosenDeathUntil > Date.now())) add('air', { air });
   const mobs = look.mobs(bot, CREEPER_REACH + HYSTERESIS + 1) || [];
   // In sight, or within four unseen: it comes round the corner already at
   // its fuse's distance (danger.js immediateThreat, mid-79-b). Not one out of
