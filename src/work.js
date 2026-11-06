@@ -9819,6 +9819,14 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     const lead = i.key === 'health' && hungryWait ? `Eat the ${waitMeal.item.name.replaceAll('_', ' ')} first (hunger ${bot.food}${waitMeal.after ? ` to ${waitMeal.after}` : ''}; health comes back from eighteen), then wait here and heal, to sixteen.` : TOP_UP[i.key];
     tree[`top_up_${i.key}`] = { description: `${lead}${i.key === 'health' ? healWaitSays(bot, i, waitMeal) : ''} ${i.says}${soFar(i)}` };
   }
+  // The wood is the chest too, where none is carried (note 2798, the user 2026-11-06: 'Seems like Jev should at least
+  // bring enough wood for a chest this time'): said on the wood, which spoke only of sticks and a table. full-318 (25588,
+  // 2026-11-06 04:35Z), back for its kit after a death, was offered the wood at 0.04 as 'sticks for the next tools',
+  // crossed with no chest and no wood, and lost its next 3 rods at its spawner at 05:24 with no chest to keep them in.
+  if (tree.top_up_wood && !countOf(bot, 'chest') && goal.kind === 'win') {
+    let rodsLeft = null; try { rodsLeft = require('./eye-need').need(bot, goal).rodsLeft; } catch (_) { rodsLeft = null; }
+    if (rodsLeft) tree.top_up_wood.description += ` No chest is carried: two of the logs are also the chest (8 planks at the table) that keeps the blaze rods through a death in the Nether, ${rodsLeft} still wanted; a death drops every rod carried where the bot falls, and a chest keeps them, counted as held and taken on the way out. The Nether's only wood is in its crimson and warped forests.`;
+  }
   // The wood a kit craft eats from the pickaxe wood, said on it (note 2319).
   for (const [key, planks] of [['top_up_shield', 6], ['top_up_chest', 8]]) if (tree[key]) tree[key].description += woodLeftSays(bot, planks);
   if (spareKit) tree.spare_kit = { description: spareKit.says };
