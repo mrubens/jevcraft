@@ -7447,6 +7447,12 @@ async function portalStep(bot, task, goal, save, client) {
   if (goal.portalFrame && goal.portalFrame.blocks.some(p => !bot.blockAt(pos(p)))) {
     const o = goal.portalFrame.origin;
     goal.step = { action: 'return_to_portal', portal: { ...o } }; save();
+    // Far off, in legs of 32 blocks toward it as the walk to a known portal goes (portalLeg), not one walk planned the
+    // whole way (note 2800, the user 2026-11-06: 'can we do something to fix or avoid these timeouts?'): a route planned
+    // over a swamp or a river a few hundred blocks across stood the bot still while it was worked out, and the stall
+    // watch called it stuck. full-318 (25588, 2026-11-06 05:57:54 to 05:58:03Z) walked so at its frame 190 blocks off,
+    // twice 'navigation timed out without reaching new ground'.
+    if (Math.hypot(o.x - bot.entity.position.x, o.z - bot.entity.position.z) > 48) { await portalLeg(bot, task, goal, o); return false; }
     await navigate(bot, task, new goals.GoalNear(o.x, o.y, o.z, 3), { timeoutMs: 60000, stallMs: 8000 });
     return false;
   }
@@ -8731,7 +8737,8 @@ function portalJobs(bot, goal, { routeKinds = noneGoodTopped(bot) } = {}) {
       if (here.distanceTo(o) > 16 && !castRests()) {
         const placed = frame.blocks.filter(p => bot.blockAt(pos(p))?.name === 'obsidian').length;
         jobs.push({ key: 'to_portal_frame', target: { x: o.x, y: o.y, z: o.z }, description: `The portal's own work: go back to the portal frame begun at (${o.x}, ${o.y}, ${o.z}), ${walkSays(o)}${frame.placedSeen !== undefined || placed ? `, ${placed || frame.placedSeen || 0} of ten standing` : ''}; the cast goes on there.`,
-          run: (t, save) => navigate(bot, t, new goals.GoalNear(o.x, o.y, o.z, 3), { timeoutMs: 120000, stallMs: 8000, sprint: true }) });
+          // Far off, by legs toward it (note 2800), as the walk back to the frame above.
+          run: async (t, save) => { if (Math.hypot(o.x - bot.entity.position.x, o.z - bot.entity.position.z) > 48) { for (let i = 0; i < 6 && Math.hypot(o.x - bot.entity.position.x, o.z - bot.entity.position.z) > 48; i++) { t.check(); if (!await portalLeg(bot, t, goal, o)) break; } if (Math.hypot(o.x - bot.entity.position.x, o.z - bot.entity.position.z) > 48) return; } await navigate(bot, t, new goals.GoalNear(o.x, o.y, o.z, 3), { timeoutMs: 120000, stallMs: 8000, sprint: true }); } });
       }
     }
     const { lavaResting } = require('./tunneling');
