@@ -295,9 +295,9 @@ async function digThroughTo(bot, task, p) {
     if (b && b.boundingBox === 'block') cells.push(q);
   }
   const walls = cells.map(q => bot.blockAt(q));
-  if (walls.some(b => !b || b.diggable === false || /^(sand|red_sand|gravel|suspicious_)/.test(b.name) || /lava|water/.test(b.name))) return false;
+  if (walls.some(b => !b || b.diggable === false || /^(sand|red_sand|gravel|suspicious_)/.test(b.name) || /lava/.test(b.name))) return false;
   if (walls.some(b => b.position.y < feet.y - 1 || (b.position.x === feet.x && b.position.z === feet.z && b.position.y < feet.y))) return false;
-  if (!walls.every(b => require('./tunneling').safeExcavation(bot, b.position)) || !require('./tunneling').safeExcavation(bot, p)) return false;
+  if (!walls.every(b => require('./tunneling').safeExcavation(bot, b.position, { waterBeside: true })) || !require('./tunneling').safeExcavation(bot, p, { waterBeside: true })) return false;
   const digOne = b => task?.check ? require('./vitals').digWithAirGuard(bot, task, b) : require('./skills').digWithTool(bot, b, true);
   for (const b of walls) { const now = bot.blockAt(b.position); if (now && now.boundingBox === 'block') await digOne(now); }
   await digOne(bot.blockAt(p));
@@ -370,7 +370,7 @@ async function mineWithinReach(bot, task, { now = Date.now(), label = 'from wher
     const walls = cells.map(q => bot.blockAt(q));
     if (!walls.length || walls.some(b => !b || ids.includes(b.type) || b.diggable === false || /^(sand|red_sand|gravel|suspicious_)/.test(b.name))) continue;
     if (walls.some(b => b.position.y < feet.y - 1 || (b.position.x === feet.x && b.position.z === feet.z))) continue;
-    if (!walls.every(b => require('./tunneling').safeExcavation(bot, b.position))) continue;
+    if (!walls.every(b => require('./tunneling').safeExcavation(bot, b.position, { waterBeside: true }))) continue;
     try {
       for (const b of walls) { const now = bot.blockAt(b.position); if (now && now.boundingBox === 'block') await digOne(now, false); }
       await digOne(bot.blockAt(p), true); dug++;

@@ -2109,7 +2109,7 @@ async function clearLineToOre(bot, task, ore, { most = 3, digBlock = dig } = {})
   for (const c of cells) {
     const b = bot.blockAt(c);
     if (!b || b.boundingBox !== 'block') continue;
-    if (dug >= most || !safeExcavation(bot, c)) break;
+    if (dug >= most || !safeExcavation(bot, c, { waterBeside: true })) break;
     await digBlock(bot, task, c, { requireDrops: false }); task.check(); dug++;
   }
   if (dug) console.log(`[mine] dug ${dug} block${dug === 1 ? '' : 's'} on the line to the ore at ${ore}`);

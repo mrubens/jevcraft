@@ -73,8 +73,13 @@ async function drainColumn(bot, task, cell, dig, top = 1) {
   throw new Error(`Sand or gravel kept falling into the stair at ${cell}`);
 }
 
-function safeExcavation(bot, p) {
-  if (faces.some(f => dangerous(bot.blockAt(p.plus(f))))) return false;
+// `waterBeside` (note 2789, the user 2026-11-01: 'I just watched Jev in 25588 leave iron behind because it was next to
+// moving water and he couldn't figure out how to mine it'): for ore, water at the sides or under the cell dug is no
+// danger, as a player mines at a stream's edge; water over it still is (it pours onto the head), and lava, fire and the
+// rest are as before. The tunnels, spans and bunkers keep water out entirely.
+const dangerousBeside = block => !block || ['lava', 'fire', 'magma_block', 'powder_snow'].includes(block.name);
+function safeExcavation(bot, p, { waterBeside = false } = {}) {
+  if (faces.some(f => (waterBeside && f.y !== 1 ? dangerousBeside : dangerous)(bot.blockAt(p.plus(f))))) return false;
   // Removing a support can drop an entire sand/gravel column and release
   // water that was not adjacent to the original dig cell.
   for (let height = 1; height <= 16; height++) {
