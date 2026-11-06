@@ -35,7 +35,7 @@ const stashNames = bot => [...KEPT, ...VALUABLES, ...spareTools(bot)];
 // From the first rod (note 931), as the bank (rod-bank.js BANK_MIN, note
 // 874): a rod kept is a rod kept, whatever the count.
 const ROD_MIN = 1;
-const REACH = 4.3, NEAR_STASH = 12, LAVA_NEAR = 2;
+const REACH = 4.3, NEAR_STASH = 12, LAVA_NEAR = 2, FAR_STASH = 64;
 // Six tries, ten minutes apart, before a chest is counted out (three till note 1047).
 const REST_MS = 5 * 60000, TAKE_REST_MS = 10 * 60000, TAKE_TRIES = 6;
 const NEAR_AGAIN = 6, FAR_FAIL = 16;
@@ -226,9 +226,19 @@ function stashOffer(bot, goal, { now = Date.now(), underFire = false } = {}) {
     return { existing: near.s, what, names, rods, wanted, seconds: round(steps / WALK + PUT_SECONDS), steps, seenBy, lull: seenBy.length ? null : lullNow(bot, now) };
   }
   const site = chestCell(bot, { underFire });
-  if (!site) return null;
   const making = chestMaking(bot);
-  if (!making) return null;
+  // No chest to set down here (none carried, no wood for one): the bot's own chest farther off, walked or tunnelled to
+  // (note 2797, the user 2026-11-06 on 25588: 'Got 3 rods, should it bank them? Right now just boxed in', then 'Yes, do
+  // that'). full-318 (25588, 2026-11-06 05:2xZ) had 3 rods boxed in at its spawner with no chest or wood carried, its
+  // own chest 36 blocks off at (-582, 73, -221), past the twelve the keep looked within, and its walks there refused.
+  if (!site || !making) {
+    const here = bot.entity.position, dim = dimOf(bot);
+    const far = stashes(goal).filter(x => x.dimension === dim).map(x => ({ s: x, d: here.distanceTo(V(x.position).offset(0.5, 0.5, 0.5)) }))
+      .filter(x => x.d <= FAR_STASH && bot.blockAt(V(x.s.position))?.name === 'chest').sort((a, b) => a.d - b.d)[0];
+    if (!far) return null;
+    const steps = Math.max(0, Math.round(far.d - 3));
+    return { existing: far.s, far: true, what, names, rods, wanted, seconds: round(steps / WALK * 2 + PUT_SECONDS), steps, seenBy, lull: seenBy.length ? null : lullNow(bot, now) };
+  }
   return { site, making, what, names, rods, wanted, seconds: round(PUT_SECONDS + making.seconds), seenBy, lull: seenBy.length ? null : lullNow(bot, now) };
 }
 
@@ -240,7 +250,7 @@ function offerSays(offer, { riskInState = false } = {}) {
   const list = offer.what.map(w => plural(w.count, words(w.item)));
   const what = list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list.at(-1)}` : list[0];
   const where = offer.existing
-    ? `put them in the chest ${offer.existing.found === 'standing' ? 'already standing (not the bot\'s own: whatever it holds stays in it) ' : ''}at ${at(offer.existing.position)}, ${offer.steps ? `a ${offer.steps}-block walk` : 'in reach'}`
+    ? `put them in the chest ${offer.existing.found === 'standing' ? 'already standing (not the bot\'s own: whatever it holds stays in it) ' : ''}at ${at(offer.existing.position)}, ${offer.steps ? `a ${offer.steps}-block walk${offer.far ? ' there and back, tunnelled through the rock where the walk does not go' : ''}` : 'in reach'}`
     : `set a chest down ${offer.site.off} blocks off at ${at(offer.site.cell)}, ${offer.site.seen ? 'in a blaze\'s line (no cell in reach is out of every line; a fireball neither breaks a chest nor burns it)' : 'out of every blaze\'s line'}, and put them in`;
   const fire = offer.seenBy?.length ? ` Done where the bot stands, in the line of ${plural(offer.seenBy.length, offer.seenBy.every(e => e.name === 'blaze') ? 'blaze' : 'shooter')} that ${offer.seenBy.length === 1 ? 'sees' : 'see'} it now.` : '';
   const secs = offer.lull ? require('./spawner-clock').jobSays(offer.lull, offer.seconds) : ` About ${offer.seconds} second${offer.seconds === 1 ? '' : 's'}.`;
@@ -287,7 +297,15 @@ async function stashRods(bot, task, goal, save, actions, offer, { step = 'stash_
       (goal.rodStashes ||= []).push(entry); save?.();
     }
     const eye = bot.entity.position.offset(0, 1.62, 0);
-    if (eye.distanceTo(cell.offset(0.5, 0.5, 0.5)) > REACH && actions?.navigate) await actions.navigate(bot, task, new goals.GoalNear(cell.x, cell.y, cell.z, 2), { timeoutMs: 15000, stallMs: 4000 });
+    if (eye.distanceTo(cell.offset(0.5, 0.5, 0.5)) > REACH && actions?.navigate) {
+      try { await actions.navigate(bot, task, new goals.GoalNear(cell.x, cell.y, cell.z, 2), { timeoutMs: offer.far ? 45000 : 15000, stallMs: offer.far ? 8000 : 4000 }); }
+      catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; if (!offer.far) throw err; }
+      // The far chest the walk falls short of: tunnelled to through the rock (note 2797).
+      if (offer.far && bot.entity.position.offset(0, 1.62, 0).distanceTo(cell.offset(0.5, 0.5, 0.5)) > REACH) {
+        await require('./bridging').tunnelStraight(bot, task, cell, { maxSteps: 80, navigate: actions.navigate, down: true });
+        if (bot.entity.position.offset(0, 1.62, 0).distanceTo(cell.offset(0.5, 0.5, 0.5)) > REACH) await actions.navigate(bot, task, new goals.GoalNear(cell.x, cell.y, cell.z, 2), { timeoutMs: 15000, stallMs: 4000 });
+      }
+    }
     const stored = await withStash(bot, task, entry, save, async window => {
       const done = [];
       for (const name of (offer.names || KEPT)) {
