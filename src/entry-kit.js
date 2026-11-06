@@ -195,6 +195,21 @@ function netherPiece(bot) { return /nether/.test(dimOf(bot)) ? ironPiece(bot) : 
 // question in the Nether made the boots. Not with a mob within 24 blocks.
 // -> { seconds, says } or null
 const GOLD = /^golden_(helmet|chestplate|leggings|boots)$/;
+// The mobs about, said on a making that stands the bot still (note 2795, the user 2026-11-05: 'piglins with arrows can
+// strike from far away right? Makes me hate these strict rules we've added', then 'Yes, go through all of them'): the
+// hostiles within 24, nearest first, which of them shoot, against the seconds the making stands still. The option was
+// withheld outright with any hostile within 24, a piglin among them; now Jev weighs it.
+function mobsAboutSays(bot, seconds) {
+  const here = bot.entity?.position;
+  if (!here) return '';
+  let shooter = () => false; try { shooter = require('./mob-policy').shooter; } catch (_) { /* none said */ }
+  const near = Object.values(bot.entities || {}).filter(e => (e.type === 'hostile' || e.kind === 'Hostile mobs') && e.position && e.position.distanceTo(here) <= 24)
+    .map(e => ({ name: String(e.name || 'mob').replaceAll('_', ' '), d: Math.round(e.position.distanceTo(here)), shoots: (() => { try { return !!shooter(e); } catch (_) { return false; } })() }))
+    .sort((a, b) => a.d - b.d);
+  if (!near.length) return ' No hostile mob within 24 blocks now.';
+  const piglins = near.filter(m => /^piglin$/.test(m.name)).length;
+  return ` Hostile mobs within 24 now: ${near.slice(0, 6).map(m => `${m.name} ${m.d} blocks${m.shoots ? ' (shoots)' : ''}`).join(', ')}${near.length > 6 ? `, and ${near.length - 6} more` : ''}; the making stands the bot still about ${Math.round(seconds)} seconds meanwhile, the shield down.${piglins ? ' A piglin turns on a player in no gold and leaves one in gold alone; making things angers none.' : ''}`;
+}
 function goldBoots(bot) {
   if (!/nether/.test(dimOf(bot)) || bot?.game?.gameMode !== 'survival' || !bot.inventory) return null;
   const worn = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean);
@@ -205,8 +220,7 @@ function goldBoots(bot) {
   // reason to withhold them, and crafting angers neither; a brute, which gold does not calm, and every other hostile
   // within 24 are as before. full-318 (25588, 2026-11-06 04:50 to 04:54Z) carried 36 nuggets and two crafting tables in
   // iron boots, piglins 9 to 10 blocks off, and was never offered the boots.
-  const CALMED = /^(piglin|zombified_piglin)$/;
-  if (here && Object.values(bot.entities || {}).some(e => (e.type === 'hostile' || e.kind === 'Hostile mobs') && !CALMED.test(e.name || '') && e.position && e.position.distanceTo(here) <= 24)) return null;
+  // Not withheld for the mobs about (note 2795): said on it instead (mobsAboutSays).
   // Nine nuggets are an ingot at a table (note 1246): 25589 (2026-10-04
   // 17:22:43Z) was killed by four piglins with 35 gold nuggets in its pack,
   // two pearls with them, and the boots never offered.
@@ -220,14 +234,13 @@ function goldBoots(bot) {
   const piglins = here ? Object.values(bot.entities || {}).filter(e => /^piglin(_brute)?$/.test(e.name || '') && e.position && e.position.distanceTo(here) <= 64).length : 0;
   const from = smelted ? `${4 - smelted ? `${4 - smelted} of the gold ingots carried and ` : ''}${smelted} smelted from the ${raw} raw gold carried (${SMELT_SECONDS} seconds an ingot in ${smelt.furnace ? 'the furnace carried' : 'a furnace made from 8 of the stone carried'}, the ${smelt.fuel.replaceAll('_', ' ')} carried for fuel)` : `4 of the ${ingots} gold ingots carried`;
   const feet = bot.inventory.slots?.[8]?.name;
-  return { seconds, fromNuggets, says: `Make golden boots now and put them on, from what is carried (${from}), ${mins(seconds)} standing here${feet ? `; they take the place of the ${feet.replaceAll('_', ' ')} worn, a point of armour less` : ''}. No gold is worn: a piglin attacks a player wearing none on sight, sword or crossbow, and leaves one wearing any piece alone (the game's rule; a brute attacks either way)${piglins ? `; ${piglins} within 64 blocks now, none within 24` : ''}. On 2026-10-03 two bots with the gold for the boots in their pockets were shot dead by piglins in the Nether with none on, and on 2026-10-04 (16:00 to 17:25Z) six deaths in the Nether were to piglins or in flight from them, every one with no gold on.${fromNuggets ? ` ${fromNuggets} of the ingots ${fromNuggets === 1 ? 'is' : 'are'} made of ${fromNuggets * 9} of the ${nuggets} gold nuggets carried, at the table.` : ''}` };
+  return { seconds, fromNuggets, get says() { return this.base + mobsAboutSays(bot, seconds); }, base: `Make golden boots now and put them on, from what is carried (${from}), ${mins(seconds)} standing here${feet ? `; they take the place of the ${feet.replaceAll('_', ' ')} worn, a point of armour less` : ''}. No gold is worn: a piglin attacks a player wearing none on sight, sword or crossbow, and leaves one wearing any piece alone (the game's rule; a brute attacks either way)${piglins ? `; ${piglins} within 64 blocks now, none within 24` : ''}. On 2026-10-03 two bots with the gold for the boots in their pockets were shot dead by piglins in the Nether with none on, and on 2026-10-04 (16:00 to 17:25Z) six deaths in the Nether were to piglins or in flight from them, every one with no gold on.${fromNuggets ? ` ${fromNuggets} of the ingots ${fromNuggets === 1 ? 'is' : 'are'} made of ${fromNuggets * 9} of the ${nuggets} gold nuggets carried, at the table.` : ''}` };
 }
 function ironPiece(bot) {
   if (bot?.game?.gameMode !== 'survival' || !bot.inventory) return null;
   const nether = /nether/.test(dimOf(bot));
   const wornAt = slot => bot.inventory.slots?.[slot]?.name || null;
-  const here = bot.entity?.position;
-  if (here && Object.values(bot.entities || {}).some(e => (e.type === 'hostile' || e.kind === 'Hostile mobs') && e.position && e.position.distanceTo(here) <= 24)) return null;
+  // Not withheld for the mobs about (note 2795): said on it instead (mobsAboutSays).
   const ingots = countOf(bot, 'iron_ingot'), raw = countOf(bot, 'raw_iron'), smelt = smeltKit(bot);
   const iron = ingots + (smelt.ok ? raw : 0);
   const table = countOf(bot, 'crafting_table') > 0, planks = sum(bot, /_planks$/) + 4 * sum(bot, /_(log|stem|wood|hyphae)$/);
@@ -250,7 +263,7 @@ function ironPiece(bot) {
       : ` Worn now: ${worn.length ? worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'nothing'}; a zombie's blow or a skeleton's arrow lands about ${z0} and a creeper's blast two blocks off about ${c0}, with the ${item.replace('iron_', '')} about ${z1} and ${c1}. The armour's own step gathers the iron for every piece before it smelts any; this one is worn from now, and the iron still to mine is that much less.`;
   } catch (_) { hits = ''; }
   try { record = nether ? ` Iron armour: ${require('./kit-record').BEFORE_NETHER.iron_armour.says}.` : ''; } catch (_) { record = ''; }
-  return { item, seconds, says: `Make ${/s$/.test(item) ? '' : 'an '}${item.replaceAll('_', ' ')} now and put ${/s$/.test(item) ? 'them' : 'it'} on, from what is carried (${plural(need, 'iron ingot')}: ${from.says}${wood.says ? `; ${wood.says.replace(/^0 of the \d+ planks carried, /, '')}` : ''}), ${mins(seconds)} standing here.${hits}${record}` };
+  return { item, seconds, get says() { return this.base + mobsAboutSays(bot, seconds); }, base: `Make ${/s$/.test(item) ? '' : 'an '}${item.replaceAll('_', ' ')} now and put ${/s$/.test(item) ? 'them' : 'it'} on, from what is carried (${plural(need, 'iron ingot')}: ${from.says}${wood.says ? `; ${wood.says.replace(/^0 of the \d+ planks carried, /, '')}` : ''}), ${mins(seconds)} standing here.${hits}${record}` };
 }
 
 module.exports = { netherPiece, ironPiece, goldBoots, RECORD, offers, netherSpare, shieldCost, ironFor, planksFor, armourHad, rateSays, goingWithout, GHAST_PROOF, STONE_KIT, IRON_FOR, WORN_BANDS };
