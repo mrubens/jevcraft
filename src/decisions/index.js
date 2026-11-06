@@ -656,7 +656,7 @@ const useStandIn = standIn => { STAND_IN.current = standIn || null; };
 // state's fingerprint changes with what the answer does not turn on (the
 // stance's scene, stance-scene.js, note 659); with it a none-good answer is
 // counted whatever its weight.
-async function decide(id, { client, bot, task, goal, save = () => {}, tree, state, isFresh = () => true, interrupt = () => {}, context, watchMs = 100, watchAir = true, target = null, above = undefined, situation = undefined, aside = false }) {
+async function decide(id, { client, bot, task, goal, save = () => {}, tree, state, isFresh = () => true, interrupt = () => {}, context, watchMs = 100, watchAir = true, target = null, above = undefined, situation = undefined, aside = false, asked = undefined }) {
   // The question above this one, where the caller knows it will not be
   // asked here (`above`: { parent: null, says }): the stall's question with
   // its rung set aside, or between requests, escalated to the rung's
@@ -665,7 +665,10 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // ended 25587's game (note 609). With nothing above to ask, every way
   // resting is asked here, each with its rest said, and why nothing above
   // is asked is said too.
-  const spec = above && above.parent !== undefined ? { ...question(id), parent: above.parent } : question(id);
+  const declared = above && above.parent !== undefined ? { ...question(id), parent: above.parent } : question(id);
+  // The question as asked this time (note 2791, the user 2026-11-05: 'Why don't we ask about the specific thing(s)
+  // falling short?'): the caller's words in place of the declared catch-all, sent as the task and kept on the record.
+  const spec = asked ? { ...declared, question: asked, ...(declared.instructions ? { instructions: { ...declared.instructions, task: asked } } : {}) } : declared;
   // The question's stages, from here (queued) to its record, each as
   // milliseconds since: asked (the turn taken), the client's sent, headers,
   // body and parsed (typesafe.js), stopped, settled, recorded. On the bot
@@ -1347,7 +1350,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   if (client) decision.stages = trace.stages;
   if (goal) {
     goal.decisions ||= [];
-    goal.decisions.push({ at: new Date().toISOString(), askedAt, id, kind: spec.kind, path: decision.path, ...(dimension ? { dimension } : {}), state, options: JSON.parse(JSON.stringify(tree)),
+    goal.decisions.push({ at: new Date().toISOString(), askedAt, id, ...(asked ? { question: asked } : {}), kind: spec.kind, path: decision.path, ...(dimension ? { dimension } : {}), state, options: JSON.parse(JSON.stringify(tree)),
       ...(client ? { stages: trace.stages } : {}),
       latencyMs: decision.latencyMs, usage: decision.usage, judgments: decision.judgments, asked: decision.asked, model: client?.model,
       stale: decision.stale, ...(decision.jevWasDown ? { jevWasDown: decision.jevWasDown } : {}), ...(decision.safetyRule ? { safetyRule: decision.safetyRule } : {}), ...(decision.standIn ? { standIn: true } : {}), gated: decision.gated, ...(decision.noneGood ? { noneGood: true } : {}), ...(decision.passedOver ? { passedOver: decision.passedOver } : {}) });

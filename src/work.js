@@ -1260,7 +1260,10 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
     }
   } catch (_) { setSays = { chore: '', carry: '' }; }
   const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description + (k === 'carry_on' ? dropsSay.carry + setSays.carry : dropsSay.chore + setSays.chore), run: async () => { chosen = k; await o.run(); } }]));
-  try { await decideAction(bot, task, goal, save, client, onStep, tree, { situation: `${lead ? `${lead} ` : ''}${due.every(k => ['fetch_batch', 'leave_batch'].includes(k)) ? 'A batch left cooking in a furnace far off is done. Choose whether to go back for it, leave it for good, or carry on with the work.' : 'Something the bot keeps in its pockets is running short. Choose whether to see to it now or carry on with the work.'}` }, 'upkeep'); }
+  const DUE_WORDS = { make_pickaxe: 'a pickaxe (none carried)', fetch_stems: 'stems for a pickaxe', return_for_wood: 'wood for a pickaxe', spare_pickaxe: 'a spare pickaxe', spare_shield: 'a spare shield', gold_boots: 'golden boots', iron_piece: 'an iron armour piece', wood_reserve: 'wood', block_reserve: 'building blocks', take_bed: 'the bed left standing', make_bed: 'a bed', food_reserve: 'food', cook_meat: 'raw meat to cook', fetch_drops: 'items lying near', fetch_batch: 'a batch done cooking far off', leave_batch: null };
+  const dueNamed = [...new Set(due.map(k => DUE_WORDS[k]).filter(Boolean))];
+  const asked = dueNamed.length ? `Due now: ${dueNamed.length > 1 ? `${dueNamed.slice(0, -1).join(', ')} and ${dueNamed.at(-1)}` : dueNamed[0]}. See to ${dueNamed.length > 1 ? 'one of them' : 'it'} now, or carry on with the work? Each option says what is carried and what it is for.` : undefined;
+  try { await decideAction(bot, task, goal, save, client, onStep, tree, { ...(asked ? { asked } : {}), situation: `${lead ? `${lead} ` : ''}${due.every(k => ['fetch_batch', 'leave_batch'].includes(k)) ? 'A batch left cooking in a furnace far off is done. Choose whether to go back for it, leave it for good, or carry on with the work.' : 'Something the bot keeps in its pockets is running short. Choose whether to see to it now or carry on with the work.'}` }, 'upkeep'); }
   finally { if (chosen === 'carry_on') goal.step = step; }
   // A pickaxe made is done: the work it was made for is the step again. Left
   // as the craft, the next asking offered "carry on with the wooden pickaxe"
@@ -4884,7 +4887,8 @@ async function decideAction(bot, task, goal, save, client, onStep, tree, context
   }
   const fingerprint = () => decisionFingerprint(bot, { inventory: planningInventory, immediateThreat, needsAir });
   const initial = fingerprint();
-  const decision = await decide(id, { client, bot, task, goal, save, tree, state, context: state, isFresh: () => fingerprint() === initial, above });
+  const asked = state.asked; delete state.asked;
+  const decision = await decide(id, { client, bot, task, goal, save, tree, state, context: state, isFresh: () => fingerprint() === initial, above, ...(asked ? { asked } : {}) });
   onStep(goal);
   if (decision.stale) return false;
   try { await decision.action.run(); }
