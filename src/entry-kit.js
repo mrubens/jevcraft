@@ -200,7 +200,13 @@ function goldBoots(bot) {
   const worn = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean);
   if (worn.some(n => GOLD.test(n)) || (bot.inventory.items?.() || []).some(i => GOLD.test(i.name))) return null;
   const here = bot.entity?.position;
-  if (here && Object.values(bot.entities || {}).some(e => (e.type === 'hostile' || e.kind === 'Hostile mobs') && e.position && e.position.distanceTo(here) <= 24)) return null;
+  // Piglins are what the boots are for (note 2794, the user 2026-11-05 on 25588: 'jev keeps getting attacked by piglins
+  // and has 36 of the little gold things. Is that enough to make boots?'): a piglin or a zombified piglin about is no
+  // reason to withhold them, and crafting angers neither; a brute, which gold does not calm, and every other hostile
+  // within 24 are as before. full-318 (25588, 2026-11-06 04:50 to 04:54Z) carried 36 nuggets and two crafting tables in
+  // iron boots, piglins 9 to 10 blocks off, and was never offered the boots.
+  const CALMED = /^(piglin|zombified_piglin)$/;
+  if (here && Object.values(bot.entities || {}).some(e => (e.type === 'hostile' || e.kind === 'Hostile mobs') && !CALMED.test(e.name || '') && e.position && e.position.distanceTo(here) <= 24)) return null;
   // Nine nuggets are an ingot at a table (note 1246): 25589 (2026-10-04
   // 17:22:43Z) was killed by four piglins with 35 gold nuggets in its pack,
   // two pearls with them, and the boots never offered.
