@@ -45,7 +45,8 @@ const NEAR_FLAT = 5, NEAR_DOWN = 2;
 // into it (note 1284): the kit for the End is made up after, the eyes safe.
 async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000, entryMs = 12000, fillOnly = false, partial = false } = {}) {
   const check = () => {
-    task.check(); checkAir(bot); checkThreats(bot);
+    // The mobs are left to strike while Jev's chosen fill runs (survival.js fill_the_frames, note 2805).
+    task.check(); checkAir(bot); if (!(bot._fillFramesUntil > Date.now())) checkThreats(bot);
     // No health floor (note 1384): the way to the portal was Jev's choice,
     // said with the health; 25598 (2026-10-06 20:00:49Z) chose to take its
     // eyes to the frame at 10 health, hunger 16 and nothing to eat, health
@@ -249,7 +250,7 @@ async function enterEnd(bot, task, goal, save, actions, { confirmationMs = 3000,
   // (note 1178): it stands on the stair by the ring and makes them for as
   // long as a player is near. The same rehearsal fought 118 passes of them
   // while it filled eleven frames, and ended at 2.6 health.
-  if (actions.dig && !(goal.endPortal.spawnerTriedAt > Date.now() - 120000)) {
+  if (actions.dig && !(goal.endPortal.spawnerTriedAt > Date.now() - 120000) && !(bot._fillFramesUntil > Date.now())) {
     const id = bot.registry?.blocksByName?.spawner?.id;
     const at = id !== undefined && typeof bot.findBlocks === 'function' ? bot.findBlocks({ matching: id, maxDistance: 12, count: 1 })[0] : null;
     if (at) {

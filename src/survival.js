@@ -7379,6 +7379,38 @@ class Survival {
           } };
       }
     } catch (_) { /* no way away offered */ }
+    // The eyes into the frames now, the mobs about or not (note 2805; the user 2026-11-06 'Yes, build it'): full-322
+    // (25591, 2026-11-06 10:3x to 10:44Z) stood at its portal at (86, -20, 2586) with 12 eyes for the 11 empty frames,
+    // fought the room's silverfish for minutes by fight and pillar, went into the lava under the ring three times and
+    // died at the third with all twelve, its bed 830 blocks off; the eyes were gone before any corpse run.
+    try {
+      const ep = goal.endPortal, here = bot.entity?.position;
+      const eyes = (bot.inventory?.items?.() || []).filter(i => i.name === 'ender_eye').reduce((n, i) => n + i.count, 0);
+      const empty = Array.isArray(ep?.frames) ? ep.frames.filter(f => !f.eye).length : 0;
+      const off = ep?.center && here && /overworld/.test(String(bot.game?.dimension || '')) ? Math.hypot(here.x - ep.center.x - 0.5, here.z - ep.center.z - 0.5) : null;
+      if (off !== null && off <= 12 && Math.abs(here.y - ep.center.y) <= 6 && eyes > 0 && empty > 0) {
+        const secs = Math.round(Math.min(eyes, empty) * 1.5 + off / 4);
+        const mobs = danger.slice(0, 6).map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} off`).join(', ');
+        options.fill_the_frames = { expects: { seconds: secs },
+          description: `Put the eyes in the End portal's frames now, the mobs about left to strike meanwhile: ${empty} frame${empty === 1 ? '' : 's'} empty, ${eyes} eye${eyes === 1 ? '' : 's'} carried, the ring ${Math.round(off)} blocks off; about ${secs} seconds, a step and a click a frame. ${mobs ? `Here now: ${mobs}. ` : ''}An eye in a frame stays there through any death; an eye carried drops at a death, and one into the lava under the ring is gone at once. ${eyes >= empty ? 'With every frame filled the portal lights, and stepping in is the way out of the room: the End takes the bot from the fight.' : `With ${empty - eyes} frame${empty - eyes === 1 ? '' : 's'} still empty after, the portal does not light yet.`} A silverfish's bite is about 1 health; they come from the room's spawner while a player is within 16 of it. full-322 (2026-11-06) fought the silverfish here for minutes with 12 eyes carried and died in the lava under the ring with all of them, its bed 830 blocks off.`,
+          run: async () => {
+            this.report(goal, save, { action: 'fill_the_frames', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
+            lowerShield(bot);
+            bot._fillFramesUntil = Date.now() + (secs + 15) * 1000;
+            const EP = require('./end-portal');
+            try {
+              for (let i = 0; i < empty + 2 && Date.now() < bot._fillFramesUntil; i++) {
+                const left = (goal.endPortal?.frames || []).filter(f => !f.eye).length, have = (bot.inventory?.items?.() || []).filter(x => x.name === 'ender_eye').length;
+                if (!left || !have) break;
+                try { await EP.enterEnd(bot, task, goal, save, this.actions, { fillOnly: true, partial: true }); }
+                catch (err) { if (['Cancelled', 'NeedsAir'].includes(err.name)) throw err; console.log(`[fill frames] ${String(err.message || err).slice(0, 140)}`); if (!/changed|confirmation/.test(String(err.message))) break; }
+              }
+            } finally { delete bot._fillFramesUntil; }
+            console.log(`[fill frames] chosen at the stance: ${(goal.endPortal?.frames || []).filter(f => !f.eye).length} frames empty now`);
+            return true;
+          } };
+      }
+    } catch (_) { /* no frames offered */ }
       const state = { ...(shared.lowAndHit ? { lowAndHit: shared.lowAndHit } : {}), ...(shared.hitting ? { hittingNow: shared.hitting } : {}), ...(shared.mobNotes ? { mobsHere: shared.mobNotes } : {}), ...(kept ? { noWayToTheBot: kept } : {}), ...(outOfSightSays ? { outOfSight: outOfSightSays } : {}), ...((d => d ? { dropBeside: d.trim() } : {})(dropBesideSays(bot))), health: bot.health, food: bot.food, dimension: String(bot.game?.dimension || ''), armour, weapon: defenseWeapon(bot)?.name || 'bare hands',
         shield: bot.inventory.slots?.[45]?.name === 'shield', arrows: countOf(bot, 'arrow'), buildingBlocks: shelter.materialStock(bot),
         dropWithinThreeBlocks: require('./terrain').dropFacts(bot, feetCell(bot), 3) || false,
