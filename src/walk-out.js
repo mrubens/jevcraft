@@ -123,7 +123,9 @@ function noteWayIn(bot, goal = bot?._stalls?.goalOf?.()) {
   if (!p) return;
   const holder = goal && typeof goal === 'object' ? goal : bot;
   const field = holder === goal ? 'wayIn' : '_wayIn';
-  if (!netherOf(bot)) { if (holder[field]) delete holder[field]; return; }
+  // The way kept past leaving (note 2792, the user 2026-11-05: 'Can't it use an existing path back?'): the last one is
+  // kept on the goal as lastWayIn, so a corpse run back into the Nether follows the ground walked before to the death.
+  if (!netherOf(bot)) { if (holder[field]) { if (holder === goal && (holder[field].cells || []).length >= 20) goal.lastWayIn = { cells: holder[field].cells, since: holder[field].since, endedAt: Date.now() }; delete holder[field]; } return; }
   if (!bot.entity.onGround) return;
   // Carried over from the bot's own keeping when a goal first holds it.
   if (holder === goal && !goal.wayIn && bot._wayIn) goal.wayIn = bot._wayIn;
@@ -250,6 +252,40 @@ function literalRun(cells, i) {
   }
   return { cells: out, upTo: k };
 }
+// A trail walked forward from the cell nearest the bot to the cell nearest `to` (note 2792): literal runs where the cells
+// are a step apart (crossAlong), the pathfinder's leg to the cell twelve on where they are not, by its ordinary rules on
+// the trail's cells. -> { tried, ok, walked, why }.
+async function walkAlong(bot, task, cells, to, navigate) {
+  const { goals } = require('mineflayer-pathfinder');
+  const here = bot.entity.position;
+  const pts = cells.map(([x, y, z]) => ({ x, y, z }));
+  const d = (a, b) => Math.hypot(a.x - b.x, (a.y - b.y) * 2, a.z - b.z);
+  let i = 0, best = Infinity; pts.forEach((c, k) => { const e = d(c, here); if (e < best) { best = e; i = k; } });
+  let end = 0, bestEnd = Infinity; pts.forEach((c, k) => { const e = Math.hypot(c.x - to.x, c.z - to.z); if (e < bestEnd) { bestEnd = e; end = k; } });
+  if (best > 32 || bestEnd > 16) return { tried: false, off: Math.round(best), endOff: Math.round(bestEnd) };
+  const way = end >= i ? pts.slice(i, end + 1) : pts.slice(end, i + 1).reverse();
+  let k = 0, walked = 0;
+  bot._wayBackWalk = true;
+  try {
+    while (k < way.length - 1) {
+      task.check();
+      const run = literalRun(way, k);
+      if (run.cells.length >= 2) {
+        const from = way[k], last = run.cells.at(-1);
+        try { await require('./bridging').crossAlong(bot, task, { from: [from.x, from.y, from.z], to: [last.x, last.y, last.z], cells: run.cells }, { navigate }); walked += run.upTo - k; k = run.upTo; continue; }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      }
+      const j = Math.min(way.length - 1, k + LEG_CELLS), c = way[j];
+      try { await navigate(bot, task, new goals.GoalNear(c.x, c.y, c.z, 1), { timeoutMs: 30000, stallMs: 8000 }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return { tried: true, ok: false, walked, why: String(err.message || err).slice(0, 160) }; }
+      walked += j - k;
+      const at = bot.entity.position;
+      let m = j, e = Infinity; for (let q = k; q < way.length; q++) { const r = d(way[q], at); if (r < e) { e = r; m = q; } }
+      k = Math.max(j, m);
+    }
+  } finally { bot._wayBackWalk = false; }
+  return { tried: true, ok: true, walked };
+}
 async function walkBack(bot, task, goal, portal, navigate, { force = false } = {}) {
   const trail = wayInOf(bot, goal), here = bot.entity.position;
   const way = backTrail(trail, here, portal);
@@ -302,4 +338,4 @@ async function walkBack(bot, task, goal, portal, navigate, { force = false } = {
   return { tried: true, ok: true, walked, reached: way.reaches };
 }
 
-module.exports = { OPEN_WALK_MS, openWalk, leadsAway, endSays, rodsCarried, noteCell, noteWayIn, wayInPlugin, wayInOf, onWayIn, backTrail, wayFacts, rodsSays, wayBackSays, walkBack, literalRun, feetOf, ROD_DROP_MAX, ROD_COST, LEG_CELLS, WAY_NEAR, WAY_IN_MOST };
+module.exports = { OPEN_WALK_MS, openWalk, leadsAway, endSays, rodsCarried, noteCell, noteWayIn, wayInPlugin, wayInOf, onWayIn, backTrail, wayFacts, rodsSays, wayBackSays, walkBack, walkAlong, literalRun, feetOf, ROD_DROP_MAX, ROD_COST, LEG_CELLS, WAY_NEAR, WAY_IN_MOST };

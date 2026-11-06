@@ -781,6 +781,21 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
         return true;
       }
     }
+    // The ground walked before to where the bot died (note 2792): in the Nether, the last way in kept through the death
+    // (walk-out.js lastWayIn), walked cell by cell toward the drops while it runs that way. full-318 (25588, 2026-11-06
+    // 04:41 to 04:43Z), its kit of 14 diamonds and 89 iron 410 blocks off at its fortress, found its own legs ending
+    // 'No route ... the way passes along a drop that would kill', the way it had walked there an hour before dropped.
+    if (/nether/.test(String(bot.game?.dimension || '')) && /nether/.test(String(run.dimension || '')) && goal.lastWayIn?.cells?.length && !run.trailTriedAt) {
+      const wo = require('./walk-out');
+      goal.step = { action: 'corpse_run', to: { ...run.position }, items: { ...run.items }, way: 'along the ground walked before to where the bot died' }; save();
+      const went = await wo.walkAlong(bot, task, goal.lastWayIn.cells, spot, move);
+      if (went.tried) {
+        console.log(`[corpse run] along the way walked before: ${went.walked} cells${went.ok ? ', to its end by the drops' : `, then ${went.why}`}`);
+        if (!went.ok) { run.trailTriedAt = Date.now(); save(); }
+        return true;
+      }
+      run.trailTriedAt = Date.now(); save();
+    }
     const leg = before > FAR ? new goals.GoalNearXZ(Math.round(here.x + Math.cos(bearing) * LEG), Math.round(here.z + Math.sin(bearing) * LEG), 4) : new goals.GoalNear(spot.x, spot.y, spot.z, 3);
     let failed = null;
     try { await move(bot, task, leg, { timeoutMs: LEG_MS, stallMs: 8000, sprint: true, hostilesOk: true, passing: /nether/.test(String(bot.game?.dimension || '')) }); }
