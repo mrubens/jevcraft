@@ -125,7 +125,17 @@ function noteWayIn(bot, goal = bot?._stalls?.goalOf?.()) {
   const field = holder === goal ? 'wayIn' : '_wayIn';
   // The way kept past leaving (note 2792, the user 2026-11-05: 'Can't it use an existing path back?'): the last one is
   // kept on the goal as lastWayIn, so a corpse run back into the Nether follows the ground walked before to the death.
-  if (!netherOf(bot)) { if (holder[field]) { if (holder === goal && (holder[field].cells || []).length >= 20) goal.lastWayIn = { cells: holder[field].cells, since: holder[field].since, endedAt: Date.now() }; delete holder[field]; } return; }
+  if (!netherOf(bot)) {
+    if (holder[field]) { if (holder === goal && (holder[field].cells || []).length >= 20) goal.lastWayIn = { cells: holder[field].cells, since: holder[field].since, endedAt: Date.now() }; delete holder[field]; }
+    // The Overworld's own trail (note 2793, the user 2026-11-05 'Do both'): the ground walked there, kept on the goal,
+    // its last 3,000 cells; at a death it is kept as lastOverworldTrail for the corpse run (wayInPlugin).
+    if (holder === goal && /overworld/.test(String(bot.game?.dimension || '')) && bot.entity.onGround) {
+      const t = goal.overworldTrail ||= { cells: [], since: Date.now() };
+      noteCell(t, feetOf(p));
+      if (t.cells.length > 3000) { t.cells.splice(0, t.cells.length - 3000); delete t._index; }
+    }
+    return;
+  }
   if (!bot.entity.onGround) return;
   // Carried over from the bot's own keeping when a goal first holds it.
   if (holder === goal && !goal.wayIn && bot._wayIn) goal.wayIn = bot._wayIn;
@@ -135,6 +145,24 @@ function noteWayIn(bot, goal = bot?._stalls?.goalOf?.()) {
 function wayInPlugin(bot) {
   if (bot._wayInWatched) return;
   bot._wayInWatched = true;
+  const goalOf = () => bot?._stalls?.goalOf?.() || bot._goal || null;
+  // A death in the Overworld keeps the trail walked there for the corpse run (note 2793); a new one begins at respawn.
+  bot.on?.('death', () => {
+    try {
+      const g = goalOf();
+      if (g?.overworldTrail?.cells?.length >= 20 && /overworld/.test(String(bot.game?.dimension || ''))) { g.lastOverworldTrail = { cells: g.overworldTrail.cells, since: g.overworldTrail.since, endedAt: Date.now() }; delete g.overworldTrail; }
+    } catch (_) { /* kept as it was */ }
+  });
+  // Short-term memory kept on the goal, so a restart does not forget it (note 2793): the spots where walks stall
+  // (skills.js) and the last minutes' positions (stillness.js); held on the bot only before a goal holds them.
+  for (const [prop, field] of [['_stallSpots', 'stallSpots'], ['_trail', 'recentTrail']]) {
+    let own;
+    try {
+      Object.defineProperty(bot, prop, { configurable: true, enumerable: false,
+        get() { const g = goalOf(); return g ? g[field] : own; },
+        set(v) { const g = goalOf(); if (g) g[field] = v; else own = v; } });
+    } catch (_) { /* a plain field as before */ }
+  }
   let last = null;
   bot.on?.('move', () => {
     try {

@@ -785,10 +785,13 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     // (walk-out.js lastWayIn), walked cell by cell toward the drops while it runs that way. full-318 (25588, 2026-11-06
     // 04:41 to 04:43Z), its kit of 14 diamonds and 89 iron 410 blocks off at its fortress, found its own legs ending
     // 'No route ... the way passes along a drop that would kill', the way it had walked there an hour before dropped.
-    if (/nether/.test(String(bot.game?.dimension || '')) && /nether/.test(String(run.dimension || '')) && goal.lastWayIn?.cells?.length && !run.trailTriedAt) {
+    // And in the Overworld (note 2793): the trail walked there before the death (walk-out.js lastOverworldTrail).
+    const trailHere = /nether/.test(String(bot.game?.dimension || '')) && /nether/.test(String(run.dimension || '')) ? goal.lastWayIn
+      : /overworld/.test(String(bot.game?.dimension || '')) && /overworld/.test(String(run.dimension || '')) ? goal.lastOverworldTrail : null;
+    if (trailHere?.cells?.length && !run.trailTriedAt) {
       const wo = require('./walk-out');
       goal.step = { action: 'corpse_run', to: { ...run.position }, items: { ...run.items }, way: 'along the ground walked before to where the bot died' }; save();
-      const went = await wo.walkAlong(bot, task, goal.lastWayIn.cells, spot, move);
+      const went = await wo.walkAlong(bot, task, trailHere.cells, spot, move);
       if (went.tried) {
         console.log(`[corpse run] along the way walked before: ${went.walked} cells${went.ok ? ', to its end by the drops' : `, then ${went.why}`}`);
         if (!went.ok) { run.trailTriedAt = Date.now(); save(); }
