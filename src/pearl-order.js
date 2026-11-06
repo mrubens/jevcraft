@@ -90,7 +90,18 @@ function routes(bot, goal, now = Date.now()) {
   if (!isSetAside(goal, 'rung', 'warped_pearls', now)) {
     let known = [];
     try { known = require('./exploration').knownLandmarks(bot, goal, 'warped_forest', FOREST_REACH).filter(k => !isSetAside(goal, 'landmark_trip', tripKey(k.landmark), now)); } catch (_) { known = []; }
-    if (known.length) out.forest = known[0];
+    // The forest stood in is the forest here, 0 blocks off, its noted points resting or not (note 2802): full-322
+    // (25591, 2026-11-06 06:18Z), in a warped forest at (117, 190) whose noted points' walks had failed ('No path',
+    // 'a drop that would kill'), was offered only the forest at (167, 53) 200 blocks off, and chose the barter's 0.3
+    // pearls over it.
+    let standing = null;
+    try {
+      const wp = require('./warped-pearls'), feet = bot.entity.position.floored();
+      const dry = goal.warpedDry && goal.warpedDry.until > now ? goal.warpedDry : null;
+      if (wp.inForest(bot) && !(dry && Math.hypot(feet.x - dry.x, feet.z - dry.z) <= 48)) standing = { landmark: { kind: 'warped_forest', x: feet.x, y: feet.y, z: feet.z }, distance: 0, here: true };
+    } catch (_) { standing = null; }
+    if (standing) out.forest = standing;
+    else if (known.length) out.forest = known[0];
     // None known: the sweep for one, Jev's (note 2784, the user 2026-11-01 'I want you to figure out why they're not
     // getting pearls', then 'Yes, build it'). The sweep ran only by the ladder's rule where nothing else was on offer
     // here: full-320 (25592) had 8 minutes of it in eleven hours and 133 on the pearls, mine gold for barter chosen 14
@@ -298,7 +309,7 @@ function tree(bot, goal, r, now = Date.now()) {
     // The pace alone (note 2412): the walks back to a portal, how many came out in the Overworld, are not this walk's.
     try { pace = require('./game-progress').netherPaceSays(bot, r.forest.distance, { toPortal: false }).says; } catch (_) { pace = ''; }
     out.warped_forest = { target: { x: l.x, y: Number.isFinite(l.y) ? l.y : Math.round(bot.entity.position.y), z: l.z },
-      description: `${r.forest.viaPortal ? `Back through the portal${r.forest.viaPortal.portalBlocks != null ? ` ${r.forest.viaPortal.portalBlocks} blocks off at (${r.forest.viaPortal.overworld.x}, ${r.forest.viaPortal.overworld.z})` : ''}, then ${r.forest.netherBlocks} blocks in the Nether from where it comes out to the warped forest known there at (${l.x}, ${l.z})` : `Go to the warped forest at (${l.x}, ${l.z}), ${r.forest.distance} blocks off`}, and hunt its endermen one at a time for the pearls; ${o.fortress}. Held while the forest's walk and hunt do not rest (a hunt fifteen minutes without a pearl rests it), then the rods again.${pace} ${record.routeSays('warped_forest', goal)} Pearls ${o.pearls}.` };
+      description: `${r.forest.viaPortal ? `Back through the portal${r.forest.viaPortal.portalBlocks != null ? ` ${r.forest.viaPortal.portalBlocks} blocks off at (${r.forest.viaPortal.overworld.x}, ${r.forest.viaPortal.overworld.z})` : ''}, then ${r.forest.netherBlocks} blocks in the Nether from where it comes out to the warped forest known there at (${l.x}, ${l.z})` : r.forest.here ? `Hunt here, in the warped forest stood in now at (${l.x}, ${l.z}), no walk to it` : `Go to the warped forest at (${l.x}, ${l.z}), ${r.forest.distance} blocks off`}, and hunt its endermen one at a time for the pearls; ${o.fortress}. Held while the forest's walk and hunt do not rest (a hunt fifteen minutes without a pearl rests it), then the rods again.${pace} ${record.routeSays('warped_forest', goal)} Pearls ${o.pearls}.` };
   }
   if (r.search) {
     const legs = r.search.legs, leg = r.search.leg;

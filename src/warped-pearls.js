@@ -128,7 +128,9 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
   // A forest part rested for a dry spell (note 2265) is not counted as one stood in: the next forest known, or the sweep for one.
   const dry = goal.warpedDry && goal.warpedDry.until > now() ? goal.warpedDry : null;
   const inDry = dry && Math.hypot(feet.x - dry.x, feet.z - dry.z) <= 48;
-  const known = toWalk() || (inForest(bot) && !inDry ? { landmark: { kind: 'warped_forest', x: feet.x, y: feet.y, z: feet.z }, distance: 0 } : null);
+  // The forest stood in first, a noted one to walk to after (note 2802): a noted forest open 200 blocks off was walked
+  // to out of the forest stood in.
+  const known = (inForest(bot) && !inDry ? { landmark: { kind: 'warped_forest', x: feet.x, y: feet.y, z: feet.z }, distance: 0 } : null) || toWalk();
   if (known) {
     // In the forest already (its biome underfoot, or its nylium within six
     // blocks): arrived, wherever in it the landmark's own point lies (note
