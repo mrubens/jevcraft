@@ -5788,6 +5788,25 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
     if (went.tried) distance = bot.entity.position.distanceTo(pos(p));
   }
   // The way in stopped: the ways on are Jev's, with what it came to.
+  // In the Overworld, the ground walked before to the portal first (note 2799, the user 2026-11-06: 'Yes add it. I
+  // don't know why it's stuck'): the trail kept there (walk-out.js overworldTrail, and the one kept at the last death)
+  // walked cell by cell to the portal where it passes within 16 of it and the bot stands within 32 of it; stopped, it
+  // rests two minutes and the ways on are asked with what it came to. full-318 (25588, 2026-11-06 05:57 to 05:58Z),
+  // going back in for its kit, had its walks to its portal at (271, 65, 863), 190 blocks off, time out 'without
+  // reaching new ground' and filled the staircase's rest exploring, a trail of 459 cells walked there kept unused.
+  if (!walk && where === 'overworld' && !isSetAside(goal, 'way_in', pos(p))) {
+    const wo = require('./walk-out');
+    for (const t of [goal.overworldTrail, goal.lastOverworldTrail]) {
+      if (!t?.cells?.length) continue;
+      goal.step = { action: 'return_to_portal', portal: { x: p.x, y: p.y, z: p.z }, via: 'the ground walked before' }; save();
+      const went = await wo.walkAlong(bot, task, t.cells, p, navigate);
+      if (!went.tried) continue;
+      console.log(`[portal] back along the ground walked before: ${went.walked} cells${went.ok ? ', to the portal' : `, then ${went.why}`}`);
+      if (!went.ok) { setAside(goal, 'way_in', pos(p), `the way along the ground walked before stopped: ${went.why}`, 120000); save(); walk = `along the ground walked before: ${went.walked} cells, then ${went.why}`; }
+      else distance = bot.entity.position.distanceTo(pos(p));
+      break;
+    }
+  }
   if (walk) return portalWay(bot, task, goal, save, p, where, { walk });
   // Under the rock in the Overworld with the portal far across: up to open
   // sky first, where the legs are walked, when the rock straight at it
