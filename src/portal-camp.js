@@ -129,10 +129,35 @@ async function stockCamp(bot, task, goal, save, actions) {
     try { for (let i = 0; i < 5 && countOf(bot, item) < 1; i++) { task.check(); if (await acts.acquireStep(bot, task, item, 1, goal, save) === true) break; } }
     catch (err) { out.notes.push(`${item}: ${tolerate(err)}`); }
   }
+  // Each thing put in is seen in the chest before the next (note 2819): by the stash's own stocking the first six camps
+  // drilled lost their stone sword, stone pickaxe and food from the pockets and five of the six chests held only the
+  // blocks (the seventh drill's lid, 25585, 2026-11-10 22:19:5xZ: 'it shows nothing' after the netherrack came out).
   try {
     const armour = stash.spareArmour(bot, home).filter(n => countOf(bot, n) >= 1).map(n => ({ item: n, count: 1, slot: 'armour' }));
-    const stored = await stash.stockStash(bot, task, goal, save, home, acts, { only: () => false, extra: [...kitFor(bot), ...armour] });
-    out.left = (stored || []).map(m => `${m.count} ${m.item.replaceAll('_', ' ')}`);
+    const moves = [...kitFor(bot), ...armour];
+    goal.step = { action: 'portal_camp', doing: 'the kit into the chest', items: moves }; save();
+    const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+    out.left = await stash.withChest(bot, task, goal, save, home, acts, async window => {
+      const inChest = name => window.containerItems().filter(i => i.name === name).reduce((n, i) => n + i.count, 0);
+      await sleep(400);
+      for (const move of moves) {
+        task.check();
+        const id = bot.registry?.itemsByName?.[move.item]?.id, before = inChest(move.item);
+        if (id === undefined) continue;
+        let ok = false, why = '';
+        for (let attempt = 0; attempt < 2 && !ok; attempt++) {
+          try { await window.deposit(id, null, move.count); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err; why = String(err?.message || err).slice(0, 80); }
+          for (let i = 0; i < 8 && inChest(move.item) < before + move.count; i++) await sleep(250);
+          try { await require('./rod-stash').putBackHeld(bot, window); } catch (_) { /* nothing held */ }
+          ok = inChest(move.item) >= before + move.count;
+        }
+        if (!ok) out.notes.push(`${move.item} not seen in the chest${why ? `: ${why}` : ''}`);
+      }
+      await sleep(400);
+      try { if (bot._syncWindow) await bot._syncWindow(window); } catch (_) { /* read as it is */ }
+      try { stash.rememberContents(home, window); } catch (_) { /* read at the next opening */ }
+      return window.containerItems().map(i => `${i.count} ${i.name.replaceAll('_', ' ')}`);
+    });
   } catch (err) { out.notes.push(`stocking: ${tolerate(err)}`); }
   return out;
 }
@@ -153,54 +178,42 @@ async function takeKit(bot, task, goal, save, actions) {
   const items = bot.inventory?.items?.() || [];
   if (items.some(i => /_(sword|axe)$/.test(i.name)) && items.some(i => /_pickaxe$/.test(i.name))) return false;
   const c = (goal.portalCamp ||= {});
-  // Up to three tries since the death, three seconds apart, while the chest is known to hold something (note 2816).
+  // Once for each death, while the chest is known to hold something: up to three openings in the one step, a second
+  // and a half apart (note 2819: tried a step apart, the ladder went on between them and the trip was asked five and
+  // a half minutes after the death, the seventh drill).
   const died = Date.parse(goal.corpseRun?.deathAt || '') || 0;
-  if (c.take?.death !== died) c.take = { death: died, n: 0, at: 0 };
-  if (c.take.n >= TAKE_TRIES || Date.now() - c.take.at < 3000 || !(c.left || []).length) return false;
+  if (c.take?.death === died || !(c.left || []).length) return false;
   const bk = require('./bed-kit'), stash = require('./home-stash'), home = bk.bedKitHome(bot, goal);
   if (!home?.stash?.position) return false;
-  c.take.n++; c.take.at = Date.now(); c.tookAt = Date.now();
+  c.take = { death: died, n: 0 }; c.tookAt = Date.now();
   goal.step = { action: 'portal_camp', doing: 'the kit out of the chest', at: { ...home.stash.position } }; save();
   const acts = { ...(actions.stashActions || {}), acquireStep: actions.acquireStep };
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const all = [];
   try {
-    // By what is in it when the lid is up (the chest's remembered contents are from before it was stocked), in up to
-    // three passes: the first taking-out (mid-full-19-campdrill-7, 25585, 2026-11-10 17:16:35Z, two seconds after the
-    // body came back) moved the 32 netherrack and left the sword, the pickaxe and the beef, each move's failure unsaid.
-    let remaining = null;
-    const took = await stash.withChest(bot, task, goal, save, home, acts, async window => {
-      const out = [], failed = [];
-      // The lid's contents come a moment after it opens: the third drill's chest (mid-full-19-campdrill-9, 25585,
-      // 2026-11-10 17:42:17Z, three seconds after the body came back) read empty with a sword, a pickaxe and beef in it,
-      // nothing was taken, and the trip was asked bare-handed half a second on. Waited for, up to four seconds.
-      for (let i = 0; i < 16 && !window.containerItems().length && (c.left || []).length; i++) { task.check(); await new Promise(resolve => setTimeout(resolve, 250)); try { if (bot._syncWindow) await bot._syncWindow(window); } catch (_) { /* read as it is */ } }
-      console.log(`[portal_camp] the chest's lid up (try ${c.take.n}): it shows ${window.containerItems().map(i => `${i.count} ${i.name}`).join(', ') || 'nothing'}; known to hold ${(c.left || []).join(', ') || 'nothing'}`);
-      for (let pass = 0; pass < 3; pass++) {
-        const there = window.containerItems();
-        if (!there.length) break;
-        if (pass) await new Promise(resolve => setTimeout(resolve, 400));
-        for (const it of there) {
+    for (; c.take.n < TAKE_TRIES && c.left.length; ) {
+      c.take.n++;
+      if (c.take.n > 1) await sleep(1500);
+      const took = await stash.withChest(bot, task, goal, save, home, acts, async window => {
+        const out = [];
+        for (let i = 0; i < 12 && !window.containerItems().length; i++) { task.check(); await sleep(250); try { if (bot._syncWindow) await bot._syncWindow(window); } catch (_) { /* read as it is */ } }
+        console.log(`[portal_camp] the chest's lid up (try ${c.take.n}): it shows ${window.containerItems().map(i => `${i.count} ${i.name}`).join(', ') || 'nothing'}; known to hold ${c.left.join(', ')}`);
+        for (const it of window.containerItems()) {
           task.check();
           try { await window.withdraw(it.type, null, it.count); out.push(`${it.count} ${it.name.replaceAll('_', ' ')}`); }
-          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err; failed.push(`${it.name} (pass ${pass + 1}): ${String(err?.message || err).slice(0, 80)}`); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err; console.log(`[portal_camp] ${it.name} not taken: ${String(err?.message || err).slice(0, 80)}`); }
         }
-      }
-      if (failed.length) console.log(`[portal_camp] not taken at once: ${failed.join('; ')}`);
-      const left = window.containerItems().map(i => `${i.count} ${i.name.replaceAll('_', ' ')}`);
-      if (left.length) console.log(`[portal_camp] still in the chest: ${left.join(', ')}`);
-      remaining = left;
-      try { stash.rememberContents(home, window); } catch (_) { /* read at the next opening */ }
-      return out;
-    });
-    // What the chest still holds is kept as known: emptied when it was read empty after something came out, or twice.
-    // What is known to be left is what was put in less what came out, not the lid's reading: the sixth drill
-    // (mid-full-19-campdrill-12, 25585, 2026-11-10 21:59:38Z) read 32 netherrack of a chest holding a sword, a pickaxe,
-    // netherrack and beef, took it, read the chest empty and went on bare. The next try opens it afresh.
-    const out = new Set(took.map(t => t.replace(/^\d+ /, '')));
-    c.left = (c.left || []).filter(t => !out.has(t.replace(/^\d+ /, '')));
-    if (c.take.n >= TAKE_TRIES && c.left.length) { console.log(`[portal_camp] given up on ${c.left.join(', ')} after ${TAKE_TRIES} tries${remaining?.length ? `; the lid showed ${remaining.join(', ')}` : ''}`); c.left = []; }
-    if (!took.length) console.log(`[portal_camp] nothing came out of the camp's chest (try ${c.take.n} of ${TAKE_TRIES}; it is known to hold ${(c.left || []).join(', ') || 'nothing'})`);
-    save();
-    if (took.length) { bot.chat?.(`Back at my camp by the portal: took ${took.join(', ')} out of the chest.`); console.log(`[portal_camp] took ${took.join(', ')} out of the camp's chest`); }
+        await sleep(300);
+        try { stash.rememberContents(home, window); } catch (_) { /* read at the next opening */ }
+        return out;
+      });
+      all.push(...took);
+      const out = new Set(took.map(t => t.replace(/^\d+ /, '')));
+      c.left = c.left.filter(t => !out.has(t.replace(/^\d+ /, '')));
+      save();
+    }
+    if (c.left.length) { console.log(`[portal_camp] given up on ${c.left.join(', ')} after ${c.take.n} openings`); c.left = []; save(); }
+    if (all.length) { bot.chat?.(`Back at my camp by the portal: took ${all.join(', ')} out of the chest.`); console.log(`[portal_camp] took ${all.join(', ')} out of the camp's chest`); }
     return true;
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err?.name)) throw err; console.log(`[portal_camp] the kit was not taken: ${String(err?.message || err).slice(0, 160)}`); return false; }
 }
@@ -216,7 +229,7 @@ function kitWaiting(bot, goal) {
     if (items.some(i => /_(sword|axe)$/.test(i.name)) && items.some(i => /_pickaxe$/.test(i.name))) return false;
     const died = Date.parse(goal.corpseRun?.deathAt || '') || 0, c = goal.portalCamp || {};
     if (!(c.left || []).length) return false;
-    return !(c.take?.death === died && c.take.n >= TAKE_TRIES);
+    return c.take?.death !== died;
   } catch (_) { return false; }
 }
 
