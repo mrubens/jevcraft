@@ -660,7 +660,10 @@ define({
 
 // A camp at the Nether portal: the respawn point and a kit beside it (src/portal-camp.js, note 2809).
 define({
-  id: 'portal_camp', area: 'resources', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  // Its ledger kind is its own, outside the run clock's kinds (clock.js CLOCK_KINDS, note 2811): asked of Jev before the ship
+  // with the clock's 'a way that cannot finish within what is left is a way to a slower run' in the state, the camp was
+  // 0.28 to 0.48 where the same question without it was 0.55 to 0.82; the option says its own minutes against the record's.
+  id: 'portal_camp', area: 'resources', parent: null, kind: 'camp', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'The bot is by a Nether portal with a bed carried and no camp at the portal: make camp there (the bed as the respawn point, a chest with a spare kit beside it), or go on?',
   trigger: 'The ladder\'s step within 32 blocks of a known portal, in the Overworld or the Nether, a bed carried, no respawn bed within 24 blocks of an Overworld portal, nothing hostile within 12; asked again after half an hour or a death.',
   source: 'src/portal-camp.js (step, offer, makeCamp), src/game-progress.js (gameStep)',
