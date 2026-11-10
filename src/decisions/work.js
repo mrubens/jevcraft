@@ -658,6 +658,19 @@ define({
   instructions: workInstructions('The bot died in the Nether and came back to life by its bed with empty hands. What it dropped lies where it died and does not age until the bot is near it again. Choose whether it goes straight back for it or makes a kit again first. Each option says what it costs and risks. tripRecord is what such trips came to in the last batch of trials, whichever way was answered: the minutes until the bot was in the Nether again, the deaths before any kit was back, the drops reached.'),
 });
 
+// A camp at the Nether portal: the respawn point and a kit beside it (src/portal-camp.js, note 2809).
+define({
+  id: 'portal_camp', area: 'resources', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'The bot is by a Nether portal with a bed carried and no camp at the portal: make camp there (the bed as the respawn point, a chest with a spare kit beside it), or go on?',
+  trigger: 'The ladder\'s step within 32 blocks of a known portal, in the Overworld or the Nether, a bed carried, no respawn bed within 24 blocks of an Overworld portal, nothing hostile within 12; asked again after half an hour or a death.',
+  source: 'src/portal-camp.js (step, offer, makeCamp), src/game-progress.js (gameStep)',
+  options: [
+    { key: 'make_camp', label: 'place the bed by the Overworld portal as the respawn point, a chest beside it with a stone sword, a stone pickaxe, blocks and food', when: 'always here; said with what the pockets make of it and the minutes', level: 'root' },
+    { key: 'go_on', label: 'go on without a camp', when: 'always here', level: 'root' },
+  ],
+  instructions: workInstructions('The bot is by its Nether portal. A death brings it back to life at its respawn point with empty hands, and what it dropped lies where it died. Choose whether to make camp at the portal now or go on. record is what the deaths of the last batch of trials cost; respawnPointNow is where a death would bring the bot back to life as things stand.'),
+});
+
 // The dig to the End portal's ring with no pickaxe (src/work.js portalPickaxeFirst, note 1289).
 define({
   id: 'portal_dig', area: 'resources', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,

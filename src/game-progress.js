@@ -1380,6 +1380,14 @@ async function gameStep(bot, task, goal, save, actions) {
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
     if (kept === 'kept') return false;
   }
+  // The camp at the portal (portal-camp.js, note 2809): the kit taken out of its chest by a body back to life there,
+  // the camp under way, or its own question at a portal with a bed carried and none standing.
+  if (actions?.stashActions) {
+    let camped = false;
+    try { camped = await require('./portal-camp').step(bot, task, goal, save, actions, actions.client || task.opportunityClient); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; console.log(`[portal_camp] ${String(err.message || err).slice(0, 160)}`); }
+    if (camped) return false;
+  }
   // The spare kit by the bed, asked on its own where it can be left (home-
   // stash.js askSpareKit, note 1222).
   if (dimension(bot) === 'overworld' && actions?.spare_kit) {
