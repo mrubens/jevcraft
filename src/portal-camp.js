@@ -159,17 +159,24 @@ async function takeKit(bot, task, goal, save, actions) {
   goal.step = { action: 'portal_camp', doing: 'the kit out of the chest', at: { ...home.stash.position } }; save();
   const acts = { ...(actions.stashActions || {}), acquireStep: actions.acquireStep };
   try {
-    // By what is in it when the lid is up (the chest's remembered contents are from before it was stocked).
+    // By what is in it when the lid is up (the chest's remembered contents are from before it was stocked), in up to
+    // three passes: the first taking-out (mid-full-19-campdrill-7, 25585, 2026-11-10 17:16:35Z, two seconds after the
+    // body came back) moved the 32 netherrack and left the sword, the pickaxe and the beef, each move's failure unsaid.
     const took = await stash.withChest(bot, task, goal, save, home, acts, async window => {
-      const out = [];
-      for (const it of window.containerItems()) {
-        task.check();
-        try {
-          if (it.stackSize === 1 || it.count === 1) { const slot = window.firstEmptyInventorySlot(); if (slot === null || slot === undefined) break; await bot.moveSlotItem(it.slot, slot); }
-          else await window.withdraw(it.type, null, it.count);
-          out.push(`${it.count} ${it.name.replaceAll('_', ' ')}`);
-        } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err; }
+      const out = [], failed = [];
+      for (let pass = 0; pass < 3; pass++) {
+        const there = window.containerItems();
+        if (!there.length) break;
+        if (pass) await new Promise(resolve => setTimeout(resolve, 400));
+        for (const it of there) {
+          task.check();
+          try { await window.withdraw(it.type, null, it.count); out.push(`${it.count} ${it.name.replaceAll('_', ' ')}`); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err; failed.push(`${it.name} (pass ${pass + 1}): ${String(err?.message || err).slice(0, 80)}`); }
+        }
       }
+      if (failed.length) console.log(`[portal_camp] not taken at once: ${failed.join('; ')}`);
+      const left = window.containerItems().map(i => `${i.count} ${i.name.replaceAll('_', ' ')}`);
+      if (left.length) console.log(`[portal_camp] still in the chest: ${left.join(', ')}`);
       try { stash.rememberContents(home, window); } catch (_) { /* read at the next opening */ }
       return out;
     });
@@ -178,6 +185,20 @@ async function takeKit(bot, task, goal, save, actions) {
     if (took.length) { bot.chat?.(`Back at my camp by the portal: took ${took.join(', ')} out of the chest.`); console.log(`[portal_camp] took ${took.join(', ')} out of the camp's chest`); }
     return took.length > 0;
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err?.name)) throw err; console.log(`[portal_camp] the kit was not taken: ${String(err?.message || err).slice(0, 160)}`); return false; }
+}
+
+// The kit in the camp's chest is still to be taken by a body back to life beside it: the trip's question waits for
+// it (corpse-run.js kitTrip), so it is asked with the kit in hand. Not after the taking was tried since that death.
+function kitWaiting(bot, goal) {
+  try {
+    if (dim(bot) !== 'overworld' || !bot.entity?.position) return false;
+    const camp = standing(bot, goal);
+    if (!camp?.chest?.position || Math.hypot(camp.chest.position.x - bot.entity.position.x, camp.chest.position.z - bot.entity.position.z) > 16) return false;
+    const items = bot.inventory?.items?.() || [];
+    if (items.some(i => /_(sword|axe)$/.test(i.name)) && items.some(i => /_pickaxe$/.test(i.name))) return false;
+    const died = Date.parse(goal.corpseRun?.deathAt || '') || 0;
+    return !(goal.portalCamp?.tookAt > died);
+  } catch (_) { return false; }
 }
 
 // The ladder's step: the kit taken, the camp under way, or the question. -> true when the step was spent here.
@@ -249,4 +270,4 @@ async function step(bot, task, goal, save, actions, client, { now = Date.now() }
   return pick === 'make_camp';
 }
 
-module.exports = { step, offer, standing, kitFor, makeCamp, stockCamp, takeKit, makingsSay, RECORD, ERRAND, NEAR_PORTAL };
+module.exports = { step, offer, standing, kitFor, makeCamp, stockCamp, takeKit, kitWaiting, makingsSay, RECORD, ERRAND, NEAR_PORTAL };

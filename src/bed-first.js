@@ -38,7 +38,13 @@ function bedFirstSays(bot, goal) {
   const fromString = Math.floor(string / 4);
   const have = wool + fromString;
   const wants = Math.max(0, 3 - have);
+  // The camp's bed, where one stands (portal-camp.js, note 2815): the bed left at the portal is the respawn point and
+  // can be slept in there; with none carried the ladder's 'a bed first' was chosen at once after the first death by
+  // a camp, the bot 118 blocks under the ground (mid-full-19-campdrill-7, 2026-11-10 17:16:36Z).
+  let campSays = null;
+  try { const camp = require('./portal-camp').standing(bot, goal); if (camp && here) campSays = `A bed stands already at the camp by the portal, ${Math.round(Math.hypot(camp.bed.x - here.x, camp.bed.z - here.z))} blocks off: it is the respawn point, and a night can be slept in it there.`; } catch (_) { campSays = null; }
   const parts = [`A bed is three wool and three planks: ${wool} wool${string ? ` and ${string} string (four a wool, ${fromString} more)` : ''} carried, ${wants ? `${wants} wool still to find` : 'enough for the bed'}; ${planks} planks${logs ? ` and ${logs} logs` : ''} carried.`];
+  if (campSays) parts.unshift(campSays);
   parts.push(sheep ? `${sheep} sheep in view within 48 blocks, a wool or two each sheared or killed.` : 'No sheep in view within 48 blocks.');
   if (night) parts.push(night[0].toUpperCase() + night.slice(1) + '.');
   parts.push(bedDeathsSays());

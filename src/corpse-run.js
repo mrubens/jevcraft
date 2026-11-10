@@ -335,6 +335,9 @@ async function kitTrip(bot, task, goal, save, now = Date.now()) {
   // is asked again at once (note 2662).
   if (run?.trip?.pick === 'quick_kit' && (now - run.trip.at >= QUICK_KIT_MS || !quickKitShort(bot).length)) delete run.trip;
   if (!run || run.status !== 'open' || run.trip || run.loadedAt || run.dimension !== 'nether' || dim(bot.game?.dimension) !== 'overworld' || !bot.entity?.position) return false;
+  // The camp's kit first (portal-camp.js, note 2815): asked two seconds after the body came back beside its chest, the
+  // trip was answered a quick kit at 0.76 for a sword, a pickaxe and food that lay in the chest a step away.
+  if (require('./portal-camp').kitWaiting(bot, goal)) return false;
   if (!Object.keys(run.items || {}).length || now - Date.parse(run.deathAt) > KEEP_MS) return false;
   const here = bot.entity.position, spot = run.position;
   const near = (list, to) => list.slice().sort((a, b) => flat(a, to) - flat(b, to))[0] || null;
