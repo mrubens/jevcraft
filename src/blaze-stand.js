@@ -1544,6 +1544,9 @@ function towardRods(need, gain, { spawner = false, of = '' } = {}) {
     return ` Toward the rods: about ${k} blaze${k === 1 ? '' : 's'} killed${gain.seconds ? ` in about ${seconds(gain.seconds)}` : ''}${gain.dies ? ' before the health runs out' : ''}, about ${rods} rod${rods === 1 ? '' : 's'} on the average (a blaze drops one about half the time)${still}.`;
   }
   if (gain === 'comes') return ` Toward the rods: a kill only if a blaze comes within the sword's reach${still}.`;
+  // Walking far off (note 2806): it was said with the holds' 'the blazes stay, and waiting does not send them away',
+  // against its own rule two sentences before; offered 210 times in the batch of 2026-11-09 and 10, chosen none.
+  if (gain === 'thins') return ` Toward the rods: none while away; the blazes left behind go by the game's own clock, and the rods are fought for after among fewer${still}.`;
   if (gain === 'stops') return ` Toward the rods: none; no blaze killed, and the spawner makes no more while it is lit${still}.`;
   return ` Toward the rods: none, no blaze killed; the blazes stay${spawner ? ' and the spawner makes more' : ''}, and waiting does not send them away${still}.`;
 }
@@ -1561,7 +1564,7 @@ function nextSpawnerSays(bot, goal, cage) {
     return `the nearest other known spawner is about ${round(nearest.distanceTo(here))} blocks off`;
   } catch (_) { return 'no other spawner is known yet'; }
 }
-const STAND_GAIN = { close: 'kills', charge: 'kills', break: 'kills', hole: 'comes', window: 'comes', spawner: 'comes', wall: 'comes', box: 'comes', corner: 'comes', light: 'stops', heal: 'none', far: 'none' };
+const STAND_GAIN = { close: 'kills', charge: 'kills', break: 'kills', hole: 'comes', window: 'comes', spawner: 'comes', wall: 'comes', box: 'comes', corner: 'comes', light: 'stops', heal: 'none', far: 'thins' };
 const gainOf = o => STAND_GAIN[o.kind] === 'kills' ? { kills: o.cost?.kills || 0, seconds: o.cost?.deathAt ?? o.cost?.seconds, dies: o.cost?.deathAt != null } : STAND_GAIN[o.kind] || null;
 
 // A stand's figure is over its setup and the fifteen seconds held after.
@@ -2184,7 +2187,7 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
     const hunger = bot.food ?? 20, eatable = (() => { try { return require('./healing').foodCarried(bot).reduce((k, f) => k + f.count * f.points, 0); } catch (_) { return 0; } })();
     const heals = hunger >= 18 || Math.min(20, hunger + eatable) >= 18;
     const rule = ` The game's rule (read from the server jar): a monster with no player within 32 blocks for 30 seconds is removed by chance, one in 800 each tick (a mean of about 40 seconds each: about ${T.farGone(90)} in 100 gone at 90 seconds, ${T.farGone(T.FAR.seconds)} in 100 after ${T.FAR.seconds} seconds here), and at once beyond 128; the blazes a spawner makes are ordinary monsters to it, and a blaze that follows in sight, or flies toward the bot, keeps its clock at nothing. The spawner makes none while no player is within sixteen of it.`;
-    const back = ` Coming back, the spawner's first try is up to four blazes, ten to forty seconds after the bot is within sixteen of it again (of the fights at a spawner that began with one to three in sight, half had four or more about by a median 32 seconds), plus any that stayed. Nothing in the record shows a bot doing this: no bot has walked out and waited, so what is left of the room after ${T.FAR.seconds} seconds is not counted.`;
+    const back = ` Coming back, the spawner's first try is up to four blazes, ten to forty seconds after the bot is within sixteen of it again (of the fights at a spawner that began with one to three in sight, half had four or more about by a median 32 seconds), plus any that stayed. No trial has counted what is left after the wait: the figure is the game's rule above, about ${100 - T.farGone(T.FAR.seconds)} in 100 of them still there after ${T.FAR.seconds} seconds.`;
     options.wait_far_off = { kind: 'far', site: far, expects: { damage: round(setup.damage), seconds: round(setup.wall + T.FAR.seconds), oneHit: fireHit },
       description: `Go out of their reach and let the room thin: walk ${n(far.blocks, 'block')} (about ${setup.time} in their fire${shield ? ', the shield up for each volley' : ''}, about ${setup.hurt}) to a place ${far.radius} blocks from the cage, the nearest blaze now ${far.nearestNow} blocks off and none nearer than that along the way (${far.nearestAlong} at the closest)${far.lava ? `; lava lies beside ${far.lava.beside ?? far.lava.cells ?? 'some'} of its cells` : ''}, and stay ${T.FAR.seconds} seconds${heals ? `, eating what is carried (health comes back at hunger 18 or more)` : `; at hunger ${hunger} with ${eatable ? `only ${eatable} points of food` : 'nothing to eat'} no health comes back there`}. It ends sooner if a mob other than a blaze comes to arm's length or the health falls under eight.${rule}${back} It kills no blaze itself.` };
   }

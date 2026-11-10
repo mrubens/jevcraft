@@ -7683,6 +7683,9 @@ class Survival {
         o.description += ` Priced at or over the bot's health: on 2026-10-20, of the 246 stances chosen so priced, 45 (18%) were followed by the bot's death within 30 seconds, against 56 of the 3,792 (1.5%) priced under it.`;
       }
       const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, ...(o.expects ? { expects: o.expects } : {}) }]));
+      // With a blaze within sixteen the question is asked short (stance-lean.js, note 2806): each option its price and
+      // what the body does, with the batch's count for it at this health; the state the fight as it stands.
+      try { const br = require('./blaze-record'); const n16 = br.blazesAbout(bot).within16 || 0; if (n16 >= 1) require('./stance-lean').apply(tree, state, { health: bot.health ?? 20, within16: n16, record: br.BATCH_ROWS }); } catch (_) { /* asked whole */ }
       let decision;
       try {
         // Jev's answer can take seconds, and a creeper's fuse is a second
