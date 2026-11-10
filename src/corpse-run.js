@@ -301,7 +301,10 @@ const KIT_FIRST_HOLD_MS = 30 * 60000, QUICK_KIT_MS = 10 * 60000;
 // later, a median 206, and none got its drops back; the 10-03 figure of 37
 // was told to full-21 and full-22 (2026-10-28 15:5xZ), who chose kit_first
 // with a diamond pickaxe, full iron and rods lying in the Nether.
-const TRIP_RECORD = 'on the full runs of 2026-10-27 and 10-28, the 8 deaths in the Nether answered this way were back in the Nether 61 to 294 minutes later, a median 206 (about three and a half hours), the kit mined and smelted again, and none of them got its drops back after';
+// The record said on the trip's ways (note 2807), in place of the full runs of 2026-10-27 and 28: the middle batch of
+// 2026-11-09 and 10 (37 trials on one build), its 36 deaths in the Nether in a kit.
+const BATCH_TRIPS = 'In the batch of 2026-11-09 and 10 (37 trials on one build, 36 deaths in the Nether in a kit): the quick kit was the first answer all 27 times this was asked, and the bot was back in the Nether a median 36 minutes after the death, not ten; 17 of the 36 died again with nothing worn before any kit was back, most in the Overworld by night; a kit was back on after 16 of them, a median 38 minutes after the death; 8 reached their drops; of the minutes between such a death and a kit back on, a third went on mining, smelting and crafting.';
+const TRIP_RECORD = '';
 // The trip come to nothing, the bot in the Nether in next to no armour: out
 // again for a kit, not on with the hunt as it stands (note 1251). Of the
 // eleven trips of 2026-10-04 (15:45 to 19:00Z) nine brought nothing back,
@@ -319,7 +322,7 @@ function tripCameToNothing(bot, goal, run, save, now = Date.now()) {
   return true;
 }
 // What is carried to dig or bridge with, said on the trip.
-const TRIPS = 'On the full runs of 2026-10-27 and 10-28 (note 2393), 9 deaths in the Nether were answered by going straight back: they were in the Nether again 27 to 342 minutes later, a median 71, and none came back with the kit: 7 never reached the drops, 1 found nothing there and 1 reached them after they had aged out.';
+const TRIPS = '';
 async function kitTrip(bot, task, goal, save, now = Date.now()) {
   const run = goal.corpseRun;
   // Put off to dawn, it is asked again then, by day.
@@ -378,20 +381,25 @@ async function kitTrip(bot, task, goal, save, now = Date.now()) {
   const minutes = Math.max(1, Math.round((toPortal + fromPortal) / 4.3 / 60));
   const again = madeAgain(run.items);
   const withSays = `with ${weapon ? `a ${weapon}` : 'no sword or axe'} and ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'}`;
+  const quickShort = quickKitShort(bot);
   const tree = {
     go_now: { description: `Go back for them now, as the bot stands (${withSays}): ${listed(run.items)} lie in the Nether where the bot died, ${fromPortal} blocks from the portal on that side;${fireDropSays(death)} the portal on this side is ${toPortal} blocks off, about ${minutes} minute${minutes === 1 ? '' : 's'} at a clear walk over level ground, and longer over water, hills or rock.${hourSays}${depthSays} They are not a second older: dropped things age only while a player is within 128 blocks, and they last until the bot comes that near again, then five minutes. ${death.cause ? `The bot ${death.cause} there; when it died, ` : 'When the bot died, '}${about || 'nothing hostile was seen'}${about ? ' was about' : ''}; what was about then may be about still, and a mob the bot had struck forgets it once the bot is gone.${/burn|flame|fire|lava/i.test(death.cause || '') ? ' A death by fire is often on burning ground, and what drops into fire or lava is destroyed: 25593 (2026-10-04) went back 162 blocks for the kit of a death it burned to, and nothing lay there.' : ''} The bot wore ${(death.worn || []).map(n => n.replaceAll('_', ' ')).join(', ') || 'nothing'} then. Taken up, the kit is worn and carried at once and the ladder goes on from there.${foodSays}${piglinSays}${waySays} ${TRIPS}` },
     // Between going bare and the whole kit (note 2405): full-26 (25586, 2026-10-28 17:21 to 17:44Z) went back bare,
     // 'cross_now' chosen over a pickaxe and wood twice, and a hoglin killed it on the way; kit_first's record is a
     // median 206 minutes.
-    quick_kit: { description: `Make a quick kit first, ten minutes at most, then go back for them: ${[!weapon && 'a stone sword', !pickaxe && 'a stone pickaxe', blocks < 32 && 'a stack of blocks to bridge and wall with', carriedFood < 12 && 'food for the walk'].filter(Boolean).join(', ') || 'what the ladder asks for next'}, from wood and stone about here; asked again with what was made after ten minutes. The drops do not age meanwhile. The iron, diamonds and rods are fetched with the drops, not made again.` },
-    kit_first: { description: `Make a kit again here first, and take the drops up on the next trip into the Nether: ${again || 'what the ladder asks for'}. In the record, ${TRIP_RECORD}. The drops do not age meanwhile, and the bot comes to them ${withSays.replace(/^with /, 'no longer with ')}, in whatever it has made.` },
+    // With nothing of it left to make it is not offered (note 2807): the question was asked again the moment it was
+    // chosen, and chosen again (full-290, 2026-11-09, three times in the 21st minute after its death). What it has been chosen
+    // before for these drops is said, and the batch's record of the trips is in the state, once for every way.
+    ...(quickShort.length ? { quick_kit: { description: `Make a quick kit first, ten minutes at most, then go back for them: ${quickShort.join(', ')}, from wood and stone about here; asked again with what was made after ten minutes.${run.quickKits?.n ? ` For these drops it has been chosen ${run.quickKits.n} time${run.quickKits.n === 1 ? '' : 's'} already, the first ${Math.max(1, Math.round((now - run.quickKits.firstAt) / 60000))} minutes ago.` : ''} The drops do not age meanwhile. The iron, diamonds and rods are fetched with the drops, not made again.` } } : {}),
+    kit_first: { description: `Make a kit again here first, and take the drops up on the next trip into the Nether: ${again || 'what the ladder asks for'}. The drops do not age meanwhile, and the bot comes to them ${withSays.replace(/^with /, 'no longer with ')}, in whatever it has made.` },
   };
   if (night && toDawn !== null) tree.go_at_dawn = { description: `Go back for them at dawn, about ${toDawn} real minute${toDawn === 1 ? '' : 's'} off: the night is seen out first as the night's own question has it (a shelter, a bed), and this is asked again by day. The drops do not age meanwhile.` };
   const decision = await require('./decisions').decide('kit_trip', { client: task.opportunityClient, bot, task, goal, save, tree,
-    state: { foodPointsCarried: carriedFood, hunger: bot.food ?? 20, night, ...(night ? { minutesToDawn: toDawn } : {}), depth: Math.round(depth), toPortal, fromPortalToDrops: fromPortal, wornNow, weapon, aboutAtDeath: death.about || [], wornAtDeath: death.worn || [], drops: run.items } });
+    state: { tripRecord: BATCH_TRIPS, foodPointsCarried: carriedFood, hunger: bot.food ?? 20, night, ...(night ? { minutesToDawn: toDawn } : {}), depth: Math.round(depth), toPortal, fromPortalToDrops: fromPortal, wornNow, weapon, aboutAtDeath: death.about || [], wornAtDeath: death.worn || [], drops: run.items } });
   if (decision.stale) return false;
   const pick = decision.path.at(-1);
   run.trip = { pick, at: now, ...(pick === 'go_at_dawn' ? { until: now + toDawn * 60000 } : {}) };
+  if (pick === 'quick_kit') run.quickKits = { n: (run.quickKits?.n || 0) + 1, firstAt: run.quickKits?.firstAt || now };
   if (pick !== 'go_now') { save(); return false; }
   // Chosen here, it is not asked again on the far side.
   run.choice = 'go_back'; run.told = TOLD; note(goal, 'begun');
