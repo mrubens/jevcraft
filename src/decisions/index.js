@@ -957,7 +957,8 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
       if (nights >= 1) state = { ...state, nightsWithoutSleep: nights, phantoms: nights >= 3 ? 'phantoms are coming at night now: three nights without sleep brings them, diving from the sky; sleeping in a bed stops them' : `phantoms come after three nights without sleep (${3 - nights} more)` };
     }
   }
-  if (state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.runClock) {
+  // Not where the question says it is asked without it (note 2812: portal_camp, whose option says its own minutes).
+  if (state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.runClock && !spec.withoutRunClock) {
     const clock = require('../game-progress').runClock(goal);
     if (clock) state = { ...state, runClock: clock };
   }
