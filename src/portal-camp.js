@@ -104,35 +104,42 @@ async function placeAndSet(bot, task, goal, save, actions) {
   return site;
 }
 
-async function makeCamp(bot, task, goal, save, actions) {
+// The chest beside the camp's bed (bed-kit.js: the home of one bed) and the kit in it: a stone sword and a stone
+// pickaxe made from the pockets where a second of each is not carried, cobblestone, food past what the body keeps.
+// Its own step, so a camp whose chest did not go down is finished at the next step there (note 2813: the first camp
+// made, mid-full-19-campdrill-5 on 25585 at 17:02Z on 2026-11-10, set its respawn point and had no chest).
+async function stockCamp(bot, task, goal, save, actions) {
   const acts = { ...(actions.stashActions || {}), acquireStep: actions.acquireStep };
   const tolerate = err => { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err?.name)) throw err; return String(err?.message || err).slice(0, 160); };
-  const site = await placeAndSet(bot, task, goal, save, acts);
   const bk = require('./bed-kit'), stash = require('./home-stash');
-  const made = { bed: { x: site.foot.x, y: site.foot.y, z: site.foot.z }, left: [], notes: [] };
-  // The chest beside it (bed-kit.js: the home of one bed), then the kit: a stone sword and a stone pickaxe made from
-  // the pockets where a second of each is not carried, a stack of blocks, food past what the body keeps.
+  const out = { left: [], notes: [], chest: null };
   let home = bk.bedKitHome(bot, goal);
-  if (!home) throw new Error('the bed stands and is not read as the respawn bed');
+  if (!home) { out.notes.push('the bed is not read as the respawn bed'); return out; }
   try {
     if (!home.stash?.position) await bk.placeBedChest(bot, task, goal, save, home, acts);
     home = bk.bedKitHome(bot, goal) || home;
-  } catch (err) { made.notes.push(`no chest: ${tolerate(err)}`); }
-  if (home.stash?.position) {
-    for (const item of ['stone_sword', 'stone_pickaxe']) {
-      if (countOf(bot, item) >= 1) continue;
-      goal.step = { action: 'portal_camp', doing: `a spare ${item.replace('_', ' ')}` }; save();
-      try { for (let i = 0; i < 5 && countOf(bot, item) < 1; i++) { task.check(); if (await acts.acquireStep(bot, task, item, 1, goal, save) === true) break; } }
-      catch (err) { made.notes.push(`${item}: ${tolerate(err)}`); }
-    }
-    const kit = kitFor(bot);
-    try {
-      const armour = bk.spareToMake ? stash.spareArmour(bot, home).filter(n => countOf(bot, n) >= 1).map(n => ({ item: n, count: 1, slot: 'armour' })) : [];
-      const stored = await stash.stockStash(bot, task, goal, save, home, acts, { only: () => false, extra: [...kit, ...armour] });
-      made.left = (stored || []).map(m => `${m.count} ${m.item.replaceAll('_', ' ')}`);
-    } catch (err) { made.notes.push(`stocking: ${tolerate(err)}`); }
+  } catch (err) { out.notes.push(`no chest: ${tolerate(err)}`); }
+  if (!home.stash?.position) return out;
+  out.chest = home.stash.position;
+  for (const item of ['stone_sword', 'stone_pickaxe']) {
+    if (countOf(bot, item) >= 1) continue;
+    goal.step = { action: 'portal_camp', doing: `a spare ${item.replace('_', ' ')}` }; save();
+    try { for (let i = 0; i < 5 && countOf(bot, item) < 1; i++) { task.check(); if (await acts.acquireStep(bot, task, item, 1, goal, save) === true) break; } }
+    catch (err) { out.notes.push(`${item}: ${tolerate(err)}`); }
   }
-  return made;
+  try {
+    const armour = stash.spareArmour(bot, home).filter(n => countOf(bot, n) >= 1).map(n => ({ item: n, count: 1, slot: 'armour' }));
+    const stored = await stash.stockStash(bot, task, goal, save, home, acts, { only: () => false, extra: [...kitFor(bot), ...armour] });
+    out.left = (stored || []).map(m => `${m.count} ${m.item.replaceAll('_', ' ')}`);
+  } catch (err) { out.notes.push(`stocking: ${tolerate(err)}`); }
+  return out;
+}
+
+async function makeCamp(bot, task, goal, save, actions) {
+  const acts = { ...(actions.stashActions || {}), acquireStep: actions.acquireStep };
+  const site = await placeAndSet(bot, task, goal, save, acts);
+  const stocked = await stockCamp(bot, task, goal, save, actions);
+  return { bed: { x: site.foot.x, y: site.foot.y, z: site.foot.z }, ...stocked };
 }
 
 // The bare body by its camp takes the kit out of the chest (the kit is its own; what it does next is the trip's
@@ -157,6 +164,17 @@ async function step(bot, task, goal, save, actions, client, { now = Date.now() }
   if (!goal || goal.kind !== 'win' || bot.game?.gameMode !== 'survival') return false;
   if (await takeKit(bot, task, goal, save, actions)) return true;
   const c = goal.portalCamp;
+  // A camp that stands with no chest, or nothing in it, is finished from where the bot is by it (note 2813).
+  if (c?.made && dim(bot) === 'overworld' && now - (c.stockTriedAt || 0) > 10 * 60000) {
+    const camp = standing(bot, goal);
+    if (camp && Math.hypot(camp.bed.x - bot.entity.position.x, camp.bed.z - bot.entity.position.z) <= 16 && (!camp.chest?.position || !(c.left || []).length) && (bot.inventory.items().some(i => /_(sword|axe)$/.test(i.name)) && bot.inventory.items().some(i => /_pickaxe$/.test(i.name)))) {
+      c.stockTriedAt = now; save();
+      const stocked = await stockCamp(bot, task, goal, save, actions);
+      c.left = stocked.left; c.notes = stocked.notes; save();
+      console.log(`[portal_camp] the chest ${stocked.chest ? 'stands' : 'did not go down'}; left ${stocked.left.join(', ') || 'nothing'}${stocked.notes.length ? `; ${stocked.notes.join('; ')}` : ''}`);
+      return true;
+    }
+  }
   if (c?.choice === 'make') {
     if (now - c.at > 20 * 60000 || standing(bot, goal)) { delete c.choice; save(); return false; }
     const where = dim(bot);
@@ -176,7 +194,7 @@ async function step(bot, task, goal, save, actions, client, { now = Date.now() }
     }
     try {
       const made = await makeCamp(bot, task, goal, save, actions);
-      goal.portalCamp = { ...c, choice: undefined, made: true, madeAt: now, bed: made.bed, portal: { x: portal.x, y: portal.y, z: portal.z }, left: made.left, notes: made.notes };
+      goal.portalCamp = { ...c, choice: undefined, made: true, madeAt: now, stockTriedAt: now, bed: made.bed, portal: { x: portal.x, y: portal.y, z: portal.z }, left: made.left, notes: made.notes };
       delete goal.portalCamp.choice;
       bot.chat?.(`Camp made by the portal: the bed is my respawn point${made.left.length ? `, and the chest holds ${made.left.join(', ')}` : ''}.`);
       console.log(`[portal_camp] made at (${made.bed.x}, ${made.bed.y}, ${made.bed.z}), ${Math.round(flat(portal, made.bed))} blocks from the portal; left ${made.left.join(', ') || 'nothing'}${made.notes.length ? `; ${made.notes.join('; ')}` : ''}`);
@@ -210,4 +228,4 @@ async function step(bot, task, goal, save, actions, client, { now = Date.now() }
   return pick === 'make_camp';
 }
 
-module.exports = { step, offer, standing, kitFor, makeCamp, takeKit, makingsSay, RECORD, ERRAND, NEAR_PORTAL };
+module.exports = { step, offer, standing, kitFor, makeCamp, stockCamp, takeKit, makingsSay, RECORD, ERRAND, NEAR_PORTAL };

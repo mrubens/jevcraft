@@ -144,4 +144,4 @@ function bedKitChores(bot, goal, { now = Date.now() } = {}) {
   return out;
 }
 
-module.exports = { bedKitHome, bedKitChores, chestCell, spareToMake, NEAR_BED };
+module.exports = { bedKitHome, bedKitChores, chestCell, spareToMake, placeBedChest, NEAR_BED };
