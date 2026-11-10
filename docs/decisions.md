@@ -8,7 +8,7 @@ One rule holds for every question about playing the game (`src/decisions/unchang
 
 Three more rules from note 749 (`src/decisions/loops.js`, `src/decisions/keys.js`, `src/intention.js`). A key names its thing: every dynamic option says what its key names (`names`: by name, by where it is, by entity id), never its place in the list, so what came of an option is said on the same thing at the next asking. A question asked round and round goes up: its askings each within a minute of the one before are its spell, said from the third (`spellSoFar`: how many, what was answered, how far the bot walked and how far it is from where they began, whether anything new is carried, how often none of the options was good); when none good was Jev's likeliest at three of its last five askings, or six askings over ninety seconds or more have left the bot within 48 blocks of where they began with nothing new carried, the answers it gave rest from there and the question above is asked with that said (not the stance, the body's way, the shield or the routing, which are said only). And a trip holds: an answer to a question about the plan whose option walks to a target, or whose catalogue entry says where it goes (`trip`), is the intention until it arrives, is done, fails, the dimension changes, health falls a blow's worth, a walk brings nothing for three minutes or ten minutes pass; its own question asked again offers only it. A rung set aside holds the same way (`src/decisions/asides.js`): an option that would take it back (`takeBack` on its node) is not offered for five minutes unless the bot is 16 blocks from where it was set aside, carries a new kind of thing or its health band changes (`asideHolds`). An answer thrown away as stale that keeps on with what is under way is kept, and from the second stale answer in a row within 30 seconds a question is watched a second first and not sent while its facts are still changing.
 
-132 questions: 81 decision trees and 51 batched questions.
+133 questions: 82 decision trees and 51 batched questions.
 
 ## Batches
 
@@ -430,6 +430,22 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `shoot_\d+` (pattern: names the mob, by its entity id) | root | shoot this mob | it is in clear view with a solved arrow path (up to three targets) |
 | `retreat` | root | run for cover out of its sight | always |
 | `dig_in` | root | seal a two-block pocket here | twelve or more building blocks are carried |
+
+### `blaze_crowd`
+
+**Blazes are about the bot within sixteen of their spawner: stay and fight on, or walk far off and let the room thin?**
+
+- When: Before encounter_stance where wait_far_off is on offer (a live spawner within sixteen, a blaze about, a way out found): once for each band of the count within sixteen (one or two, three or four, five or six, seven or more), again after three minutes in it.
+- Decision tree, choice; stakes medium; ledger kind `combat`
+- Bar: none
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
+- Options built in: src/blaze-crowd.js (ask), src/survival.js (the stance's asking)
+- Nothing left to try: the stall's question, as before (nothing above it)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `fight_on` | root | stay within sixteen of the spawner and fight on; the stance is asked next without the walk off | always here; said with the batch's rods and deaths an hour at this count |
+| `wait_far_off` | root | walk past 32 blocks of every blaze and wait two minutes while the game removes them, then come back | always here; said with the walk, the game's rule and what is left after |
 
 ### `encounter_stance`
 

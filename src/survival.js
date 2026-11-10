@@ -7686,6 +7686,12 @@ class Survival {
       // With a blaze within sixteen the question is asked short (stance-lean.js, note 2806): each option its price and
       // what the body does, with the batch's count for it at this health; the state the fight as it stands.
       try { const br = require('./blaze-record'); const n16 = br.blazesAbout(bot).within16 || 0; if (n16 >= 1) require('./stance-lean').apply(tree, state, { health: bot.health ?? 20, within16: n16, record: br.BATCH_ROWS }); } catch (_) { /* asked whole */ }
+      // The crowd first, on its own (blaze-crowd.js, note 2810): stay and fight on, or walk far off for the room to thin;
+      // its answer narrows the tree the stance is asked with.
+      if (tree.wait_far_off) {
+        try { await require('./blaze-crowd').ask(this, bot, task, goal, save, tree, state, { within16: require('./blaze-record').blazesAbout(bot).within16 || 0 }); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
+      }
       let decision;
       try {
         // Jev's answer can take seconds, and a creeper's fuse is a second

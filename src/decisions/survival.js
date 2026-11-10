@@ -180,6 +180,19 @@ define({
   ungated: 'Jev\'s pick is taken at any confidence; Jev not reachable, the bot holds and it is asked again (jev-down.js)',
 });
 
+// The crowd at a blaze spawner, asked before the stance where walking far off is on offer (src/blaze-crowd.js, note 2810).
+define({
+  id: 'blaze_crowd', area: 'combat', parent: null, kind: 'combat', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'Blazes are about the bot within sixteen of their spawner: stay and fight on, or walk far off and let the room thin?',
+  trigger: 'Before encounter_stance where wait_far_off is on offer (a live spawner within sixteen, a blaze about, a way out found): once for each band of the count within sixteen (one or two, three or four, five or six, seven or more), again after three minutes in it.',
+  source: 'src/blaze-crowd.js (ask), src/survival.js (the stance\'s asking)',
+  options: [
+    { key: 'fight_on', label: 'stay within sixteen of the spawner and fight on; the stance is asked next without the walk off', when: 'always here; said with the batch\'s rods and deaths an hour at this count', level: 'root' },
+    { key: 'wait_far_off', label: 'walk past 32 blocks of every blaze and wait two minutes while the game removes them, then come back', when: 'always here; said with the walk, the game\'s rule and what is left after', level: 'root' },
+  ],
+  instructions: { task: 'Blazes are about the bot near their spawner. Choose whether it stays and fights on, or walks far off and lets the room thin first.', guidance: 'blazesWithinSixteen is the count now; blazeRecord is what the minutes at each count came to in the last batch of trials, rods and deaths an hour. The spawner makes blazes only while a player is within sixteen of it, and the game removes a monster with no player within 32 blocks for thirty seconds at one chance in 800 a tick. A death in the Nether drops the kit and the rods carried. The player counts real time: the two minutes away are spent, and so is the time a death costs.' },
+});
+
 // The stance for an encounter, once per encounter (src/survival.js
 // stanceStep). Jev's pick stands, sure or not; Jev not reachable, the bot
 // holds and asks again (jev-down.js); the rules answer only with
