@@ -1330,8 +1330,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `go_now` (trip: the drops) | root | through the portal now for the drops, as the bot stands | always here; said with both walks, what lies there, what was about at the death and what the bot wears now |
 | `go_at_dawn` (trip: the drops) | root | see the night out, and be asked again at dawn | by night |
-| `quick_kit` | root | make a quick stone kit first, ten minutes at most, then go back for the drops | always here; said with what is missing (sword, pickaxe, blocks, food) (note 2405) |
-| `kit_first` | root | make a kit again first; the drops on the next Nether trip | always here; said with what the kit takes to make again and the record |
+| `quick_kit` | root | make a quick stone kit first, ten minutes at most, then go back for the drops | while any of it is still to make (sword, pickaxe, blocks, food); said with what is missing and how often it was chosen before for these drops (notes 2405, 2807) |
+| `kit_first` | root | make a kit again first; the drops on the next Nether trip | always here; said with what the kit takes to make again |
 
 ### `portal_dig`
 

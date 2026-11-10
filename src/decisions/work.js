@@ -652,10 +652,10 @@ define({
   options: [
     { key: 'go_now', trip: 'the drops', label: 'through the portal now for the drops, as the bot stands', when: 'always here; said with both walks, what lies there, what was about at the death and what the bot wears now', level: 'root' },
     { key: 'go_at_dawn', trip: 'the drops', label: 'see the night out, and be asked again at dawn', when: 'by night', level: 'root' },
-    { key: 'quick_kit', label: 'make a quick stone kit first, ten minutes at most, then go back for the drops', when: 'always here; said with what is missing (sword, pickaxe, blocks, food) (note 2405)', level: 'root' },
-    { key: 'kit_first', label: 'make a kit again first; the drops on the next Nether trip', when: 'always here; said with what the kit takes to make again and the record', level: 'root' },
+    { key: 'quick_kit', label: 'make a quick stone kit first, ten minutes at most, then go back for the drops', when: 'while any of it is still to make (sword, pickaxe, blocks, food); said with what is missing and how often it was chosen before for these drops (notes 2405, 2807)', level: 'root' },
+    { key: 'kit_first', label: 'make a kit again first; the drops on the next Nether trip', when: 'always here; said with what the kit takes to make again', level: 'root' },
   ],
-  instructions: workInstructions('The bot died in the Nether and came back to life by its bed with empty hands. What it dropped lies where it died and does not age until the bot is near it again. Choose whether it goes straight back for it or makes a kit again first. Each option says what it costs and risks.'),
+  instructions: workInstructions('The bot died in the Nether and came back to life by its bed with empty hands. What it dropped lies where it died and does not age until the bot is near it again. Choose whether it goes straight back for it or makes a kit again first. Each option says what it costs and risks. tripRecord is what such trips came to in the last batch of trials, whichever way was answered: the minutes until the bot was in the Nether again, the deaths before any kit was back, the drops reached.'),
 });
 
 // The dig to the End portal's ring with no pickaxe (src/work.js portalPickaxeFirst, note 1289).
