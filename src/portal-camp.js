@@ -42,8 +42,10 @@ function kitFor(bot) {
   const count = re => items.filter(i => re.test(i.name)).reduce((n, i) => n + i.count, 0);
   if (countOf(bot, 'stone_sword') >= 1 && count(/_(sword|axe)$/) >= 2) out.push({ item: 'stone_sword', count: 1, slot: 'sword' });
   if (countOf(bot, 'stone_pickaxe') >= 1 && count(/_pickaxe$/) >= 2) out.push({ item: 'stone_pickaxe', count: 1, slot: 'pickaxe' });
-  // Cobblestone: what the chest's own taking-out knows as blocks (home-stash.js SPARE_KIT).
-  if (countOf(bot, 'cobblestone') >= BLOCKS * 2) out.push({ item: 'cobblestone', count: BLOCKS, slot: 'cobblestone' });
+  // The building block most carried (the first camp's bot carried 134 and no cobblestone among them, and none was left).
+  const blocks = items.filter(i => BLOCK.test(i.name)).reduce((m, i) => { m[i.name] = (m[i.name] || 0) + i.count; return m; }, {});
+  const most = Object.entries(blocks).sort((a, b) => b[1] - a[1])[0];
+  if (most && count(BLOCK) >= BLOCKS * 2 && most[1] >= BLOCKS) out.push({ item: most[0], count: BLOCKS, slot: 'cobblestone' });
   try {
     const foods = require('./healing').foodCarried(bot).slice().sort((a, b) => b.points - a.points);
     const total = foods.reduce((n, f) => n + f.count * f.points, 0);
@@ -149,14 +151,33 @@ async function takeKit(bot, task, goal, save, actions) {
   const camp = standing(bot, goal);
   if (!camp?.chest?.position || Math.hypot(camp.chest.position.x - bot.entity.position.x, camp.chest.position.z - bot.entity.position.z) > 16) return false;
   const items = bot.inventory?.items?.() || [];
-  if (items.some(i => /_(sword|axe)$/.test(i.name) && !/_pickaxe$/.test(i.name)) && items.some(i => /_pickaxe$/.test(i.name))) return false;
+  if (items.some(i => /_(sword|axe)$/.test(i.name)) && items.some(i => /_pickaxe$/.test(i.name))) return false;
   if (goal.portalCamp?.tookAt && Date.now() - goal.portalCamp.tookAt < 120000) return false;
   const bk = require('./bed-kit'), stash = require('./home-stash'), home = bk.bedKitHome(bot, goal);
-  if (!home?.stash?.position || !stash.stashWithdrawals(bot, home, []).length) return false;
-  (goal.portalCamp ||= {}).tookAt = Date.now(); save();
+  if (!home?.stash?.position) return false;
+  (goal.portalCamp ||= {}).tookAt = Date.now();
+  goal.step = { action: 'portal_camp', doing: 'the kit out of the chest', at: { ...home.stash.position } }; save();
   const acts = { ...(actions.stashActions || {}), acquireStep: actions.acquireStep };
-  try { await stash.restockFromStash(bot, task, goal, save, home, acts, []); bot.chat?.('Back at my camp by the portal: taking the kit out of the chest.'); return true; }
-  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err?.name)) throw err; return false; }
+  try {
+    // By what is in it when the lid is up (the chest's remembered contents are from before it was stocked).
+    const took = await stash.withChest(bot, task, goal, save, home, acts, async window => {
+      const out = [];
+      for (const it of window.containerItems()) {
+        task.check();
+        try {
+          if (it.stackSize === 1 || it.count === 1) { const slot = window.firstEmptyInventorySlot(); if (slot === null || slot === undefined) break; await bot.moveSlotItem(it.slot, slot); }
+          else await window.withdraw(it.type, null, it.count);
+          out.push(`${it.count} ${it.name.replaceAll('_', ' ')}`);
+        } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err; }
+      }
+      try { stash.rememberContents(home, window); } catch (_) { /* read at the next opening */ }
+      return out;
+    });
+    if (goal.portalCamp) goal.portalCamp.left = [];
+    save();
+    if (took.length) { bot.chat?.(`Back at my camp by the portal: took ${took.join(', ')} out of the chest.`); console.log(`[portal_camp] took ${took.join(', ')} out of the camp's chest`); }
+    return took.length > 0;
+  } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err?.name)) throw err; console.log(`[portal_camp] the kit was not taken: ${String(err?.message || err).slice(0, 160)}`); return false; }
 }
 
 // The ladder's step: the kit taken, the camp under way, or the question. -> true when the step was spent here.
