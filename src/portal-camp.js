@@ -156,7 +156,7 @@ async function takeKit(bot, task, goal, save, actions) {
   // Up to three tries since the death, three seconds apart, while the chest is known to hold something (note 2816).
   const died = Date.parse(goal.corpseRun?.deathAt || '') || 0;
   if (c.take?.death !== died) c.take = { death: died, n: 0, at: 0 };
-  if (c.take.n >= TAKE_TRIES || Date.now() - c.take.at < 3000 || (c.made && !(c.left || []).length && c.take.n >= 1)) return false;
+  if (c.take.n >= TAKE_TRIES || Date.now() - c.take.at < 3000 || !(c.left || []).length) return false;
   const bk = require('./bed-kit'), stash = require('./home-stash'), home = bk.bedKitHome(bot, goal);
   if (!home?.stash?.position) return false;
   c.take.n++; c.take.at = Date.now(); c.tookAt = Date.now();
@@ -173,6 +173,7 @@ async function takeKit(bot, task, goal, save, actions) {
       // 2026-11-10 17:42:17Z, three seconds after the body came back) read empty with a sword, a pickaxe and beef in it,
       // nothing was taken, and the trip was asked bare-handed half a second on. Waited for, up to four seconds.
       for (let i = 0; i < 16 && !window.containerItems().length && (c.left || []).length; i++) { task.check(); await new Promise(resolve => setTimeout(resolve, 250)); try { if (bot._syncWindow) await bot._syncWindow(window); } catch (_) { /* read as it is */ } }
+      console.log(`[portal_camp] the chest's lid up (try ${c.take.n}): it shows ${window.containerItems().map(i => `${i.count} ${i.name}`).join(', ') || 'nothing'}; known to hold ${(c.left || []).join(', ') || 'nothing'}`);
       for (let pass = 0; pass < 3; pass++) {
         const there = window.containerItems();
         if (!there.length) break;
@@ -191,7 +192,12 @@ async function takeKit(bot, task, goal, save, actions) {
       return out;
     });
     // What the chest still holds is kept as known: emptied when it was read empty after something came out, or twice.
-    if (took.length || c.take.n >= 2) c.left = remaining || [];
+    // What is known to be left is what was put in less what came out, not the lid's reading: the sixth drill
+    // (mid-full-19-campdrill-12, 25585, 2026-11-10 21:59:38Z) read 32 netherrack of a chest holding a sword, a pickaxe,
+    // netherrack and beef, took it, read the chest empty and went on bare. The next try opens it afresh.
+    const out = new Set(took.map(t => t.replace(/^\d+ /, '')));
+    c.left = (c.left || []).filter(t => !out.has(t.replace(/^\d+ /, '')));
+    if (c.take.n >= TAKE_TRIES && c.left.length) { console.log(`[portal_camp] given up on ${c.left.join(', ')} after ${TAKE_TRIES} tries${remaining?.length ? `; the lid showed ${remaining.join(', ')}` : ''}`); c.left = []; }
     if (!took.length) console.log(`[portal_camp] nothing came out of the camp's chest (try ${c.take.n} of ${TAKE_TRIES}; it is known to hold ${(c.left || []).join(', ') || 'nothing'})`);
     save();
     if (took.length) { bot.chat?.(`Back at my camp by the portal: took ${took.join(', ')} out of the chest.`); console.log(`[portal_camp] took ${took.join(', ')} out of the camp's chest`); }
@@ -209,14 +215,34 @@ function kitWaiting(bot, goal) {
     const items = bot.inventory?.items?.() || [];
     if (items.some(i => /_(sword|axe)$/.test(i.name)) && items.some(i => /_pickaxe$/.test(i.name))) return false;
     const died = Date.parse(goal.corpseRun?.deathAt || '') || 0, c = goal.portalCamp || {};
-    if (c.made && !(c.left || []).length) return false;
+    if (!(c.left || []).length) return false;
     return !(c.take?.death === died && c.take.n >= TAKE_TRIES);
   } catch (_) { return false; }
+}
+
+// The camp's bed and chest are not dug (note 2818): the sixth drill's bot, back to life in its camp 118 blocks under
+// the ground with the trip answered a quick kit, worked its way up 'one move at a time' through its own chest and bed
+// (21:59:50 and 21:59:54Z), the respawn point gone with the bed. Every dig goes through bot.dig; taking the bed up on
+// purpose sets bot._campTakeUp.
+function guard(bot, goal) {
+  try {
+    const camp = standing(bot, goal), sb = bot._survivalState?.spawnBed;
+    bot._campCells = camp ? new Set([sb?.foot, sb?.head, camp.chest?.position].filter(p => p && Number.isFinite(p.x)).map(p => `${p.x},${p.y},${p.z}`)) : null;
+    if (bot._campGuard || typeof bot.dig !== 'function') return;
+    const dig = bot.dig.bind(bot);
+    bot.dig = (block, ...rest) => {
+      const p = block?.position;
+      if (p && !bot._campTakeUp && dim(bot) === 'overworld' && bot._campCells?.has(`${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`)) return Promise.reject(Object.assign(new Error("Refusing to dig the camp's bed or chest by the portal"), { name: 'CampKept' }));
+      return dig(block, ...rest);
+    };
+    bot._campGuard = true;
+  } catch (_) { /* dug as before */ }
 }
 
 // The ladder's step: the kit taken, the camp under way, or the question. -> true when the step was spent here.
 async function step(bot, task, goal, save, actions, client, { now = Date.now() } = {}) {
   if (!goal || goal.kind !== 'win' || bot.game?.gameMode !== 'survival') return false;
+  guard(bot, goal);
   if (await takeKit(bot, task, goal, save, actions)) return true;
   const c = goal.portalCamp;
   // A camp that stands with no chest, or nothing in it, is finished from where the bot is by it (note 2813).
@@ -283,4 +309,4 @@ async function step(bot, task, goal, save, actions, client, { now = Date.now() }
   return pick === 'make_camp';
 }
 
-module.exports = { step, offer, standing, kitFor, makeCamp, stockCamp, takeKit, kitWaiting, makingsSay, RECORD, ERRAND, NEAR_PORTAL };
+module.exports = { step, offer, standing, kitFor, makeCamp, stockCamp, takeKit, kitWaiting, guard, makingsSay, RECORD, ERRAND, NEAR_PORTAL };

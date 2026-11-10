@@ -6342,7 +6342,9 @@ class Survival {
       if (loop) options.take_up_bed = { description: loop.says, run: async () => {
         const foot = new Vec3(loop.bed.x, loop.bed.y, loop.bed.z);
         this.report(goal, save, { action: 'take_up_bed', at: { ...loop.bed }, deaths: loop.deaths });
-        await this.actions.dig(bot, task, foot, { requireDrops: false });
+        // Jev's own taking up, the camp's bed among them (portal-camp.js guard, note 2818).
+        bot._campTakeUp = true;
+        try { await this.actions.dig(bot, task, foot, { requireDrops: false }); } finally { bot._campTakeUp = false; }
         if (!isBed(bot.blockAt(foot))) { delete this.state.spawnBed; this.state.respawn = null; save(); }
       } };
     }
