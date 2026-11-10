@@ -220,7 +220,7 @@ async function step(bot, task, goal, save, actions, client, { now = Date.now() }
   if (await takeKit(bot, task, goal, save, actions)) return true;
   const c = goal.portalCamp;
   // A camp that stands with no chest, or nothing in it, is finished from where the bot is by it (note 2813).
-  if (c?.made && dim(bot) === 'overworld' && now - (c.stockTriedAt || 0) > 10 * 60000) {
+  if (c?.made && dim(bot) === 'overworld' && now - (c.stockTriedAt || 0) > 10 * 60000 && now - (c.tookAt || 0) > 10 * 60000) {
     const camp = standing(bot, goal);
     if (camp && Math.hypot(camp.bed.x - bot.entity.position.x, camp.bed.z - bot.entity.position.z) <= 16 && (!camp.chest?.position || !(c.left || []).length) && (bot.inventory.items().some(i => /_(sword|axe)$/.test(i.name)) && bot.inventory.items().some(i => /_pickaxe$/.test(i.name)))) {
       c.stockTriedAt = now; save();
