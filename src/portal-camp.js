@@ -18,7 +18,7 @@ const { goals } = require('mineflayer-pathfinder');
 const { countOf } = require('./skills');
 
 const NEAR_PORTAL = 32, CAMP_REACH = 24, ASK_AGAIN_MS = 30 * 60000, FAILED_MS = 20 * 60000, BLOCKS = 32, FOOD_POINTS = 12, FOOD_KEPT = 20;
-const ERRAND = 'the camp at the portal';
+const ERRAND = 'the camp at the portal', TAKE_TRIES = 3;
 const RECORD = 'In the batch of 2026-11-09 and 10 (37 trials on one build): 32 died once, 31 of them in full iron, a median 38 minutes after entering the Nether; the respawn point stood a median 188 blocks from the portal (14 to 558); after a death in a kit the bot was back in the Nether a median 36 minutes later, 17 of 36 died again with nothing worn before any kit was back, and 59 in 100 of all the minutes played came after a first death. No trial has had a camp at its portal: what it saves is the walk and the kit made again, by this record, not a count of its own.';
 const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const dim = bot => (/nether/.test(String(bot.game?.dimension || '')) ? 'nether' : /end/.test(String(bot.game?.dimension || '')) ? 'end' : 'overworld');
@@ -152,18 +152,27 @@ async function takeKit(bot, task, goal, save, actions) {
   if (!camp?.chest?.position || Math.hypot(camp.chest.position.x - bot.entity.position.x, camp.chest.position.z - bot.entity.position.z) > 16) return false;
   const items = bot.inventory?.items?.() || [];
   if (items.some(i => /_(sword|axe)$/.test(i.name)) && items.some(i => /_pickaxe$/.test(i.name))) return false;
-  if (goal.portalCamp?.tookAt && Date.now() - goal.portalCamp.tookAt < 120000) return false;
+  const c = (goal.portalCamp ||= {});
+  // Up to three tries since the death, three seconds apart, while the chest is known to hold something (note 2816).
+  const died = Date.parse(goal.corpseRun?.deathAt || '') || 0;
+  if (c.take?.death !== died) c.take = { death: died, n: 0, at: 0 };
+  if (c.take.n >= TAKE_TRIES || Date.now() - c.take.at < 3000 || (c.made && !(c.left || []).length && c.take.n >= 1)) return false;
   const bk = require('./bed-kit'), stash = require('./home-stash'), home = bk.bedKitHome(bot, goal);
   if (!home?.stash?.position) return false;
-  (goal.portalCamp ||= {}).tookAt = Date.now();
+  c.take.n++; c.take.at = Date.now(); c.tookAt = Date.now();
   goal.step = { action: 'portal_camp', doing: 'the kit out of the chest', at: { ...home.stash.position } }; save();
   const acts = { ...(actions.stashActions || {}), acquireStep: actions.acquireStep };
   try {
     // By what is in it when the lid is up (the chest's remembered contents are from before it was stocked), in up to
     // three passes: the first taking-out (mid-full-19-campdrill-7, 25585, 2026-11-10 17:16:35Z, two seconds after the
     // body came back) moved the 32 netherrack and left the sword, the pickaxe and the beef, each move's failure unsaid.
+    let remaining = null;
     const took = await stash.withChest(bot, task, goal, save, home, acts, async window => {
       const out = [], failed = [];
+      // The lid's contents come a moment after it opens: the third drill's chest (mid-full-19-campdrill-9, 25585,
+      // 2026-11-10 17:42:17Z, three seconds after the body came back) read empty with a sword, a pickaxe and beef in it,
+      // nothing was taken, and the trip was asked bare-handed half a second on. Waited for, up to four seconds.
+      for (let i = 0; i < 16 && !window.containerItems().length && (c.left || []).length; i++) { task.check(); await new Promise(resolve => setTimeout(resolve, 250)); try { if (bot._syncWindow) await bot._syncWindow(window); } catch (_) { /* read as it is */ } }
       for (let pass = 0; pass < 3; pass++) {
         const there = window.containerItems();
         if (!there.length) break;
@@ -177,13 +186,16 @@ async function takeKit(bot, task, goal, save, actions) {
       if (failed.length) console.log(`[portal_camp] not taken at once: ${failed.join('; ')}`);
       const left = window.containerItems().map(i => `${i.count} ${i.name.replaceAll('_', ' ')}`);
       if (left.length) console.log(`[portal_camp] still in the chest: ${left.join(', ')}`);
+      remaining = left;
       try { stash.rememberContents(home, window); } catch (_) { /* read at the next opening */ }
       return out;
     });
-    if (goal.portalCamp) goal.portalCamp.left = [];
+    // What the chest still holds is kept as known: emptied when it was read empty after something came out, or twice.
+    if (took.length || c.take.n >= 2) c.left = remaining || [];
+    if (!took.length) console.log(`[portal_camp] nothing came out of the camp's chest (try ${c.take.n} of ${TAKE_TRIES}; it is known to hold ${(c.left || []).join(', ') || 'nothing'})`);
     save();
     if (took.length) { bot.chat?.(`Back at my camp by the portal: took ${took.join(', ')} out of the chest.`); console.log(`[portal_camp] took ${took.join(', ')} out of the camp's chest`); }
-    return took.length > 0;
+    return true;
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err?.name)) throw err; console.log(`[portal_camp] the kit was not taken: ${String(err?.message || err).slice(0, 160)}`); return false; }
 }
 
@@ -196,8 +208,9 @@ function kitWaiting(bot, goal) {
     if (!camp?.chest?.position || Math.hypot(camp.chest.position.x - bot.entity.position.x, camp.chest.position.z - bot.entity.position.z) > 16) return false;
     const items = bot.inventory?.items?.() || [];
     if (items.some(i => /_(sword|axe)$/.test(i.name)) && items.some(i => /_pickaxe$/.test(i.name))) return false;
-    const died = Date.parse(goal.corpseRun?.deathAt || '') || 0;
-    return !(goal.portalCamp?.tookAt > died);
+    const died = Date.parse(goal.corpseRun?.deathAt || '') || 0, c = goal.portalCamp || {};
+    if (c.made && !(c.left || []).length) return false;
+    return !(c.take?.death === died && c.take.n >= TAKE_TRIES);
   } catch (_) { return false; }
 }
 
