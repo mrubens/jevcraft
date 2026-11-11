@@ -303,22 +303,13 @@ async function step(bot, task, goal, save, actions, client, { now = Date.now() }
   if (!client) return false;
   const o = offer(bot, goal, { now });
   if (!o) return false;
-  // Asked only where a way to the portal is found from here (note 2820): the saves of the middle stage begin 20 to 80
-  // blocks from their Nether portal, often on a span above it, and the camp chosen there came to nothing twice
-  // (mid-full-19-campdrill-17 and -18, 25585, 2026-11-10 23:13Z and 2026-11-11 04:27Z: 'no route' to the portal 10
-  // blocks off and 14 down, the errand set aside by Jev a minute on, and no camp when the bot died). Looked for once
-  // a minute at most, 700 milliseconds of it.
-  if (Math.hypot(o.portal.x - bot.entity.position.x, o.portal.z - bot.entity.position.z) > 6 || Math.abs(o.portal.y - bot.entity.position.y) > 4) {
-    const c0 = (goal.portalCamp ||= {});
-    if (c0.noRouteAt && now - c0.noRouteAt < 60000) return false;
-    let found = null;
-    try { const route = await require('./skills').surveyRoute(bot, task, bot.pathfinder?.movements, new goals.GoalNear(o.portal.x, o.portal.y, o.portal.z, 3), 700); found = route?.status === 'success' && (route.path || []).length ? route.path.length : null; }
-    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err?.name)) throw err; found = null; }
-    if (!found || found > 96) { c0.noRouteAt = now; return false; }
-    o.walk = found;
-  }
+  // Asked wherever a portal is within 32 blocks, with how far below or above it lies said (note 2821). Note 2820 asked
+  // only where a walk to the portal was found in 700 milliseconds, and the save it was drilled on (77 blocks from its
+  // portal, on a span 14 above it) was then never asked: the way out that made four of the first seven camps was a
+  // tunnel home, which no walk's search finds. A camp chosen and not reached costs about a minute.
+  const dy = Math.round(o.portal.y - bot.entity.position.y);
   const m = o.makings;
-  const through = o.where === 'nether' ? `out through the portal ${o.off} blocks off${o.walk ? ` (a way of ${o.walk} blocks found to it)` : ''}, ` : '';
+  const through = o.where === 'nether' ? `out through the portal ${o.off} blocks off${Math.abs(dy) > 4 ? ` and ${Math.abs(dy)} ${dy < 0 ? 'below' : 'above'} (a way to it is walked or tunnelled first; of the first nine camps chosen in the Nether two found none and were given up a minute on)` : ''}, ` : '';
   const chestSays = m.chest ? 'the chest carried' : m.planks >= 8 ? `a chest from 8 of the ${m.planks} planks' worth of wood carried` : `no chest (${m.planks} planks' worth of wood carried, 8 wanted)`;
   const sb = bot._survivalState?.spawnBed?.foot, op = nearest(goal, 'overworld', o.where === 'overworld' ? bot.entity.position : { x: bot.entity.position.x * 8, z: bot.entity.position.z * 8 });
   const respawnNow = sb && op ? `a bed ${Math.round(flat(sb, op))} blocks from the Overworld portal` : sb ? 'a bed' : 'the world spawn';
