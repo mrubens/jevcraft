@@ -668,7 +668,7 @@ define({
   // record was 0.41 to 0.47 for the camp as asked, 0.56 to 0.68 without runClock, 0.61 to 0.72 with the fight's facts alone.
   id: 'portal_camp', area: 'resources', parent: null, kind: 'camp', primitive: 'choice', stakes: 'medium', tree: true, withoutRunClock: true,
   question: 'The bot is by a Nether portal with a bed carried and no camp at the portal: make camp there (the bed as the respawn point, a chest with a spare kit beside it), or go on?',
-  trigger: 'The ladder\'s step within 32 blocks of a known portal, in the Overworld or the Nether, a bed carried; or in the Overworld by the respawn bed (within 16 blocks) with none carried and a portal known within 600 (note 2824); no respawn bed within 24 blocks of an Overworld portal, nothing hostile within 12; asked again after half an hour or a death.',
+  trigger: 'The ladder\'s step within 32 blocks of a known portal, in the Overworld or the Nether, a bed carried; or in the Overworld within 64 blocks of the respawn bed with none carried and a portal known within 600 (note 2824); no respawn bed within 24 blocks of an Overworld portal, nothing hostile within 12; asked again after half an hour or a death.',
   source: 'src/portal-camp.js (step, offer, makeCamp), src/game-progress.js (gameStep)',
   options: [
     { key: 'make_camp', label: 'place the bed by the Overworld portal as the respawn point (the one carried, or the respawn bed taken up and carried there), a chest beside it with a stone sword, a stone pickaxe, blocks and food', when: 'always here; said with what the pockets make of it and the minutes', level: 'root' },

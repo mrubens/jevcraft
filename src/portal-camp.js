@@ -17,7 +17,7 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { countOf } = require('./skills');
 
-const NEAR_PORTAL = 32, FAR_BED = 600, CAMP_REACH = 24, ASK_AGAIN_MS = 30 * 60000, FAILED_MS = 20 * 60000, BLOCKS = 32, FOOD_POINTS = 12, FOOD_KEPT = 20;
+const NEAR_PORTAL = 32, FAR_BED = 600, BED_BACK = 64, CAMP_REACH = 24, ASK_AGAIN_MS = 30 * 60000, FAILED_MS = 20 * 60000, BLOCKS = 32, FOOD_POINTS = 12, FOOD_KEPT = 20;
 const ERRAND = 'the camp at the portal', TAKE_TRIES = 3;
 const RECORD = 'In the batch of 2026-11-09 and 10 (37 trials on one build): 32 died once, 31 of them in full iron, a median 38 minutes after entering the Nether; the respawn point stood a median 188 blocks from the portal (14 to 558); after a death in a kit the bot was back in the Nether a median 36 minutes later, 17 of 36 died again with nothing worn before any kit was back, and 59 in 100 of all the minutes played came after a first death. No trial has had a camp at its portal: what it saves is the walk and the kit made again, by this record, not a count of its own.';
 const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
@@ -83,9 +83,13 @@ function offer(bot, goal, { now = Date.now() } = {}) {
   let takeUp = null;
   if (!m.bed && where === 'overworld') {
     const sb = bot._survivalState?.spawnBed;
-    if (sb?.foot && Math.hypot(sb.foot.x - here.x, sb.foot.z - here.z) <= 16 && flat(portal, here) <= FAR_BED) {
+    // Within 64 blocks of it (note 2825: at 16 the first body back to life, by night with skeletons about, was 9 blocks
+    // from its bed three seconds on and never within 16 again; mid-full-19-campdrill-24, 25585, 2026-11-11 15:24Z). A
+    // bed out of the loaded blocks is taken as standing: the taking up says so if it is not.
+    const back = sb?.foot ? Math.round(Math.hypot(sb.foot.x - here.x, sb.foot.z - here.z)) : null;
+    if (sb?.foot && back <= BED_BACK && flat(portal, here) <= FAR_BED) {
       let block = null; try { block = bot.blockAt(new Vec3(sb.foot.x, sb.foot.y, sb.foot.z)); } catch (_) { block = null; }
-      if (/_bed$/.test(block?.name || '')) { takeUp = { foot: { ...sb.foot }, name: block.name }; m.bed = block.name; }
+      if (!block || /_bed$/.test(block.name || '')) { takeUp = { foot: { ...sb.foot }, name: block?.name || sb.name || 'bed', back }; m.bed = takeUp.name; }
     }
   }
   if (!m.bed || (!takeUp && flat(portal, here) > NEAR_PORTAL)) return null;
@@ -346,7 +350,7 @@ async function step(bot, task, goal, save, actions, client, { now = Date.now() }
   const respawnNow = sb && op ? `a bed ${Math.round(flat(sb, op))} blocks from the Overworld portal` : sb ? 'a bed' : 'the world spawn';
   const walkMin = Math.max(1, Math.round(o.off / 4.3 / 60));
   const tree = o.takeUp ? {
-    make_camp: { description: `Move the respawn point to the portal now: the ${m.bed.replaceAll('_', ' ')} the bot stands by (its respawn point, ${o.off} blocks from the Overworld portal) taken up, carried to the portal, about ${walkMin} minute${walkMin === 1 ? '' : 's'} at a clear walk and the way the bot goes to cross in any case, placed beside it and used, which sets the respawn point there by day or night; a chest and a spare kit beside it when the bot stands there with spares. After it a death brings the bot back to life beside the portal, and what it dropped lies ahead of it, not ageing until it is near. While the bed is carried a death comes back to life at the world spawn. Set beside the record: about a minute at the portal once, against a median 36 minutes after each death in a kit, in trials where 32 of 37 died at least once and most of those again.` },
+    make_camp: { description: `Move the respawn point to the portal now: the ${m.bed.replaceAll('_', ' ')} ${o.takeUp.back <= 8 ? 'the bot stands by' : `${o.takeUp.back} blocks back`} (its respawn point, ${o.off} blocks from the Overworld portal) taken up, carried to the portal, about ${walkMin} minute${walkMin === 1 ? '' : 's'} at a clear walk and the way the bot goes to cross in any case, placed beside it and used, which sets the respawn point there by day or night; a chest and a spare kit beside it when the bot stands there with spares. After it a death brings the bot back to life beside the portal, and what it dropped lies ahead of it, not ageing until it is near. While the bed is carried a death comes back to life at the world spawn. Set beside the record: about a minute at the portal once, against a median 36 minutes after each death in a kit, in trials where 32 of 37 died at least once and most of those again.` },
     go_on: { description: `Go on without it: the bed stays where it is, ${o.off} blocks from the portal, and a death brings the bot back to life here with empty hands, as in the record. Asked again after half an hour or a death.` },
   } : {
     make_camp: { description: `Make camp at the portal now: ${through}the ${m.bed.replaceAll('_', ' ')} carried placed beside the portal on the Overworld side and used, which sets the respawn point there by day or night; ${chestSays} beside it; and in it a stone sword and a stone pickaxe (made from the ${m.cobble} blocks and the wood carried where a second is not), ${BLOCKS} blocks and about ${FOOD_POINTS} food points of the ${m.food} carried past the ${FOOD_KEPT} the body keeps. About two to four minutes${o.where === 'nether' ? ', the two crossings with it' : ''}, then on as before. After it a death anywhere brings the bot back to life beside the portal with that kit a step away, and what it dropped lies ahead of it, not ageing until it is near. Set beside the record: these few minutes once, against a median 36 minutes after each death in a kit, in trials where 32 of 37 died at least once. The bed stays there: the nights after are without it unless another is made.` },

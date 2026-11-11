@@ -1353,7 +1353,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **The bot is by a Nether portal with a bed carried and no camp at the portal: make camp there (the bed as the respawn point, a chest with a spare kit beside it), or go on?**
 
-- When: The ladder's step within 32 blocks of a known portal, in the Overworld or the Nether, a bed carried; or in the Overworld by the respawn bed (within 16 blocks) with none carried and a portal known within 600 (note 2824); no respawn bed within 24 blocks of an Overworld portal, nothing hostile within 12; asked again after half an hour or a death.
+- When: The ladder's step within 32 blocks of a known portal, in the Overworld or the Nether, a bed carried; or in the Overworld within 64 blocks of the respawn bed with none carried and a portal known within 600 (note 2824); no respawn bed within 24 blocks of an Overworld portal, nothing hostile within 12; asked again after half an hour or a death.
 - Decision tree, choice; stakes medium; ledger kind `camp`
 - Bar: none
 - Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
