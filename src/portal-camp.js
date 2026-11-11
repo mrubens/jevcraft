@@ -17,7 +17,7 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { countOf } = require('./skills');
 
-const NEAR_PORTAL = 32, FAR_BED = 600, BED_BACK = 64, CAMP_REACH = 24, ASK_AGAIN_MS = 30 * 60000, FAILED_MS = 20 * 60000, BLOCKS = 32, FOOD_POINTS = 12, FOOD_KEPT = 20;
+const NEAR_PORTAL = 32, FAR_BED = 600, BED_BACK = 64, CAMP_REACH = 40, PLACE_WITHIN = 10, ASK_AGAIN_MS = 30 * 60000, FAILED_MS = 20 * 60000, BLOCKS = 32, FOOD_POINTS = 12, FOOD_KEPT = 20;
 const ERRAND = 'the camp at the portal', TAKE_TRIES = 3;
 const RECORD = 'In the batch of 2026-11-09 and 10 (37 trials on one build): 32 died once, 31 of them in full iron, a median 38 minutes after entering the Nether; the respawn point stood a median 188 blocks from the portal (14 to 558); after a death in a kit the bot was back in the Nether a median 36 minutes later, 17 of 36 died again with nothing worn before any kit was back, and 59 in 100 of all the minutes played came after a first death. No trial has had a camp at its portal: what it saves is the walk and the kit made again, by this record, not a count of its own.';
 const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
@@ -100,7 +100,8 @@ function offer(bot, goal, { now = Date.now() } = {}) {
 // The bed placed beside the bot and used: by day or night the use sets the respawn point (the server's own word).
 async function placeAndSet(bot, task, goal, save, actions) {
   const { bedSiteNear } = require('./survival'), { placeOriented, isBed } = require('./home-base');
-  const bed = bedCarried(bot), site = bedSiteNear(bot);
+  // A site within four blocks, then within seven ('no two level cells beside the bot for the bed', mid-full-194-middle-4).
+  const bed = bedCarried(bot), site = bedSiteNear(bot) || bedSiteNear(bot, 7);
   if (!bed) throw new Error('no bed is carried');
   if (!site) throw new Error('no two level cells beside the bot for the bed');
   goal.step = { action: 'portal_camp', doing: 'the bed', at: { x: site.foot.x, y: site.foot.y, z: site.foot.z } }; save();
@@ -325,12 +326,18 @@ async function step(bot, task, goal, save, actions, client, { now = Date.now() }
       return true;
     }
     const here = bot.entity.position, portal = nearest(goal, 'overworld', here);
-    if (!portal || flat(portal, here) > NEAR_PORTAL) {
+    // The bed goes down within ten blocks of the portal (note 2827): placed where the bot stood on coming within 32,
+    // one camp stood 31 blocks from its portal (mid-full-204-middle-4, 25593, 2026-11-11), past what is read as a camp.
+    if (!portal || flat(portal, here) > PLACE_WITHIN) {
       if (!portal) { delete c.choice; save(); return false; }
       goal.step = { action: 'portal_camp', doing: 'the walk to the portal', portal: { x: portal.x, y: portal.y, z: portal.z } }; save();
-      try { await actions.stashActions.navigate(bot, task, new goals.GoalNear(portal.x, portal.y, portal.z, 6), { timeoutMs: 60000, stallMs: 8000 }); }
+      const before = flat(portal, here);
+      try { await actions.stashActions.navigate(bot, task, new goals.GoalNear(portal.x, portal.y, portal.z, 4), { timeoutMs: 60000, stallMs: 8000 }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err?.name)) throw err; }
-      return true;
+      // No nearer after three walks from within 32: the camp where the bot stands.
+      const after = flat(portal, bot.entity.position);
+      c.walks = after < before - 2 ? 0 : (c.walks || 0) + 1; save();
+      if (!(after <= NEAR_PORTAL && c.walks >= 3)) return true;
     }
     try {
       const made = await makeCamp(bot, task, goal, save, actions, { bedOnly: !!c.takeUp && !(bot.inventory.items().some(i => /_(sword|axe)$/.test(i.name)) && bot.inventory.items().some(i => /_pickaxe$/.test(i.name))) });
