@@ -9607,6 +9607,9 @@ function nightMineLeftSays(bot, goal, now = Date.now()) {
   return ` A night mine was chosen as the night's shelter ${agoSays} ago${dist ? `, ${dist} blocks from here` : ', here'} (${m.mined || 0} mined): this climb leaves it, and the night's shelter is asked again up there.${run} On ${NIGHT_MINES_LEFT.runs} fresh runs (${NIGHT_MINES_LEFT.window}) ${NIGHT_MINES_LEFT.left} of the ${NIGHT_MINES_LEFT.chosen} night mines chosen were left by a climb within three minutes, each a climb and a way back down.`;
 }
 async function crossingKitReady(bot, task, goal, save, client = task.opportunityClient, now = Date.now()) {
+  // The camp chosen with its bed carried goes down first (portal-camp.js beforeCrossing, note 2830).
+  try { if (await require('./portal-camp').beforeCrossing(bot, task, goal, save, { stashActions: homeActions(), acquireStep })) return false; }
+  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
   // The crossing chosen as the bot stands, for the kit a death left on the
   // far side (corpse-run.js kitTrip): not asked again here. 25589
   // (2026-10-04 15:48:58Z) chose the trip and at the portal was asked of a

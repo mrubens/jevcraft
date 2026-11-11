@@ -384,4 +384,14 @@ async function step(bot, task, goal, save, actions, client, { now = Date.now() }
   return pick === 'make_camp';
 }
 
-module.exports = { step, offer, standing, kitFor, makeCamp, stockCamp, takeKit, kitWaiting, guard, makingsSay, RECORD, ERRAND, NEAR_PORTAL };
+// The camp chosen and its bed carried is made before a crossing (note 2830): the trip back for the drops and the
+// ladder's own crossing go through the portal ahead of the ladder's step, and a bed taken up for the camp was carried
+// into the Nether twice and lost at the next death (mid-full-204-middle-4, 2026-11-11 17:10Z; mid-full-198-middle-6,
+// 22:40Z, 'not made: the bed was not taken up in 3 tries' after it). -> true when the step was spent on the camp.
+async function beforeCrossing(bot, task, goal, save, actions, now = Date.now()) {
+  const c = goal?.portalCamp;
+  if (!c || c.choice !== 'make' || dim(bot) !== 'overworld' || !bedCarried(bot) || standing(bot, goal)) return false;
+  return step(bot, task, goal, save, actions, null, { now });
+}
+
+module.exports = { step, offer, standing, kitFor, makeCamp, stockCamp, takeKit, kitWaiting, guard, beforeCrossing, makingsSay, RECORD, ERRAND, NEAR_PORTAL };
