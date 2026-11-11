@@ -937,7 +937,8 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // it walked back to the drowned that had just killed it, and chose to
   // search for food at five health three deaths running, told nothing of
   // any of them (the user's suggestion, 2026-09-26).
-  if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.recentDeaths) {
+  // Not where the question is declared with its own state alone (plainState, note 2829: portal_camp).
+  if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.recentDeaths && !spec.plainState) {
     const deaths = recentDeaths(bot, goal);
     if (deaths.length) { const spells = deathSpells(goal); state = { ...state, recentDeaths: deaths, ...(spells ? { deathSpells: spells } : {}) }; }
   }
@@ -967,7 +968,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // hurt, under eighteen hunger with nothing safe to eat, told of it in a
   // few options of a few questions (note 515: mid-231-o, mid-207-l,
   // mid-211-x, mid-231-q).
-  if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.healing) {
+  if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.healing && !spec.plainState) {
     let healing = null; try { healing = require('../healing').healingSays(bot, goal); } catch (_) { /* no body */ }
     if (healing) state = { ...state, healing };
   }
@@ -1154,7 +1155,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     if (holds || commitEnded) state = { ...state, ...(holds ? { answersHold: holds } : {}), ...(commitEnded ? { lastCommitment: commitEnded } : {}) };
   }
   if (spell?.said && state && typeof state === 'object') state = { ...state, spellSoFar: `${id.replaceAll('_', ' ')} was ${spell.says}${spell.why ? `; ${spell.why}` : ''}` };
-  if (state && typeof state === 'object' && (underWay || intentionEnded)) state ={ ...state, ...(underWay ? { underWay } : {}), ...(intentionEnded ? { lastIntention: intentionEnded } : {}) };
+  if (state && typeof state === 'object' && (underWay || intentionEnded) && !spec.plainState) state ={ ...state, ...(underWay ? { underWay } : {}), ...(intentionEnded ? { lastIntention: intentionEnded } : {}) };
   // The plan answers just given from here, a reversal among them, and the
   // options that would turn back on the last (plan-chain.js, note 705).
   if (ledgered && state && typeof state === 'object') {

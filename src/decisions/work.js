@@ -667,6 +667,10 @@ define({
   // 2026-11-10 17:0xZ, the respawn bed 69 blocks off) were go on at 0.59 to 0.61; that question asked again from its
   // record was 0.41 to 0.47 for the camp as asked, 0.56 to 0.68 without runClock, 0.61 to 0.72 with the fight's facts alone.
   id: 'portal_camp', area: 'resources', parent: null, kind: 'camp', primitive: 'choice', stakes: 'medium', tree: true, withoutRunClock: true,
+  // And with its own state alone (plainState, note 2829): the recent deaths, the healing and the last intention that
+  // every question is given took the bed's move from 0.62 to 0.77 down to 0.37 to 0.46 where the bed stood 416 blocks
+  // from the portal (asked again from the record, six times each; no one of them alone moved it more than 0.08).
+  plainState: true,
   question: 'The bot is by a Nether portal with a bed carried and no camp at the portal: make camp there (the bed as the respawn point, a chest with a spare kit beside it), or go on?',
   trigger: 'The ladder\'s step within 32 blocks of a known portal, in the Overworld or the Nether, a bed carried; or in the Overworld within 64 blocks of the respawn bed with none carried and a portal known within 600 (note 2824); no respawn bed within 24 blocks of an Overworld portal, nothing hostile within 12; asked again after half an hour or a death.',
   source: 'src/portal-camp.js (step, offer, makeCamp), src/game-progress.js (gameStep)',
