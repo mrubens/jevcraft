@@ -101,6 +101,11 @@ function ownChest(goal, p) {
   // "Opened the chest's chest: 2 blaze rod", took them back, and carried
   // them into the Nether again, the record still saying two were held (note
   // 879).
+  // The chest beside the respawn bed (bed-kit.js goal.bedKit, the camp at the portal's among them, and the ones left
+  // behind): the camp's kit was put in and, two seconds on, 'Opened the chest's chest: 1 stone sword, 1 stone pickaxe
+  // and 2 cooked beef' (mid-full-19-campdrill-21, 25585, 2026-11-11 13:26:01 and 13:26:03Z), taken back as loot, the
+  // blocks left; the body back to life there found the chest empty in every camp but one (note 2822).
+  if ([goal.bedKit, ...(goal.bedKitsLeft || [])].some(c => c?.position && key(c.position) === key(p))) return true;
   if ((goal.rodStashes || []).some(c => c.position && key(c.position) === key(p))) return true;
   if (goal.rodBank?.chestAt && key(goal.rodBank.chestAt) === key(p)) return true;
   if ((goal.placedWorkstations || []).some(w => /^chest:/.test(w) && w.replace(/\s/g, '').endsWith(`(${p.x},${p.y},${p.z})`))) return true;
