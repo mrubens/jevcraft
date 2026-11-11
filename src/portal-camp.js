@@ -17,7 +17,7 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { countOf } = require('./skills');
 
-const NEAR_PORTAL = 32, CAMP_REACH = 24, ASK_AGAIN_MS = 30 * 60000, FAILED_MS = 20 * 60000, BLOCKS = 32, FOOD_POINTS = 12, FOOD_KEPT = 20;
+const NEAR_PORTAL = 32, FAR_BED = 600, CAMP_REACH = 24, ASK_AGAIN_MS = 30 * 60000, FAILED_MS = 20 * 60000, BLOCKS = 32, FOOD_POINTS = 12, FOOD_KEPT = 20;
 const ERRAND = 'the camp at the portal', TAKE_TRIES = 3;
 const RECORD = 'In the batch of 2026-11-09 and 10 (37 trials on one build): 32 died once, 31 of them in full iron, a median 38 minutes after entering the Nether; the respawn point stood a median 188 blocks from the portal (14 to 558); after a death in a kit the bot was back in the Nether a median 36 minutes later, 17 of 36 died again with nothing worn before any kit was back, and 59 in 100 of all the minutes played came after a first death. No trial has had a camp at its portal: what it saves is the walk and the kit made again, by this record, not a count of its own.';
 const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
@@ -74,11 +74,23 @@ function offer(bot, goal, { now = Date.now() } = {}) {
   if (c?.askedAt && now - c.askedAt < ASK_AGAIN_MS && (goal.survival?.deaths || []).length === (c.deathsThen ?? -1)) return null;
   if (c?.failedAt && now - c.failedAt < FAILED_MS) return null;
   const here = bot.entity.position, portal = nearest(goal, where, here);
-  if (!portal || flat(portal, here) > NEAR_PORTAL || !nearest(goal, 'overworld', where === 'overworld' ? here : { x: here.x * 8, z: here.z * 8 })) return null;
+  if (!portal || !nearest(goal, 'overworld', where === 'overworld' ? here : { x: here.x * 8, z: here.z * 8 })) return null;
   const m = makingsSay(bot);
-  if (!m.bed) return null;
+  // With no bed carried, the respawn bed the bot stands by is the bed (note 2824): the middle stage's saves begin away
+  // from their portal and a death drops the bed carried, so of batch three's sixteen trials two made a camp and of
+  // batch four's first six, 34 to 85 minutes in with ten deaths, none was asked; a body back to life stands at its bed,
+  // a median 188 blocks from the portal it must walk to anyway.
+  let takeUp = null;
+  if (!m.bed && where === 'overworld') {
+    const sb = bot._survivalState?.spawnBed;
+    if (sb?.foot && Math.hypot(sb.foot.x - here.x, sb.foot.z - here.z) <= 16 && flat(portal, here) <= FAR_BED) {
+      let block = null; try { block = bot.blockAt(new Vec3(sb.foot.x, sb.foot.y, sb.foot.z)); } catch (_) { block = null; }
+      if (/_bed$/.test(block?.name || '')) { takeUp = { foot: { ...sb.foot }, name: block.name }; m.bed = block.name; }
+    }
+  }
+  if (!m.bed || (!takeUp && flat(portal, here) > NEAR_PORTAL)) return null;
   try { if (require('./danger').threats(bot, 12).length) return null; } catch (_) { return null; }
-  return { where, portal, off: Math.round(flat(portal, here)), makings: m };
+  return { where, portal, off: Math.round(flat(portal, here)), makings: m, takeUp };
 }
 
 // The bed placed beside the bot and used: by day or night the use sets the respawn point (the server's own word).
@@ -162,10 +174,11 @@ async function stockCamp(bot, task, goal, save, actions) {
   return out;
 }
 
-async function makeCamp(bot, task, goal, save, actions) {
+async function makeCamp(bot, task, goal, save, actions, { bedOnly = false } = {}) {
   const acts = { ...(actions.stashActions || {}), acquireStep: actions.acquireStep };
   const site = await placeAndSet(bot, task, goal, save, acts);
-  const stocked = await stockCamp(bot, task, goal, save, actions);
+  // A bare body's camp is its bed (the chest and the kit when it stands there again with spares: the step's finishing).
+  const stocked = bedOnly ? { left: [], notes: ['the bed alone: the chest and the kit when the bot is back by it with spares'], chest: null } : await stockCamp(bot, task, goal, save, actions);
   return { bed: { x: site.foot.x, y: site.foot.y, z: site.foot.z }, ...stocked };
 }
 
@@ -278,6 +291,24 @@ async function step(bot, task, goal, save, actions, client, { now = Date.now() }
       return false;
     }
     if (where !== 'overworld') { delete c.choice; save(); return false; }
+    // The respawn bed taken up first, where that was the choice.
+    if (c.takeUp && !bedCarried(bot)) {
+      const f = c.takeUp.foot, foot = new Vec3(f.x, f.y, f.z);
+      let block = null; try { block = bot.blockAt(foot); } catch (_) { block = null; }
+      if (!/_bed$/.test(block?.name || '')) { console.log('[portal_camp] not made: the bed to take up is not where it stood'); goal.portalCamp = { askedAt: c.askedAt, deathsThen: c.deathsThen, failedAt: now, failed: 'the bed to take up is not where it stood' }; save(); return true; }
+      goal.step = { action: 'portal_camp', doing: 'the bed taken up', at: { ...f } }; save();
+      try {
+        await actions.stashActions.navigate(bot, task, new goals.GoalNear(f.x, f.y, f.z, 2), { timeoutMs: 30000, stallMs: 8000 });
+        bot._campTakeUp = true;
+        try { await bot.dig(bot.blockAt(foot)); } finally { bot._campTakeUp = false; }
+        await actions.stashActions.navigate(bot, task, new goals.GoalNear(f.x, f.y, f.z, 0), { timeoutMs: 8000, stallMs: 4000 }).catch(() => {});
+        await new Promise(resolve => setTimeout(resolve, 800));
+        if (bot._survivalState?.spawnBed) { delete bot._survivalState.spawnBed; bot._survivalState.respawn = null; }
+        save();
+      } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err?.name)) throw err; }
+      if (!bedCarried(bot)) { console.log('[portal_camp] not made: the bed was not taken up'); goal.portalCamp = { askedAt: c.askedAt, deathsThen: c.deathsThen, failedAt: now, failed: 'the bed was not taken up' }; save(); }
+      return true;
+    }
     const here = bot.entity.position, portal = nearest(goal, 'overworld', here);
     if (!portal || flat(portal, here) > NEAR_PORTAL) {
       if (!portal) { delete c.choice; save(); return false; }
@@ -287,7 +318,7 @@ async function step(bot, task, goal, save, actions, client, { now = Date.now() }
       return true;
     }
     try {
-      const made = await makeCamp(bot, task, goal, save, actions);
+      const made = await makeCamp(bot, task, goal, save, actions, { bedOnly: !!c.takeUp && !(bot.inventory.items().some(i => /_(sword|axe)$/.test(i.name)) && bot.inventory.items().some(i => /_pickaxe$/.test(i.name))) });
       goal.portalCamp = { ...c, choice: undefined, made: true, madeAt: now, stockTriedAt: now, bed: made.bed, portal: { x: portal.x, y: portal.y, z: portal.z }, left: made.left, notes: made.notes };
       delete goal.portalCamp.choice;
       bot.chat?.(`Camp made by the portal: the bed is my respawn point${made.left.length ? `, and the chest holds ${made.left.join(', ')}` : ''}.`);
@@ -313,7 +344,11 @@ async function step(bot, task, goal, save, actions, client, { now = Date.now() }
   const chestSays = m.chest ? 'the chest carried' : m.planks >= 8 ? `a chest from 8 of the ${m.planks} planks' worth of wood carried` : `no chest (${m.planks} planks' worth of wood carried, 8 wanted)`;
   const sb = bot._survivalState?.spawnBed?.foot, op = nearest(goal, 'overworld', o.where === 'overworld' ? bot.entity.position : { x: bot.entity.position.x * 8, z: bot.entity.position.z * 8 });
   const respawnNow = sb && op ? `a bed ${Math.round(flat(sb, op))} blocks from the Overworld portal` : sb ? 'a bed' : 'the world spawn';
-  const tree = {
+  const walkMin = Math.max(1, Math.round(o.off / 4.3 / 60));
+  const tree = o.takeUp ? {
+    make_camp: { description: `Move the respawn point to the portal now: the ${m.bed.replaceAll('_', ' ')} the bot stands by (its respawn point, ${o.off} blocks from the Overworld portal) taken up, carried to the portal, about ${walkMin} minute${walkMin === 1 ? '' : 's'} at a clear walk and the way the bot goes to cross in any case, placed beside it and used, which sets the respawn point there by day or night; a chest and a spare kit beside it when the bot stands there with spares. After it a death brings the bot back to life beside the portal, and what it dropped lies ahead of it, not ageing until it is near. While the bed is carried a death comes back to life at the world spawn. Set beside the record: about a minute at the portal once, against a median 36 minutes after each death in a kit, in trials where 32 of 37 died at least once and most of those again.` },
+    go_on: { description: `Go on without it: the bed stays where it is, ${o.off} blocks from the portal, and a death brings the bot back to life here with empty hands, as in the record. Asked again after half an hour or a death.` },
+  } : {
     make_camp: { description: `Make camp at the portal now: ${through}the ${m.bed.replaceAll('_', ' ')} carried placed beside the portal on the Overworld side and used, which sets the respawn point there by day or night; ${chestSays} beside it; and in it a stone sword and a stone pickaxe (made from the ${m.cobble} blocks and the wood carried where a second is not), ${BLOCKS} blocks and about ${FOOD_POINTS} food points of the ${m.food} carried past the ${FOOD_KEPT} the body keeps. About two to four minutes${o.where === 'nether' ? ', the two crossings with it' : ''}, then on as before. After it a death anywhere brings the bot back to life beside the portal with that kit a step away, and what it dropped lies ahead of it, not ageing until it is near. Set beside the record: these few minutes once, against a median 36 minutes after each death in a kit, in trials where 32 of 37 died at least once. The bed stays there: the nights after are without it unless another is made.` },
     go_on: { description: `Go on without a camp: the bed stays carried, and a death brings the bot back to life at ${respawnNow} with empty hands, as in the record. Asked again at a portal after half an hour or a death.` },
   };
@@ -321,7 +356,7 @@ async function step(bot, task, goal, save, actions, client, { now = Date.now() }
   const decision = await require('./decisions').decide('portal_camp', { client, bot, task, goal, save, tree, state });
   if (decision.stale) return false;
   const pick = decision.path.at(-1);
-  goal.portalCamp = { ...(goal.portalCamp || {}), askedAt: now, deathsThen: (goal.survival?.deaths || []).length, ...(pick === 'make_camp' ? { choice: 'make', at: now } : {}) };
+  goal.portalCamp = { ...(goal.portalCamp || {}), askedAt: now, deathsThen: (goal.survival?.deaths || []).length, ...(pick === 'make_camp' ? { choice: 'make', at: now, ...(o.takeUp ? { takeUp: o.takeUp } : {}) } : {}) };
   delete goal.portalCamp.failedAt;
   save();
   return pick === 'make_camp';
