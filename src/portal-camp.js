@@ -287,7 +287,7 @@ async function step(bot, task, goal, save, actions, client, { now = Date.now() }
     }
   }
   if (c?.choice === 'make') {
-    if (now - c.at > 20 * 60000 || standing(bot, goal)) { delete c.choice; save(); return false; }
+    if (now - c.at > (c.takeUp ? 40 : 20) * 60000 || standing(bot, goal)) { delete c.choice; save(); return false; }
     const where = dim(bot);
     if (where === 'nether') {
       // Out through the portal first: the ladder's own return (game-progress.js errandStage).
@@ -299,18 +299,29 @@ async function step(bot, task, goal, save, actions, client, { now = Date.now() }
     if (c.takeUp && !bedCarried(bot)) {
       const f = c.takeUp.foot, foot = new Vec3(f.x, f.y, f.z);
       let block = null; try { block = bot.blockAt(foot); } catch (_) { block = null; }
-      if (!/_bed$/.test(block?.name || '')) { console.log('[portal_camp] not made: the bed to take up is not where it stood'); goal.portalCamp = { askedAt: c.askedAt, deathsThen: c.deathsThen, failedAt: now, failed: 'the bed to take up is not where it stood' }; save(); return true; }
+      // The bed gone from its place and none carried: it lies there as a drop (dug a step ago), or was never there.
+      // Walked onto for up to six seconds, three steps at most; then given up (note 2826: the first bed taken up,
+      // mid-full-204-middle-4 on 25593 at 17:08:53Z on 2026-11-11, was in the pack half a minute after 'not made: the bed
+      // was not taken up', the camp given up for twenty minutes with the respawn bed gone and the bed carried into the
+      // Nether).
+      const standsThere = /_bed$/.test(block?.name || '');
+      c.takeUpTries = (c.takeUpTries || 0) + 1;
       goal.step = { action: 'portal_camp', doing: 'the bed taken up', at: { ...f } }; save();
       try {
         await actions.stashActions.navigate(bot, task, new goals.GoalNear(f.x, f.y, f.z, 2), { timeoutMs: 30000, stallMs: 8000 });
-        bot._campTakeUp = true;
-        try { await bot.dig(bot.blockAt(foot)); } finally { bot._campTakeUp = false; }
-        await actions.stashActions.navigate(bot, task, new goals.GoalNear(f.x, f.y, f.z, 0), { timeoutMs: 8000, stallMs: 4000 }).catch(() => {});
-        await new Promise(resolve => setTimeout(resolve, 800));
-        if (bot._survivalState?.spawnBed) { delete bot._survivalState.spawnBed; bot._survivalState.respawn = null; }
-        save();
+        if (standsThere) {
+          bot._campTakeUp = true;
+          try { await bot.dig(bot.blockAt(foot)); } finally { bot._campTakeUp = false; }
+          if (bot._survivalState?.spawnBed) { delete bot._survivalState.spawnBed; bot._survivalState.respawn = null; }
+          save();
+        }
+        for (let i = 0; i < 10 && !bedCarried(bot); i++) {
+          task.check();
+          await actions.stashActions.navigate(bot, task, new goals.GoalNear(f.x, f.y, f.z, 0), { timeoutMs: 3000, stallMs: 2000 }).catch(() => {});
+          await new Promise(resolve => setTimeout(resolve, 600));
+        }
       } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err?.name)) throw err; }
-      if (!bedCarried(bot)) { console.log('[portal_camp] not made: the bed was not taken up'); goal.portalCamp = { askedAt: c.askedAt, deathsThen: c.deathsThen, failedAt: now, failed: 'the bed was not taken up' }; save(); }
+      if (!bedCarried(bot) && c.takeUpTries >= 3) { console.log(`[portal_camp] not made: the bed was not taken up in ${c.takeUpTries} tries${standsThere ? '' : ' (it does not stand where it stood)'}`); goal.portalCamp = { askedAt: c.askedAt, deathsThen: c.deathsThen, failedAt: now, failed: 'the bed was not taken up' }; save(); }
       return true;
     }
     const here = bot.entity.position, portal = nearest(goal, 'overworld', here);
