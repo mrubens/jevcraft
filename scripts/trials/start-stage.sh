@@ -19,6 +19,12 @@ PORT=$1; STAGE=$2
 # The port's arm (two-arm trials, scripts/lib/arms.js, note 666): a save the
 # other arm started and this one has not is taken first, and the start is
 # logged with the arm and the stage asked for.
+# A build pinned for the port's next trial (middle-batch.sh pin, note 2828) becomes its arm here, at the trial's start,
+# not when it was pinned: the supervisor starts a bot again from the port's arm every half hour or so, and a pin set
+# at once moved the trials under way onto the new build (six trials of 2026-11-11 recorded as 9eb129be were running
+# 92c20168 by 19:00Z).
+NEXT="$ROOT/.bot-state/arms/next-$PORT"
+if [ -f "$NEXT" ]; then (cd "$ROOT" && node scripts/lib/arms.js set "$PORT" "$(cat "$NEXT")" >/dev/null 2>&1) && rm -f "$NEXT"; fi
 ARM=$(cd "$ROOT" && node scripts/lib/arms.js name "$PORT" 2>&1) || { echo "the arm of $PORT cannot carry a bot: $ARM"; exit 1; }
 ASKED=$STAGE
 PICK=$(STAGE_PORT=$PORT STAGE_ARM=$ARM node "$ROOT/scripts/trials/stage-pick.js" "$STAGE") || { echo "no usable $STAGE snapshot"; exit 1; }
