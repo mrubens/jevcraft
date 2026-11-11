@@ -9904,12 +9904,28 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     const asked = !!kit.foodAsk && !takenShort && !(goal.foodTurnBack?.at > since) && !(goal.survival?.deaths || []).some(d => Date.parse(d.at) > since);
     if (fi && !asked) {
       const ck = require('./crossing-kit'), stay = ck.netherStay(bot, goal), short = Math.max(0, fi.wants - fi.carried);
+      // On the trip back for the drops the crossing is said as that (note 2823): asked as any crossing ('16 food points
+      // ... against the 120 minutes the goal wants there; 64 points short', and the record of crossings made with little
+      // food), the bot that had chosen to go straight back, its kit out of the camp's chest and the portal two blocks
+      // off, chose the food first at 0.6 and climbed 118 blocks to hunt (mid-full-19-campdrill-22, 25585, 2026-11-11
+      // 13:41:06Z), about 84 food points lying with its drops 50 blocks past the portal.
+      let dropsSays = '';
+      if (kitTrip) {
+        try {
+          const run = goal.corpseRun, foods = bot.registry?.foodsByName || {};
+          const pts = Object.entries(run.items || {}).reduce((n, [name, c]) => n + (foods[name]?.foodPoints || 0) * c, 0);
+          const there = (goal.portals || []).filter(p => p.dimension === 'nether').sort((a, b) => Math.hypot(a.x - run.position.x, a.z - run.position.z) - Math.hypot(b.x - run.position.x, b.z - run.position.z))[0];
+          const off = there ? Math.round(Math.hypot(there.x - run.position.x, there.z - run.position.z)) : null;
+          const worn = Object.keys(run.items || {}).filter(n => /_(helmet|chestplate|leggings|boots)$/.test(n)).length;
+          dropsSays = `the drops lie ${off === null ? 'on the far side' : `${off} blocks from the portal on the far side, ${off / 4.3 < 50 ? 'under a minute' : `about ${Math.round(off / 4.3 / 60)} minute${Math.round(off / 4.3 / 60) === 1 ? '' : 's'}`} of walking there`}, with about ${pts} food points among them${worn ? ` beside ${worn} piece${worn === 1 ? '' : 's'} of armour` : ''}`;
+        } catch (_) { dropsSays = ''; }
+      }
       const foodTree = {
-        cross_now: { description: `Cross and go on with the stay on what is carried: ${fi.carried} food points, about ${Math.round(fi.carried / ck.NETHER_HUNGER_AN_HOUR * 60)} minutes of it at ${ck.NETHER_HUNGER_AN_HOUR} an hour, against the ${stay.minutes} minutes the goal wants there; ${short} points short. In the Nether the food is a hoglin (in the crimson forests, 40 health, hitting for 3 to 8) or a bastion's chests; otherwise back out through this portal for it.${(() => { try { return require('./nether-food').blazeFoodSays(fi.carried); } catch (_) { return ''; } })()}${ck.CROSSED_SHORT}${crossFoodSays}` },
-        take_up_food: { description: `Get the Nether's food here first, before crossing: ${fi.carried} of ${fi.wants} points carried.${takeUpFoodSays(bot, goal, fi)}${kit.takeUpRested && Date.now() - kit.takeUpRested.at < 30 * 60000 ? ` Taken up ${Math.max(1, Math.round((Date.now() - kit.takeUpRested.at) / 60000))} minutes ago, every way to food here came to nothing and rests, ${kit.takeUpRested.carried} points carried then.` : ''}` },
+        cross_now: dropsSays ? { description: `Cross now for the drops, with the ${fi.carried} food points carried: ${dropsSays}. Taken up, they are the kit and the food for the stay; the ${fi.carried} points carried are about ${Math.round(fi.carried / ck.NETHER_HUNGER_AN_HOUR * 60)} minutes at the Nether's ${ck.NETHER_HUNGER_AN_HOUR} an hour.` } : { description: `Cross and go on with the stay on what is carried: ${fi.carried} food points, about ${Math.round(fi.carried / ck.NETHER_HUNGER_AN_HOUR * 60)} minutes of it at ${ck.NETHER_HUNGER_AN_HOUR} an hour, against the ${stay.minutes} minutes the goal wants there; ${short} points short. In the Nether the food is a hoglin (in the crimson forests, 40 health, hitting for 3 to 8) or a bastion's chests; otherwise back out through this portal for it.${(() => { try { return require('./nether-food').blazeFoodSays(fi.carried); } catch (_) { return ''; } })()}${ck.CROSSED_SHORT}${crossFoodSays}` },
+        take_up_food: { description: `Get the Nether's food here first, before crossing: ${fi.carried} of ${fi.wants} points carried.${takeUpFoodSays(bot, goal, fi)}${kit.takeUpRested && Date.now() - kit.takeUpRested.at < 30 * 60000 ? ` Taken up ${Math.max(1, Math.round((Date.now() - kit.takeUpRested.at) / 60000))} minutes ago, every way to food here came to nothing and rests, ${kit.takeUpRested.carried} points carried then.` : ''}${dropsSays ? ' The drops wait meanwhile, not ageing until the bot is within 128 blocks of them.' : ''}` },
       };
       const decision = await decide('crossing_food', { client, bot, task, goal, save, tree: foodTree,
-        state: { food: `${fi.carried} carried, the stay wants ${fi.wants}`, health: bot.health, hunger: bot.food, minutesAtCrossing: Math.round(kit.workedMs / 60000) } });
+        state: { ...(dropsSays ? { kitTrip: `This crossing is the trip back for what the bot dropped when it died: ${dropsSays}.` } : {}), food: `${fi.carried} carried, the stay wants ${fi.wants}`, health: bot.health, hunger: bot.food, minutesAtCrossing: Math.round(kit.workedMs / 60000) } });
       if (decision.stale) return false;
       // A body way the low-health layer put beside it (wall_in_first, eat_first) is run there and is not the food's
       // answer: the food is asked again on the next pass (note 2571). full-156 (25592, 2026-10-30 04:53Z), 0 food points
