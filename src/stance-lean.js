@@ -7,7 +7,7 @@
 // gainsaid); each option cut to its price and what the body does, with this batch's own count for it at the bot's
 // health, and the state cut to the fight, moved the answers at 14 health or more from 46 to 61 in 100 for a way
 // that kills, and left the heal at low health where it was (30 of 64 at 8 to 13 either way). Every option stays
-// on offer. JEV_LEAN_STANCE=0 asks it whole.
+// on offer. Off by default since note 2831; JEV_LEAN_STANCE=1 asks it short.
 // [answers, rods in 100, deaths in 100] within 45 seconds of the answer, by the health it was given at: the rows of
 // ten answers or more.
 const BATCH = {
@@ -46,7 +46,10 @@ const first = (d, n) => String(d).split(/(?<=[.!?])\s+(?=[A-Z])/).slice(0, n).jo
 const RULE = /The game's rule[\s\S]*?within sixteen of it\./;
 // tree and state are changed in place. -> true when it was said short.
 function apply(tree, state, { health = 20, within16 = 0, record = '' } = {}) {
-  if (process.env.JEV_LEAN_STANCE === '0' || !(within16 >= 1) || !tree || !state) return false;
+  // Off unless asked for (note 2831): played, it did not pay. Batch three (build 5253afac, 16 trials, 2026-11-11) against
+  // batch one: a way that kills answered 31 in 100 times at the blazes for 22, the rods there 11.5 an hour for 13, the
+  // deaths there 5 an hour for 2.7, a charge followed by a death 11 times in 100 for 5. JEV_LEAN_STANCE=1 asks it short.
+  if (process.env.JEV_LEAN_STANCE !== '1' || !(within16 >= 1) || !tree || !state) return false;
   const hb = band(health);
   for (const [k, o] of Object.entries(tree)) {
     if (!o || typeof o.description !== 'string') continue;
