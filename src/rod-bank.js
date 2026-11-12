@@ -112,6 +112,14 @@ function spreadSays(bot, goal) {
   return ` This run's rods and pearls already lie in ${held.length} chest${held.length === 1 ? '' : 's'}${far ? `, the farthest in this dimension ${far} blocks from here` : ''}; each is a walk of its own when they are collected for the eyes${hours ? `, and banking and collecting have taken ${hours} hours of this run so far` : ''}.`;
 }
 
+// Every rod had and pearls still wanted: what the walk out comes to, said on it, and the three ways named by what they
+// mean for the pearls (note 2832). In the middle-stage trials of 2026-11-11 and 11-12 (13 that got their rods, 2,728
+// minutes after them) 54% of the time after the rods was spent in the Overworld and pearls came at 1.3 an hour; the
+// largest chosen cause was this walk, 8 times and 517 minutes, answered 9 of 17 times it was asked with every rod had.
+// The same 17 questions asked again, twice each: the walk out 22 of 36 as worded, 15 with its cost said, 4 with the
+// options led by what each does about the pearls.
+const TWICE = ' A warped forest\'s slot in the Nether is where the pearls came in the trials of 2026-11-11 and 11-12 (40 of the 46 hunted after the rods), so taken out now this walk is made twice: out with the rods, back in for the pearls, and out again with them. Of 8 times a bot took its full rods out with pearls still wanted in those trials it was back in the Nether after 49 minutes at the median (4 to 170), no pearl got meanwhile.';
+
 function offerSays(offer, bot = null, goal = null) {
   const list = offer.what.map(w => plural(w.count, w.item.replaceAll('_', ' ')));
   const what = list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list.at(-1)}` : list[0];
@@ -120,7 +128,7 @@ function offerSays(offer, bot = null, goal = null) {
   let staying = ''; try { const rk = require('./rod-risk'), own = rk.runSays(bot, goal, offer.rods); staying = ` ${own || `Staying with them: ${rk.recordSays(offer.rods)}`}`; } catch (_) { staying = ''; }
   let spread = ''; try { spread = spreadSays(bot, goal); } catch (_) { spread = ''; }
   staying += spread;
-  if (offer.complete) return `Take the rods out: every rod wanted is had (${offer.rods} carried${offer.inChest ? `, ${offer.inChest} in the bot's chest in the Nether, counted as held and taken out on the way out` : ''}, ${offer.wanted} wanted), and ${plural(offer.pearlsLeft, 'ender pearl')} ${offer.pearlsLeft === 1 ? 'is' : 'are'} still wanted. Walk back to the portal ${offer.d} blocks off with the ${what}, go through the portal and put them in ${offer.chest.says}; the pearls are hunted after, from either side, with no rod in the pack. ${walk} The walk out carries them, and a death on it drops them as one here does; once in the chest they are kept through any death after, counted as held, and taken out when the pearls are had too.${staying}`;
+  if (offer.complete) return `Walk the rods out before the pearls, and come back in for them: every rod wanted is had (${offer.rods} carried${offer.inChest ? `, ${offer.inChest} in the bot's chest in the Nether, counted as held and taken out on the way out` : ''}, ${offer.wanted} wanted), and ${plural(offer.pearlsLeft, 'ender pearl')} ${offer.pearlsLeft === 1 ? 'is' : 'are'} still wanted. Walk back to the portal ${offer.d} blocks off with the ${what}, go through the portal and put them in ${offer.chest.says}; then back in through the portal for the pearls.${TWICE} ${walk} The walk out carries them, and a death on it drops them as one here does; once in the chest they are kept through any death after, counted as held, and taken out when the pearls are had too.${staying}`;
   return `Bank the rods got so far: walk back to the portal ${offer.d} blocks off with the ${what}, go through the portal, put them in ${offer.chest.says}, and come back through for the ${plural(offer.left, 'rod')} still needed. ${walk} There and back is about ${minutes} minute${minutes === 1 ? '' : 's'}${offer.chest.how === 'tree' ? ' and the time the wood takes on the Overworld side' : ''}, no rod meanwhile. The walk out carries them, and a death on it drops them as one here does; once in the chest they are kept through any death after, counted as held, and taken out once the rods carried and banked together are what the goal wants, so a death after loses only the rods got since.${staying}`;
 }
 
@@ -235,6 +243,7 @@ async function askBank(bot, task, goal, save, actions, client, { now = Date.now(
   const today = `On ${TODAY.day}, ${TODAY.lives} lives carried 2 or more rods at a fortress: ${TODAY.died} stayed and died with them (${TODAY.lost.join(', ')} rods lost), ${TODAY.out} left and carried its ${TODAY.outRods} out.`;
   // The chest here (note 931): the rods kept in the Nether, the hunt on.
   let keep = null; try { keep = rs().keepOption(bot, task, goal, save, actions, { thenSays: offer.complete ? 'Then the pearls are hunted with nothing in the pack to lose, and the chest is emptied on the way out.' : `Then the hunt goes on here for the ${plural(offer.left, 'rod')} still needed with nothing in the pack to lose, and the walk out is made once, with them all.` }); } catch (_) { keep = null; }
+  if (keep && offer.complete) keep = { ...keep, description: String(keep.description).replace(/^Keep the/, 'Go on to the pearls here with the rods left safe in a chest, no walk out until the pearls are had: keep the') };
   const last = lastWalkSays(goal, now);
   // No chest and no wood for one: the wood fetched first where stems are
   // known, then the chest here (note 997). On 2026-10-03 (04:00 to 06:40Z)
@@ -295,7 +304,7 @@ async function askBank(bot, task, goal, save, actions, client, { now = Date.now(
     ...(keep ? { keep_here: { description: keep.description, run: keep.run } } : {}),
     ...(woodFirst ? { wood_for_chest: woodFirst } : {}),
     ...(ownChest ? { own_chest: ownChest } : {}),
-    stay_for_more: { description: `${offer.complete ? `Go on to the pearls (${offer.pearlsLeft} still wanted)` : `Stay and hunt on for the ${plural(offer.left, 'rod')} still needed`} with the ${plural(offer.rods, 'rod')} in the pack: no walk out now, and every rod carried is lost with a death here.${last} ${staying}${own ? '' : ` ${today} ${bankWalksSays()}`} Asked again when another rod is carried, or in ten minutes.` },
+    stay_for_more: { description: `${offer.complete ? `Go on to the pearls here (${offer.pearlsLeft} still wanted)` : `Stay and hunt on for the ${plural(offer.left, 'rod')} still needed`} with the ${plural(offer.rods, 'rod')} in the pack: no walk out now, and every rod carried is lost with a death here.${last} ${staying}${own ? '' : ` ${today} ${bankWalksSays()}`} Asked again when another rod is carried, or in ten minutes.` },
   };
   // The rods' own rate here, beside the walk out (note 2524, Fable's Nether review): full-100 (25590, 2026-10-29
   // 16:32 to 16:41Z) stood nine minutes for two rods and left at four of seven; the walk home was priced, the staying not.
